@@ -137,7 +137,7 @@ export default function ServerTab({
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
       <div className="flex items-center gap-2 mb-1">
         <Icon name="Server" size={16} className="text-blue-500" />
-        <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Расчётный сервер</span>
+        <span className="font-semibold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Расчётный сервер</span>
       </div>
       <p className="text-[11px] text-gray-400 mb-4">
         На случай, когда на основном сервере закончилось вычислительное время —
@@ -300,7 +300,7 @@ export default function ServerTab({
 
           <button onClick={saveServerCfg} disabled={srvCfgSaving || (srvActive === "backup" && !srvBackupUrl.trim())}
             className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
-            style={{ background: "#1a3a6b" }}>
+            style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
             {srvCfgSaving ? <><Icon name="Loader" size={14} className="animate-spin" />Сохранение...</> : <><Icon name="Save" size={14} />Сохранить</>}
           </button>
         </div>
@@ -311,7 +311,7 @@ export default function ServerTab({
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
       <div className="flex items-center gap-2 mb-3">
         <Icon name="Route" size={16} className="text-blue-500" />
-        <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>
+        <span className="font-semibold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
           Какой резерв вам нужен
         </span>
       </div>
@@ -397,7 +397,7 @@ export default function ServerTab({
 
       <div className="flex items-center gap-2 mb-3 pt-1 border-t border-gray-100">
         <Icon name="BookOpen" size={16} className="text-blue-500 mt-3" />
-        <span className="font-semibold text-[13px] mt-3" style={{ color: "#1a3a6b" }}>
+        <span className="font-semibold text-[13px] mt-3" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
           Как поднять резерв на своём втором ПК
         </span>
       </div>
@@ -414,7 +414,7 @@ export default function ServerTab({
           нажмите «Проверить связь», затем «Сохранить».</li>
       </ol>
       <div className="text-[11px] text-gray-600 mt-3 space-y-1 border-t border-gray-100 pt-3">
-        <div className="font-semibold text-[11.5px]" style={{ color: "#1a3a6b" }}>Управление сервером на втором ПК</div>
+        <div className="font-semibold text-[11.5px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Управление сервером на втором ПК</div>
         <div><span className="font-mono">run.bat</span> — обычный запуск (после первой установки)</div>
         <div><span className="font-mono">stop.bat</span> — остановить сервер</div>
         <div><span className="font-mono">autostart.bat</span> — включить/выключить автозапуск вместе с Windows</div>

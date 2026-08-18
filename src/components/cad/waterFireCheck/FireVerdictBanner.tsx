@@ -26,14 +26,14 @@ export default function FireVerdictBanner({ fireResult }: FireVerdictBannerProps
   return (
 <div className="px-4 py-2.5 flex items-center gap-3"
   style={{
-    background: fireResult.sufficient ? "#f0fdf4" : "#fff1f1",
+    background: fireResult.sufficient ? "var(--c-tint-green, #f0fdf4)" : "#fff1f1",
     borderBottom: "1px solid #e0e4ee",
   }}>
   <Icon name={fireResult.sufficient ? "ShieldCheck" : "ShieldAlert"} size={18}
-    style={{ color: fireResult.sufficient ? "#15803d" : "#dc2626" }} />
+    style={{ color: fireResult.sufficient ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }} />
   <div className="flex-1">
     <div className="text-[12px] font-semibold"
-      style={{ color: fireResult.sufficient ? "#15803d" : "#b91c1c" }}>
+      style={{ color: fireResult.sufficient ? "var(--c-green, #15803d)" : "var(--c-red, #b91c1c)" }}>
       {fireResult.verdict}
     </div>
     <div className="text-[10px] text-gray-500 pt-0.5">
@@ -43,7 +43,7 @@ export default function FireVerdictBanner({ fireResult }: FireVerdictBannerProps
     </div>
     {/* Откуда вода пойдёт раньше всего — это НЕ всегда ближайший кран */}
     {fireResult.rescueComputed && fireResult.fastestHydrant && (
-      <div className="text-[10px] pt-1" style={{ color: "#1d4ed8" }}>
+      <div className="text-[10px] pt-1" style={{ color: "var(--c-blue, #1d4ed8)" }}>
         Вода быстрее всего от крана <b>№ {fireResult.fastestHydrant.nodeNumber}</b>:
         {" "}ход отделения {Math.round(fireResult.fastestHydrant.rescueTime ?? 0)} мин
         {" "}+ развёртывание {fireResult.fastestHydrant.hoseCount} рукав.

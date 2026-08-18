@@ -61,7 +61,7 @@ export default function CadTitleBar({
           таким именем не существует, и пользователь ищет его на диске. */}
       <span className="text-xs text-gray-400">—</span>
       {projectFileName ? (
-        <span className="text-xs font-semibold" style={{ color: "#1a3a6b" }}>
+        <span className="text-xs font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
           {projectFileName}{isDirty ? " *" : ""}
         </span>
       ) : (

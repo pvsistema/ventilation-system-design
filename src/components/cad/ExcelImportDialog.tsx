@@ -63,7 +63,7 @@ export default function ExcelImportDialog({ onImport, onClose }: Props) {
             onDragOver={(e) => e.preventDefault()}
             onClick={() => inputRef.current?.click()}
             className="flex flex-col items-center justify-center gap-2 cursor-pointer rounded border-2 border-dashed py-5 hover:bg-blue-50 transition-colors"
-            style={{ borderColor: file ? "#2563eb" : "#9ca3af" }}>
+            style={{ borderColor: file ? "var(--c-blue, #2563eb)" : "#9ca3af" }}>
             <Icon name="FileSpreadsheet" size={26} />
             {file ? (
               <>
@@ -113,8 +113,8 @@ export default function ExcelImportDialog({ onImport, onClose }: Props) {
                   { label: "С Z≠0",  value: result.stats.nodesWithZ, hi: result.stats.nodesWithZ > 0 },
                 ].map(s => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
-                    style={{ background: s.hi ? "#dbeafe" : "#f9f9f9", borderColor: s.hi ? "#93c5fd" : "#e0e0e0" }}>
-                    <div className="text-xl font-bold" style={{ color: s.hi ? "#1d4ed8" : "#6b7280" }}>{s.value}</div>
+                    style={{ background: s.hi ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#93c5fd" : "var(--c-b1, #e0e0e0)" }}>
+                    <div className="text-xl font-bold" style={{ color: s.hi ? "var(--c-blue, #1d4ed8)" : "var(--c-t3, #6b7280)" }}>{s.value}</div>
                     <div className="text-[10px] text-gray-500">{s.label}</div>
                   </div>
                 ))}
@@ -201,7 +201,7 @@ export default function ExcelImportDialog({ onImport, onClose }: Props) {
             disabled={!result || result.branches.length === 0}
             onClick={() => result && onImport(result, mode)}
             className="px-5 py-1.5 text-sm font-semibold text-white rounded disabled:opacity-40"
-            style={{ background: "#2563eb" }}>
+            style={{ background: "var(--c-blue-bg, #2563eb)" }}>
             Импортировать ({result?.branches.length ?? 0} ветвей)
           </button>
         </div>

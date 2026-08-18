@@ -99,7 +99,7 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
             key={f}
             onClick={() => setFilter(f)}
             className="text-[10px] px-2 py-0.5 rounded"
-            style={{ background: filter === f ? "#1e293b" : "#e2e8f0", color: filter === f ? "white" : "#475569", fontWeight: filter === f ? 600 : 400 }}
+            style={{ background: filter === f ? "#1e293b" : "var(--c-s4, #e2e8f0)", color: filter === f ? "white" : "var(--c-t3, #475569)", fontWeight: filter === f ? 600 : 400 }}
           >
             {f === "all" ? "Все" : f === "warn" ? "Предупреждения" : "Ошибки"}
           </button>
@@ -110,7 +110,7 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
       {/* Список строк */}
       <div className="overflow-y-auto flex-1 font-mono" style={{ fontSize: 11, background: "#0f172a" }}>
         {visible.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-[11px]" style={{ color: "#475569" }}>Нет записей</div>
+          <div className="flex items-center justify-center h-full text-[11px]" style={{ color: "var(--c-t3, #475569)" }}>Нет записей</div>
         ) : (
           visible.map(e => (
             <div
@@ -120,7 +120,7 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
             >
               <span className="shrink-0 text-[10px] mt-0.5" style={{ color: "var(--c-t2, #334155)", width: 50 }}>{e.ts}</span>
               <span className="shrink-0" style={{ color: levelColor(e.level), width: 10 }}>{levelIcon(e.level)}</span>
-              <span style={{ color: e.level === "error" ? "#fca5a5" : e.level === "warn" ? "#fcd34d" : e.level === "ok" ? "#86efac" : "#94a3b8", wordBreak: "break-word" }}>
+              <span style={{ color: e.level === "error" ? "#fca5a5" : e.level === "warn" ? "#fcd34d" : e.level === "ok" ? "#86efac" : "var(--c-t4, #94a3b8)", wordBreak: "break-word" }}>
                 {e.text}
               </span>
             </div>

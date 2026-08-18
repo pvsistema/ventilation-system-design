@@ -52,7 +52,7 @@ function Card({ title, icon, color, children }: { title: string; icon: string; c
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
       <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
         <Icon name={icon} size={15} style={{ color }} />
-        <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>{title}</span>
+        <span className="font-semibold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>{title}</span>
       </div>
       <div className="p-5">{children}</div>
     </div>
@@ -81,11 +81,11 @@ export default function MonitoringTab({ data, loading }: Props) {
       {/* Верхние метрики */}
       <div className="grid grid-cols-5 gap-4">
         {[
-          { label: "Онлайн сейчас", value: data.sessions.online, sub: `из ${data.sessions.total} мест`, icon: "Wifi", color: "#16a34a" },
-          { label: "Обращений за месяц", value: (data.usage?.month ?? 0).toLocaleString("ru"), sub: "к серверу", icon: "Gauge", color: "#7c3aed" },
-          { label: "Входов за 24 ч", value: data.logins_24h, sub: "активность", icon: "LogIn", color: "#2563eb" },
-          { label: "Нарушения (30 дн)", value: totalViolations, sub: "попыток", icon: "ShieldAlert", color: totalViolations ? "#dc2626" : "#94a3b8" },
-          { label: "Скоро истекают", value: data.expiring.length, sub: "лицензий", icon: "CalendarClock", color: data.expiring.length ? "#d97706" : "#94a3b8" },
+          { label: "Онлайн сейчас", value: data.sessions.online, sub: `из ${data.sessions.total} мест`, icon: "Wifi", color: "var(--c-green, #16a34a)" },
+          { label: "Обращений за месяц", value: (data.usage?.month ?? 0).toLocaleString("ru"), sub: "к серверу", icon: "Gauge", color: "var(--c-purple, #7c3aed)" },
+          { label: "Входов за 24 ч", value: data.logins_24h, sub: "активность", icon: "LogIn", color: "var(--c-blue, #2563eb)" },
+          { label: "Нарушения (30 дн)", value: totalViolations, sub: "попыток", icon: "ShieldAlert", color: totalViolations ? "var(--c-red, #dc2626)" : "var(--c-t4, #94a3b8)" },
+          { label: "Скоро истекают", value: data.expiring.length, sub: "лицензий", icon: "CalendarClock", color: data.expiring.length ? "var(--c-amber, #d97706)" : "var(--c-t4, #94a3b8)" },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl shadow-sm border border-gray-200 p-4">
             <div className="flex items-center gap-2 mb-1.5">
@@ -135,7 +135,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
                         style={desktop
                           ? { background: "#eef2ff", color: "#4338ca" }
-                          : { background: "var(--c-s3, #f1f5f9)", color: "#475569" }}>
+                          : { background: "var(--c-s3, #f1f5f9)", color: "var(--c-t3, #475569)" }}>
                         <Icon name={desktop ? "Monitor" : "Globe"} size={11} />
                         {desktop ? "Десктоп" : "Браузер"}
                       </span>
@@ -145,7 +145,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                       {outdated ? (
                         <span
                           className="inline-flex items-center gap-1 font-mono font-medium"
-                          style={{ color: "#b45309" }}
+                          style={{ color: "var(--c-amber, #b45309)" }}
                           title={`Устаревшая версия — актуальная ${APP_VERSION}. Клиенту нужно обновиться (десктоп) или сбросить кеш браузера (Ctrl+Shift+R).`}>
                           <Icon name="TriangleAlert" size={11} />
                           {s.app_version}
@@ -154,7 +154,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                         <span className="text-gray-500 font-mono">{s.app_version || "—"}</span>
                       )}
                     </td>
-                    <td className="py-2 pr-3 font-mono" style={{ color: desktop ? "#7c3aed" : "#94a3b8" }}>
+                    <td className="py-2 pr-3 font-mono" style={{ color: desktop ? "var(--c-purple, #7c3aed)" : "var(--c-t4, #94a3b8)" }}>
                       {s.core_version || "—"}
                     </td>
                     <td className="py-2 pr-3 text-gray-500 font-mono">{s.ip || "—"}</td>
@@ -197,7 +197,7 @@ export default function MonitoringTab({ data, loading }: Props) {
               ].map(s => (
                 <div key={s.label} className="rounded-lg p-3" style={{ background: "#faf5ff" }}>
                   <div className="text-[10px] text-gray-500 mb-1">{s.label}</div>
-                  <div className="text-[20px] font-bold leading-none" style={{ color: "#7c3aed" }}>{s.value}</div>
+                  <div className="text-[20px] font-bold leading-none" style={{ color: "var(--c-purple, #7c3aed)" }}>{s.value}</div>
                   <div className="text-[10px] text-gray-400 mt-1">{s.sub}</div>
                 </div>
               ))}
@@ -237,7 +237,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                 <div className="text-[11px] text-gray-400 mb-1.5">Прогноз</div>
                 <div className="text-[12px] text-gray-600">
                   При нынешнем темпе за месяц выйдет около{" "}
-                  <span className="font-semibold" style={{ color: "#7c3aed" }}>
+                  <span className="font-semibold" style={{ color: "var(--c-purple, #7c3aed)" }}>
                     {forecast.toLocaleString("ru")}
                   </span>{" "}
                   обращений.

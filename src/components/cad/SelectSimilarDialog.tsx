@@ -174,7 +174,7 @@ export default function SelectSimilarDialog({ selectedBranch, selectedSymbol, br
           <button onClick={handleSelect}
             disabled={checked.size === 0}
             className="text-[11px] px-4 py-1 rounded"
-            style={{ background: checked.size > 0 ? "#2563eb" : "#93c5fd", color: "white", border: "none", cursor: checked.size > 0 ? "pointer" : "default" }}>
+            style={{ background: checked.size > 0 ? "var(--c-blue, #2563eb)" : "#93c5fd", color: "white", border: "none", cursor: checked.size > 0 ? "pointer" : "default" }}>
             Выбрать
           </button>
         </div>

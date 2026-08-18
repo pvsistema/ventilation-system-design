@@ -59,7 +59,7 @@ export default function CadContextMenu({ x, y, items, onSelect, onClose }: CadCo
         zIndex: 99999,
         minWidth: 210,
         background: "var(--c-s3, #f0f0f0)",
-        border: "1px solid #888",
+        border: "1px solid var(--c-b3, #888)",
         boxShadow: "2px 3px 8px rgba(0,0,0,0.28)",
         borderRadius: 2,
         padding: "2px 0",
@@ -85,7 +85,7 @@ export default function CadContextMenu({ x, y, items, onSelect, onClose }: CadCo
               padding: "3px 14px 3px 8px",
               fontSize: 12,
               cursor: item.disabled ? "default" : "pointer",
-              color: item.danger ? "#c00" : item.disabled ? "#aaa" : "#111",
+              color: item.danger ? "#c00" : item.disabled ? "#aaa" : "var(--c-t1, #111)",
               background: "transparent",
               whiteSpace: "nowrap",
             }}
@@ -105,7 +105,7 @@ export default function CadContextMenu({ x, y, items, onSelect, onClose }: CadCo
             </span>
             <span style={{ flex: 1 }}>{item.label}</span>
             {item.shortcut && (
-              <span style={{ fontSize: 11, color: "#888", marginLeft: 12 }}>{item.shortcut}</span>
+              <span style={{ fontSize: 11, color: "var(--c-t4, #888)", marginLeft: 12 }}>{item.shortcut}</span>
             )}
           </div>
         )

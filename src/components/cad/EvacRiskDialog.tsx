@@ -77,7 +77,7 @@ export default function EvacRiskDialog({
 
         {result.error && (
           <div className="px-4 py-2.5 text-[11px] flex items-start gap-2"
-            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "var(--c-amber, #8a5a00)" }}>
             <Icon name="TriangleAlert" size={14} className="mt-0.5 flex-shrink-0" />
             <div>
               {result.error}
@@ -132,10 +132,10 @@ export default function EvacRiskDialog({
               Людей в смену: <b>{result.totalPeople}</b> на {result.totalWorkplaces} местах
             </span>
             {result.peopleInSmoke > 0 && (
-              <span style={{ color: "#c2410c" }}>В зоне задымления: <b>{result.peopleInSmoke}</b></span>
+              <span style={{ color: "var(--c-amber, #c2410c)" }}>В зоне задымления: <b>{result.peopleInSmoke}</b></span>
             )}
             {result.peopleNeedSwitch > 0 && (
-              <span style={{ color: "#c2410c" }}>Нужно переключение: <b>{result.peopleNeedSwitch}</b></span>
+              <span style={{ color: "var(--c-amber, #c2410c)" }}>Нужно переключение: <b>{result.peopleNeedSwitch}</b></span>
             )}
             {result.peopleAtRisk > 0
               ? <span className="text-red-600 font-semibold">Не успевают выйти: {result.peopleAtRisk}</span>
@@ -190,12 +190,12 @@ export default function EvacRiskDialog({
                     </td>
                     <td className="px-2 py-1 text-right tabular-nums font-semibold"
                       style={{ borderBottom: "1px solid #eef1f6",
-                        color: r.timeMargin < 0 ? "#dc2626" : r.timeMargin < r.rescuerTime * 0.2 ? "#a16207" : "#15803d" }}>
+                        color: r.timeMargin < 0 ? "var(--c-red, #dc2626)" : r.timeMargin < r.rescuerTime * 0.2 ? "#a16207" : "var(--c-green, #15803d)" }}>
                       {r.evacTime > 0 ? (r.timeMargin > 0 ? `+${r.timeMargin.toFixed(0)}` : r.timeMargin.toFixed(0)) : "—"}
                     </td>
                     <td className="px-2 py-1 text-center" style={{ borderBottom: "1px solid #eef1f6" }}>
                       {(r.inSmokeZone || r.routeThroughSmoke)
-                        ? <span style={{ color: "#dc2626", fontWeight: 700 }}
+                        ? <span style={{ color: "var(--c-red, #dc2626)", fontWeight: 700 }}
                             title={r.inSmokeZone ? "Рабочее место в дыму" : "Путь выхода через дым"}>
                             {r.inSmokeZone ? "место" : "путь"}
                           </span>

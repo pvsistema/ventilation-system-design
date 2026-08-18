@@ -69,7 +69,7 @@ export default function BranchBulkheadTab({
           </InlineLabel>
           {!mineBulkheads?.length && (
             <div className="mx-1 my-1 px-2 py-1 text-[10px] rounded"
-              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #fcd34d", color: "#92400e" }}>
+              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #fcd34d", color: "var(--c-amber-ink, #92400e)" }}>
               Справочник перемычек пуст. Откройте Справочники → Перемычки и добавьте перемычки.
             </div>
           )}
@@ -79,7 +79,7 @@ export default function BranchBulkheadTab({
 
           {/* R = ... (вычисленное/итоговое) */}
           <div className="flex items-center justify-center py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
-            <span className="text-[13px] font-semibold" style={{ color: "#1a3a6b" }}>
+            <span className="text-[13px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
               R = {(() => {
                 const uRes = getUnit(unitsConfig, "resistance");
                 // Читаем параметры из символа перемычки (приоритет) или из полей ветви
@@ -151,7 +151,7 @@ export default function BranchBulkheadTab({
                 /* Глухая перемычка — воздухопроницаемость */
                 <>
                   <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-                    <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Воздухопроницаемость</span>
+                    <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Воздухопроницаемость</span>
                   </div>
                   <div className="flex items-center px-1 py-0.5 gap-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                     <span className="text-[11px] text-gray-700 flex-shrink-0" style={{ width: 130 }}>Тип:</span>
@@ -187,7 +187,7 @@ export default function BranchBulkheadTab({
                 </>
               )}
               <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-                <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
+                <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Вычисленные параметры</span>
               </div>
               <InlineLabel label="ΔP:">
                 <ComputedInput value={(() => {
@@ -254,7 +254,7 @@ export default function BranchBulkheadTab({
                 />
               </InlineLabel>
               <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-                <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
+                <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Вычисленные параметры</span>
               </div>
               <InlineLabel label="ΔP:">
                 <ComputedInput value={(() => {
@@ -297,7 +297,7 @@ export default function BranchBulkheadTab({
                 />
               </InlineLabel>
               <div className="px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
-                <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Вычисленные параметры</span>
+                <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Вычисленные параметры</span>
               </div>
               <InlineLabel label="ΔP:">
                 <ComputedInput value={(() => {

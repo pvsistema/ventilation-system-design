@@ -112,7 +112,7 @@ export default function CadModals(p: CadModalsProps) {
                     className="px-3 py-1 text-[12px] cursor-pointer"
                     style={{
                       background: item === "Пределы масштабов" ? "#0078d7" : "transparent",
-                      color: item === "Пределы масштабов" ? "white" : "#222",
+                      color: item === "Пределы масштабов" ? "white" : "var(--c-t1, #222)",
                       paddingLeft: i > 0 ? 24 : 12,
                     }}>
                     {item}
@@ -358,7 +358,7 @@ export default function CadModals(p: CadModalsProps) {
               <button
                 onClick={() => { p.resetAllNodesToSurvey(); p.setResetSurveyDialog(false); }}
                 className="text-[11px] px-3 py-1 rounded font-semibold"
-                style={{ background: "#1d4ed8", border: "1px solid #1d4ed8", color: "white", cursor: "pointer" }}>
+                style={{ background: "var(--c-blue-bg, #1d4ed8)", border: "1px solid var(--c-blue, #1d4ed8)", color: "white", cursor: "pointer" }}>
                 Вернуть на место
               </button>
             </div>
@@ -465,7 +465,7 @@ export default function CadModals(p: CadModalsProps) {
                 )}
                 <button onClick={() => p.confirmDeleteBranches(plan, true)}
                   className="text-[11px] px-3 py-1 rounded font-semibold"
-                  style={{ background: "#dc2626", border: "1px solid #dc2626", color: "white", cursor: "pointer" }}>
+                  style={{ background: "var(--c-red-bg, #dc2626)", border: "1px solid var(--c-red, #dc2626)", color: "white", cursor: "pointer" }}>
                   {hasOrphans ? "Удалить с узлами" : "Удалить"}
                 </button>
               </div>
@@ -511,7 +511,7 @@ export default function CadModals(p: CadModalsProps) {
                 <button
                   onClick={() => { p.doDeleteNode(p.mergeNodeDialog!.nodeId); p.setMergeNodeDialog(null); }}
                   className="text-[11px] px-3 py-1 rounded"
-                  style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "#991b1b", cursor: "pointer" }}>
+                  style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "var(--c-red-ink, #991b1b)", cursor: "pointer" }}>
                   Удалить без объединения
                 </button>
                 <button
@@ -520,7 +520,7 @@ export default function CadModals(p: CadModalsProps) {
                     p.setMergeNodeDialog(null);
                   }}
                   className="text-[11px] px-3 py-1 rounded font-semibold"
-                  style={{ background: "#1d4ed8", border: "1px solid #1d4ed8", color: "white", cursor: "pointer" }}>
+                  style={{ background: "var(--c-blue-bg, #1d4ed8)", border: "1px solid var(--c-blue, #1d4ed8)", color: "white", cursor: "pointer" }}>
                   Объединить выработки
                 </button>
               </div>
@@ -567,7 +567,7 @@ export default function CadModals(p: CadModalsProps) {
                   p.addSymbol(p.squadDialog!.typeId, p.squadDialog!.x, p.squadDialog!.y, p.squadDialog!.branchId, `${n} чел.`, undefined, p.squadDialog!.t);
                   p.setTool("select"); p.setActiveSymbolTypeId(null); p.setSquadDialog(null);
                 }}
-                  className="h-7 px-3 text-[11px] rounded text-white" style={{ background: "#2563eb" }}>
+                  className="h-7 px-3 text-[11px] rounded text-white" style={{ background: "var(--c-blue-bg, #2563eb)" }}>
                   Разместить
                 </button>
               </div>
@@ -619,7 +619,7 @@ export default function CadModals(p: CadModalsProps) {
                 <button
                   onClick={async () => { await p.handleSave(); doClose(); }}
                   className="h-7 px-3 text-[12px] rounded text-white"
-                  style={{ background: "#2563eb" }}>
+                  style={{ background: "var(--c-blue-bg, #2563eb)" }}>
                   Сохранить
                 </button>
               </div>
@@ -667,7 +667,7 @@ export default function CadModals(p: CadModalsProps) {
                       <span className="font-medium flex items-center gap-1.5">
                         <span style={{
                           width: 8, height: 8, borderRadius: 999,
-                          background: isOnline ? "#22c55e" : "#f59e0b",
+                          background: isOnline ? "var(--c-green-lt, #22c55e)" : "var(--c-amber-lt, #f59e0b)",
                           display: "inline-block",
                         }} />
                         {isOnline ? "Онлайн" : "Офлайн-режим"}
@@ -690,7 +690,7 @@ export default function CadModals(p: CadModalsProps) {
               <button
                 onClick={() => p.setShowAbout(false)}
                 className="h-7 px-4 text-[12px] rounded text-white font-medium flex-shrink-0"
-                style={{ background: "#2563eb" }}>
+                style={{ background: "var(--c-blue-bg, #2563eb)" }}>
                 OK
               </button>
             </div>
@@ -720,7 +720,7 @@ export default function CadModals(p: CadModalsProps) {
                 <div className="text-[11px] text-gray-500 mb-1 font-medium">Исходный файл:</div>
                 <div className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200"
                   style={{ background: "var(--c-s2, #f9fafb)" }}>
-                  <Icon name="FileText" size={18} style={{ color: "#2563eb" }} />
+                  <Icon name="FileText" size={18} style={{ color: "var(--c-blue, #2563eb)" }} />
                   <span className="text-[12px] font-medium text-gray-800">{p.projectFileName}</span>
                   <span className="ml-auto text-[10px] text-gray-400">{p.nodes.length} уз. / {p.branches.length} вет.</span>
                 </div>
@@ -777,12 +777,12 @@ export default function CadModals(p: CadModalsProps) {
                   }}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded border-2 border-dashed transition-colors"
                   style={{
-                    borderColor: p.compareLoading ? "#93c5fd" : "#d1d5db",
-                    background: p.compareLoading ? "#eff6ff" : "#f9fafb",
+                    borderColor: p.compareLoading ? "#93c5fd" : "var(--c-b2, #d1d5db)",
+                    background: p.compareLoading ? "var(--c-tint-blue, #eff6ff)" : "var(--c-s2, #f9fafb)",
                     cursor: p.compareLoading ? "wait" : "pointer",
                   }}>
                   <Icon name={p.compareLoading ? "Loader" : "FolderOpen"} size={22}
-                    style={{ color: "#2563eb" }} className={p.compareLoading ? "animate-spin" : ""} />
+                    style={{ color: "var(--c-blue, #2563eb)" }} className={p.compareLoading ? "animate-spin" : ""} />
                   <div className="text-left">
                     <div className="text-[12px] font-medium text-gray-800">
                       {p.compareLoading ? "Загрузка..." : "Выбрать файл для сравнения"}

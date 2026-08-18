@@ -64,7 +64,7 @@ export default function HQFireDiagramDialog({ open, onClose, data, branchName }:
         {/* Заголовок */}
         <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "var(--c-tint-red, #fef2f2)", borderColor: "#fecaca" }}>
           <div>
-            <div className="text-[13px] font-semibold" style={{ color: "#991b1b" }}>
+            <div className="text-[13px] font-semibold" style={{ color: "var(--c-red-ink, #991b1b)" }}>
               Режим проветривания уклонного поля (h–Q, {ascending ? "восходящее, рис. 2.2" : "нисходящее, рис. 2.1,б"})
             </div>
             {branchName && <div className="text-[11px] text-gray-500">{branchName}</div>}
@@ -104,18 +104,18 @@ export default function HQFireDiagramDialog({ open, onClose, data, branchName }:
         {/* Расшифровка */}
         <div className="px-4 pb-3 text-[11px] leading-relaxed text-gray-600 border-t pt-2">
           <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-            <div><b style={{ color: "#0369a1" }}>Кривая 1</b> — характеристика уклонного поля h = R·Q²</div>
-            <div><b style={{ color: "#c2410c" }}>Кривая 2</b> — тепловая депрессия пожара h_т = {hT.toFixed(1)} Па</div>
-            <div><b style={{ color: "#dc2626" }}>Кривая 3</b> — активизированная характеристика h_т + R·Q²</div>
+            <div><b style={{ color: "var(--c-blue, #0369a1)" }}>Кривая 1</b> — характеристика уклонного поля h = R·Q²</div>
+            <div><b style={{ color: "var(--c-amber, #c2410c)" }}>Кривая 2</b> — тепловая депрессия пожара h_т = {hT.toFixed(1)} Па</div>
+            <div><b style={{ color: "var(--c-red, #dc2626)" }}>Кривая 3</b> — активизированная характеристика h_т + R·Q²</div>
             {hKr !== undefined && hKr > 0 && (
-              <div><b style={{ color: "#7c3aed" }}>h_кр</b> — критическая депрессия = {hKr.toFixed(1)} Па</div>
+              <div><b style={{ color: "var(--c-purple, #7c3aed)" }}>h_кр</b> — критическая депрессия = {hKr.toFixed(1)} Па</div>
             )}
-            <div><b style={{ color: "#0369a1" }}>A</b> — режим до пожара, Q = {Math.abs(Qa).toFixed(2)} м³/с</div>
+            <div><b style={{ color: "var(--c-blue, #0369a1)" }}>A</b> — режим до пожара, Q = {Math.abs(Qa).toFixed(2)} м³/с</div>
             <div>
-              <b style={{ color: "#dc2626" }}>{ascending ? "E" : "B"}</b> — режим при пожаре, Q = {Math.abs(Qb).toFixed(2)} м³/с
+              <b style={{ color: "var(--c-red, #dc2626)" }}>{ascending ? "E" : "B"}</b> — режим при пожаре, Q = {Math.abs(Qb).toFixed(2)} м³/с
               {ascending ? " (растёт)" : " (падает)"}
             </div>
-            {!ascending && <div><b style={{ color: "#7c3aed" }}>C</b> — критический режим (Q = 0)</div>}
+            {!ascending && <div><b style={{ color: "var(--c-purple, #7c3aed)" }}>C</b> — критический режим (Q = 0)</div>}
             {reversed && <div><b style={{ color: "#450a0a" }}>D</b> — опрокидывание струи (Q &lt; 0)</div>}
           </div>
           {pU !== undefined && (

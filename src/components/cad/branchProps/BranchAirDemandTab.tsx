@@ -43,7 +43,7 @@ export default function BranchAirDemandTab({
   /** Предупреждение о данных, не типичных для этого типа забоя */
   const StaleNote = ({ what }: { what: string }) => (
     <div className="mx-2 mb-1 px-2 py-1 rounded text-[9px] leading-snug"
-      style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "#92400e" }}>
+      style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "var(--c-amber-ink, #92400e)" }}>
       Для типа «{FACE_TYPE_LABEL[faceType]}» {what} обычно не учитывают,
       но данные заданы и участвуют в расчёте. Очистите поля, если они не нужны.
     </div>
@@ -58,14 +58,14 @@ export default function BranchAirDemandTab({
     <div className="flex items-center px-1 py-0.5"
       style={{
         borderBottom: "1px solid #ebebeb",
-        background: active ? "#eff6ff" : undefined,
+        background: active ? "var(--c-tint-blue, #eff6ff)" : undefined,
       }}>
       <span className="text-[11px] flex-shrink-0"
-        style={{ width: 128, color: active ? "#1d4ed8" : "#4b5563", fontWeight: active ? 600 : 400 }}>
+        style={{ width: 128, color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #4b5563)", fontWeight: active ? 600 : 400 }}>
         {label}
       </span>
       <span className="text-[11px] text-right flex-1 tabular-nums"
-        style={{ color: active ? "#1d4ed8" : "#374151", fontWeight: active ? 700 : 400 }}>
+        style={{ color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)", fontWeight: active ? 700 : 400 }}>
         {value > 0 ? value.toFixed(2) : "—"}
       </span>
       <span className="text-[10px] text-gray-400 flex-shrink-0" style={{ width: 34, textAlign: "right" }}>
@@ -103,7 +103,7 @@ export default function BranchAirDemandTab({
       </label>
       {(branch.pollutesAir ?? false) && (
         <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
-          style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "#1e40af" }}>
+          style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "var(--c-blue-ink, #1e40af)" }}>
           Стрелки направления воздуха в ветвях ниже по потоку от этой ветви
           будут отображаться синим цветом.
         </div>
@@ -279,21 +279,21 @@ export default function BranchAirDemandTab({
         <InlineLabel label="Фактически, м³/с">
           <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
             style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
-              color: d.flowOk ? "#15803d" : "#dc2626" }}>
+              color: d.flowOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}>
             {d.actualFlow.toFixed(2)}
           </div>
         </InlineLabel>
         <InlineLabel label="Скорость, м/с">
           <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
             style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
-              color: d.velocityOk ? "#15803d" : "#dc2626" }}
+              color: d.velocityOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}
             title={`Допустимо: ${d.vMin}–${d.vMax} м/с`}>
             {d.actualVelocity.toFixed(2)}
           </div>
         </InlineLabel>
 
         <div className="px-2 py-1.5 text-[11px] font-semibold leading-snug"
-          style={{ color: d.verdict === "Обеспечено" ? "#15803d" : "#b91c1c" }}>
+          style={{ color: d.verdict === "Обеспечено" ? "var(--c-green, #15803d)" : "var(--c-red, #b91c1c)" }}>
           {d.verdict}
           {d.recommendation && (
             <div className="text-[9px] font-normal text-gray-500 pt-0.5">

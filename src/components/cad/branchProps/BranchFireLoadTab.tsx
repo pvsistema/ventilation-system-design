@@ -123,10 +123,10 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-red, #dc2626)" }}>
                       {vfr.power_MW.toFixed(2)}
                     </td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-blue, #2563eb)" }}>
                       {airFlow > 0 ? airFlow.toFixed(1) : "—"}
                     </td>
                     <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>
@@ -203,10 +203,10 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-red, #dc2626)" }}>
                       {beltResult.powerMax.toFixed(2)}
                     </td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-blue, #2563eb)" }}>
                       {airFlow > 0 ? airFlow.toFixed(1) : "—"}
                     </td>
                     <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>
@@ -290,8 +290,8 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>{cableResult.powerMW.toFixed(2)}</td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-red, #dc2626)" }}>{cableResult.powerMW.toFixed(2)}</td>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-blue, #2563eb)" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
                     <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{cableResult.deltaT_C > 0 ? cableResult.deltaT_C.toFixed(1) : "—"}</td>
                   </tr>
                 </tbody>
@@ -368,8 +368,8 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>{woodResult.powerMW.toFixed(2)}</td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-red, #dc2626)" }}>{woodResult.powerMW.toFixed(2)}</td>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-blue, #2563eb)" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
                     <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{woodResult.deltaT_C > 0 ? woodResult.deltaT_C.toFixed(1) : "—"}</td>
                   </tr>
                 </tbody>
@@ -421,8 +421,8 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
               </thead>
               <tbody>
                 <tr>
-                  <td className="text-center px-1 py-0.5 font-bold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#b91c1c" }}>{totalPower.toFixed(2)}</td>
-                  <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                  <td className="text-center px-1 py-0.5 font-bold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-red, #b91c1c)" }}>{totalPower.toFixed(2)}</td>
+                  <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-blue, #2563eb)" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
                   <td className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{totalDT > 0 ? totalDT.toFixed(1) : "—"}</td>
                 </tr>
               </tbody>

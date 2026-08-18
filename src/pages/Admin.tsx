@@ -456,7 +456,7 @@ export default function Admin() {
       {/* Шапка. sticky — остаётся на виду при прокрутке длинных вкладок,
           чтобы переключение разделов и кнопка «Обновить» были всегда под рукой. */}
       <div className="h-14 flex items-center justify-between px-6 shadow-sm sticky top-0 z-20"
-        style={{ background: "#1a3a6b" }}>
+        style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
         <div className="flex items-center gap-3">
           <Icon name="ShieldCheck" size={20} className="text-blue-300" />
           <span className="text-white font-bold text-[14px]">Панель администратора</span>
@@ -492,7 +492,7 @@ export default function Admin() {
             </button>
             <button onClick={() => setShowCreate(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white transition-colors"
-              style={{ background: "#16a34a" }}>
+              style={{ background: "var(--c-green-bg, #16a34a)" }}>
               <Icon name="Plus" size={14} />Создать ключ
             </button>
           </>}

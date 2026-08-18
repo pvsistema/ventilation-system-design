@@ -43,7 +43,7 @@ function SectionHeader({ label, expanded, onToggle, onAll }: SectionHeaderProps)
         onClick={onToggle}
         className="flex items-center gap-1 flex-1 text-left hover:bg-gray-100">
         <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={10} />
-        <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>{label}</span>
+        <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>{label}</span>
       </button>
       {onAll && (
         <div className="flex gap-1 flex-shrink-0">
@@ -223,7 +223,7 @@ export default function InfoPanel({
               <button onClick={() => setPosVisOpen((v) => !v)}
                 className="flex items-center gap-1 flex-1 text-left">
                 <Icon name={posVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
-                <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>
+                <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
                   Позиции ПЛА
                 </span>
               </button>
@@ -250,7 +250,7 @@ export default function InfoPanel({
                     <div key={pos.id}
                       style={{
                         borderBottom: "1px solid var(--c-b1, #f0f0f0)",
-                        background: posVis ? "transparent" : "#fafafa",
+                        background: posVis ? "transparent" : "var(--c-s2, #fafafa)",
                         paddingTop: 2, paddingBottom: 2,
                       }}>
                       {/* Строка позиции */}
@@ -275,7 +275,7 @@ export default function InfoPanel({
                           {pos.number}
                         </div>
                         <span className="text-[11px] flex-1 truncate"
-                          style={{ color: posVis ? "#1a3a6b" : "#aaa", fontWeight: 500 }}
+                          style={{ color: posVis ? "var(--c-blue-ink, #1a3a6b)" : "#aaa", fontWeight: 500 }}
                           title={pos.name || `Позиция ${pos.number}`}>
                           {pos.name || `Позиция ${pos.number}`}
                         </span>
@@ -298,7 +298,7 @@ export default function InfoPanel({
                             style={{ accentColor: "#7c3aed" }}
                           />
                           <Icon name="GitBranch" size={10} />
-                          <span className="text-[10px]" style={{ color: brVis ? "#374151" : "#aaa" }}>
+                          <span className="text-[10px]" style={{ color: brVis ? "var(--c-t2, #374151)" : "#aaa" }}>
                             Ветви ({pos.branchIds.length})
                           </span>
                         </div>
@@ -319,7 +319,7 @@ export default function InfoPanel({
               <button onClick={() => setNodeVisOpen((v) => !v)}
                 className="flex items-center gap-1 flex-1 text-left">
                 <Icon name={nodeVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
-                <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>
+                <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
                   Видимость узлов
                 </span>
               </button>
@@ -344,7 +344,7 @@ export default function InfoPanel({
                     style={{
                       paddingLeft: 20, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
                       borderBottom: "1px solid var(--c-b1, #f0f0f0)",
-                      background: selectedNodeId === node.id ? "#dbeafe" : "transparent",
+                      background: selectedNodeId === node.id ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
                     }}>
                     <label className="flex items-center gap-1.5 flex-1 cursor-pointer min-w-0">
                       <input
@@ -355,7 +355,7 @@ export default function InfoPanel({
                         style={{ accentColor: "#2563eb" }}
                       />
                       <span className="text-[11px] font-mono font-bold flex-shrink-0"
-                        style={{ color: "#1a3a6b", minWidth: 24 }}>
+                        style={{ color: "var(--c-blue-ink, #1a3a6b)", minWidth: 24 }}>
                         {node.number}
                       </span>
                       <span className="text-[10px] text-gray-400 truncate font-mono">

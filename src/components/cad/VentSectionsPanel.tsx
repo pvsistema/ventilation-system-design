@@ -136,9 +136,9 @@ export default function VentSectionsPanel({
           <button onClick={onToggleColorFill}
             className="h-6 px-3 rounded text-[11px] font-semibold"
             style={{
-              background: colorFill ? "#dc2626" : "#f3f4f6",
-              color: colorFill ? "white" : "#374151",
-              border: "1px solid " + (colorFill ? "#b91c1c" : "#d1d5db"),
+              background: colorFill ? "var(--c-red, #dc2626)" : "var(--c-s3, #f3f4f6)",
+              color: colorFill ? "white" : "var(--c-t2, #374151)",
+              border: "1px solid " + (colorFill ? "var(--c-red, #b91c1c)" : "var(--c-b2, #d1d5db)"),
             }}>
             {colorFill ? "Заливка ВКЛ" : "Заливка ВЫКЛ"}
           </button>
@@ -150,7 +150,7 @@ export default function VentSectionsPanel({
       <div className="px-2 py-1 text-[10px] text-gray-500 flex-shrink-0"
         style={{ borderBottom: "1px solid #eef1f6" }}>
         Участков: {sections.length}
-        {unassigned > 0 && <span style={{ color: "#c2410c" }}> · без участка: {unassigned} выраб.</span>}
+        {unassigned > 0 && <span style={{ color: "var(--c-amber, #c2410c)" }}> · без участка: {unassigned} выраб.</span>}
       </div>
 
       <div className="flex-1 overflow-y-auto">

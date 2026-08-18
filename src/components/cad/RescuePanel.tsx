@@ -217,20 +217,20 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>ΣO₂, л</th>
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>O₂/100м</th>
               {/* Слабая задымлённость k3=1 */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green2, #dcfce7)", color: "#166534" }}>t слаб.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green2, #dcfce7)", color: "#166534" }}>O₂ слаб.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green2, #dcfce7)", color: "var(--c-green-ink, #166534)" }}>t слаб.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green2, #dcfce7)", color: "var(--c-green-ink, #166534)" }}>O₂ слаб.</th>
               {/* Средняя задымлённость k3=1,43 */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-amber, #fff7ed)", color: "#c2410c" }}>t сред.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-amber, #fff7ed)", color: "#c2410c" }}>O₂ сред.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-amber, #fff7ed)", color: "var(--c-amber, #c2410c)" }}>t сред.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-amber, #fff7ed)", color: "var(--c-amber, #c2410c)" }}>O₂ сред.</th>
               {/* Сильная задымлённость k3=2 */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c" }}>t сильн.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c" }}>O₂ сильн.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-left font-medium" style={{ background: "var(--c-s2, #f8fafc)", color: "#475569" }}>Комментарий</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)" }}>t сильн.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)" }}>O₂ сильн.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-left font-medium" style={{ background: "var(--c-s2, #f8fafc)", color: "var(--c-t3, #475569)" }}>Комментарий</th>
             </tr>
           </thead>
           <tbody>
             {segments.map((s, i) => (
-              <tr key={i} style={{ background: i % 2 === 0 ? "white" : "#f9fafb" }}>
+              <tr key={i} style={{ background: i % 2 === 0 ? "white" : "var(--c-s2, #f9fafb)" }}>
                 <td className="border border-gray-200 px-1 py-0.5 max-w-[110px] truncate" title={s.branchName}>
                   {s.branchLabel || s.branchName}
                 </td>
@@ -344,7 +344,7 @@ function RescueResultDialog({
         {/* Заголовок — область перетаскивания */}
         <div onMouseDown={onDragStart}
           className="flex items-center justify-between px-4 py-2 border-b select-none"
-          style={{ background: "#1e40af", color: "white", cursor: "move" }}>
+          style={{ background: "var(--c-blue-bg, #1e40af)", color: "white", cursor: "move" }}>
           <div className="flex items-center gap-2">
             <Icon name="Move" size={13} style={{ color: "#93c5fd" }} />
             <Icon name="ShieldCheck" size={16} />
@@ -980,7 +980,7 @@ export default function RescuePanel({
         <button onClick={handleCalc}
           disabled={!startNodeId || !targetNodeId}
           className="w-full py-1.5 rounded text-[12px] font-semibold disabled:opacity-40"
-          style={{ background: "#1d4ed8", color: "white" }}>
+          style={{ background: "var(--c-blue-bg, #1d4ed8)", color: "white" }}>
           Рассчитать
         </button>
         {showResultLink && result && (

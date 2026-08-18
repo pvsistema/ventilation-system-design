@@ -50,9 +50,9 @@ function num(s: string): number {
 
 function classify(a: number): { label: string; color: string } {
   if (a <= 0) return { label: "—", color: "var(--c-t3, #6b7280)" };
-  if (a < 1) return { label: "Труднопроветриваемая", color: "#dc2626" };
-  if (a <= 2) return { label: "Средней трудности проветривания", color: "#d97706" };
-  return { label: "Легкопроветриваемая", color: "#16a34a" };
+  if (a < 1) return { label: "Труднопроветриваемая", color: "var(--c-red, #dc2626)" };
+  if (a <= 2) return { label: "Средней трудности проветривания", color: "var(--c-amber, #d97706)" };
+  return { label: "Легкопроветриваемая", color: "var(--c-green, #16a34a)" };
 }
 
 export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {

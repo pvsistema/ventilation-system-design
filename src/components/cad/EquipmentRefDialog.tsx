@@ -226,7 +226,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                 {([["all", "Все"], ["axial", "Осевые"], ["centrifugal", "Центробежные"], ["vmp", "ВМП"]] as const).map(([v, l]) => (
                   <button key={v} onClick={() => setFilter(v)}
                     className="flex-1 py-0.5 text-[10px] rounded border"
-                    style={{ background: filter === v ? "#2563eb" : "white", color: filter === v ? "white" : "#555", borderColor: filter === v ? "#2563eb" : "#d1d5db" }}>
+                    style={{ background: filter === v ? "var(--c-blue, #2563eb)" : "white", color: filter === v ? "white" : "var(--c-t3, #555)", borderColor: filter === v ? "var(--c-blue, #2563eb)" : "var(--c-b2, #d1d5db)" }}>
                     {l}
                   </button>
                 ))}
@@ -238,7 +238,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                 <div key={c.id}
                   onClick={() => setPreviewId(c.id)}
                   className="flex items-center justify-between px-3 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
-                  style={{ background: previewId === c.id ? "#dbeafe" : undefined }}>
+                  style={{ background: previewId === c.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
                   <div>
                     <div className="text-[12px] font-semibold text-blue-800">{c.name}</div>
                     <div className="text-[10px] text-gray-500">{c.type === "axial" ? "Осевой" : c.type === "vmp" ? "ВМП" : "Центробежный"}</div>
@@ -594,7 +594,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
             <div key={f.id}
               onClick={() => setSelectedId(f.id)}
               className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
-              style={{ background: selectedId === f.id ? "#dbeafe" : undefined }}>
+              style={{ background: selectedId === f.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
               <div className="flex-1 min-w-0">
                 <div className="text-[12px] font-semibold text-blue-800 truncate">{f.name}</div>
                 <div className="text-[10px] text-gray-500">{f.type} · Ø{f.diameter} м</div>
@@ -833,7 +833,7 @@ const SURFACE_OPTIONS = [
 const DEFAULT_BRANCH_TYPES: BranchType[] = [];
 
 const EMPTY_TYPE: Omit<BranchType, "id"> = {
-  name: "", color: "#3b82f6", shape: "arch", surface: SURFACE_OPTIONS[0], area: 10, vMax: 8, alphaCoef: 30,
+  name: "", color: "var(--c-blue-lt, #3b82f6)", shape: "arch", surface: SURFACE_OPTIONS[0], area: 10, vMax: 8, alphaCoef: 30,
 };
 
 function TypesSection({ initialTypes = [], onBranchTypesChange }: {
@@ -922,8 +922,8 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
                 style={{
                   gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px",
                   minHeight: 28,
-                  background: isSel ? "#dbeafe" : i % 2 === 0 ? "#fafafa" : "#fff",
-                  outline: isSel ? "1px solid #3b82f6" : "none",
+                  background: isSel ? "var(--c-tint-blue2, #dbeafe)" : i % 2 === 0 ? "var(--c-s2, #fafafa)" : "var(--c-s1, #fff)",
+                  outline: isSel ? "1px solid var(--c-blue-lt, #3b82f6)" : "none",
                 }}
                 onClick={() => selectRow(t)}>
                 <button className="flex items-center justify-center w-full h-full hover:text-red-500 text-gray-300"
@@ -1217,7 +1217,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
             <div key={b.id}
               onClick={() => { setSelectedId(b.id); setIsEditing(false); }}
               className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
-              style={{ background: selectedId === b.id ? "#dbeafe" : undefined }}>
+              style={{ background: selectedId === b.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
               <div className="flex items-start gap-1.5 flex-1 min-w-0">
                 <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-0.5" style={{ background: b.color }} />
                 <div className="flex-1 min-w-0">
@@ -1396,9 +1396,9 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                   <button key={v} onClick={() => setCatalogFilter(v as BulkheadType | "all")}
                     className="text-left px-2 py-1 text-[11px] rounded"
                     style={{
-                      background: catalogFilter === v ? "#2563eb" : "white",
-                      color: catalogFilter === v ? "white" : "#374151",
-                      border: `1px solid ${catalogFilter === v ? "#2563eb" : "#e5e7eb"}`,
+                      background: catalogFilter === v ? "var(--c-blue, #2563eb)" : "white",
+                      color: catalogFilter === v ? "white" : "var(--c-t2, #374151)",
+                      border: `1px solid ${catalogFilter === v ? "var(--c-blue, #2563eb)" : "var(--c-b1, #e5e7eb)"}`,
                     }}>
                     {l}
                   </button>
@@ -1537,7 +1537,7 @@ function VehicleCatalogSection() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {filtered.map((v, i) => (
           <div key={i} style={{
-            background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px",
+            background: "var(--c-s2, #f8fafc)", border: "1px solid var(--c-b1, #e2e8f0)", borderRadius: 10, padding: "10px 12px",
             cursor: "default",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -1552,8 +1552,8 @@ function VehicleCatalogSection() {
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
               {[
                 { label: "РЕЗИНА", val: v.rubber, color: "var(--c-t2, #374151)" },
-                { label: "ДИЗЕЛЬ", val: v.diesel, color: "#2563eb" },
-                { label: "МАСЛО",  val: v.oil,    color: "#ea580c" },
+                { label: "ДИЗЕЛЬ", val: v.diesel, color: "var(--c-blue, #2563eb)" },
+                { label: "МАСЛО",  val: v.oil,    color: "var(--c-amber, #ea580c)" },
               ].map(({ label, val, color }) => (
                 <div key={label} style={{ background: "var(--c-s3, #eef2f7)", borderRadius: 6, padding: "5px 6px" }}>
                   <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 9, fontWeight: 600, letterSpacing: "0.05em" }}>{label}</div>
@@ -1590,7 +1590,7 @@ function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | num
       <thead><tr>{headers.map(h => <Th key={h}>{h}</Th>)}</tr></thead>
       <tbody>
         {rows.map((r, i) => (
-          <tr key={i} style={{ background: i % 2 === 0 ? "#fafafa" : "#fff" }} className="hover:bg-blue-50 cursor-pointer">
+          <tr key={i} style={{ background: i % 2 === 0 ? "var(--c-s2, #fafafa)" : "var(--c-s1, #fff)" }} className="hover:bg-blue-50 cursor-pointer">
             {r.map((c, j) => <Td key={j}>{c}</Td>)}
           </tr>
         ))}
@@ -1612,7 +1612,7 @@ function PumpsSection() {
         <tbody>
           {PUMP_CATALOG.map((p, i) => (
             <tr key={p.id}
-              style={{ background: i % 2 === 0 ? "#fafafa" : "#fff" }}
+              style={{ background: i % 2 === 0 ? "var(--c-s2, #fafafa)" : "var(--c-s1, #fff)" }}
               className="hover:bg-blue-50 cursor-pointer"
               onDoubleClick={() => setSelected(p)}
               title="Двойной клик — карта характеристик">
@@ -1644,7 +1644,7 @@ function ConsumersSection() {
       </div>
       {(Object.keys(CONSUMER_GROUP_NAMES) as ConsumerGroup[]).map((g) => (
         <div key={g} className="mb-3">
-          <div className="text-[12px] font-semibold mb-1" style={{ color: "#b91c1c" }}>
+          <div className="text-[12px] font-semibold mb-1" style={{ color: "var(--c-red, #b91c1c)" }}>
             {CONSUMER_GROUP_NAMES[g]}
           </div>
           <table className="w-full border-collapse">
@@ -1653,7 +1653,7 @@ function ConsumersSection() {
             </tr></thead>
             <tbody>
               {CONSUMER_CATALOG.filter(c => c.group === g).map((c, i) => (
-                <tr key={c.id} style={{ background: i % 2 === 0 ? "#fafafa" : "#fff" }} className="hover:bg-blue-50">
+                <tr key={c.id} style={{ background: i % 2 === 0 ? "var(--c-s2, #fafafa)" : "var(--c-s1, #fff)" }} className="hover:bg-blue-50">
                   <Td>{c.name}</Td>
                   <Td>{c.outletDiameter > 0 ? c.outletDiameter : "—"}</Td>
                   <Td>{c.flowLps.toLocaleString("ru")}</Td>
@@ -1681,7 +1681,7 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="bg-white rounded shadow-2xl overflow-hidden" style={{ width: 560 }}>
         {/* Заголовок */}
-        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "#dc2626", color: "white" }}>
+        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "var(--c-red-bg, #dc2626)", color: "white" }}>
           <div className="flex items-center gap-2">
             <Icon name="Waves" size={16} />
             <span className="text-[13px] font-semibold">Характеристика насоса — {pump.brand} {pump.model}</span>
@@ -1695,7 +1695,7 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
             <div className="text-[11px] text-gray-500 mb-1 font-medium">Напорная характеристика Q–H</div>
             <PumpChart pump={pump} width={300} height={200} />
             <div className="text-[10px] text-gray-400 mt-1">
-              <span className="inline-block w-3 h-0.5 align-middle" style={{ background: "#dc2626" }} /> напор ·
+              <span className="inline-block w-3 h-0.5 align-middle" style={{ background: "var(--c-red-bg, #dc2626)" }} /> напор ·
               <span className="inline-block w-3 h-0.5 align-middle ml-1" style={{ background: "#9ca3af" }} /> КПД
             </div>
           </div>
@@ -1894,7 +1894,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
                 {TABS.filter(t => t.group === group).map(tab => (
                   <button key={tab.id} onClick={() => onTabChange(tab.id)}
                     className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-100"
-                    style={{ background: activeTab === tab.id ? "#2563eb" : "transparent", color: activeTab === tab.id ? "white" : "#333", fontWeight: activeTab === tab.id ? 600 : 400 }}>
+                    style={{ background: activeTab === tab.id ? "var(--c-blue, #2563eb)" : "transparent", color: activeTab === tab.id ? "white" : "var(--c-t2, #333)", fontWeight: activeTab === tab.id ? 600 : 400 }}>
                     <Icon name={tab.icon} size={13} className={activeTab === tab.id ? "text-white" : "text-gray-500"} fallback="Square" />
                     {tab.label}
                   </button>

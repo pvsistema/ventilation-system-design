@@ -23,7 +23,7 @@ function ColInput({
   return (
     <div className="flex items-center gap-2 py-0.5">
       <span className="text-[11px] flex-1 truncate"
-        style={{ color: required ? "#1e3a8a" : "#374151", fontWeight: required ? 600 : 400 }}
+        style={{ color: required ? "#1e3a8a" : "var(--c-t2, #374151)", fontWeight: required ? 600 : 400 }}
         title={hint ?? label}>{label}</span>
       <input
         type="number" min={0} max={99} step={1}
@@ -31,7 +31,7 @@ function ColInput({
         placeholder="—"
         onChange={e => onChange(Math.max(0, parseInt(e.target.value) || 0))}
         className="w-10 text-center text-[11px] border rounded px-1 py-0.5 bg-white"
-        style={{ borderColor: required && value === 0 ? "#f87171" : "#d1d5db" }}
+        style={{ borderColor: required && value === 0 ? "#f87171" : "var(--c-b2, #d1d5db)" }}
         title={hint}
       />
     </div>
@@ -50,15 +50,15 @@ function DropZone({
       onDragOver={e => e.preventDefault()}
       className="flex items-center gap-2 cursor-pointer rounded border border-dashed px-3 py-2 hover:bg-blue-50 transition-colors"
       style={{
-        borderColor: fileName ? "#22c55e" : required ? "#f97316" : "#9ca3af",
-        background: fileName ? "#f0fdf4" : "#fafafa",
+        borderColor: fileName ? "var(--c-green-lt, #22c55e)" : required ? "#f97316" : "#9ca3af",
+        background: fileName ? "var(--c-tint-green, #f0fdf4)" : "var(--c-s2, #fafafa)",
       }}>
       <Icon name={fileName ? "FileCheck" : "FileText"} size={16}
         className={fileName ? "text-green-600 flex-shrink-0" : required ? "text-orange-400 flex-shrink-0" : "text-gray-400 flex-shrink-0"} />
       <div className="flex-1 min-w-0">
         <div className="text-[11px] font-medium truncate"
-          style={{ color: required && !fileName ? "#c2410c" : "#374151" }}>{label}</div>
-        <div className="text-[10px] truncate" style={{ color: fileName ? "#16a34a" : "#9ca3af" }}>
+          style={{ color: required && !fileName ? "var(--c-amber, #c2410c)" : "var(--c-t2, #374151)" }}>{label}</div>
+        <div className="text-[10px] truncate" style={{ color: fileName ? "var(--c-green, #16a34a)" : "var(--c-t4, #9ca3af)" }}>
           {fileName || (required ? "Обязательный файл" : "Перетащите или нажмите")}
         </div>
       </div>
@@ -164,7 +164,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
             {/* Схема и разделитель */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="px-2 py-0.5 rounded text-[11px] font-semibold"
-                style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "#1e40af" }}>Вентиляция 2.0</div>
+                style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue-ink, #1e40af)" }}>Вентиляция 2.0</div>
               <div className="ml-auto flex items-center gap-1 text-[11px] text-gray-600">
                 Разд.:
                 <select value={sep} onChange={e => setSep(e.target.value as Sep)}
@@ -397,14 +397,14 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
           <div className="flex gap-2">
             <button onClick={handleParse} disabled={!branchFile || loading}
               className="flex items-center gap-2 px-4 py-1 text-[12px] rounded border disabled:opacity-40"
-              style={{ background: "var(--c-tint-blue2, #dbeafe)", borderColor: "#93c5fd", color: "#1e40af" }}>
+              style={{ background: "var(--c-tint-blue2, #dbeafe)", borderColor: "#93c5fd", color: "var(--c-blue-ink, #1e40af)" }}>
               {loading
                 ? <><div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />Анализ...</>
                 : <><Icon name="Play" size={13} />Анализ</>}
             </button>
             <button onClick={handleImport} disabled={!canImport}
               className="flex items-center gap-2 px-5 py-1 text-[12px] rounded border disabled:opacity-40"
-              style={{ background: canImport ? "#16a34a" : "#86efac", borderColor: "#15803d", color: "white" }}>
+              style={{ background: canImport ? "var(--c-green, #16a34a)" : "#86efac", borderColor: "var(--c-green, #15803d)", color: "white" }}>
               <Icon name="Download" size={13} />
               Импорт
             </button>

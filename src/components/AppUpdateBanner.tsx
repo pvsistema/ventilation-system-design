@@ -158,7 +158,7 @@ export default function AppUpdateBanner() {
       data-pvs-react-update-banner="1"
       className="fixed top-0 left-0 right-0 z-[100000] flex items-center gap-3 px-4 h-11"
       style={{
-        background: "linear-gradient(90deg,#2563eb,#1d4ed8)",
+        background: "linear-gradient(90deg,var(--c-blue-bg, #2563eb),var(--c-blue, #1d4ed8))",
         color: "#fff",
         fontFamily: "Segoe UI, Arial, sans-serif",
         fontSize: 13,
@@ -188,7 +188,7 @@ export default function AppUpdateBanner() {
         onClick={handleUpdate}
         disabled={busy}
         className="h-7 px-4 rounded-md text-[12px] font-semibold flex items-center gap-1.5 flex-shrink-0 disabled:opacity-60"
-        style={{ background: "var(--c-s1, #fff)", color: "#1d4ed8" }}>
+        style={{ background: "var(--c-s1, #fff)", color: "var(--c-blue, #1d4ed8)" }}>
         {busy ? (
           <><Icon name="Loader2" size={13} className="animate-spin" />
             {progress !== null && progress < 100 ? `${progress}%` : "Обновление…"}</>
@@ -227,9 +227,9 @@ export default function AppUpdateBanner() {
           <div className="px-5 py-4 flex items-center gap-2.5 border-b border-gray-100">
             <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
               style={{ background: "var(--c-tint-amber2, #fef3c7)" }}>
-              <Icon name="TriangleAlert" size={18} style={{ color: "#b45309" }} />
+              <Icon name="TriangleAlert" size={18} style={{ color: "var(--c-amber, #b45309)" }} />
             </div>
-            <div className="font-semibold text-[15px]" style={{ color: "#1a3a6b" }}>
+            <div className="font-semibold text-[15px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
               Сохраните проект перед обновлением
             </div>
           </div>
@@ -256,7 +256,7 @@ export default function AppUpdateBanner() {
               onClick={handleSaveAndReload}
               disabled={busy}
               className="h-9 px-4 rounded-md text-[13px] font-semibold text-white flex items-center gap-1.5 disabled:opacity-60"
-              style={{ background: "#2563eb" }}>
+              style={{ background: "var(--c-blue-bg, #2563eb)" }}>
               {busy
                 ? <><Icon name="Loader2" size={14} className="animate-spin" />Сохранение…</>
                 : <><Icon name="Save" size={14} />Сохранить и обновить</>}
@@ -271,7 +271,7 @@ export default function AppUpdateBanner() {
       <div
         className="fixed bottom-4 right-4 z-[100001] w-[360px] max-w-[92vw] bg-white rounded-xl overflow-hidden"
         style={{ fontFamily: "Segoe UI, Arial, sans-serif", boxShadow: "0 10px 30px rgba(0,0,0,0.25)", border: "1px solid var(--c-b1, #e5e7eb)" }}>
-        <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: "linear-gradient(90deg,#2563eb,#1d4ed8)", color: "#fff" }}>
+        <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: "linear-gradient(90deg,var(--c-blue-bg, #2563eb),var(--c-blue, #1d4ed8))", color: "#fff" }}>
           <Icon name="Sparkles" size={16} className="flex-shrink-0" />
           <div className="flex-1 font-semibold text-[13px]">Установлена устаревшая версия</div>
           <button
@@ -295,7 +295,7 @@ export default function AppUpdateBanner() {
           <button
             onClick={() => { setShowReminder(false); handleUpdate(); }}
             className="h-8 px-4 rounded-md text-[12.5px] font-semibold text-white flex items-center gap-1.5"
-            style={{ background: "#2563eb" }}>
+            style={{ background: "var(--c-blue-bg, #2563eb)" }}>
             <Icon name="RefreshCw" size={13} />Обновить сейчас
           </button>
         </div>

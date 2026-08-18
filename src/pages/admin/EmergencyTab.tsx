@@ -64,7 +64,7 @@ export default function EmergencyTab({
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
       <div className="flex items-center gap-2 mb-1">
         <Icon name="LifeBuoy" size={16} className="text-amber-500" />
-        <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Аварийный оффлайн-ключ</span>
+        <span className="font-semibold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Аварийный оффлайн-ключ</span>
       </div>
       <p className="text-[11px] text-gray-400 mb-4">
         Для расчётов без интернета (рудник / ВГСЧ). Ключ подписан криптографически
@@ -93,7 +93,7 @@ export default function EmergencyTab({
 
         <button onClick={generateEmergencyKey} disabled={emgLoading || !emgOrg.trim()}
           className="w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50"
-          style={{ background: "#d97706" }}>
+          style={{ background: "var(--c-amber-bg, #d97706)" }}>
           {emgLoading ? <><Icon name="Loader" size={14} className="animate-spin" />Генерация...</> : <><Icon name="Key" size={14} />Сгенерировать аварийный ключ</>}
         </button>
 
@@ -117,7 +117,7 @@ export default function EmergencyTab({
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <Icon name="ListChecks" size={16} className="text-amber-500" />
-          <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>
+          <span className="font-semibold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
             Выданные ключи ({offlineKeys.length})
           </span>
         </div>
@@ -159,7 +159,7 @@ export default function EmergencyTab({
                 </div>
                 <div className="flex gap-2">
                   <button onClick={saveEditOffline} disabled={!okEditOrg.trim()}
-                    className="px-3 py-1 rounded text-[11px] font-semibold text-white disabled:opacity-50" style={{ background: "#16a34a" }}>
+                    className="px-3 py-1 rounded text-[11px] font-semibold text-white disabled:opacity-50" style={{ background: "var(--c-green-bg, #16a34a)" }}>
                     Сохранить
                   </button>
                   <button onClick={() => setOkEditId(null)}

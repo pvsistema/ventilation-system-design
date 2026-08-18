@@ -30,9 +30,9 @@ export function TopoCanvasIndicators({
     <>
       {/* Индикаторы */}
       <div className="absolute bottom-1 left-2 text-[11px] font-mono pointer-events-none"
-        style={{ color: "#444", marginLeft: "0px", paddingBottom: "0px" }}>
+        style={{ color: "var(--c-t2, #444)", marginLeft: "0px", paddingBottom: "0px" }}>
         {useCanvas && (
-          <span className="mr-2 px-1 rounded" style={{ background: "#d1fae5", color: "#065f46" }}>
+          <span className="mr-2 px-1 rounded" style={{ background: "var(--c-tint-green2, #d1fae5)", color: "#065f46" }}>
             Canvas · {visibleBranchCount} вет.
           </span>
         )}
@@ -49,12 +49,12 @@ export function TopoCanvasIndicators({
           );
         })()}
         <span className="ml-3 px-1.5 py-0.5 rounded"
-          style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "#92400e" }}>
+          style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #92400e)" }}>
           Плоск: {effPlane.axis.toUpperCase()}={effPlane.value} м
         </span>
       </div>
       <div className="absolute bottom-1 right-2 text-[11px] font-mono pointer-events-none"
-        style={{ color: "#444" }}>
+        style={{ color: "var(--c-t2, #444)" }}>
         М 1:{(1 / Math.max(0.00001, scale * 0.001)).toFixed(0)}
       </div>
     </>
@@ -75,7 +75,7 @@ export function TopoCanvasHints({ pendingSymbolTypeId, tool, effPlane, branchFro
       {/* Подсказка — режим ожидания привязки */}
       {pendingSymbolTypeId && (
         <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#059669", color: "white" }}>
+          style={{ background: "var(--c-green-bg, #059669)", color: "white" }}>
           Кликните на ветвь чтобы разместить УО · Esc — отмена
         </div>
       )}
@@ -83,7 +83,7 @@ export function TopoCanvasHints({ pendingSymbolTypeId, tool, effPlane, branchFro
       {/* Подсказка */}
       {tool === "node" && (
         <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#2563eb", color: "white" }}>
+          style={{ background: "var(--c-blue-bg, #2563eb)", color: "white" }}>
           ✚ Клик на холсте — создать узел на плоскости{" "}
           {effPlane.axis === "z" ? `Z = ${effPlane.value} м (XY)` :
            effPlane.axis === "y" ? `Y = ${effPlane.value} м (XZ)` :
@@ -92,13 +92,13 @@ export function TopoCanvasHints({ pendingSymbolTypeId, tool, effPlane, branchFro
       )}
       {tool === "branch" && (
         <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#2563eb", color: "white" }}>
+          style={{ background: "var(--c-blue-bg, #2563eb)", color: "white" }}>
           {branchFrom ? "Выберите второй узел" : "Выберите начальный узел ветви"}
         </div>
       )}
       {tool === "rotate" && (
         <div className="absolute top-2 left-2 px-2 py-1 rounded text-[11px]"
-          style={{ background: "#7c3aed", color: "white" }}>
+          style={{ background: "var(--c-purple-bg, #7c3aed)", color: "white" }}>
           🔄 Драг — вращение камеры (Az/El)
         </div>
       )}

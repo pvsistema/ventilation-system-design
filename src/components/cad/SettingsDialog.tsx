@@ -94,7 +94,7 @@ export default function SettingsDialog({ onClose }: Props) {
                 <button key={t.id} onClick={() => choose(t.id)}
                   className="text-left rounded border p-2 transition-colors"
                   style={{
-                    borderColor: active ? "#2563eb" : undefined,
+                    borderColor: active ? "var(--c-blue, #2563eb)" : undefined,
                     boxShadow: active ? "0 0 0 2px rgba(37,99,235,0.18)" : undefined,
                   }}
                   {...(!active ? { "data-inactive": true } : {})}>

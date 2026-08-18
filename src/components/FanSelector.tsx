@@ -229,7 +229,7 @@ function FanDetails({ sel, requiredQ, requiredH }: { sel: FanSelection; required
         <div className="text-right">
           <p className="text-xs uppercase tracking-wider" style={{ color: "hsl(215,15%,45%)" }}>Скор подбора</p>
           <p className="text-3xl font-mono font-bold"
-            style={{ color: sel.score >= 80 ? "#10b981" : sel.score >= 50 ? "#f59e0b" : "#ef4444" }}>
+            style={{ color: sel.score >= 80 ? "#10b981" : sel.score >= 50 ? "var(--c-amber-lt, #f59e0b)" : "var(--c-red-lt, #ef4444)" }}>
             {sel.score}
           </p>
         </div>
@@ -243,7 +243,7 @@ function FanDetails({ sel, requiredQ, requiredH }: { sel: FanSelection; required
           </span>
           <div className="flex gap-3 text-[10px]">
             <span style={{ color: "hsl(210,100%,65%)" }}>━ Вентилятор H(Q)</span>
-            <span style={{ color: "#ef4444" }}>━ Сеть S·Q²</span>
+            <span style={{ color: "var(--c-red-lt, #ef4444)" }}>━ Сеть S·Q²</span>
             <span style={{ color: "#10b981" }}>┄ КПД η(Q)</span>
           </div>
         </div>

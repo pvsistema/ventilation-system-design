@@ -65,20 +65,20 @@ export default function WaterCheckTable({
               return (<>
                 <td className="px-2 py-1 text-right tabular-nums"
                   style={{ borderBottom: "1px solid #eef1f6",
-                    color: fr.reachesFire ? undefined : "#dc2626",
+                    color: fr.reachesFire ? undefined : "var(--c-red, #dc2626)",
                     fontWeight: fr.reachesFire ? undefined : 600 }}>
                   {fr.distanceToFire.toFixed(0)}
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums"
                   style={{ borderBottom: "1px solid #eef1f6",
-                    color: fr.reachesFire ? "#6b7280" : "#dc2626" }}>
+                    color: fr.reachesFire ? "var(--c-t3, #6b7280)" : "var(--c-red, #dc2626)" }}>
                   {fr.hoseCount}
                 </td>
                 {/* Ход отделения ВГСЧ и время начала подачи воды */}
                 {fireResult?.rescueComputed && (<>
                   <td className="px-2 py-1 text-right tabular-nums"
                     style={{ borderBottom: "1px solid #eef1f6",
-                      color: fr.rescueReachable ? "#6b7280" : "#dc2626",
+                      color: fr.rescueReachable ? "var(--c-t3, #6b7280)" : "var(--c-red, #dc2626)",
                       fontWeight: fr.rescueReachable ? undefined : 600 }}
                     title={fr.rescueO2 !== null ? `Расход кислорода: ${fr.rescueO2} л` : undefined}>
                     {fr.rescueTime !== null ? fr.rescueTime.toFixed(0) : "—"}
@@ -87,7 +87,7 @@ export default function WaterCheckTable({
                   <td className="px-2 py-1 text-right tabular-nums"
                     style={{ borderBottom: "1px solid #eef1f6",
                       fontWeight: fireResult.fastestHydrant?.nodeId === fr.nodeId ? 700 : undefined,
-                      color: fireResult.fastestHydrant?.nodeId === fr.nodeId ? "#1d4ed8" : "#374151" }}>
+                      color: fireResult.fastestHydrant?.nodeId === fr.nodeId ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)" }}>
                     {fr.waterStartTime !== null ? fr.waterStartTime.toFixed(0) : "—"}
                   </td>
                 </>)}
@@ -95,7 +95,7 @@ export default function WaterCheckTable({
             })()}
             <td className="px-2 py-1 text-right tabular-nums"
               style={{ borderBottom: "1px solid #eef1f6",
-                color: r.fails.includes("no-pressure") || r.fails.includes("over-pressure") ? "#dc2626" : undefined,
+                color: r.fails.includes("no-pressure") || r.fails.includes("over-pressure") ? "var(--c-red, #dc2626)" : undefined,
                 fontWeight: r.fails.includes("no-pressure") || r.fails.includes("over-pressure") ? 600 : undefined }}>
               {r.pressure.toFixed(3)}
             </td>
@@ -106,7 +106,7 @@ export default function WaterCheckTable({
             )}
             <td className="px-2 py-1 text-right tabular-nums"
               style={{ borderBottom: "1px solid #eef1f6",
-                color: r.fails.includes("low-flow") ? "#dc2626" : undefined,
+                color: r.fails.includes("low-flow") ? "var(--c-red, #dc2626)" : undefined,
                 fontWeight: r.fails.includes("low-flow") ? 600 : undefined }}>
               {r.flow.toFixed(1)}
             </td>
@@ -115,7 +115,7 @@ export default function WaterCheckTable({
             </td>
             <td className="px-2 py-1 text-right tabular-nums"
               style={{ borderBottom: "1px solid #eef1f6",
-                color: r.fails.includes("short-duration") ? "#dc2626" : undefined }}>
+                color: r.fails.includes("short-duration") ? "var(--c-red, #dc2626)" : undefined }}>
               {r.duration > 0 ? r.duration.toFixed(0) : "—"}
             </td>
             {mode === "network" && (

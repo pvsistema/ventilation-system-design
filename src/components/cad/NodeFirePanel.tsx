@@ -47,7 +47,7 @@ function ComputedInput({ value, empty }: { value: string; empty?: boolean }) {
     <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
       title="Расчётное значение — изменить нельзя"
       style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
-        color: empty ? "#94a3b8" : "#0f172a", userSelect: "text", cursor: "default" }}>
+        color: empty ? "var(--c-t4, #94a3b8)" : "var(--c-t1, #0f172a)", userSelect: "text", cursor: "default" }}>
       {value}
     </div>
   );
@@ -349,7 +349,7 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
           {/* Таблица открытых потребителей */}
           {openConsumers.length > 0 && (<>
             <div className="flex items-center px-1 py-0.5 text-[10px] font-semibold select-none"
-              style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8", borderLeft: "3px solid #0284c7", color: "#075985" }}>
+              style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8", borderLeft: "3px solid var(--c-blue, #0284c7)", color: "#075985" }}>
               Открытые краны ({openConsumers.length})
             </div>
             {/* Шапка таблицы */}
@@ -374,14 +374,14 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
                   <div className="truncate" style={{ width: 90, color: "var(--c-t2, #374151)" }} title={label}>
                     {label}
                   </div>
-                  <div style={{ width: 55, textAlign: "right", fontWeight: 600, color: "#1a1a1a" }}>
+                  <div style={{ width: 55, textAlign: "right", fontWeight: 600, color: "var(--c-t1, #1a1a1a)" }}>
                     {q.toFixed(2)}
                   </div>
                   <div style={{ width: 55, textAlign: "right", color: "var(--c-t2, #374151)" }}>
                     {dp.toFixed(3)}
                   </div>
                   <div style={{ width: 40, textAlign: "right",
-                    color: pct === null ? "#9ca3af" : ok ? "#15803d" : "#dc2626",
+                    color: pct === null ? "var(--c-t4, #9ca3af)" : ok ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)",
                     fontWeight: 600 }}>
                     {pct !== null ? `${pct}%` : "—"}
                   </div>
@@ -391,8 +391,8 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
             {/* Итого */}
             <div className="flex items-center text-[10px] px-1 font-semibold"
               style={{ minHeight: 18, borderTop: "2px solid #c8d4e8", background: "var(--c-tint-blue, #f0f4ff)" }}>
-              <div style={{ width: 90, color: "#1a3a6b" }}>Итого:</div>
-              <div style={{ width: 55, textAlign: "right", color: "#1a3a6b" }}>
+              <div style={{ width: 90, color: "var(--c-blue-ink, #1a3a6b)" }}>Итого:</div>
+              <div style={{ width: 55, textAlign: "right", color: "var(--c-blue-ink, #1a3a6b)" }}>
                 {totalFlow.toFixed(2)}
               </div>
               <div style={{ width: 55, textAlign: "right" }}></div>
@@ -420,9 +420,9 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
             {warnings.map((w, i) => (
               <div key={i} className="flex items-start gap-1 px-1.5 py-1 rounded text-[10px] leading-tight"
                 style={{
-                  background: w.level === "error" ? "#fef2f2" : "#fffbeb",
+                  background: w.level === "error" ? "var(--c-tint-red, #fef2f2)" : "var(--c-tint-amber, #fffbeb)",
                   border: `1px solid ${w.level === "error" ? "#fca5a5" : "#fcd34d"}`,
-                  color: w.level === "error" ? "#991b1b" : "#92400e",
+                  color: w.level === "error" ? "var(--c-red-ink, #991b1b)" : "var(--c-amber-ink, #92400e)",
                 }}>
                 <span style={{ flexShrink: 0, fontWeight: 700 }}>
                   {w.level === "error" ? "✕" : "⚠"}

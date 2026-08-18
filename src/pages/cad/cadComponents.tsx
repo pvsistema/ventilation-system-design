@@ -104,7 +104,7 @@ export function RibbonTabBtn({ label, active, onClick, fileStyle, highlight }: {
     return (
       <button onClick={onClick}
         className="px-3 h-6 text-xs text-white rounded-t-sm hover:brightness-110"
-        style={{ background: "#2563eb", fontWeight: 500 }}>
+        style={{ background: "var(--c-blue-bg, #2563eb)", fontWeight: 500 }}>
         {label}
       </button>
     );
@@ -113,12 +113,12 @@ export function RibbonTabBtn({ label, active, onClick, fileStyle, highlight }: {
     <button onClick={onClick}
       className="px-3 h-6 text-xs rounded-t-sm transition-colors"
       style={{
-        background: active ? "#fafafa" : "transparent",
-        borderTop: active ? "1px solid #b8b8b8" : "1px solid transparent",
-        borderLeft: active ? "1px solid #b8b8b8" : "1px solid transparent",
-        borderRight: active ? "1px solid #b8b8b8" : "1px solid transparent",
+        background: active ? "var(--c-s2, #fafafa)" : "transparent",
+        borderTop: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
+        borderLeft: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
+        borderRight: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
         marginBottom: active ? "-1px" : "0",
-        color: highlight ? "#2563eb" : "#1f1f1f",
+        color: highlight ? "var(--c-blue, #2563eb)" : "var(--c-t1, #1f1f1f)",
         fontWeight: active || highlight ? 600 : 400,
       }}>
       {label}
@@ -146,9 +146,9 @@ export function RibbonBigBtn({ icon, iconImg, label, sublabel, disabled, onClick
         // при жёстких 52px текст вылезал за границы и налезал на соседнюю кнопку.
         minWidth: 52, height: 60,
         paddingLeft: 4, paddingRight: 4,
-        border: active ? "1.5px solid #3b82f6" : "1px solid transparent",
-        background: active ? "#dbeafe" : "transparent",
-        color: active ? "#1d4ed8" : "#374151",
+        border: active ? "1.5px solid var(--c-blue-lt, #3b82f6)" : "1px solid transparent",
+        background: active ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
+        color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)",
         flexShrink: 0,
         ...style,
       }}
@@ -156,10 +156,10 @@ export function RibbonBigBtn({ icon, iconImg, label, sublabel, disabled, onClick
       onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}>
       {iconImg
         ? <img src={iconImg} alt={label} style={{ width: 22, height: 22, objectFit: "contain" }} />
-        : <Icon name={icon} size={20} fallback="Square" style={{ color: active ? "#2563eb" : "#4b5563" }} />}
+        : <Icon name={icon} size={20} fallback="Square" style={{ color: active ? "var(--c-blue, #2563eb)" : "var(--c-t2, #4b5563)" }} />}
       <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500 }}>
         <div style={{ whiteSpace: "nowrap" }}>{label}</div>
-        {sublabel && <div style={{ color: active ? "#1d4ed8" : "#6b7280", whiteSpace: "nowrap" }}>{sublabel}</div>}
+        {sublabel && <div style={{ color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t3, #6b7280)", whiteSpace: "nowrap" }}>{sublabel}</div>}
       </div>
     </button>
   );
@@ -173,8 +173,8 @@ export function RibbonSmallBtn({ children, active, title, onClick }: {
       className="flex items-center justify-center rounded transition-colors"
       style={{
         width: 40, height: 40,
-        border: active ? "1.5px solid #3b82f6" : "1px solid transparent",
-        background: active ? "#dbeafe" : "transparent",
+        border: active ? "1.5px solid var(--c-blue-lt, #3b82f6)" : "1px solid transparent",
+        background: active ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
         flexShrink: 0,
       }}
       onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; } }}
@@ -255,9 +255,9 @@ export function FieldRow({ label, value, computed }: { label: string; value: str
       <input type="text" value={value} readOnly
         className="flex-1 text-xs px-1 py-0.5 border bg-white text-right font-mono"
         style={{
-          borderColor: computed ? "#d0d0d0" : "#a0a0a0",
-          background: computed ? "#fafafa" : "white",
-          color: computed ? "#1f1f1f" : "#1f1f1f",
+          borderColor: computed ? "var(--c-b2, #d0d0d0)" : "var(--c-b3, #a0a0a0)",
+          background: computed ? "var(--c-s2, #fafafa)" : "white",
+          color: computed ? "var(--c-t1, #1f1f1f)" : "var(--c-t1, #1f1f1f)",
           fontWeight: computed ? 600 : 400,
         }} />
     </div>
@@ -348,9 +348,9 @@ export function ToolBtn({ icon, label, active, onClick, disabled }: {
     <button onClick={onClick} disabled={disabled} title={label}
       className="h-6 px-2 flex items-center gap-1 rounded text-[11px] disabled:opacity-40"
       style={{
-        background: active ? "#2563eb" : "transparent",
-        color: active ? "white" : "#1f1f1f",
-        border: active ? "1px solid #1d4ed8" : "1px solid transparent",
+        background: active ? "var(--c-blue, #2563eb)" : "transparent",
+        color: active ? "white" : "var(--c-t1, #1f1f1f)",
+        border: active ? "1px solid var(--c-blue, #1d4ed8)" : "1px solid transparent",
       }}>
       <Icon name={icon} size={13} fallback="Square" />
       <span>{label}</span>
@@ -394,9 +394,9 @@ export function ViewBtn({ label, preset, current, onClick, hint }: {
     <button onClick={() => onClick(preset)} title={hint ?? label}
       className="h-6 px-2 flex items-center rounded text-[11px]"
       style={{
-        background: active ? "#7c3aed" : "transparent",
-        color: active ? "white" : "#1f1f1f",
-        border: active ? "1px solid #5b21b6" : "1px solid #d0d0d0",
+        background: active ? "var(--c-purple, #7c3aed)" : "transparent",
+        color: active ? "white" : "var(--c-t1, #1f1f1f)",
+        border: active ? "1px solid #5b21b6" : "1px solid var(--c-b2, #d0d0d0)",
       }}>
       {label}
     </button>
@@ -410,8 +410,8 @@ export function FlowBtn({ label, active, onClick, hint }: {
     <button onClick={onClick} title={hint ?? label}
       className="h-6 px-2 text-[11px] border-r last:border-r-0 border-gray-300"
       style={{
-        background: active ? "#0369a1" : "white",
-        color: active ? "white" : "#1f1f1f",
+        background: active ? "var(--c-blue, #0369a1)" : "white",
+        color: active ? "white" : "var(--c-t1, #1f1f1f)",
       }}>
       {label}
     </button>

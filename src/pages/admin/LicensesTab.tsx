@@ -25,9 +25,9 @@ export default function LicensesTab({
         {/* Статистика */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           {[
-            { label: "Всего лицензий", value: licenses.length, icon: "Key", color: "#2563eb" },
-            { label: "Активных", value: licenses.filter(l => l.is_active).length, icon: "CheckCircle", color: "#16a34a" },
-            { label: "Рабочих мест занято", value: licenses.reduce((s, l) => s + l.used_seats, 0), icon: "Monitor", color: "#d97706" },
+            { label: "Всего лицензий", value: licenses.length, icon: "Key", color: "var(--c-blue, #2563eb)" },
+            { label: "Активных", value: licenses.filter(l => l.is_active).length, icon: "CheckCircle", color: "var(--c-green, #16a34a)" },
+            { label: "Рабочих мест занято", value: licenses.reduce((s, l) => s + l.used_seats, 0), icon: "Monitor", color: "var(--c-amber, #d97706)" },
           ].map(s => (
             <div key={s.label} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100">
               <div className="flex items-center gap-2 mb-1">
@@ -42,7 +42,7 @@ export default function LicensesTab({
         {/* Таблица лицензий */}
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-            <span className="font-semibold text-[13px]" style={{ color: "#1a3a6b" }}>Лицензии</span>
+            <span className="font-semibold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Лицензии</span>
           </div>
 
           {licenses.length === 0 ? (
@@ -63,7 +63,7 @@ export default function LicensesTab({
                     {/* Основная инфо */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-bold text-[13px]" style={{ color: "#1a3a6b" }}>{lic.owner_name}</span>
+                        <span className="font-bold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>{lic.owner_name}</span>
                         {lic.owner_email && <span className="text-[11px] text-gray-400">{lic.owner_email}</span>}
                         {!lic.is_active && (
                           <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-100 text-red-600 font-medium">ОТОЗВАНА</span>
@@ -94,13 +94,13 @@ export default function LicensesTab({
                     <div className="flex items-center gap-2 flex-shrink-0">
                       <button onClick={() => loadSeats(lic.id)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-blue-50"
-                        style={{ borderColor: "#93c5fd", color: "#2563eb" }}>
+                        style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
                         <Icon name="Monitor" size={12} />
                         {seatsForId === lic.id ? "Скрыть" : `Места (${lic.used_seats})`}
                       </button>
                       <button onClick={() => openEdit(lic)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-amber-50"
-                        style={{ borderColor: "#fcd34d", color: "#b45309" }}>
+                        style={{ borderColor: "#fcd34d", color: "var(--c-amber, #b45309)" }}>
                         <Icon name="Pencil" size={12} />
                         Изменить
                       </button>
@@ -108,8 +108,8 @@ export default function LicensesTab({
                         onClick={() => toggleLicense(lic.id, !lic.is_active)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors"
                         style={lic.is_active
-                          ? { borderColor: "#fca5a5", color: "#dc2626", background: "var(--c-tint-red, #fff5f5)" }
-                          : { borderColor: "#86efac", color: "#16a34a", background: "var(--c-tint-green, #f0fdf4)" }}>
+                          ? { borderColor: "#fca5a5", color: "var(--c-red, #dc2626)", background: "var(--c-tint-red, #fff5f5)" }
+                          : { borderColor: "#86efac", color: "var(--c-green, #16a34a)", background: "var(--c-tint-green, #f0fdf4)" }}>
                         <Icon name={lic.is_active ? "PauseCircle" : "PlayCircle"} size={12} />
                         {lic.is_active ? "Отозвать" : "Активировать"}
                       </button>

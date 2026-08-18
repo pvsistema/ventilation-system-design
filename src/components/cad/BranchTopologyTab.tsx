@@ -74,7 +74,7 @@ export default function BranchTopologyTab({
           <button
             onClick={() => onUpdate({ manualLength: !branch.manualLength })}
             title={branch.manualLength ? "Вычислять автоматически из координат" : "Задать вручную"}
-            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualLength ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualLength ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
             {branch.manualLength ? "рук" : "авт"}
           </button>
         </div>
@@ -97,7 +97,7 @@ export default function BranchTopologyTab({
           <button
             onClick={() => onUpdate({ manualAngle: !branch.manualAngle })}
             title={branch.manualAngle ? "Вычислять автоматически из координат" : "Задать вручную"}
-            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualAngle ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualAngle ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
             {branch.manualAngle ? "рук" : "авт"}
           </button>
         </div>
@@ -302,7 +302,7 @@ export default function BranchTopologyTab({
           />
           <span style={{
             fontSize: 11,
-            color: branch.isLeakage ? "#c2410c" : "#6b7280",
+            color: branch.isLeakage ? "var(--c-amber, #c2410c)" : "var(--c-t3, #6b7280)",
             fontWeight: branch.isLeakage ? 600 : 400,
           }}>
             {branch.isLeakage ? "Утечка (перемычка/целик)" : "Не утечка"}
@@ -340,7 +340,7 @@ export default function BranchTopologyTab({
           />
           <span style={{
             fontSize: 11,
-            color: branch.isDead ? "#374151" : "#6b7280",
+            color: branch.isDead ? "var(--c-t2, #374151)" : "var(--c-t3, #6b7280)",
             fontWeight: branch.isDead ? 600 : 400,
           }}>
             {branch.isDead ? "Тупиковая (Q→0)" : "Сквозная"}
@@ -393,7 +393,7 @@ export default function BranchTopologyTab({
                 <span
                   title={`Ошибка: аэродинамическое сопротивление (${numFmt(rAeroKmu, 4)} кМюрг) меньше геометрического (${numFmt(rGeomKmu, 4)} кМюрг). Аэродинамическое R не может быть меньше геометрического — проверьте параметры ветви.`}
                   className="ml-1 flex-shrink-0 cursor-help"
-                  style={{ fontSize: 12, color: "#dc2626" }}
+                  style={{ fontSize: 12, color: "var(--c-red, #dc2626)" }}
                 >⚠</span>
               )}
             </div>

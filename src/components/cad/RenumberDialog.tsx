@@ -32,20 +32,20 @@ export default function RenumberDialog({ nodeCount, branchCount, horizons, onCon
 
   const S = {
     overlay: { position: "fixed" as const, inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" },
-    dialog: { width: 390, background: "var(--c-s1, #ffffff)", border: "1px solid #aaa", borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "Segoe UI, Arial, sans-serif", fontSize: 12, color: "#1a1a1a" },
+    dialog: { width: 390, background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #aaa)", borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "Segoe UI, Arial, sans-serif", fontSize: 12, color: "var(--c-t1, #1a1a1a)" },
     header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", background: "linear-gradient(180deg,#dde4ef,#c5cfe0)", borderBottom: "1px solid #9aa8bf" },
-    headerTitle: { display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 13, color: "#1a1a1a" },
+    headerTitle: { display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 13, color: "var(--c-t1, #1a1a1a)" },
     closeBtn: { width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", background: "transparent", fontSize: 12, color: "var(--c-t2, #333)", borderRadius: 2 },
     body: { padding: "12px 16px", display: "flex", flexDirection: "column" as const, gap: 8, background: "var(--c-s1, #ffffff)" },
     row: { display: "flex", alignItems: "center", gap: 8 },
     label: { width: 120, flexShrink: 0, color: "var(--c-t2, #333)", fontSize: 12 },
-    select: { flex: 1, height: 22, padding: "0 4px", border: "1px solid #aaa", borderRadius: 2, fontSize: 12, background: "var(--c-s1, #fff)", color: "#1a1a1a", outline: "none" },
-    input: { width: 72, height: 22, padding: "0 4px", border: "1px solid #aaa", borderRadius: 2, fontSize: 12, background: "var(--c-s1, #fff)", color: "#1a1a1a", textAlign: "right" as const, outline: "none" },
+    select: { flex: 1, height: 22, padding: "0 4px", border: "1px solid var(--c-b3, #aaa)", borderRadius: 2, fontSize: 12, background: "var(--c-s1, #fff)", color: "var(--c-t1, #1a1a1a)", outline: "none" },
+    input: { width: 72, height: 22, padding: "0 4px", border: "1px solid var(--c-b3, #aaa)", borderRadius: 2, fontSize: 12, background: "var(--c-s1, #fff)", color: "var(--c-t1, #1a1a1a)", textAlign: "right" as const, outline: "none" },
     stat: { fontSize: 11, color: "var(--c-t3, #555)", paddingTop: 6, borderTop: "1px solid #ddd", marginTop: 2 },
-    statVal: { fontWeight: 600, color: "#1a1a1a" },
+    statVal: { fontWeight: 600, color: "var(--c-t1, #1a1a1a)" },
     footer: { display: "flex", justifyContent: "flex-end", gap: 6, padding: "8px 16px 10px", background: "var(--c-s3, #f0f0f0)", borderTop: "1px solid var(--c-b2, #ccc)" },
-    btnOk: { height: 26, padding: "0 20px", fontSize: 12, background: "#2563eb", color: "#fff", border: "1px solid #1d4ed8", borderRadius: 2, cursor: "pointer", fontWeight: 600 },
-    btnCancel: { height: 26, padding: "0 14px", fontSize: 12, background: "var(--c-s2, #f5f5f5)", color: "#1a1a1a", border: "1px solid #aaa", borderRadius: 2, cursor: "pointer" },
+    btnOk: { height: 26, padding: "0 20px", fontSize: 12, background: "var(--c-blue-bg, #2563eb)", color: "#fff", border: "1px solid var(--c-blue, #1d4ed8)", borderRadius: 2, cursor: "pointer", fontWeight: 600 },
+    btnCancel: { height: 26, padding: "0 14px", fontSize: 12, background: "var(--c-s2, #f5f5f5)", color: "var(--c-t1, #1a1a1a)", border: "1px solid var(--c-b3, #aaa)", borderRadius: 2, cursor: "pointer" },
   };
 
   return (
@@ -55,7 +55,7 @@ export default function RenumberDialog({ nodeCount, branchCount, horizons, onCon
         {/* Шапка */}
         <div style={S.header}>
           <div style={S.headerTitle}>
-            <Icon name="Hash" size={14} style={{ color: "#2563eb" }} />
+            <Icon name="Hash" size={14} style={{ color: "var(--c-blue, #2563eb)" }} />
             Автонумерация объектов
           </div>
           <button style={S.closeBtn} onClick={onClose} title="Закрыть">✕</button>

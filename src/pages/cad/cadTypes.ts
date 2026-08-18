@@ -168,7 +168,7 @@ export function makeTextBlock(partial?: Partial<TextBlock>): TextBlock {
     text: "Текст",
     x: 0, y: 0,
     fontSize: 10,
-    color: "#1a1a1a",
+    color: "var(--c-t1, #1a1a1a)",
     bold: false,
     italic: false,
     background: "none",

@@ -111,7 +111,7 @@ export default function FireStabilityDialog({
 
         {!solved && (
           <div className="px-4 py-2 text-[11px] flex items-center gap-2"
-            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "var(--c-amber, #8a5a00)" }}>
             <Icon name="TriangleAlert" size={14} />
             Сначала выполните «Расчёт сети» — иначе расходы и депрессии будут нулевыми.
           </div>
@@ -146,12 +146,12 @@ export default function FireStabilityDialog({
               <div className="flex items-center gap-2">
                 <button onClick={handleComputeFacts} disabled={computing || !solved}
                   className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1.5 disabled:opacity-50"
-                  style={{ borderColor: "#c8d4e8", background: "#eef4ff", color: "#1d4ed8" }}>
+                  style={{ borderColor: "#c8d4e8", background: "#eef4ff", color: "var(--c-blue, #1d4ed8)" }}>
                   <Icon name={computing ? "Loader" : "Play"} size={12}
                     className={computing ? "animate-spin" : ""} />
                   {computing ? "Проверка..." : "Рассчитать факт опрокидывания"}
                 </button>
-                <span className="text-[10px]" style={{ color: reversalFacts && !computing ? "#15803d" : "#9ca3af" }}>
+                <span className="text-[10px]" style={{ color: reversalFacts && !computing ? "var(--c-green, #15803d)" : "var(--c-t4, #9ca3af)" }}>
                   {computing
                     ? (progress && progress.total > 0
                         ? `Расчёт устойчивости… ${Math.round((progress.done / progress.total) * 100)}%`
@@ -172,7 +172,7 @@ export default function FireStabilityDialog({
                   <div>
                     <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "#e3e8f2" }}>
                       <div className={`h-full rounded-full transition-all duration-300 ${pct < 100 ? "animate-pulse" : ""}`}
-                        style={{ width: `${barW}%`, background: "#2563eb" }} />
+                        style={{ width: `${barW}%`, background: "var(--c-blue-bg, #2563eb)" }} />
                     </div>
                     <div className="text-[10px] text-gray-400 text-right pt-0.5">{pct}%</div>
                   </div>
@@ -263,7 +263,7 @@ export default function FireStabilityDialog({
             </button>
             <button onClick={handleExport} disabled={total === 0}
               className="text-[12px] px-3 py-1.5 rounded text-white flex items-center gap-1.5 disabled:opacity-50"
-              style={{ background: "#2563eb" }}>
+              style={{ background: "var(--c-blue-bg, #2563eb)" }}>
               <Icon name="FileSpreadsheet" size={14} />
               Сформировать акт (Excel)
             </button>

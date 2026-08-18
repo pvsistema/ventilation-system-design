@@ -42,7 +42,7 @@ export default function LicenseDialogs({
           <form onSubmit={handleCreate}
             className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4"
-              style={{ background: "#1a3a6b" }}>
+              style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
               <div className="text-white font-bold text-[14px] flex items-center gap-2">
                 <Icon name="Plus" size={16} />Создать лицензию
               </div>
@@ -60,7 +60,7 @@ export default function LicenseDialogs({
                     className={`flex-1 border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-300`} />
                   <button type="button" onClick={generateKey}
                     className="px-3 py-2 rounded-lg text-[11px] font-medium text-white flex-shrink-0"
-                    style={{ background: "#2563eb" }}>
+                    style={{ background: "var(--c-blue-bg, #2563eb)" }}>
                     <Icon name="Shuffle" size={14} />
                   </button>
                 </div>
@@ -113,7 +113,7 @@ export default function LicenseDialogs({
 
               <button type="submit"
                 className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white"
-                style={{ background: "#16a34a" }}>
+                style={{ background: "var(--c-green-bg, #16a34a)" }}>
                 Создать лицензию
               </button>
             </div>
@@ -127,7 +127,7 @@ export default function LicenseDialogs({
           <form onSubmit={handleUpdate}
             className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4"
-              style={{ background: "#92400e" }}>
+              style={{ background: "var(--c-amber-bg, #92400e)" }}>
               <div className="text-white font-bold text-[14px] flex items-center gap-2">
                 <Icon name="Pencil" size={16} />Изменить лицензию
               </div>
@@ -194,7 +194,7 @@ export default function LicenseDialogs({
                 </button>
                 <button type="submit" disabled={editSaving}
                   className="flex-1 py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50"
-                  style={{ background: "#b45309" }}>
+                  style={{ background: "var(--c-amber-bg, #b45309)" }}>
                   {editSaving ? "Сохранение..." : "Сохранить"}
                 </button>
               </div>

@@ -1,10 +1,10 @@
 // Базовые UI-примитивы для панелей свойств ветви
 import { useState, useEffect } from "react";
 
-export const SH = "#e8eef8";
-export const SB = "1px solid #c8d4e8";
-export const CB = "#d4d4d4";
-export const CBB = "1px solid #b0b0b0";
+export const SH = "var(--c-tint-blue, #e8eef8)";
+export const SB = "1px solid var(--c-b1, #c8d4e8)";
+export const CB = "var(--c-s4, #d4d4d4)";
+export const CBB = "1px solid var(--c-b3, #b0b0b0)";
 
 export const BRANCH_TYPES = [
   "Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.",
@@ -26,13 +26,15 @@ export function numFmt(v: number, d = 2): string {
 // полоса, заголовок в тон. Цвет = смысл, а не украшение.
 type SectionTone = { bar: string; bg: string; text: string };
 
-const TONE_GEOMETRY: SectionTone = { bar: "#2563eb", bg: "#eff6ff", text: "#1e40af" }; // синий
-const TONE_AERO:     SectionTone = { bar: "#0891b2", bg: "#ecfeff", text: "#155e75" }; // бирюзовый
-const TONE_RESULT:   SectionTone = { bar: "#16a34a", bg: "#f0fdf4", text: "#166534" }; // зелёный
-const TONE_DANGER:   SectionTone = { bar: "#dc2626", bg: "#fef2f2", text: "#991b1b" }; // красный
-const TONE_WATER:    SectionTone = { bar: "#0284c7", bg: "#f0f9ff", text: "#075985" }; // голубой
-const TONE_EQUIP:    SectionTone = { bar: "#ea580c", bg: "#fff7ed", text: "#9a3412" }; // оранжевый
-const TONE_INFO:     SectionTone = { bar: "#6b7280", bg: "#f9fafb", text: "#374151" }; // серый
+// Цвета берутся из переменных темы: в тёмной теме подложка становится
+// глубокой, а текст — светлым, иначе тёмная надпись на тёмном не читается.
+const TONE_GEOMETRY: SectionTone = { bar: "var(--c-blue-bg, #2563eb)",   bg: "var(--c-tint-blue, #eff6ff)",  text: "var(--c-blue-ink, #1e40af)" };   // синий
+const TONE_AERO:     SectionTone = { bar: "var(--c-cyan-bg, #0891b2)",   bg: "var(--c-tint-cyan, #ecfeff)",  text: "var(--c-cyan-ink, #155e75)" };   // бирюзовый
+const TONE_RESULT:   SectionTone = { bar: "var(--c-green-bg, #16a34a)",  bg: "var(--c-tint-green, #f0fdf4)", text: "var(--c-green-ink, #166534)" };  // зелёный
+const TONE_DANGER:   SectionTone = { bar: "var(--c-red-bg, #dc2626)",    bg: "var(--c-tint-red, #fef2f2)",   text: "var(--c-red-ink, #991b1b)" };    // красный
+const TONE_WATER:    SectionTone = { bar: "var(--c-cyan-bg, #0284c7)",   bg: "var(--c-tint-cyan, #f0f9ff)",  text: "var(--c-cyan-ink, #075985)" };   // голубой
+const TONE_EQUIP:    SectionTone = { bar: "var(--c-amber-bg, #ea580c)",  bg: "var(--c-tint-amber, #fff7ed)", text: "var(--c-amber-ink, #9a3412)" };  // оранжевый
+const TONE_INFO:     SectionTone = { bar: "var(--c-b3, #6b7280)",        bg: "var(--c-s2, #f9fafb)",         text: "var(--c-t2, #374151)" };         // серый
 
 const SECTION_TONES: Record<string, SectionTone> = {
   "Геометрия":                    TONE_GEOMETRY,
@@ -133,13 +135,13 @@ export function EditInput({
       style={{
         // Редактируемое поле — белое с чёткой рамкой, чтобы визуально отличалось
         // от расчётных значений, которые править нельзя.
-        background: readOnly ? "#f1f5f9" : "#ffffff",
-        border: readOnly ? "1px solid #d8dee6" : "1px solid #94a3b8",
+        background: readOnly ? "var(--c-s3, #f1f5f9)" : "var(--c-s1, #ffffff)",
+        border: readOnly ? "1px solid #d8dee6" : "1px solid var(--c-b3, #94a3b8)",
         borderRadius: 2,
         height: 18,
         outline: "none",
         fontFamily: "inherit",
-        color: readOnly ? "#475569" : "#0f172a",
+        color: readOnly ? "var(--c-t3, #475569)" : "var(--c-t1, #0f172a)",
       }}
     />
   );
@@ -235,7 +237,7 @@ export function ComputedInput({ value, color, className }: { value: string; colo
         borderRadius: 2,
         height: 18,
         lineHeight: "16px",
-        color: color ?? "#0f172a",
+        color: color ?? "var(--c-t1, #0f172a)",
         userSelect: "text",
         cursor: "default",
       }}>

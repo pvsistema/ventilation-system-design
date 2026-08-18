@@ -52,7 +52,7 @@ function ComputedInput({ value, empty }: { value: string; empty?: boolean }) {
     <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
       title="Расчётное значение — изменить нельзя"
       style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
-        color: empty ? "#94a3b8" : "#0f172a", userSelect: "text", cursor: "default" }}>
+        color: empty ? "var(--c-t4, #94a3b8)" : "var(--c-t1, #0f172a)", userSelect: "text", cursor: "default" }}>
       {value}
     </div>
   );
@@ -214,14 +214,14 @@ export default function NodePeoplePanel({ node, onUpdate, allNodes = [] }: NodeP
         <Row label="Успевают выйти">
           <div className="w-full text-[11px] text-right px-1 font-semibold"
             style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
-              color: evacSafe === undefined ? "#94a3b8" : evacSafe ? "#15803d" : "#dc2626" }}>
+              color: evacSafe === undefined ? "var(--c-t4, #94a3b8)" : evacSafe ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}>
             {evacSafe === undefined ? "—" : evacSafe ? "Да" : "Нет"}
           </div>
         </Row>
         <Row label="В зоне задымления">
           <div className="w-full text-[11px] text-right px-1 font-semibold"
             style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
-              color: node.evacComputedSmoke === undefined ? "#94a3b8" : node.evacComputedSmoke ? "#dc2626" : "#15803d" }}>
+              color: node.evacComputedSmoke === undefined ? "var(--c-t4, #94a3b8)" : node.evacComputedSmoke ? "var(--c-red, #dc2626)" : "var(--c-green, #15803d)" }}>
             {node.evacComputedSmoke === undefined ? "—" : node.evacComputedSmoke ? "Да" : "Нет"}
           </div>
         </Row>
@@ -241,7 +241,7 @@ export default function NodePeoplePanel({ node, onUpdate, allNodes = [] }: NodeP
         <div className="px-1 py-1" style={{ borderTop: "1px solid #ebebeb" }}>
           {warnings.map((w, i) => (
             <div key={i} className="flex items-start gap-1 text-[10px] leading-tight py-0.5"
-              style={{ color: w.level === "error" ? "#b91c1c" : "#a16207" }}>
+              style={{ color: w.level === "error" ? "var(--c-red, #b91c1c)" : "#a16207" }}>
               <span style={{ flexShrink: 0, fontWeight: 700 }}>
                 {w.level === "error" ? "✕" : "⚠"}
               </span>

@@ -68,7 +68,7 @@ export default function MultiBranchPropsDialog({ branches, onClose, onApply }: P
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
-          style={{ background: "#1a3a6b" }}>
+          style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
           <div className="flex items-center gap-2 text-white font-bold text-[14px]">
             <Icon name="Layers" size={16} />
             Свойства выбранных ветвей ({count} шт.)
@@ -204,7 +204,7 @@ export default function MultiBranchPropsDialog({ branches, onClose, onApply }: P
           </button>
           <button onClick={handleApply}
             className="px-4 py-1.5 rounded text-[12px] font-semibold text-white"
-            style={{ background: "#1a3a6b" }}>
+            style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
             Применить к {count} ветвям
           </button>
         </div>

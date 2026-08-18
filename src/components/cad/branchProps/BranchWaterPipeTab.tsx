@@ -110,13 +110,13 @@ export default function BranchWaterPipeTab({
           return (
             <>
               <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
+                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid var(--c-blue, #0284c7)", color: "#075985" }}>
                 <span>Запорный вентиль</span>
                 {onRemoveGate && (
                   <button
                     onClick={onRemoveGate}
                     className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
+                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "var(--c-red-ink, #991b1b)", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
                     title="Удалить запорный вентиль">
                     Удалить вентиль
                   </button>
@@ -127,9 +127,9 @@ export default function BranchWaterPipeTab({
                   onClick={() => onUpdate({ wpGateClosed: false })}
                   className="flex-1 text-[11px] py-1 rounded font-medium"
                   style={{
-                    background: !closed ? "#dcfce7" : "#f3f4f6",
-                    color: !closed ? "#166534" : "#6b7280",
-                    border: !closed ? "1px solid #86efac" : "1px solid #e5e7eb",
+                    background: !closed ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s3, #f3f4f6)",
+                    color: !closed ? "var(--c-green-ink, #166534)" : "var(--c-t3, #6b7280)",
+                    border: !closed ? "1px solid #86efac" : "1px solid var(--c-b1, #e5e7eb)",
                     cursor: "pointer",
                   }}>
                   Открыт
@@ -138,15 +138,15 @@ export default function BranchWaterPipeTab({
                   onClick={() => onUpdate({ wpGateClosed: true })}
                   className="flex-1 text-[11px] py-1 rounded font-medium"
                   style={{
-                    background: closed ? "#fee2e2" : "#f3f4f6",
-                    color: closed ? "#991b1b" : "#6b7280",
-                    border: closed ? "1px solid #fca5a5" : "1px solid #e5e7eb",
+                    background: closed ? "var(--c-tint-red2, #fee2e2)" : "var(--c-s3, #f3f4f6)",
+                    color: closed ? "var(--c-red-ink, #991b1b)" : "var(--c-t3, #6b7280)",
+                    border: closed ? "1px solid #fca5a5" : "1px solid var(--c-b1, #e5e7eb)",
                     cursor: "pointer",
                   }}>
                   Закрыт
                 </button>
               </div>
-              <div className="px-1 pb-1.5 text-[10px]" style={{ color: closed ? "#991b1b" : "#166534" }}>
+              <div className="px-1 pb-1.5 text-[10px]" style={{ color: closed ? "var(--c-red-ink, #991b1b)" : "var(--c-green-ink, #166534)" }}>
                 {closed
                   ? "Течение воды в этой ветви перекрыто"
                   : "Вода свободно проходит через ветвь"}
@@ -169,13 +169,13 @@ export default function BranchWaterPipeTab({
           return (
             <>
               <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
+                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid var(--c-blue, #0284c7)", color: "#075985" }}>
                 <span>Редукционный клапан</span>
                 {onRemoveReducer && (
                   <button
                     onClick={onRemoveReducer}
                     className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
+                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "var(--c-red-ink, #991b1b)", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
                     title="Удалить редукционный клапан">
                     Удалить клапан
                   </button>
@@ -255,8 +255,8 @@ export default function BranchWaterPipeTab({
                 <span
                   className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
                   style={{
-                    background: reducerActive ? "#fef08a" : "#e5e7eb",
-                    color: reducerActive ? "#92400e" : "#6b7280",
+                    background: reducerActive ? "#fef08a" : "var(--c-s4, #e5e7eb)",
+                    color: reducerActive ? "var(--c-amber-ink, #92400e)" : "var(--c-t3, #6b7280)",
                   }}>
                   {reducerActive ? "● Активен" : "○ Не активен"}
                 </span>

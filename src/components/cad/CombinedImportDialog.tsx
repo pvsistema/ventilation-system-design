@@ -89,7 +89,7 @@ export default function CombinedImportDialog({ onImport, onClose }: Props) {
         onDrop={(e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) onFile(f); }}
         onDragOver={(e) => e.preventDefault()}
         className="flex items-center gap-3 cursor-pointer rounded border-2 border-dashed px-3 py-3 hover:bg-blue-50 transition-colors"
-        style={{ borderColor: file ? "#2563eb" : "#9ca3af", background: file ? "#eff6ff" : "#fafafa" }}>
+        style={{ borderColor: file ? "var(--c-blue, #2563eb)" : "#9ca3af", background: file ? "var(--c-tint-blue, #eff6ff)" : "var(--c-s2, #fafafa)" }}>
         <Icon name={file ? "CheckCircle" : "Upload"} size={20}
           className={file ? "text-blue-600" : "text-gray-400"} />
         <div className="flex-1 min-w-0">
@@ -177,8 +177,8 @@ export default function CombinedImportDialog({ onImport, onClose }: Props) {
                   { label: "С Z≠0",     value: combined.stats.nodesWithZ,      hi: combined.stats.nodesWithZ > 0 },
                 ].map(s => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
-                    style={{ background: s.hi ? "#dbeafe" : "#f9f9f9", borderColor: s.hi ? "#93c5fd" : "#e0e0e0" }}>
-                    <div className="text-lg font-bold" style={{ color: s.hi ? "#1d4ed8" : "#374151" }}>{s.value}</div>
+                    style={{ background: s.hi ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#93c5fd" : "var(--c-b1, #e0e0e0)" }}>
+                    <div className="text-lg font-bold" style={{ color: s.hi ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)" }}>{s.value}</div>
                     <div className="text-[10px] text-gray-500">{s.label}</div>
                   </div>
                 ))}
@@ -262,7 +262,7 @@ export default function CombinedImportDialog({ onImport, onClose }: Props) {
             disabled={!combined || combined.branches.length === 0}
             onClick={() => combined && onImport(combined, mode)}
             className="px-5 py-1.5 text-sm font-semibold text-white rounded disabled:opacity-40"
-            style={{ background: "#2563eb" }}>
+            style={{ background: "var(--c-blue-bg, #2563eb)" }}>
             Импортировать ({combined?.branches.length ?? 0} ветвей)
           </button>
         </div>

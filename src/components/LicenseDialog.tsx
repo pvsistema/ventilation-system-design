@@ -93,7 +93,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
 
         {/* Шапка */}
         <div className="flex items-center justify-between px-5 py-4"
-          style={{ background: "linear-gradient(135deg,#1a3a6b 0%,#2563eb 100%)" }}>
+          style={{ background: "linear-gradient(135deg,var(--c-blue-ink-bg, #1a3a6b) 0%,var(--c-blue-bg, #2563eb) 100%)" }}>
           <div className="flex items-center gap-3">
             <div className="w-9 h-9 rounded-lg bg-white/20 flex items-center justify-center">
               <Icon name="KeyRound" size={20} className="text-white" />
@@ -235,7 +235,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 placeholder="PVS-XXXX-XXXX-XXXX-XXXX  или  PVSO…"
                 maxLength={400}
                 className={`w-full border rounded-lg px-3 py-2.5 text-[13px] font-mono focus:outline-none focus:ring-2 focus:ring-blue-300 ${isEmergencyInput ? "tracking-normal break-all" : "tracking-wider"}`}
-                style={{ borderColor: err ? "#dc2626" : "#d1d5db" }}
+                style={{ borderColor: err ? "var(--c-red, #dc2626)" : "var(--c-b2, #d1d5db)" }}
                 onKeyDown={e => e.key === "Enter" && handleActivate()}
                 autoFocus
               />
@@ -254,7 +254,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 onClick={handleActivate}
                 disabled={loading || !canActivate}
                 className="mt-3 w-full py-2.5 rounded-lg text-[13px] font-semibold text-white transition-opacity disabled:opacity-40"
-                style={{ background: "#1a3a6b" }}>
+                style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
                 {loading ? (
                   <span className="flex items-center justify-center gap-2">
                     <Icon name="Loader2" size={14} className="animate-spin" />Проверка ключа...

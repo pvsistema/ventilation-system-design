@@ -16,16 +16,16 @@ interface Props {
 export default function AdminLogin({ password, setPassword, authErr, setAuthErr, loading, handleLogin }: Props) {
   return (
       <div className="min-h-screen flex items-center justify-center"
-        style={{ background: "linear-gradient(135deg,#0f172a,#1e3a5f)" }}>
+        style={{ background: "linear-gradient(135deg,#0f172a,var(--c-blue-bg, #1e3a5f))" }}>
         <form onSubmit={handleLogin}
           className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-8">
           <div className="flex items-center gap-3 mb-6">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center"
-              style={{ background: "#1a3a6b" }}>
+              style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
               <Icon name="ShieldCheck" size={22} className="text-white" />
             </div>
             <div>
-              <div className="text-[16px] font-bold" style={{ color: "#1a3a6b" }}>Панель администратора</div>
+              <div className="text-[16px] font-bold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Панель администратора</div>
               <div className="text-[11px] text-gray-400">ПВ-Система — Лицензии</div>
             </div>
           </div>
@@ -37,7 +37,7 @@ export default function AdminLogin({ password, setPassword, authErr, setAuthErr,
           {authErr && <div className="mt-2 text-[12px] text-red-600">{authErr}</div>}
           <button type="submit" disabled={loading}
             className="mt-4 w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-50"
-            style={{ background: "#1a3a6b" }}>
+            style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
             {loading ? "Вход..." : "Войти"}
           </button>
           <a href="/" className="mt-4 block text-center text-[11px] text-gray-400 hover:text-gray-600">

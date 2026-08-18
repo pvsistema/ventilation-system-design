@@ -38,7 +38,7 @@ export default function FireSourceSettings({
 <div className="px-4 pt-2.5 pb-2" style={{ borderBottom: "1px solid #e0e4ee" }}>
   {fireBranches.length === 0 ? (
     <div className="text-[11px] flex items-center gap-2 py-1"
-      style={{ color: "#8a5a00" }}>
+      style={{ color: "var(--c-amber, #8a5a00)" }}>
       <Icon name="TriangleAlert" size={14} />
       В схеме не задан очаг пожара. Установите очаг на вкладке «Аварии».
     </div>

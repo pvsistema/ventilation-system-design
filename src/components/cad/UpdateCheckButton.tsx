@@ -47,7 +47,7 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
         <button
           onClick={downloadAndInstall}
           className="h-7 px-3 text-[12px] rounded text-white font-medium flex items-center gap-1.5"
-          style={{ background: "#16a34a" }}>
+          style={{ background: "var(--c-green-bg, #16a34a)" }}>
           <Icon name="Download" size={13} />
           Скачать и обновить
         </button>

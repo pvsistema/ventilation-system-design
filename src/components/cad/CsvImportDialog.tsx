@@ -9,10 +9,10 @@ interface Props {
 }
 
 const FILE_TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
-  nodes:       { label: "Узлы",       color: "#166534", bg: "#dcfce7" },
-  excavations: { label: "Выработки",  color: "#1e40af", bg: "#dbeafe" },
-  positions:   { label: "Позиции",    color: "#7c3aed", bg: "#ede9fe" },
-  bulkheads:   { label: "Перемычки",  color: "#92400e", bg: "#fef3c7" },
+  nodes:       { label: "Узлы",       color: "var(--c-green-ink, #166534)", bg: "#dcfce7" },
+  excavations: { label: "Выработки",  color: "var(--c-blue-ink, #1e40af)", bg: "#dbeafe" },
+  positions:   { label: "Позиции",    color: "var(--c-purple, #7c3aed)", bg: "#ede9fe" },
+  bulkheads:   { label: "Перемычки",  color: "var(--c-amber-ink, #92400e)", bg: "#fef3c7" },
   fans:        { label: "Вент-ры",    color: "#9f1239", bg: "#ffe4e6" },
   unknown:     { label: "?",          color: "var(--c-t2, #374151)", bg: "#f3f4f6" },
 };
@@ -121,7 +121,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
             </div>
             {rUnit === "auto" && detectedUnit && (
               <div className="mt-1 px-2 py-0.5 rounded text-[10px] inline-block"
-                style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "#1e40af" }}>
+                style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue-ink, #1e40af)" }}>
                 Определено: {detectedUnit === "kmu" ? "кмю — значения будут делиться на 1000" : "СИ — значения без изменений"}
               </div>
             )}
@@ -132,7 +132,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
             onDragOver={(e) => e.preventDefault()}
             onClick={() => inputRef.current?.click()}
             className="flex flex-col items-center justify-center gap-2 cursor-pointer rounded border-2 border-dashed py-6 hover:bg-green-50 transition-colors"
-            style={{ borderColor: files.length > 0 ? "#16a34a" : "#9ca3af", background: files.length > 0 ? "#f0fdf4" : "#fafafa" }}>
+            style={{ borderColor: files.length > 0 ? "var(--c-green, #16a34a)" : "#9ca3af", background: files.length > 0 ? "var(--c-tint-green, #f0fdf4)" : "var(--c-s2, #fafafa)" }}>
             <Icon name="FolderOpen" size={28} className={files.length > 0 ? "text-green-600" : "text-gray-400"} />
             {files.length > 0 ? (
               <div className="text-sm font-semibold text-green-700">Загружено {files.length} файлов — нажмите для замены</div>
@@ -188,8 +188,8 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
                   { label: "Слоёв",      value: result.stats.horizons ?? 0,           hi: (result.stats.horizons ?? 0) > 0 },
                 ].map(s => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
-                    style={{ background: s.hi ? "#dcfce7" : "#f9f9f9", borderColor: s.hi ? "#86efac" : "#e0e0e0" }}>
-                    <div className="text-xl font-bold" style={{ color: s.hi ? "#15803d" : "#6b7280" }}>{s.value}</div>
+                    style={{ background: s.hi ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#86efac" : "var(--c-b1, #e0e0e0)" }}>
+                    <div className="text-xl font-bold" style={{ color: s.hi ? "var(--c-green, #15803d)" : "var(--c-t3, #6b7280)" }}>{s.value}</div>
                     <div className="text-[10px] text-gray-500">{s.label}</div>
                   </div>
                 ))}
@@ -237,7 +237,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
             disabled={!result || result.branches.length === 0}
             onClick={() => result && onImport(result, mode)}
             className="px-5 py-1.5 text-sm font-semibold text-white rounded disabled:opacity-40"
-            style={{ background: "#16a34a" }}>
+            style={{ background: "var(--c-green-bg, #16a34a)" }}>
             Импортировать ({result?.branches.length ?? 0} ветвей)
           </button>
         </div>

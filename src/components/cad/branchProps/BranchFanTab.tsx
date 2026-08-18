@@ -44,7 +44,7 @@ export default function BranchFanTab({
         <button
           onClick={onRemoveFan}
           className="text-[11px] px-3 py-0.5 rounded flex items-center gap-1"
-          style={{ background: "#dc2626", color: "white", border: "none", cursor: "pointer" }}>
+          style={{ background: "var(--c-red-bg, #dc2626)", color: "white", border: "none", cursor: "pointer" }}>
           ✕ Удалить вентилятор
         </button>
       </div>
@@ -104,7 +104,7 @@ export default function BranchFanTab({
         <button
           onClick={onFanIndResetOffset}
           className="text-[11px] px-2 py-0.5 rounded"
-          style={{ background: "var(--c-s3, #f1f5f9)", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}
+          style={{ background: "var(--c-s3, #f1f5f9)", color: "var(--c-t3, #475569)", border: "1px solid var(--c-b2, #cbd5e1)", cursor: "pointer" }}
           title="Подпись двигается мышью прямо на схеме — эта кнопка вернёт её на место">
           Вернуть подпись на место
         </button>
@@ -117,7 +117,7 @@ export default function BranchFanTab({
           <button
             onClick={onFanSymbolDelete}
             className="text-[11px] px-2 py-0.5 rounded"
-            style={{ background: "var(--c-s3, #f1f5f9)", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}>
+            style={{ background: "var(--c-s3, #f1f5f9)", color: "var(--c-t3, #475569)", border: "1px solid var(--c-b2, #cbd5e1)", cursor: "pointer" }}>
             Удалить УО
           </button>
         )}
@@ -125,7 +125,7 @@ export default function BranchFanTab({
           <button
             onClick={onReverse}
             className="text-[11px] px-2 py-0.5 rounded flex items-center gap-1"
-            style={{ background: "var(--c-tint-blue, #eff6ff)", color: "#1d4ed8", border: "1px solid #bfdbfe", cursor: "pointer" }}>
+            style={{ background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)", border: "1px solid #bfdbfe", cursor: "pointer" }}>
             ⇄ Развернуть
           </button>
         )}
@@ -166,9 +166,9 @@ export default function BranchFanTab({
             className="w-full text-[11px] px-2 rounded"
             style={{
               height: 18,
-              background: branch.fanStopped ? "#f3f4f6" : branch.fanReverse ? "#fee2e2" : "#f0fdf4",
-              color: branch.fanStopped ? "#9ca3af" : branch.fanReverse ? "#b91c1c" : "#15803d",
-              border: `1px solid ${branch.fanStopped ? "#d1d5db" : branch.fanReverse ? "#fca5a5" : "#86efac"}`,
+              background: branch.fanStopped ? "var(--c-s3, #f3f4f6)" : branch.fanReverse ? "var(--c-tint-red2, #fee2e2)" : "var(--c-tint-green, #f0fdf4)",
+              color: branch.fanStopped ? "var(--c-t4, #9ca3af)" : branch.fanReverse ? "var(--c-red, #b91c1c)" : "var(--c-green, #15803d)",
+              border: `1px solid ${branch.fanStopped ? "var(--c-b2, #d1d5db)" : branch.fanReverse ? "#fca5a5" : "#86efac"}`,
               cursor: branch.fanStopped ? "not-allowed" : "pointer",
               fontWeight: 600,
             }}>
@@ -185,7 +185,7 @@ export default function BranchFanTab({
     )}
     {branch.fanType === "ВМП" && (
       <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
-        style={{ background: "var(--c-tint-blue, #f0f9ff)", border: "1px solid #bae6fd", color: "#0369a1" }}>
+        style={{ background: "var(--c-tint-blue, #f0f9ff)", border: "1px solid #bae6fd", color: "var(--c-blue, #0369a1)" }}>
         Для смены направления нагнетания — разверните ветвь (Ctrl+R)
       </div>
     )}
@@ -196,8 +196,8 @@ export default function BranchFanTab({
         className="w-full text-[11px] px-2 rounded"
         style={{
           height: 18,
-          background: branch.fanStopped ? "#fef3c7" : "#f0fdf4",
-          color: branch.fanStopped ? "#92400e" : "#15803d",
+          background: branch.fanStopped ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-tint-green, #f0fdf4)",
+          color: branch.fanStopped ? "var(--c-amber-ink, #92400e)" : "var(--c-green, #15803d)",
           border: `1px solid ${branch.fanStopped ? "#fcd34d" : "#86efac"}`,
           cursor: "pointer",
           fontWeight: 600,
@@ -210,7 +210,7 @@ export default function BranchFanTab({
       <>
         {branch.fanPressure <= 0 && (
           <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-            style={{ background: "var(--c-tint-amber, #fff7ed)", border: "1px solid #fed7aa", color: "#c2410c" }}>
+            style={{ background: "var(--c-tint-amber, #fff7ed)", border: "1px solid #fed7aa", color: "var(--c-amber, #c2410c)" }}>
             ⚠ Напор = 0 Па. Расчёт даст Q=0. Задайте напор вентилятора.
           </div>
         )}
@@ -459,9 +459,9 @@ export default function BranchFanTab({
                 {renderChart()}
               </div>
               <div className="px-2 pb-1 flex gap-3 text-[9px] text-gray-400 justify-center flex-wrap">
-                <span style={{ color: "#2563eb" }}>— выбранный угол</span>
+                <span style={{ color: "var(--c-blue, #2563eb)" }}>— выбранный угол</span>
                 <span style={{ color: "#93c5fd" }}>-- другие углы</span>
-                {Math.abs(branch.flow) > 0.01 && <span style={{ color: "#ef4444" }}>● рабочая точка</span>}
+                {Math.abs(branch.flow) > 0.01 && <span style={{ color: "var(--c-red-lt, #ef4444)" }}>● рабочая точка</span>}
               </div>
             </>
           )}
@@ -500,13 +500,13 @@ export default function BranchFanTab({
 
     {branch.fanStopped && (
       <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
-        style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #fcd34d", color: "#92400e" }}>
+        style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #fcd34d", color: "var(--c-amber-ink, #92400e)" }}>
         ⏹ Вентилятор остановлен — напор H=0, воздух движется по естественной тяге
       </div>
     )}
     {!branch.fanStopped && branch.fanReverse && branch.fanType !== "ВМП" && (
       <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
-        style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "#b91c1c" }}>
+        style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "var(--c-red, #b91c1c)" }}>
         {(() => {
           const curve = getFanById(branch.fanCurveId);
           const eff = curve?.reverseEfficiencyFactor ?? 0.82;
@@ -527,7 +527,7 @@ export default function BranchFanTab({
       if (Q <= qMaxScaled * 1.02) return null;
       return (
         <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-          style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #f59e0b", color: "#92400e" }}>
+          style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid var(--c-amber-lt, #f59e0b)", color: "var(--c-amber-ink, #92400e)" }}>
           ⚠ Q={Q.toFixed(2)} м³/с превышает max {qMaxScaled.toFixed(1)} м³/с для {curve.name} (угол {branch.fanBladeAngle ?? "-"}°). Вентилятор вне паспортной зоны.
         </div>
       );
@@ -568,7 +568,7 @@ export default function BranchFanTab({
           </InlineLabel>
           {windowTooBig && (
             <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #f59e0b", color: "#92400e" }}>
+              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid var(--c-amber-lt, #f59e0b)", color: "var(--c-amber-ink, #92400e)" }}>
               ⚠ Площадь окна ΔS={numFmt(dS, 2)} м² не меньше сечения выработки
               S={numFmt(sBr, 2)} м² — окно не сужает поток, поэтому R окна = 0.
               Проверьте сечение выработки или уменьшите площадь окна.
@@ -576,7 +576,7 @@ export default function BranchFanTab({
           )}
           {noSection && (
             <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #f59e0b", color: "#92400e" }}>
+              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid var(--c-amber-lt, #f59e0b)", color: "var(--c-amber-ink, #92400e)" }}>
               ⚠ У выработки не задано сечение S — R окна посчитан без учёта
               скорости подхода (как для очень большой выработки).
             </div>

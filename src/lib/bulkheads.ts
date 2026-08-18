@@ -46,7 +46,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 1_000_000, rMax: 1_000_000,
     failurePressure: 0.16,
     note: "A=0,001 м²/(с·√Па)",
-    color: "#1565c0",
+    color: "var(--c-blue, #1565c0)",
   },
   {
     id: "door_auto_concrete",
@@ -56,7 +56,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 98_712, rMax: 98_712,
     failurePressure: 0.08,
     note: "A=0,003182 м²/(с·√Па)",
-    color: "#1565c0",
+    color: "var(--c-blue, #1565c0)",
   },
   {
     id: "door_auto_wood",
@@ -66,7 +66,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 3_880, rMax: 3_880,
     failurePressure: 0.01,
     note: "A=0,016052 м²/(с·√Па)",
-    color: "#1565c0",
+    color: "var(--c-blue, #1565c0)",
   },
   {
     id: "door_auto_brick",
@@ -76,7 +76,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 66_980, rMax: 66_980,
     failurePressure: 0.04,
     note: "A=0,003863 м²/(с·√Па)",
-    color: "#1565c0",
+    color: "var(--c-blue, #1565c0)",
   },
   {
     id: "door_auto_metal",
@@ -86,7 +86,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 3_880, rMax: 3_880,
     failurePressure: 0.02,
     note: "A=0,016052 м²/(с·√Па)",
-    color: "#1565c0",
+    color: "var(--c-blue, #1565c0)",
   },
 
   // === ДВЕРИ ВЕНТИЛЯЦИОННЫЕ ЗАКРЫТЫЕ ===
@@ -162,7 +162,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 1_000_000, rMax: 1_000_000,
     failurePressure: 0.16,
     note: "A=0,001 м²/(с·√Па)",
-    color: "#6a1b9a",
+    color: "var(--c-purple-ink, #6a1b9a)",
   },
   {
     id: "water_dam_concrete",
@@ -172,7 +172,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 105_800, rMax: 105_800,
     failurePressure: 0.08,
     note: "A=0,003074 м²/(с·√Па)",
-    color: "#6a1b9a",
+    color: "var(--c-purple-ink, #6a1b9a)",
   },
   {
     id: "water_dam_wood",
@@ -182,7 +182,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 8_818, rMax: 8_818,
     failurePressure: 0.01,
     note: "A=0,01065 м²/(с·√Па)",
-    color: "#6a1b9a",
+    color: "var(--c-purple-ink, #6a1b9a)",
   },
   {
     id: "water_dam_brick",
@@ -192,7 +192,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 70_617, rMax: 70_617,
     failurePressure: 0.04,
     note: "A=0,003765 м²/(с·√Па)",
-    color: "#6a1b9a",
+    color: "var(--c-purple-ink, #6a1b9a)",
   },
   {
     id: "water_dam_metal",
@@ -202,7 +202,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 8_818, rMax: 8_818,
     failurePressure: 0.02,
     note: "A=0,01065 м²/(с·√Па)",
-    color: "#6a1b9a",
+    color: "var(--c-purple-ink, #6a1b9a)",
   },
 
   // === ПЕРЕМЫЧКИ ГЛУХИЕ ===
@@ -214,7 +214,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 1_000_000, rMax: 1_000_000,
     failurePressure: 0.16,
     note: "A=0,001 м²/(с·√Па), ГОСТ 12.3.022",
-    color: "#2e7d32",
+    color: "var(--c-green, #2e7d32)",
   },
   {
     id: "solid_concrete",
@@ -224,7 +224,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 105_800, rMax: 105_800,
     failurePressure: 0.08,
     note: "A=0,003074 м²/(с·√Па)",
-    color: "#2e7d32",
+    color: "var(--c-green, #2e7d32)",
   },
   {
     id: "solid_wood",

@@ -64,13 +64,13 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
           {/* Зона загрузки */}
           <div
             className="border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors py-6"
-            style={{ borderColor: fileName ? "#22c55e" : "#d1d5db", background: fileName ? "#f0fdf4" : "#fafafa" }}
+            style={{ borderColor: fileName ? "var(--c-green-lt, #22c55e)" : "var(--c-b2, #d1d5db)", background: fileName ? "var(--c-tint-green, #f0fdf4)" : "var(--c-s2, #fafafa)" }}
             onClick={() => inputRef.current?.click()}
             onDrop={handleDrop}
             onDragOver={e => e.preventDefault()}
           >
-            <Icon name={fileName ? "CheckCircle" : "FolderOpen"} size={28} style={{ color: fileName ? "#22c55e" : "#9ca3af" }} />
-            <div className="mt-2 text-sm font-medium" style={{ color: fileName ? "#15803d" : "#6b7280" }}>
+            <Icon name={fileName ? "CheckCircle" : "FolderOpen"} size={28} style={{ color: fileName ? "var(--c-green-lt, #22c55e)" : "var(--c-t4, #9ca3af)" }} />
+            <div className="mt-2 text-sm font-medium" style={{ color: fileName ? "var(--c-green, #15803d)" : "var(--c-t3, #6b7280)" }}>
               {loading ? "Анализирую файл…" : fileName ? `${fileName} — нажмите для замены` : "Перетащите CSV-файл или нажмите для выбора"}
             </div>
             <input ref={inputRef} type="file" accept=".csv,.txt" className="hidden"
@@ -95,8 +95,8 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
                   { label: "Вент-ров",value: result.stats.fans,     hi: result.stats.fans > 0 },
                 ].map(s => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
-                    style={{ background: s.hi ? "#dcfce7" : "#f9f9f9", borderColor: s.hi ? "#86efac" : "#e0e0e0" }}>
-                    <div className="text-xl font-bold" style={{ color: s.hi ? "#15803d" : "#6b7280" }}>{s.value}</div>
+                    style={{ background: s.hi ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#86efac" : "var(--c-b1, #e0e0e0)" }}>
+                    <div className="text-xl font-bold" style={{ color: s.hi ? "var(--c-green, #15803d)" : "var(--c-t3, #6b7280)" }}>{s.value}</div>
                     <div className="text-[10px] text-gray-500">{s.label}</div>
                   </div>
                 ))}
@@ -140,7 +140,7 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
             onClick={() => result && onImport(result, mode)}
             disabled={!result || result.stats.branches === 0}
             className="px-5 py-1.5 text-sm font-semibold text-white rounded-lg transition-colors"
-            style={{ background: result && result.stats.branches > 0 ? "#16a34a" : "#9ca3af", cursor: result && result.stats.branches > 0 ? "pointer" : "not-allowed" }}
+            style={{ background: result && result.stats.branches > 0 ? "var(--c-green, #16a34a)" : "#9ca3af", cursor: result && result.stats.branches > 0 ? "pointer" : "not-allowed" }}
           >
             {result ? `Импортировать (${result.stats.branches} ветвей)` : "Выберите файл"}
           </button>

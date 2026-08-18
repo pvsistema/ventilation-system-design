@@ -58,7 +58,7 @@ export default function AirDemandDialog({
     );
     const num = (v: number) => (v > 0 ? v.toFixed(2) : "—");
     const hl = (active: boolean): React.CSSProperties => active
-      ? { background: "var(--c-tint-blue, #eff6ff)", color: "#1d4ed8", fontWeight: 700 }
+      ? { background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)", fontWeight: 700 }
       : {};
 
     return (
@@ -75,16 +75,16 @@ export default function AirDemandDialog({
         {cell(num(f.byBlast), "right", hl(f.factor === "blast"))}
         {cell(num(f.byDiesel), "right", hl(f.factor === "diesel"))}
         {cell(num(f.byVMin), "right", hl(f.factor === "vmin"))}
-        {cell(<span style={{ color: "#1d4ed8" }}>{FACTOR_LABEL[f.factor]}</span>, "left")}
+        {cell(<span style={{ color: "var(--c-blue, #1d4ed8)" }}>{FACTOR_LABEL[f.factor]}</span>, "left")}
         {cell(<b>{f.total > 0 ? f.total.toFixed(2) : "—"}</b>)}
-        {cell(<span style={{ color: f.flowOk ? "#15803d" : "#dc2626", fontWeight: 600 }}>
+        {cell(<span style={{ color: f.flowOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)", fontWeight: 600 }}>
           {f.actualFlow.toFixed(2)}
         </span>)}
-        {cell(<span style={{ color: f.velocityOk ? "#15803d" : "#dc2626" }} title={`Допустимо ${f.vMin}–${f.vMax} м/с`}>
+        {cell(<span style={{ color: f.velocityOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }} title={`Допустимо ${f.vMin}–${f.vMax} м/с`}>
           {f.actualVelocity.toFixed(2)}
         </span>)}
         {cell(
-          <span style={{ color: ok ? "#15803d" : "#b91c1c", fontWeight: ok ? 400 : 600 }}
+          <span style={{ color: ok ? "var(--c-green, #15803d)" : "var(--c-red, #b91c1c)", fontWeight: ok ? 400 : 600 }}
             title={f.recommendation}>
             {f.verdict}
           </span>, "left")}
@@ -143,11 +143,11 @@ export default function AirDemandDialog({
             {[
               { label: "Забоев в расчёте", value: String(result.faces.length), color: "var(--c-t1, #0f172a)" },
               { label: "Участков", value: String(result.sections.length), color: "var(--c-t1, #0f172a)" },
-              { label: "Потребность, м³/с", value: result.totalDemand.toFixed(2), color: "#1d4ed8" },
+              { label: "Потребность, м³/с", value: result.totalDemand.toFixed(2), color: "var(--c-blue, #1d4ed8)" },
               { label: "Фактически, м³/с", value: result.totalActual.toFixed(2),
-                color: result.totalActual >= result.totalDemand ? "#15803d" : "#dc2626" },
+                color: result.totalActual >= result.totalDemand ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" },
               { label: "Не обеспечено забоев", value: String(result.failedCount),
-                color: result.failedCount > 0 ? "#dc2626" : "#15803d" },
+                color: result.failedCount > 0 ? "var(--c-red, #dc2626)" : "var(--c-green, #15803d)" },
             ].map((c, i) => (
               <div key={i} className="px-4 py-2" style={{ borderRight: i < 4 ? "1px solid #e6eaf2" : undefined }}>
                 <div className="text-[9px] text-gray-500 uppercase tracking-wide">{c.label}</div>
@@ -215,13 +215,13 @@ export default function AirDemandDialog({
                         </td>
                         <td className="px-1 py-0.5 text-right font-bold"
                           style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)",
-                            color: sec.ok ? "#15803d" : "#dc2626" }}>
+                            color: sec.ok ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}>
                           {sec.actual.toFixed(2)}
                         </td>
                         <td style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)" }} />
                         <td className="px-1 py-0.5 text-[10px] font-semibold"
                           style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)",
-                            color: sec.ok ? "#15803d" : "#b91c1c" }}>
+                            color: sec.ok ? "var(--c-green, #15803d)" : "var(--c-red, #b91c1c)" }}>
                           {sec.ok ? "обеспечено" : `не обеспечено: ${sec.failed}`}
                         </td>
                       </tr>
@@ -252,20 +252,20 @@ export default function AirDemandDialog({
               <tfoot>
                 <tr>
                   <td colSpan={9} className="px-2 py-1.5 text-right font-bold text-[12px]"
-                    style={{ border: "1px solid #1e3a5f", background: "#1e3a5f", color: "white" }}>
+                    style={{ border: "1px solid var(--c-blue-ink, #1e3a5f)", background: "var(--c-blue-bg, #1e3a5f)", color: "white" }}>
                     ВСЕГО ПО РУДНИКУ:
                   </td>
                   <td className="px-1 py-1.5 text-right font-bold text-[12px]"
-                    style={{ border: "1px solid #1e3a5f", background: "#1e3a5f", color: "white" }}>
+                    style={{ border: "1px solid var(--c-blue-ink, #1e3a5f)", background: "var(--c-blue-bg, #1e3a5f)", color: "white" }}>
                     {result.totalDemand.toFixed(2)}
                   </td>
                   <td className="px-1 py-1.5 text-right font-bold text-[12px]"
-                    style={{ border: "1px solid #1e3a5f", background: "#1e3a5f", color: "white" }}>
+                    style={{ border: "1px solid var(--c-blue-ink, #1e3a5f)", background: "var(--c-blue-bg, #1e3a5f)", color: "white" }}>
                     {result.totalActual.toFixed(2)}
                   </td>
-                  <td style={{ border: "1px solid #1e3a5f", background: "#1e3a5f" }} />
+                  <td style={{ border: "1px solid var(--c-blue-ink, #1e3a5f)", background: "var(--c-blue-bg, #1e3a5f)" }} />
                   <td className="px-1 py-1.5 text-[10px] font-semibold"
-                    style={{ border: "1px solid #1e3a5f", background: "#1e3a5f",
+                    style={{ border: "1px solid var(--c-blue-ink, #1e3a5f)", background: "var(--c-blue-bg, #1e3a5f)",
                       color: result.failedCount > 0 ? "#fca5a5" : "#86efac" }}>
                     {result.failedCount > 0
                       ? `Не обеспечено: ${result.failedCount}`

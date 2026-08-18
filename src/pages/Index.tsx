@@ -52,9 +52,9 @@ type Tool = "select" | "node-junction" | "node-supply" | "node-exhaust" | "node-
 const TOOLS: { id: Tool; icon: string; label: string; color?: string }[] = [
   { id: "select", icon: "MousePointer2", label: "Выбор" },
   { id: "node-supply", icon: "ArrowUp", label: "Приток", color: "#10b981" },
-  { id: "node-exhaust", icon: "ArrowDown", label: "Вытяжка", color: "#ef4444" },
-  { id: "node-junction", icon: "Circle", label: "Узел", color: "#3b82f6" },
-  { id: "node-fan", icon: "Gauge", label: "Вентилятор", color: "#f59e0b" },
+  { id: "node-exhaust", icon: "ArrowDown", label: "Вытяжка", color: "var(--c-red-lt, #ef4444)" },
+  { id: "node-junction", icon: "Circle", label: "Узел", color: "var(--c-blue-lt, #3b82f6)" },
+  { id: "node-fan", icon: "Gauge", label: "Вентилятор", color: "var(--c-amber-lt, #f59e0b)" },
   { id: "branch", icon: "Minus", label: "Ветвь" },
   { id: "delete", icon: "Trash2", label: "Удалить" },
 ];
@@ -1146,12 +1146,12 @@ export default function Index() {
                               </td>
                               <td className="py-2 px-1 text-right text-xs font-mono">{flow}</td>
                               <td className="py-2 px-1 text-right text-xs font-mono">
-                                <span style={{ color: calc.velocity > 8 ? "#f59e0b" : calc.velocity > 12 ? "#ef4444" : "inherit" }}>
+                                <span style={{ color: calc.velocity > 8 ? "var(--c-amber-lt, #f59e0b)" : calc.velocity > 12 ? "var(--c-red-lt, #ef4444)" : "inherit" }}>
                                   {calc.velocity}
                                 </span>
                               </td>
                               <td className="py-2 pl-1 text-right text-xs font-mono">
-                                <span style={{ color: calc.dpTotal > 50 ? "#f59e0b" : "inherit" }}>
+                                <span style={{ color: calc.dpTotal > 50 ? "var(--c-amber-lt, #f59e0b)" : "inherit" }}>
                                   {calc.dpTotal}
                                 </span>
                               </td>

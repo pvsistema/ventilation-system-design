@@ -152,7 +152,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
             onDragOver={(e) => e.preventDefault()}
             onClick={() => inputRef.current?.click()}
             className="flex flex-col items-center justify-center gap-2 cursor-pointer rounded border-2 border-dashed py-5 hover:bg-blue-50 transition-colors"
-            style={{ borderColor: file ? "#2563eb" : "#9ca3af" }}>
+            style={{ borderColor: file ? "var(--c-blue, #2563eb)" : "#9ca3af" }}>
             <Icon name="FileUp" size={26} />
             {file ? (
               <>
@@ -217,8 +217,8 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                   { label: "Ветвей",         value: result.stats.branches, hi: true },
                 ].map((s) => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
-                    style={{ background: s.hi ? "#dbeafe" : "#f9f9f9", borderColor: s.hi ? "#93c5fd" : "#e0e0e0" }}>
-                    <div className="text-xl font-bold" style={{ color: s.hi ? "#1d4ed8" : "#1f2937" }}>{s.value}</div>
+                    style={{ background: s.hi ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#93c5fd" : "var(--c-b1, #e0e0e0)" }}>
+                    <div className="text-xl font-bold" style={{ color: s.hi ? "var(--c-blue, #1d4ed8)" : "var(--c-t1, #1f2937)" }}>{s.value}</div>
                     <div className="text-[10px] text-gray-500 leading-tight">{s.label}</div>
                   </div>
                 ))}
@@ -241,8 +241,8 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
               )}
               {result.zRange && (
                 <div className="rounded text-xs border px-2 py-1.5"
-                  style={{ background: result.zRange.hasZ ? "#ecfdf5" : "#fff7ed", borderColor: result.zRange.hasZ ? "#a7f3d0" : "#fed7aa" }}>
-                  <span style={{ color: result.zRange.hasZ ? "#047857" : "#9a3412" }}>
+                  style={{ background: result.zRange.hasZ ? "var(--c-tint-green, #ecfdf5)" : "var(--c-tint-amber, #fff7ed)", borderColor: result.zRange.hasZ ? "#a7f3d0" : "#fed7aa" }}>
+                  <span style={{ color: result.zRange.hasZ ? "var(--c-green, #047857)" : "#9a3412" }}>
                     {result.zRange.hasZ
                       ? `3D: Z от ${result.zRange.min.toFixed(0)} до ${result.zRange.max.toFixed(0)} м`
                       : "⚠ Все Z=0 — плоский файл"}
@@ -353,7 +353,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
             disabled={!result || result.branches.length === 0}
             className="px-4 py-1.5 text-sm rounded text-white font-medium"
             style={{
-              background: result && result.branches.length > 0 ? "#2563eb" : "#9ca3af",
+              background: result && result.branches.length > 0 ? "var(--c-blue, #2563eb)" : "#9ca3af",
               cursor: result && result.branches.length > 0 ? "pointer" : "not-allowed",
             }}>
             Импортировать ({result?.branches.length ?? 0} ветвей)

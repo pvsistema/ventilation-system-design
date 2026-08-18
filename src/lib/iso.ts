@@ -37,9 +37,9 @@ export function project(p: Point3D, origin: Point2D = { x: 0, y: 0 }): Point2D {
 // ─── Стандартный набор этажей ────────────────────────────────────────────────
 
 export const DEFAULT_FLOORS: Floor[] = [
-  { id: "F1", name: "1 этаж", level: 0,   height: 3.0, color: "#3b82f6", visible: true },
+  { id: "F1", name: "1 этаж", level: 0,   height: 3.0, color: "var(--c-blue-lt, #3b82f6)", visible: true },
   { id: "F2", name: "2 этаж", level: 3.0, height: 3.0, color: "#10b981", visible: true },
-  { id: "F3", name: "3 этаж", level: 6.0, height: 3.0, color: "#f59e0b", visible: true },
+  { id: "F3", name: "3 этаж", level: 6.0, height: 3.0, color: "var(--c-amber-lt, #f59e0b)", visible: true },
 ];
 
 // ─── Утилиты для отрисовки изометрических элементов ─────────────────────────

@@ -39,7 +39,7 @@ export default function UnitsConfigPanel({ unitsConfig, onChange }: Props) {
               return (
                 <tr
                   key={q.id}
-                  style={{ background: i % 2 === 0 ? "#ffffff" : "#f8fafd" }}
+                  style={{ background: i % 2 === 0 ? "var(--c-s1, #ffffff)" : "#f8fafd" }}
                   className="hover:bg-blue-50 transition-colors"
                 >
                   <td className="px-3 py-1.5 text-gray-800 border-b border-gray-100">
@@ -51,12 +51,12 @@ export default function UnitsConfigPanel({ unitsConfig, onChange }: Props) {
                       onChange={e => handleChange(q.id, e.target.value)}
                       className="w-full text-[11px] px-1"
                       style={{
-                        background: isDefault ? "white" : "#eff6ff",
-                        border: `1px solid ${isDefault ? "#c8c8c8" : "#93c5fd"}`,
+                        background: isDefault ? "white" : "var(--c-tint-blue, #eff6ff)",
+                        border: `1px solid ${isDefault ? "var(--c-b2, #c8c8c8)" : "#93c5fd"}`,
                         height: 20,
                         outline: "none",
                         borderRadius: 2,
-                        color: isDefault ? "#374151" : "#1d4ed8",
+                        color: isDefault ? "var(--c-t2, #374151)" : "var(--c-blue, #1d4ed8)",
                       }}
                     >
                       {q.units.map(u => (

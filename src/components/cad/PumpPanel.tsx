@@ -70,7 +70,7 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, wat
       <div className="flex gap-1 mb-2">
         <button onClick={() => setShowLibrary((v) => !v)}
           className="flex-1 flex items-center justify-center gap-1 py-1 rounded text-[10px] font-medium border"
-          style={{ background: showLibrary ? "#fef2f2" : "white", color: "#dc2626", borderColor: "#fca5a5" }}>
+          style={{ background: showLibrary ? "var(--c-tint-red, #fef2f2)" : "white", color: "var(--c-red, #dc2626)", borderColor: "#fca5a5" }}>
           <Icon name="Library" size={11} /> Библиотека насосов
         </button>
       </div>
@@ -194,7 +194,7 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, wat
           <div className="text-[10px] text-gray-500 mb-1">Напорная характеристика Q–H</div>
           <PumpChart pump={currentModel} workQ={sym.pumpFlow} />
           <div className="text-[9px] text-gray-400 mt-1">
-            <span className="inline-block w-3 h-0.5 align-middle" style={{ background: "#dc2626" }} /> напор ·
+            <span className="inline-block w-3 h-0.5 align-middle" style={{ background: "var(--c-red-bg, #dc2626)" }} /> напор ·
             <span className="inline-block w-3 h-0.5 align-middle ml-1" style={{ background: "#9ca3af", borderTop: "1px dashed #9ca3af" }} /> КПД
           </div>
         </div>
@@ -202,7 +202,7 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, wat
 
       {/* Результат гидравлического расчёта водопровода на ветви насоса */}
       {waterBranchResult && (
-        <div className="mt-2 rounded p-2" style={{ background: waterBranchResult.pumpActive ? "#f0fdf4" : "#f9fafb", border: "1px solid var(--c-b1, #e5e7eb)" }}>
+        <div className="mt-2 rounded p-2" style={{ background: waterBranchResult.pumpActive ? "var(--c-tint-green, #f0fdf4)" : "var(--c-s2, #f9fafb)", border: "1px solid var(--c-b1, #e5e7eb)" }}>
           <div className="text-[10px] font-medium text-gray-600 mb-1 flex items-center gap-1">
             <Icon name="Activity" size={11} /> Результат расчёта
           </div>
@@ -293,7 +293,7 @@ function AddPumpForm({ onAdd, onCancel }: { onAdd: (p: PumpModel) => void; onCan
       {row("КПД", eta, setEta, "%")}
       <div className="flex gap-1 mt-1.5">
         <button onClick={submit}
-          className="flex-1 py-1 rounded text-[10px] font-medium text-white" style={{ background: "#dc2626" }}>
+          className="flex-1 py-1 rounded text-[10px] font-medium text-white" style={{ background: "var(--c-red-bg, #dc2626)" }}>
           Добавить
         </button>
         <button onClick={onCancel}

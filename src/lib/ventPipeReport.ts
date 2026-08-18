@@ -247,23 +247,23 @@ export function buildVentPipeReportHtml(
 <title>Отчёт по вентиляционным ставам — ${projectName}</title>
 <style>
   @page { size: A4 landscape; margin: 12mm; }
-  body { font-family: "Times New Roman", serif; font-size: 10pt; color: #000; margin: 0; }
+  body { font-family: "Times New Roman", serif; font-size: 10pt; color: var(--c-t1, #000); margin: 0; }
   h1 { font-size: 14pt; margin: 0 0 2mm; }
   h2 { font-size: 11pt; margin: 6mm 0 2mm; }
-  .meta { font-size: 9pt; color: #444; margin-bottom: 4mm; }
+  .meta { font-size: 9pt; color: var(--c-t2, #444); margin-bottom: 4mm; }
   .summary { font-size: 9.5pt; margin: 0 0 4mm; padding: 2mm 3mm;
-             border: 1px solid #999; background: #f5f5f5; }
+             border: 1px solid var(--c-b3, #999); background: #f5f5f5; }
   table { width: 100%; border-collapse: collapse; margin-bottom: 4mm; }
   th, td { border: 1px solid #666; padding: 1mm 1.5mm; text-align: center;
            font-size: 8.5pt; vertical-align: middle; }
-  th { background: #ececec; font-weight: bold; }
+  th { background: var(--c-s3, #ececec); font-weight: bold; }
   td.left { text-align: left; }
   td.strong { font-weight: bold; }
   td.neg { color: #a00; font-weight: bold; }
   tr.bad td { background: #fff2f2; }
   table.notes td.left { font-size: 8pt; }
-  .empty { font-size: 11pt; color: #555; }
-  .foot { margin-top: 6mm; font-size: 8.5pt; color: #444; }
+  .empty { font-size: 11pt; color: var(--c-t3, #555); }
+  .foot { margin-top: 6mm; font-size: 8.5pt; color: var(--c-t2, #444); }
 </style></head>
 <body>
   <h1>Расчёт вентиляционных ставов (ВМП, нагнетательная схема)</h1>

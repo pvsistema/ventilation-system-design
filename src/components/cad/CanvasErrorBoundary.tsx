@@ -28,7 +28,7 @@ export class CanvasErrorBoundary extends React.Component<{ children: React.React
           </div>
           <button
             onClick={() => this.setState({ error: null })}
-            style={{ marginTop: 8, padding: "6px 18px", borderRadius: 6, background: "#2563eb", color: "#fff", border: "none", cursor: "pointer", fontSize: 13 }}
+            style={{ marginTop: 8, padding: "6px 18px", borderRadius: 6, background: "var(--c-blue-bg, #2563eb)", color: "#fff", border: "none", cursor: "pointer", fontSize: 13 }}
           >
             Попробовать снова
           </button>

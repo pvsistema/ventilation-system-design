@@ -166,7 +166,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
-          style={{ background: "#1a3a6b" }}>
+          style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
           <div className="flex items-center gap-2 text-white font-bold text-[14px]">
             <Icon name="Wind" size={16} />
             {editingLine
@@ -241,7 +241,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                         `${(brandSize ?? brand.sizes[0]).workPressure} Па`
                         + ((brandSize ?? brand.sizes[0]).workPressureEstimated ? " (оценка)" : "")],
                     ].map(([k, v], i) => (
-                      <tr key={k} style={{ background: i % 2 ? "#fafafa" : "white" }}>
+                      <tr key={k} style={{ background: i % 2 ? "var(--c-s2, #fafafa)" : "white" }}>
                         <td className="px-3 py-1 text-gray-600 align-top">{k}</td>
                         <td className="px-3 py-1 text-right font-semibold text-gray-900 whitespace-nowrap">{v}</td>
                       </tr>
@@ -478,7 +478,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
           </button>
           <button onClick={handleApply}
             className="px-4 py-1.5 rounded text-[12px] font-semibold text-white"
-            style={{ background: "#1a3a6b" }}>
+            style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
             Применить
           </button>
         </div>

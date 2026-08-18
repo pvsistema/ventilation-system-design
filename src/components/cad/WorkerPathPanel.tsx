@@ -90,8 +90,8 @@ function exportCsv(result: WorkerPathResult) {
 
 function zoneLabel(z: "clean" | "smoky_low" | "smoky_high" | undefined) {
   if (!z || z === "clean") return { label: "Чистая", color: "#14532d", bg: "#f0fdf4" };
-  if (z === "smoky_low") return { label: "Задым. (5-10м)", color: "#92400e", bg: "#fffbeb" };
-  return { label: "Задым. (<5м)", color: "#991b1b", bg: "#fef2f2" };
+  if (z === "smoky_low") return { label: "Задым. (5-10м)", color: "var(--c-amber-ink, #92400e)", bg: "#fffbeb" };
+  return { label: "Задым. (<5м)", color: "var(--c-red-ink, #991b1b)", bg: "#fef2f2" };
 }
 
 function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: () => void }) {
@@ -136,7 +136,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
           style={{ background: "var(--c-tint-blue, #f0f9ff)", borderRadius: "8px 8px 0 0", cursor: "move" }}>
           <div className="flex items-center gap-2">
             <Icon name="Move" size={14} style={{ color: "var(--c-t4, #94a3b8)" }} />
-            <Icon name="PersonStanding" size={18} style={{ color: "#0369a1" }} />
+            <Icon name="PersonStanding" size={18} style={{ color: "var(--c-blue, #0369a1)" }} />
             <span className="font-semibold text-[13px] text-blue-900">
               Время хода горнорабочего — {method}
             </span>
@@ -223,7 +223,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                           {z.label}
                         </span>
                       </td>
-                      <td className="px-2 py-0.5 text-right" style={{ color: s.zone !== "clean" ? "#b45309" : "#1d4ed8" }}>{s.speed_mpm}</td>
+                      <td className="px-2 py-0.5 text-right" style={{ color: s.zone !== "clean" ? "var(--c-amber, #b45309)" : "var(--c-blue, #1d4ed8)" }}>{s.speed_mpm}</td>
                       <td className="px-2 py-0.5 text-right font-medium">{numFmt(s.time_min, 2)}</td>
                       <td className="px-2 py-0.5 text-right font-semibold text-blue-800">{numFmt(s.cumulTime, 2)}</td>
                     </tr>
@@ -231,7 +231,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                   })}
                 </tbody>
                 <tfoot>
-                  <tr style={{ background: "#e0f2fe", borderTop: "2px solid #bae6fd" }}>
+                  <tr style={{ background: "var(--c-tint-blue, #e0f2fe)", borderTop: "2px solid #bae6fd" }}>
                     <td className="px-2 py-1 font-bold text-blue-900" colSpan={2}>ИТОГО</td>
                     <td className="px-2 py-1 text-right font-bold text-blue-900">{totalLen}</td>
                     <td className="px-2 py-1"></td>
@@ -258,7 +258,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
           <button
             onClick={onClose}
             className="px-4 py-1 rounded text-[12px] font-medium text-white"
-            style={{ background: "#0284c7" }}
+            style={{ background: "var(--c-blue-bg, #0284c7)" }}
           >
             Закрыть
           </button>
@@ -357,9 +357,9 @@ export default function WorkerPathPanel({
 
   const btnPickStyle = (active: boolean): React.CSSProperties => ({
     height: 22, fontSize: 10, padding: "0 6px",
-    border: `1px solid ${active ? "#2563eb" : "#c8c8c8"}`,
-    background: active ? "#dbeafe" : "#f5f5f5",
-    color: active ? "#1d4ed8" : "#374151",
+    border: `1px solid ${active ? "var(--c-blue, #2563eb)" : "var(--c-b2, #c8c8c8)"}`,
+    background: active ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)",
+    color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)",
     cursor: "pointer", borderRadius: 2, flexShrink: 0, whiteSpace: "nowrap",
   });
 
@@ -367,14 +367,14 @@ export default function WorkerPathPanel({
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
       <div className="flex-1 overflow-y-auto">
         {/* Методика */}
-        <div className="px-2 py-1 border-b" style={{ background: "var(--c-tint-blue, #f0f9ff)", fontSize: 10, color: "#0369a1", fontWeight: 600 }}>
+        <div className="px-2 py-1 border-b" style={{ background: "var(--c-tint-blue, #f0f9ff)", fontSize: 10, color: "var(--c-blue, #0369a1)", fontWeight: 600 }}>
           Расчёт времени хода горнорабочего
         </div>
 
         {/* Статус учёта задымления */}
         {fireCalcDone && (
           <div className="px-2 py-1 flex items-center gap-1.5 border-b" style={{ background: "var(--c-tint-amber, #fff7ed)", borderColor: "#fed7aa" }}>
-            <Icon name="Flame" size={11} style={{ color: "#ea580c" }} />
+            <Icon name="Flame" size={11} style={{ color: "var(--c-amber, #ea580c)" }} />
             <span className="text-[10px] text-orange-700 font-medium">Учёт задымления активен — скорость снижена в задымлённых зонах</span>
           </div>
         )}
@@ -449,7 +449,7 @@ export default function WorkerPathPanel({
                     </button>
                     <button
                       onClick={() => setWaypointIds(prev => prev.filter((_, i) => i !== idx))}
-                      style={{ ...btnPickStyle(false), color: "#dc2626", borderColor: "#fca5a5" }}
+                      style={{ ...btnPickStyle(false), color: "var(--c-red, #dc2626)", borderColor: "#fca5a5" }}
                     >×</button>
                   </div>
                 ))}
@@ -494,7 +494,7 @@ export default function WorkerPathPanel({
               onClick={handleCalc}
               disabled={!canCalc}
               className="flex-1 py-1.5 rounded text-[12px] font-semibold text-white disabled:opacity-40"
-              style={{ background: "#0284c7", border: "none", cursor: canCalc ? "pointer" : "default" }}
+              style={{ background: "var(--c-blue-bg, #0284c7)", border: "none", cursor: canCalc ? "pointer" : "default" }}
             >
               <Icon name="Timer" size={13} style={{ display: "inline", marginRight: 5, verticalAlign: "middle" }} />
               Вычислить
@@ -561,7 +561,7 @@ export default function WorkerPathPanel({
                     ["30–45°", 20,  22],
                     [">45°",   14,  15],
                   ].map(([label, rd, fnip], i) => (
-                    <tr key={i} style={{ background: i % 2 === 0 ? "white" : "#f8fafc" }}>
+                    <tr key={i} style={{ background: i % 2 === 0 ? "white" : "var(--c-s2, #f8fafc)" }}>
                       <td className="px-1 py-0.5 text-gray-700">{label}</td>
                       <td className={`px-1 py-0.5 text-right font-medium ${method === "rd" ? "text-blue-700" : "text-gray-500"}`}>{rd}</td>
                       <td className={`px-1 py-0.5 text-right font-medium ${method === "fnip" ? "text-blue-700" : "text-gray-500"}`}>{fnip}</td>

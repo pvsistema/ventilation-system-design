@@ -52,7 +52,7 @@ export function QStep({ n, title, children }: { n: number; title: string; childr
   return (
     <li className="flex items-start gap-3">
       <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center text-[12px] font-bold text-white"
-        style={{ background: "#2563eb" }}>
+        style={{ background: "var(--c-blue-bg, #2563eb)" }}>
         {n}
       </div>
       <div className="text-[12px] text-gray-700 leading-relaxed pt-0.5">

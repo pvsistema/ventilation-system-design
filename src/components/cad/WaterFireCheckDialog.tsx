@@ -156,11 +156,11 @@ export default function WaterFireCheckDialog({
             <button key={t.key} onClick={() => setMode(t.key)}
               className="text-[12px] px-3 py-1.5 rounded-t flex items-center gap-1.5"
               style={{
-                background: mode === t.key ? "#ffffff" : "transparent",
+                background: mode === t.key ? "var(--c-s1, #ffffff)" : "transparent",
                 border: mode === t.key ? "1px solid #d0d8e8" : "1px solid transparent",
                 borderBottom: mode === t.key ? "1px solid #ffffff" : "1px solid transparent",
                 marginBottom: -1,
-                color: mode === t.key ? "#1d4ed8" : "#6b7280",
+                color: mode === t.key ? "var(--c-blue, #1d4ed8)" : "var(--c-t3, #6b7280)",
                 fontWeight: mode === t.key ? 600 : 400,
               }}>
               <Icon name={t.icon} size={13} />
@@ -193,7 +193,7 @@ export default function WaterFireCheckDialog({
 
         {mode === "fire" && fireResult?.error && (
           <div className="px-4 py-2 text-[11px] flex items-center gap-2"
-            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "var(--c-amber, #8a5a00)" }}>
             <Icon name="TriangleAlert" size={14} />
             {fireResult.error}
           </div>
@@ -201,7 +201,7 @@ export default function WaterFireCheckDialog({
 
         {mode === "network" && result.error && (
           <div className="px-4 py-2 text-[11px] flex items-center gap-2"
-            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "var(--c-amber, #8a5a00)" }}>
             <Icon name="TriangleAlert" size={14} />
             {result.error}
           </div>
@@ -224,7 +224,7 @@ export default function WaterFireCheckDialog({
             style={{ background: "var(--c-s3, #f6f8fc)", borderBottom: "1px solid #e0e4ee" }}>
             <span className="text-gray-600">Проверено точек: <b>{result.total}</b></span>
             {result.pumpCount > 0 && (
-              <span style={{ color: "#1d4ed8" }}
+              <span style={{ color: "var(--c-blue, #1d4ed8)" }}
                 title="Напор насосных станций учтён в расчёте давлений">
                 Насосов: {result.pumpCount} (+{result.pumpHeadTotal} м вод. ст.)
               </span>
@@ -275,7 +275,7 @@ export default function WaterFireCheckDialog({
                 ? "Акт формируется по всей сети (режим «Вся сеть»)"
                 : "Сформировать акт проверки ППЗ"}
               className="text-[12px] px-3 py-1.5 rounded text-white flex items-center gap-1.5 disabled:opacity-50"
-              style={{ background: "#2563eb" }}>
+              style={{ background: "var(--c-blue-bg, #2563eb)" }}>
               <Icon name="FileSpreadsheet" size={14} />
               Сформировать акт (Excel)
             </button>

@@ -38,7 +38,7 @@ export default function HelpDialog({ onClose }: Props) {
 
         {/* Боковое меню */}
         <div className="flex flex-col flex-shrink-0 overflow-y-auto"
-          style={{ width: 210, background: "#1a3a6b", minWidth: 180 }}>
+          style={{ width: 210, background: "var(--c-blue-bg, #1a3a6b)", minWidth: 180 }}>
           {/* Логотип */}
           <div className="px-4 py-4 flex-shrink-0" style={{ borderBottom: "1px solid rgba(255,255,255,0.12)" }}>
             <div className="flex items-center gap-2 mb-1">
@@ -120,7 +120,7 @@ export default function HelpDialog({ onClose }: Props) {
             </div>
             <button onClick={onClose}
               className="px-5 py-1.5 rounded text-[12px] font-semibold text-white"
-              style={{ background: "#1a3a6b" }}>
+              style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
               Закрыть
             </button>
           </div>
