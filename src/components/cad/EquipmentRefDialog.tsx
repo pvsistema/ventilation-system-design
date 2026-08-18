@@ -262,8 +262,20 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                     {preview.type === "axial" ? "Осевой" : preview.type === "vmp" ? "ВМП" : "Центробежный"} · Ø{preview.diameter} м · {preview.rpmMin}–{preview.rpmMax} об/мин
                   </div>
                   <div className="flex gap-3 mt-1.5 text-[11px] text-gray-600">
-                    <span>Q: {preview.qMin}–{preview.qMax} м³/с</span>
-                    <span>H: {Math.round(preview.h0)} Па (max)</span>
+                    {/* Паспортный диапазон: с учётом крайних углов лопаток —
+                        минимум по самому закрытому, максимум по самому открытому */}
+                    <span>Q: {(() => {
+                      const a = preview.bladeAngles;
+                      const lo = a.length > 1 ? fanQMax(preview, a[0]) / preview.qMax * preview.qMin : preview.qMin;
+                      const hi = a.length > 1 ? fanQMax(preview, a[a.length - 1]) : preview.qMax;
+                      const f = (v: number) => v >= 10 ? Math.round(v) : Math.round(v * 10) / 10;
+                      return `${f(lo)}–${f(hi)}`;
+                    })()} м³/с</span>
+                    <span>H: {Math.round(
+                      preview.bladeAngles.length > 1
+                        ? fanHAngle(preview, preview.qMin, preview.bladeAngles[preview.bladeAngles.length - 1])
+                        : preview.h0
+                    )} Па (max)</span>
                     {preview.bladeAngles.length > 0 && <span>Углы: {preview.bladeAngles.join(", ")}°</span>}
                     {preview.reverseH0 !== undefined && <span className="text-green-700 font-medium">✓ Реверс</span>}
                   </div>
