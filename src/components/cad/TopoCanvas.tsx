@@ -42,6 +42,7 @@ import { usePrintLayers } from "@/components/cad/topoCanvas/TopoCanvasPrintLayer
 import TopoCanvasSymbolsOverlay from "@/components/cad/topoCanvas/TopoCanvasSymbolsOverlay";
 import { useViewEffects } from "@/components/cad/topoCanvas/TopoCanvasViewEffects";
 import { useCanvasTheme } from "@/hooks/useTheme";
+import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 
 export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
@@ -3306,11 +3307,15 @@ export default function TopoCanvas(props: Props) {
                 const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * _branchObjSF * _indZoomSF;
                 const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * _branchObjSF * _indZoomSF;
                 const opacity = Math.min(1, (view.scale - 0.05) / 0.06);
+                // Подложка под индикаторами — та же, что в canvas-режиме:
+                // без неё подписи ЗС теряются среди выработок.
+                const msBg = msIndBg(sym.msIndBgColor);
+                const msFg = msIndTextColor(msBg);
 
                 return (
                   <g opacity={opacity}>
                     <line x1={px} y1={py} x2={bx} y2={by - boxH / 2}
-                      stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                      stroke={msBg ?? "#8899bb"} strokeWidth={0.7} strokeDasharray="3 2" />
                     <g style={{ cursor: "move" }}
                       onMouseDown={(e) => {
                         if (tool !== "select") return;
@@ -3329,13 +3334,25 @@ export default function TopoCanvas(props: Props) {
                         window.addEventListener("mousemove", onMove);
                         window.addEventListener("mouseup", onUp);
                       }}>
+                      {/* Цветная плашка под текстом — делает ЗС заметной.
+                          Прозрачный прямоугольник нужен и без фона: за него
+                          удобно перетаскивать блок индикаторов. */}
+                      <rect
+                        x={bx - boxW / 2} y={by - boxH / 2}
+                        width={boxW} height={boxH}
+                        rx={Math.min(4 * _indZoomSF, boxH / 3)}
+                        fill={msBg ?? "transparent"}
+                        stroke={msBg ? "white" : "none"}
+                        strokeWidth={msBg ? Math.max(0.5, 1.2 * _indZoomSF) : 0} />
                       {msLines.map((line, i) => (
                         <text key={i}
                           x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                           textAnchor="middle" fontSize={fSize}
-                          fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                          fill={msFg} fontFamily="Segoe UI, sans-serif"
                           fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
-                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                          style={msBg
+                            ? undefined
+                            : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                           {line}
                         </text>
                       ))}
@@ -3396,11 +3413,15 @@ export default function TopoCanvas(props: Props) {
                 const bxF = px + perpXF * (gapF + boxWF / 2) + (sym.fanIndOffsetX ?? 0) * fanDragSF;
                 const byF = py + perpYF * (gapF + boxHF / 2) + (sym.fanIndOffsetY ?? 0) * fanDragSF;
                 const opacityF = Math.min(1, (view.scale - 0.05) / 0.06);
+                // Подложка под подписью вентилятора (по умолчанию синяя) —
+                // та же, что в canvas-режиме.
+                const fanBg = fanIndBg(sym.fanIndBgColor);
+                const fanFg = msIndTextColor(fanBg);
 
                 return (
                   <g opacity={opacityF}>
                     <line x1={px} y1={py} x2={bxF} y2={byF - boxHF / 2}
-                      stroke="#8899bb" strokeWidth={0.7} strokeDasharray="3 2" />
+                      stroke={fanBg ?? "#8899bb"} strokeWidth={0.7} strokeDasharray="3 2" />
                     <g style={{ cursor: "move" }}
                       onMouseDown={(e) => {
                         if (tool !== "select") return;
@@ -3418,12 +3439,23 @@ export default function TopoCanvas(props: Props) {
                         window.addEventListener("mousemove", onMove);
                         window.addEventListener("mouseup", onUp);
                       }}>
+                      {/* Плашка под текстом. Прозрачный прямоугольник нужен
+                          и без фона — за него удобно перетаскивать подпись. */}
+                      <rect
+                        x={bxF - boxWF / 2} y={byF - boxHF / 2}
+                        width={boxWF} height={boxHF}
+                        rx={Math.min(4 * _indZoomSF, boxHF / 3)}
+                        fill={fanBg ?? "transparent"}
+                        stroke={fanBg ? "white" : "none"}
+                        strokeWidth={fanBg ? Math.max(0.5, 1.2 * _indZoomSF) : 0} />
                       {fanLines.map((line, i) => (
                         <text key={i}
                           x={bxF} y={byF - boxHF / 2 + (i + 1) * lineHF}
                           textAnchor="middle" fontSize={fSizeF}
-                          fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
-                          style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
+                          fill={fanFg} fontFamily="Segoe UI, sans-serif"
+                          style={fanBg
+                            ? undefined
+                            : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                           {line}
                         </text>
                       ))}
