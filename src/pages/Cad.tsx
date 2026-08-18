@@ -109,6 +109,7 @@ export default function CadPage() {
     || license.status === "offline_expired"
     || license.status === "clock_rollback";
   const [showLicenseDialog, setShowLicenseDialog] = useState(false);
+  const [showSettingsDialog, setShowSettingsDialog] = useState(false);
 
   // При первом запуске без лицензии показываем диалог активации.
   // То же при блокировке — человек должен увидеть причину и способ исправить.
@@ -4464,7 +4465,8 @@ export default function CadPage() {
                   </button>
                 ))}
                 <div className="mt-auto flex flex-col border-t border-gray-400">
-                  <button className="px-4 py-2 text-left text-[12px] hover:bg-gray-200 flex items-center gap-2">
+                  <button className="px-4 py-2 text-left text-[12px] hover:bg-gray-200 flex items-center gap-2"
+                    onClick={() => { setShowSettingsDialog(true); setActiveRibbon("home"); }}>
                     <Icon name="Settings" size={13} /> Настройки
                   </button>
                   <button className="px-4 py-2 text-left text-[12px] hover:bg-red-100 text-red-600 flex items-center gap-2"
@@ -13160,6 +13162,8 @@ export default function CadPage() {
       computeFireStabilityFacts={computeFireStabilityFacts}
       showLicenseDialog={showLicenseDialog}
       setShowLicenseDialog={setShowLicenseDialog}
+      showSettingsDialog={showSettingsDialog}
+      setShowSettingsDialog={setShowSettingsDialog}
       license={license}
       isDemo={isDemo}
       showMultiBranchProps={showMultiBranchProps}

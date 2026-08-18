@@ -8,6 +8,11 @@ import '@fontsource/ibm-plex-sans/500.css'
 import '@fontsource/ibm-plex-sans/600.css'
 import '@fontsource/ibm-plex-mono/400.css'
 import '@fontsource/ibm-plex-mono/500.css'
+import { applyTheme, getStoredTheme } from './lib/theme'
+
+// Тему применяем ДО первой отрисовки, иначе при тёмной теме на миг
+// мелькнёт белый интерфейс.
+applyTheme(getStoredTheme());
 
 createRoot(document.getElementById("root")!).render(<App />);
 

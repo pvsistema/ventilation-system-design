@@ -41,10 +41,12 @@ import { TopoCanvasIndicators, TopoCanvasHints } from "@/components/cad/topoCanv
 import { usePrintLayers } from "@/components/cad/topoCanvas/TopoCanvasPrintLayers";
 import TopoCanvasSymbolsOverlay from "@/components/cad/topoCanvas/TopoCanvasSymbolsOverlay";
 import { useViewEffects } from "@/components/cad/topoCanvas/TopoCanvasViewEffects";
+import { useCanvasTheme } from "@/hooks/useTheme";
 
 export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
 export default function TopoCanvas(props: Props) {
+  const canvasTheme = useCanvasTheme();
   const {
     nodes, branches, selectedNodeId, selectedBranchId, tool,
     onNodeAdd, onNodeMove, onNodeDragStart, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
@@ -1553,7 +1555,7 @@ export default function TopoCanvas(props: Props) {
     <div ref={containerRef} className="absolute inset-0 overflow-hidden"
       tabIndex={0}
       style={{
-        background: is3D ? "linear-gradient(to bottom, #f0f4f8 0%, #ffffff 60%, #f5f5f5 100%)" : "#ffffff",
+        background: is3D ? canvasTheme.bg3D : canvasTheme.bg2D,
         cursor: cursorStyle,
         outline: "none",
       }}
@@ -2000,10 +2002,10 @@ export default function TopoCanvas(props: Props) {
             : colorMode === "flowQ" ? gradColor(Math.abs(Q), flowColorMin, flowColorMax, flowColorHue)
             : colorMode === "velocityV" ? gradColor(V, velColorMin, velColorMax, velColorHue)
             : colorMode === "section" ? SECTION_KIND_COLORS[sectionKind(b)]
-            : colorMode === "ventsection" ? (sectionColors?.get(b.id) ?? "#ffffff")
-            : colorMode === "none" ? "#ffffff"
+            : colorMode === "ventsection" ? (sectionColors?.get(b.id) ?? canvasTheme.branchFill)
+            : colorMode === "none" ? canvasTheme.branchFill
             : Q > 0 ? velocityColor(V)
-            : "#ffffff";
+            : canvasTheme.branchFill;
 
           // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
           const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;

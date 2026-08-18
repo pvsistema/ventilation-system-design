@@ -17,6 +17,7 @@ import WaterFireCheckDialog from "@/components/cad/WaterFireCheckDialog";
 import EvacRiskDialog from "@/components/cad/EvacRiskDialog";
 import VdsDialog from "@/components/cad/VdsDialog";
 import LicenseDialog from "@/components/LicenseDialog";
+import SettingsDialog from "@/components/cad/SettingsDialog";
 import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
 import VentPipeDialog from "@/components/cad/VentPipeDialog";
 import HelpDialog from "@/components/cad/HelpDialog";
@@ -122,6 +123,9 @@ export interface CadToolDialogsProps {
   // Лицензия
   showLicenseDialog: boolean;
   setShowLicenseDialog: (v: boolean) => void;
+  // Настройки программы
+  showSettingsDialog: boolean;
+  setShowSettingsDialog: (v: boolean) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   license: any;
   isDemo: boolean;
@@ -315,6 +319,11 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           onClose={() => p.setShowLicenseDialog(false)}
           required={p.isDemo && !p.license.info}
         />
+      )}
+
+      {/* ── Настройки программы ─────────────────────────────────────────── */}
+      {p.showSettingsDialog && (
+        <SettingsDialog onClose={() => p.setShowSettingsDialog(false)} />
       )}
 
       {/* ── Групповое редактирование ветвей ────────────────────────────── */}

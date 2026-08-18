@@ -1557,7 +1557,7 @@ body{background:white;font-family:Arial,sans-serif}
           {/* Предпросмотр */}
           <div
             ref={previewContainerRef}
-            className="flex-1 overflow-scroll"
+            className="flex-1 overflow-scroll print-paper"
             style={{ background: "#ffffff", cursor: isDragging ? "grabbing" : "default", position: "relative" }}
             onScroll={syncViewport}
             onWheel={handlePreviewWheel}

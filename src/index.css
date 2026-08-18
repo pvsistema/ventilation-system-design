@@ -51,9 +51,441 @@
   }
 
   body {
-    @apply bg-background text-foreground font-sans;
-    background-color: hsl(220, 20%, 8%);
+    @apply font-sans;
+    background-color: #ffffff;
+    color: #1f2937;
   }
+
+  .dark body {
+    background-color: var(--s-0);
+    color: var(--t-2);
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   ТЁМНАЯ ТЕМА
+   ───────────────────────────────────────────────────────────────────────────
+   Интерфейс написан на «серых» классах Tailwind (bg-white, text-gray-600,
+   border-gray-300 и т.п.) — их около двух тысяч по всей программе. Вместо
+   правки каждого места классы переопределяются здесь один раз для .dark.
+   Плюс: новые экраны получают тёмную тему сами, ничего не забудется.
+
+   Палитра — «инженерный графит»: холодные сине-серые тона, как в AutoCAD и
+   professional-САПР. Не чистый чёрный (утомляет глаза и даёт ореолы на
+   тонких линиях схемы), а мягкий тёмно-синий с ровными ступенями контраста.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.dark {
+  /* Ступени поверхностей: от самой глубокой к самой светлой */
+  --s-0: #10151d; /* фон приложения, холст */
+  --s-1: #171d28; /* панели, карточки, «бумага» */
+  --s-2: #1e2632; /* поднятые блоки, шапки таблиц */
+  --s-3: #262f3e; /* наведение, активные строки */
+  --s-4: #313c4d; /* границы заметные, разделители */
+
+  /* Текст: 4 ступени по убыванию важности */
+  --t-1: #e8edf5; /* заголовки, основные значения */
+  --t-2: #c2ccdb; /* обычный текст */
+  --t-3: #93a1b5; /* подписи, второстепенное */
+  --t-4: #6b7a90; /* подсказки, неактивное */
+
+  --br-1: #2a3444; /* тонкая граница */
+  --br-2: #38455a; /* обычная граница */
+  --br-3: #4a5a72; /* контрастная граница */
+
+  color-scheme: dark;
+}
+
+/* ── Фоны ─────────────────────────────────────────────────────────────── */
+.dark .bg-white {
+  background-color: var(--s-1) !important;
+}
+.dark .bg-gray-50 {
+  background-color: var(--s-1) !important;
+}
+.dark .bg-gray-100 {
+  background-color: var(--s-2) !important;
+}
+.dark .bg-gray-200 {
+  background-color: var(--s-3) !important;
+}
+.dark .bg-gray-300 {
+  background-color: var(--s-4) !important;
+}
+.dark .bg-slate-50 {
+  background-color: var(--s-1) !important;
+}
+.dark .bg-slate-100 {
+  background-color: var(--s-2) !important;
+}
+/* Тёмные фоны в светлой теме были акцентом — в тёмной их наоборот осветляем,
+   иначе они сливаются с общим фоном */
+.dark .bg-gray-700 {
+  background-color: var(--s-3) !important;
+}
+.dark .bg-gray-800 {
+  background-color: var(--s-2) !important;
+}
+.dark .bg-gray-900 {
+  background-color: var(--s-1) !important;
+}
+.dark .bg-slate-700 {
+  background-color: var(--s-3) !important;
+}
+.dark .bg-slate-800 {
+  background-color: var(--s-2) !important;
+}
+
+/* Наведение */
+.dark .hover\:bg-gray-50:hover {
+  background-color: var(--s-2) !important;
+}
+.dark .hover\:bg-gray-100:hover {
+  background-color: var(--s-3) !important;
+}
+.dark .hover\:bg-gray-200:hover {
+  background-color: var(--s-3) !important;
+}
+.dark .hover\:bg-white:hover {
+  background-color: var(--s-2) !important;
+}
+
+/* ── Текст ────────────────────────────────────────────────────────────── */
+.dark .text-gray-900 {
+  color: var(--t-1) !important;
+}
+.dark .text-gray-800 {
+  color: var(--t-1) !important;
+}
+.dark .text-gray-700 {
+  color: var(--t-2) !important;
+}
+.dark .text-gray-600 {
+  color: var(--t-2) !important;
+}
+.dark .text-gray-500 {
+  color: var(--t-3) !important;
+}
+.dark .text-gray-400 {
+  color: var(--t-4) !important;
+}
+.dark .text-gray-300 {
+  color: var(--t-3) !important;
+}
+.dark .text-gray-200 {
+  color: var(--t-2) !important;
+}
+.dark .text-slate-500 {
+  color: var(--t-3) !important;
+}
+.dark .text-slate-400 {
+  color: var(--t-4) !important;
+}
+.dark .text-black {
+  color: var(--t-1) !important;
+}
+
+/* ── Границы ──────────────────────────────────────────────────────────── */
+.dark .border-gray-50 {
+  border-color: var(--br-1) !important;
+}
+.dark .border-gray-100 {
+  border-color: var(--br-1) !important;
+}
+.dark .border-gray-200 {
+  border-color: var(--br-1) !important;
+}
+.dark .border-gray-300 {
+  border-color: var(--br-2) !important;
+}
+.dark .border-gray-400 {
+  border-color: var(--br-3) !important;
+}
+.dark .border-gray-500 {
+  border-color: var(--br-3) !important;
+}
+.dark .divide-gray-100 > * + * {
+  border-color: var(--br-1) !important;
+}
+
+/* ── Цветные акценты ──────────────────────────────────────────────────────
+   Пастельные подложки (bg-blue-50 и др.) на тёмном выглядят выцветшими
+   пятнами. Заменяем на полупрозрачную заливку цветом — акцент читается,
+   но не спорит с фоном. Текст при этом делаем светлее, чтобы был контраст. */
+.dark .bg-blue-50 {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+}
+.dark .bg-blue-100 {
+  background-color: rgba(59, 130, 246, 0.22) !important;
+}
+.dark .bg-green-50 {
+  background-color: rgba(34, 197, 94, 0.13) !important;
+}
+.dark .bg-green-100 {
+  background-color: rgba(34, 197, 94, 0.2) !important;
+}
+.dark .bg-red-50 {
+  background-color: rgba(239, 68, 68, 0.13) !important;
+}
+.dark .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.2) !important;
+}
+.dark .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.13) !important;
+}
+.dark .bg-amber-100 {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+}
+.dark .bg-yellow-50 {
+  background-color: rgba(234, 179, 8, 0.13) !important;
+}
+.dark .bg-yellow-100 {
+  background-color: rgba(234, 179, 8, 0.2) !important;
+}
+.dark .bg-orange-50 {
+  background-color: rgba(249, 115, 22, 0.13) !important;
+}
+.dark .bg-orange-100 {
+  background-color: rgba(249, 115, 22, 0.2) !important;
+}
+.dark .bg-purple-50 {
+  background-color: rgba(168, 85, 247, 0.13) !important;
+}
+.dark .bg-purple-100 {
+  background-color: rgba(168, 85, 247, 0.2) !important;
+}
+.dark .bg-indigo-50 {
+  background-color: rgba(99, 102, 241, 0.13) !important;
+}
+.dark .bg-indigo-100 {
+  background-color: rgba(99, 102, 241, 0.2) !important;
+}
+.dark .bg-cyan-50 {
+  background-color: rgba(6, 182, 212, 0.13) !important;
+}
+.dark .bg-emerald-50 {
+  background-color: rgba(16, 185, 129, 0.13) !important;
+}
+.dark .bg-sky-50 {
+  background-color: rgba(14, 165, 233, 0.13) !important;
+}
+
+.dark .hover\:bg-blue-50:hover {
+  background-color: rgba(59, 130, 246, 0.2) !important;
+}
+.dark .hover\:bg-green-50:hover {
+  background-color: rgba(34, 197, 94, 0.18) !important;
+}
+.dark .hover\:bg-red-50:hover {
+  background-color: rgba(239, 68, 68, 0.18) !important;
+}
+.dark .hover\:bg-amber-50:hover {
+  background-color: rgba(245, 158, 11, 0.18) !important;
+}
+
+/* Тёмные оттенки текста на цветных подложках — осветляем до читаемых */
+.dark .text-blue-900,
+.dark .text-blue-800 {
+  color: #93c5fd !important;
+}
+.dark .text-blue-700,
+.dark .text-blue-600 {
+  color: #7cb8fb !important;
+}
+.dark .text-green-900,
+.dark .text-green-800 {
+  color: #86efac !important;
+}
+.dark .text-green-700,
+.dark .text-green-600 {
+  color: #6ee7a0 !important;
+}
+.dark .text-red-900,
+.dark .text-red-800 {
+  color: #fca5a5 !important;
+}
+.dark .text-red-700,
+.dark .text-red-600 {
+  color: #f98a8a !important;
+}
+.dark .text-amber-900,
+.dark .text-amber-800 {
+  color: #fcd34d !important;
+}
+.dark .text-amber-700,
+.dark .text-amber-600 {
+  color: #fbbf24 !important;
+}
+.dark .text-yellow-800,
+.dark .text-yellow-700 {
+  color: #fde047 !important;
+}
+.dark .text-orange-800,
+.dark .text-orange-700 {
+  color: #fdba74 !important;
+}
+.dark .text-purple-800,
+.dark .text-purple-700 {
+  color: #d8b4fe !important;
+}
+.dark .text-indigo-800,
+.dark .text-indigo-700 {
+  color: #a5b4fc !important;
+}
+.dark .text-emerald-700,
+.dark .text-emerald-600 {
+  color: #6ee7b7 !important;
+}
+
+.dark .border-blue-200 {
+  border-color: rgba(59, 130, 246, 0.35) !important;
+}
+.dark .border-blue-300 {
+  border-color: rgba(59, 130, 246, 0.45) !important;
+}
+.dark .border-green-200 {
+  border-color: rgba(34, 197, 94, 0.35) !important;
+}
+.dark .border-red-200 {
+  border-color: rgba(239, 68, 68, 0.35) !important;
+}
+.dark .border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.35) !important;
+}
+
+/* ── Поля ввода ───────────────────────────────────────────────────────── */
+.dark .cad-input,
+.dark input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.dark textarea,
+.dark select {
+  background-color: var(--s-0) !important;
+  border-color: var(--br-2) !important;
+  color: var(--t-1) !important;
+}
+.dark .cad-input:hover:not(:focus):not([readonly]),
+.dark input:hover:not(:focus):not([readonly]) {
+  border-color: var(--br-3) !important;
+}
+.dark .cad-edit-input:focus {
+  background: var(--s-0) !important;
+}
+.dark input::placeholder,
+.dark textarea::placeholder {
+  color: var(--t-4) !important;
+}
+
+/* ── Тени ─────────────────────────────────────────────────────────────────
+   На тёмном фоне обычные тени не видны — усиливаем, чтобы окна и меню
+   по-прежнему «отрывались» от фона. */
+.dark .shadow-sm {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5) !important;
+}
+.dark .shadow {
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55) !important;
+}
+.dark .shadow-md {
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.6) !important;
+}
+.dark .shadow-lg {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.65) !important;
+}
+.dark .shadow-xl {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.7) !important;
+}
+.dark .shadow-2xl {
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.75) !important;
+}
+
+/* Прокрутка в тёмной теме */
+.dark .cad-toolbar-scroll::-webkit-scrollbar-thumb {
+  background: var(--s-4);
+}
+.dark .cad-toolbar-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--br-3);
+}
+
+/* ── Фоны, заданные прямо в разметке ──────────────────────────────────────
+   Часть панелей и диалогов написана с инлайн-стилем (style="background:#f5f5f5"),
+   а он сильнее любого класса. Перебиваем по значению цвета — так тёмная тема
+   доходит и до этих мест. Исключение — .print-paper: лист печати обязан
+   оставаться белым, его вид должен совпадать с бумагой. */
+.dark [style*="background: #f9f9f9"]:not(.print-paper),
+.dark [style*="background:#f9f9f9"]:not(.print-paper),
+.dark [style*="background: #fafafa"]:not(.print-paper),
+.dark [style*="background:#fafafa"]:not(.print-paper),
+.dark [style*="background: #f5f5f5"]:not(.print-paper),
+.dark [style*="background:#f5f5f5"]:not(.print-paper),
+.dark [style*="background: #ffffff"]:not(.print-paper),
+.dark [style*="background:#ffffff"]:not(.print-paper),
+.dark [style*='background: #fff"']:not(.print-paper) {
+  background-color: var(--s-1) !important;
+}
+.dark [style*="background: #f0f0f0"]:not(.print-paper),
+.dark [style*="background:#f0f0f0"]:not(.print-paper),
+.dark [style*="background: #e8e8e8"]:not(.print-paper),
+.dark [style*="background:#e8e8e8"]:not(.print-paper),
+.dark [style*="background: #eee"]:not(.print-paper) {
+  background-color: var(--s-2) !important;
+}
+/* Тёмный текст, заданный инлайн — иначе останется чёрным на тёмном */
+.dark [style*="color: #1f1f1f"],
+.dark [style*="color:#1f1f1f"],
+.dark [style*="color: #0f172a"],
+.dark [style*="color:#0f172a"],
+.dark [style*="color: #333"],
+.dark [style*="color: #4b5563"] {
+  color: var(--t-2) !important;
+}
+/* Тёмно-синее имя проекта в заголовке окна — на тёмном фоне не читалось */
+.dark [style*="color: #1a3a6b"] {
+  color: #7cb8fb !important;
+}
+/* Инлайн-границы светлых оттенков */
+.dark [style*="1px solid #e5e7eb"],
+.dark [style*="1px solid #e0e0e0"],
+.dark [style*="1px solid #ccc"],
+.dark [style*="1px solid #d0d0d0"],
+.dark [style*="1px solid #c8c8c8"],
+.dark [style*="1px solid #999"] {
+  border-color: var(--br-2) !important;
+}
+
+/* Заголовок окна, лента и панели — серые градиенты «под Windows» */
+.dark [style*="linear-gradient(180deg,#e8e8e8"],
+.dark [style*="linear-gradient(180deg, #e8e8e8"],
+.dark [style*="linear-gradient(180deg,#f5f5f5"],
+.dark [style*="linear-gradient(180deg,#dde4ef"] {
+  background: linear-gradient(180deg, var(--s-2), var(--s-1)) !important;
+  border-bottom-color: var(--br-1) !important;
+}
+/* Голубоватые градиенты — активные/выделенные элементы ленты */
+.dark [style*="linear-gradient(180deg,#e8eef8"],
+.dark [style*="linear-gradient(180deg,#eff6ff"],
+.dark [style*="linear-gradient(180deg,#f0f6ff"] {
+  background: linear-gradient(
+    180deg,
+    rgba(59, 130, 246, 0.22),
+    rgba(59, 130, 246, 0.13)
+  ) !important;
+}
+.dark [style*="1px solid #b8b8b8"],
+.dark [style*="1px solid #a0a0a0"],
+.dark [style*="1px solid #94a3b8"] {
+  border-color: var(--br-2) !important;
+}
+
+/* Лист печати и всё внутри него — всегда белый, в любой теме */
+.print-paper,
+.print-paper * {
+  color-scheme: light;
+}
+
+/* Плавное переключение темы — без «моргания» интерфейса */
+.theme-switching,
+.theme-switching * {
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    color 0.18s ease !important;
 }
 
 /* Анимации */
