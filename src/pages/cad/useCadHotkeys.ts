@@ -118,12 +118,12 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
         && active !== document.body)
         || (active?.isContentEditable ?? false);
 
-      if (e.ctrlKey && (e.key === "z" || e.key === "я" || e.key === "Я")) {
+      if (e.ctrlKey && (e.key === "z" || e.key === "Z" || e.key === "я" || e.key === "Я")) {
         e.preventDefault();
         handleUndo();
         return;
       }
-      if (e.ctrlKey && (e.key === "s" || e.key === "ы" || e.key === "Ы")) {
+      if (e.ctrlKey && (e.key === "s" || e.key === "S" || e.key === "ы" || e.key === "Ы")) {
         e.preventDefault();
         handleSave();
         return;
@@ -221,8 +221,8 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
         return;
       }
 
-      // Ctrl+R — развернуть выбранную ветвь
-      if (e.ctrlKey && (e.key === "r" || e.key === "R") && !isEditing) {
+      // Ctrl+R / Ctrl+К — развернуть выбранную ветвь
+      if (e.ctrlKey && (e.key === "r" || e.key === "R" || e.key === "к" || e.key === "К") && !isEditing) {
         e.preventDefault();
         if (selectedBranchId) handleReverseBranch(selectedBranchId);
         return;
