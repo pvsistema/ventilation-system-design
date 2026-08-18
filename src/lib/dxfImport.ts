@@ -438,10 +438,29 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   for (const c of circles) {
     allAbsCoords.push(Math.abs(c.cx), Math.abs(c.cy), Math.abs(c.cz));
   }
+  // Единицы определяем по РАЗМАХУ чертежа (габаритам), а не по абсолютным
+  // координатам. Маркшейдерские планы ведутся в госсистеме координат, где
+  // X ≈ 2 313 000 м, Y ≈ 369 000 м — это МЕТРЫ, хотя число огромное. Раньше
+  // такой файл принимался за миллиметры и вся схема сжималась в 1000 раз:
+  // выработка длиной 10 м превращалась в 1 см, все узлы слипались в один
+  // (порог слияния 0.10 м) и импорт давал 0 ветвей.
+  // Размах же от системы координат не зависит: у шахтного поля в метрах он
+  // сотни-тысячи, в миллиметрах — сотни тысяч.
+  const spanOf = (get: (s: Seg) => number[]): number => {
+    const vals: number[] = [];
+    for (const s of segments) vals.push(...get(s));
+    for (const c of circles) vals.push(c.cx, c.cy, c.cz);
+    if (vals.length === 0) return 0;
+    return Math.max(...vals) - Math.min(...vals);
+  };
+  const spanX = spanOf(s => [s.x1, s.x2]);
+  const spanY = spanOf(s => [s.y1, s.y2]);
+  const span = Math.max(spanX, spanY);
   const maxCoord = allAbsCoords.length > 0 ? Math.max(...allAbsCoords) : 0;
   let scale = 1;
-  if (maxCoord > 100000) { scale = 0.001; warnings.push("Единицы: мм → конвертированы в м."); }
-  else if (maxCoord > 10000) { scale = 0.01; warnings.push("Единицы: см → конвертированы в м."); }
+  if (span > 200000) { scale = 0.001; warnings.push("Единицы: мм → конвертированы в м."); }
+  else if (span > 20000) { scale = 0.01; warnings.push("Единицы: см → конвертированы в м."); }
+  debugLines.push(`Размах чертежа: X=${spanX.toFixed(1)}, Y=${spanY.toFixed(1)} → единицы ${scale === 1 ? "м" : scale === 0.01 ? "см" : "мм"} (масштаб ${scale}), макс. координата ${maxCoord.toFixed(0)}`);
   const toM = (v: number) => v * scale;
 
   // ── Определяем коэффициент косоугольной проекции ─────────────────────────

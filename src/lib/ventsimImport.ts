@@ -262,11 +262,17 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
 
   // Масштабирование координат: Ventsim может хранить в мм
   const allCoords = [...nodeCoords.values()];
+  // Единицы определяем по РАЗМАХУ (габаритам) схемы, а не по абсолютным
+  // координатам: в госсистеме координат X ≈ 2 313 000 — это метры, а не
+  // миллиметры. Иначе схема сжимается в 1000 раз и все узлы слипаются.
   const maxCoord = Math.max(...allCoords.flatMap(c => [Math.abs(c.x), Math.abs(c.y)]));
+  const spanX = allCoords.length ? Math.max(...allCoords.map(c => c.x)) - Math.min(...allCoords.map(c => c.x)) : 0;
+  const spanY = allCoords.length ? Math.max(...allCoords.map(c => c.y)) - Math.min(...allCoords.map(c => c.y)) : 0;
+  const span = Math.max(spanX, spanY);
   let coordScale = 1;
-  if (maxCoord > 100000) { coordScale = 0.001; warnings.push("Координаты в мм → переведены в м."); }
-  else if (maxCoord > 10000) { coordScale = 0.01; warnings.push("Координаты в см → переведены в м."); }
-  debug.push(`maxCoord=${maxCoord.toFixed(0)}, coordScale=${coordScale}`);
+  if (span > 200000) { coordScale = 0.001; warnings.push("Координаты в мм → переведены в м."); }
+  else if (span > 20000) { coordScale = 0.01; warnings.push("Координаты в см → переведены в м."); }
+  debug.push(`Размах: X=${spanX.toFixed(1)}, Y=${spanY.toFixed(1)}, maxCoord=${maxCoord.toFixed(0)}, coordScale=${coordScale}`);
 
   const hasRealCoords = allCoords.some(c => c.x !== 0 || c.y !== 0);
   const coordLayout: Map<string, { x: number; y: number }> = hasRealCoords
@@ -369,4 +375,3 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
     debug: debug.join("\n"),
   };
 }
-
