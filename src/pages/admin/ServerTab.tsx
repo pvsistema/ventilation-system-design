@@ -326,14 +326,17 @@ export default function ServerTab({
           Обновление — одной командой или автоматически по расписанию.
         </div>
         <ol className="text-[11px] text-blue-900/90 leading-relaxed mt-2.5 space-y-1.5 list-decimal pl-4">
-          <li>Beget → «Домены» → направьте домен на новый сайт.</li>
-          <li>Beget → «Сайты» → «Приложения» → <span className="font-semibold">Python 3.11</span>.</li>
-          <li>По SSH загрузите программу:
+          <li>Хостинг → «Управление сайтами» → у сайта «⋮» → «Приложения» →
+            <span className="font-semibold"> Python 3.11</span>.</li>
+          <li>Настройки → включить доступ по SSH.</li>
+          <li>В терминале загрузить программу в папку сайта:
             <span className="font-mono block mt-1 text-[10px] bg-white/70 rounded px-2 py-1 break-all">
-              git clone https://github.com/pvsistema/ventilation-system-design.git pvs-backup
+              git clone https://github.com/pvsistema/ventilation-system-design.git public_html
             </span>
           </li>
-          <li>Beget → «Домены» → включите бесплатный SSL (Let's Encrypt).</li>
+          <li>Установить библиотеки и перезапустить приложение
+            (команды в инструкции).</li>
+          <li>Домены → у домена → SSL → Let's Encrypt (бесплатно, обязательно).</li>
           <li>Впишите адрес домена сюда → «Проверить связь» → «Сохранить».</li>
         </ol>
         <div className="text-[10.5px] text-blue-900/80 mt-2.5 bg-white/60 rounded px-2.5 py-1.5">
@@ -344,8 +347,8 @@ export default function ServerTab({
         <div className="text-[10.5px] text-blue-900/70 mt-2 pt-2 border-t border-blue-200">
           Пошаговая инструкция с готовыми командами под ваш аккаунт —
           <span className="font-mono"> backup-server\beget\УСТАНОВКА.md</span>.
-          Обновление резерва после правок:
-          <span className="font-mono"> bash ~/pvs-backup/update.sh</span>
+          Обновление резерва после правок — одна команда
+          <span className="font-mono"> update.sh</span> или задание в планировщике Beget.
         </div>
       </div>
 
