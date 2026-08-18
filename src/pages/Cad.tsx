@@ -447,7 +447,7 @@ export default function CadPage() {
   // (там лежат подложки PNG/JPG как dataURL — не теряются при обновлении страницы).
   const [horizons, setHorizons] = useState<Horizon[]>(() => {
     const DEFAULT_OVERVIEW: Horizon = {
-      id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
+      id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "var(--c-t3, #6b7280)", visible: true,
       printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
         orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
         period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
@@ -2764,7 +2764,7 @@ export default function CadPage() {
       // Гарантируем наличие "Общего вида" при открытии любого проекта
       const withOverview = loaded.some(h => h.id === OVERVIEW_HORIZON_ID)
         ? loaded
-        : [{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
+        : [{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "var(--c-t3, #6b7280)", visible: true,
             printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
               orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
               period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
@@ -2952,7 +2952,7 @@ export default function CadPage() {
     setTextBlocks([]);
 
     // ── Горизонты — сброс к одному «Общий вид» ──
-    setHorizons([{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "#6b7280", visible: true,
+    setHorizons([{ id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "var(--c-t3, #6b7280)", visible: true,
       printLayer: { visible: true, title: "Общий вид вентиляционной схемы", scale: "авто",
         orgName: "", approverTitle: "", approverName: "", year: new Date().getFullYear().toString(),
         period: "", developer: "", checker: "", sheetNum: "1", sheetTotal: "1",
@@ -4380,7 +4380,7 @@ export default function CadPage() {
   return (
     <>
     <div className="w-full flex flex-col"
-      style={{ background: "#f0f0f0", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "#1f1f1f", height: "100dvh" }}>
+      style={{ background: "var(--c-s3, #f0f0f0)", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "var(--c-t1, #1f1f1f)", height: "100dvh" }}>
 
       {/* ═══ TITLE BAR ════════════════════════════════════════════════════ */}
       <CadTitleBar
@@ -4394,7 +4394,7 @@ export default function CadPage() {
       {/* ── Демо-баннер ────────────────────────────────────────────────── */}
       {isDemo && (
         <div className="flex items-center justify-between px-3 py-1 text-[11px] font-medium select-none"
-          style={{ background: "#fef3c7", borderBottom: "1px solid #fcd34d", color: "#92400e" }}>
+          style={{ background: "var(--c-tint-amber2, #fef3c7)", borderBottom: "1px solid #fcd34d", color: "#92400e" }}>
           <span>⚠ Демо-режим: ограничено 20 узлов, нет сохранения, печати и расчётов аварий</span>
           <button onClick={() => setShowLicenseDialog(true)}
             className="ml-3 px-2 py-0.5 rounded text-[10px] font-semibold text-white flex-shrink-0"
@@ -4406,7 +4406,7 @@ export default function CadPage() {
 
       {/* ═══ RIBBON TABS ══════════════════════════════════════════════════ */}
       <div className="flex items-end h-7 px-1 gap-0.5"
-        style={{ background: "#f0f0f0", borderBottom: "1px solid #b8b8b8" }}>
+        style={{ background: "var(--c-s3, #f0f0f0)", borderBottom: "1px solid var(--c-b3, #b8b8b8)" }}>
         <RibbonTabBtn label="Файл" active={activeRibbon === "file"} onClick={() => setActiveRibbon("file")} fileStyle />
         <RibbonTabBtn label="Главная" active={activeRibbon === "home"} onClick={() => selectRibbon("home")} />
         <RibbonTabBtn label="Схема" active={activeRibbon === "vent"} onClick={() => selectRibbon("vent")} />
@@ -4449,9 +4449,9 @@ export default function CadPage() {
           <div className="fixed inset-0 z-50" onClick={() => setActiveRibbon("home")}>
             <div className="absolute top-14 left-0 flex shadow-xl border border-gray-300"
               onClick={(e) => e.stopPropagation()}
-              style={{ background: "#f9f9f9", minHeight: 420, width: 580 }}>
+              style={{ background: "var(--c-s2, #f9f9f9)", minHeight: 420, width: 580 }}>
               {/* Левая боковая панель */}
-              <div className="w-36 flex flex-col text-xs border-r border-gray-300" style={{ background: "#e8e8e8" }}>
+              <div className="w-36 flex flex-col text-xs border-r border-gray-300" style={{ background: "var(--c-s4, #e8e8e8)" }}>
                 {sections.map((item) => (
                   <button key={item.id}
                     onClick={() => setFileSectionState(item.id)}
@@ -4486,7 +4486,7 @@ export default function CadPage() {
                     <button
                       onClick={handleNewProject}
                       className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-gray-200 group">
-                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400" style={{ background: "#fff" }}>
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400" style={{ background: "var(--c-s1, #fff)" }}>
                         <Icon name="FilePlus" size={22} />
                       </div>
                       <div>
@@ -4563,7 +4563,7 @@ export default function CadPage() {
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Открыть проект</div>
                     <button onClick={handleOpen}
                       className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-gray-200 group">
-                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400" style={{ background: "#fff" }}>
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-blue-400" style={{ background: "var(--c-s1, #fff)" }}>
                         <Icon name="FolderOpen" size={22} className="text-blue-600" />
                       </div>
                       <div>
@@ -4590,7 +4590,7 @@ export default function CadPage() {
                     </div>
                     <button onClick={() => { handleSave(); setActiveRibbon("home"); }}
                       className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group mb-2">
-                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#dbeafe" }}>
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "var(--c-tint-blue2, #dbeafe)" }}>
                         <Icon name="Save" size={22} className="text-blue-600" />
                       </div>
                       <div>
@@ -4610,7 +4610,7 @@ export default function CadPage() {
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Сохранить как</div>
                     <button onClick={() => { handleSaveAs(); setActiveRibbon("home"); }}
                       className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-green-50 border border-gray-200 group mb-2">
-                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-green-400" style={{ background: "#f0fdf4" }}>
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-gray-300 group-hover:border-green-400" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
                         <Icon name="SaveAll" size={22} className="text-green-600" />
                       </div>
                       <div>
@@ -4620,7 +4620,7 @@ export default function CadPage() {
                     </button>
                     <button onClick={() => { handleSave(); setActiveRibbon("home"); }}
                       className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 border border-gray-200 group">
-                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "#fff" }}>
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-s1, #fff)" }}>
                         <Icon name="FileJson" size={16} className="text-blue-600" />
                       </div>
                       <div>
@@ -4637,7 +4637,7 @@ export default function CadPage() {
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Печать схемы</div>
                     <button onClick={() => { openPrintDialog(); setActiveRibbon("home"); }}
                       className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group mb-2">
-                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "var(--c-tint-blue, #eff6ff)" }}>
                         <Icon name="Printer" size={22} className="text-blue-600" />
                       </div>
                       <div>
@@ -4649,7 +4649,7 @@ export default function CadPage() {
                     <div className="text-[13px] font-semibold mb-2 mt-4 pb-1 border-b border-gray-300">Отчёты</div>
                     <button onClick={() => { handlePrintVentPipeReport(); setActiveRibbon("home"); }}
                       className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group mb-2">
-                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
+                      <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "var(--c-tint-blue, #eff6ff)" }}>
                         <Icon name="Wind" size={22} className="text-blue-600" />
                       </div>
                       <div>
@@ -4686,7 +4686,7 @@ export default function CadPage() {
                     </button>
                     <button onClick={() => { setActiveRibbon("home"); setShowCsvExport(true); }}
                       className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-green-50 border border-gray-200 group mb-1">
-                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "#f0fdf4" }}>
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
                         <Icon name="Table" size={16} className="text-green-600" />
                       </div>
                       <div>
@@ -4711,7 +4711,7 @@ export default function CadPage() {
                           href={INSTALLER_URL}
                           rel="noopener"
                           className="w-full flex items-center gap-3 px-3 py-3 text-left rounded hover:bg-blue-50 border border-blue-200 group no-underline">
-                          <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "#eff6ff" }}>
+                          <div className="w-10 h-10 flex items-center justify-center rounded border border-blue-300 group-hover:border-blue-500" style={{ background: "var(--c-tint-blue, #eff6ff)" }}>
                             <Icon name="Download" size={22} className="text-blue-600" />
                           </div>
                           <div>
@@ -4774,7 +4774,7 @@ export default function CadPage() {
                     )}
                     <button onClick={() => { setShowLicenseDialog(true); setActiveRibbon("home"); }}
                       className="w-full flex items-center gap-3 px-3 py-2.5 text-left rounded hover:bg-blue-50 border border-blue-200 group">
-                      <div className="w-9 h-9 flex items-center justify-center rounded border border-blue-300" style={{ background: "#dbeafe" }}>
+                      <div className="w-9 h-9 flex items-center justify-center rounded border border-blue-300" style={{ background: "var(--c-tint-blue2, #dbeafe)" }}>
                         <Icon name="KeyRound" size={18} className="text-blue-600" />
                       </div>
                       <div>
@@ -4926,7 +4926,7 @@ export default function CadPage() {
       {/* ═══ RIBBON CONTENT: СПРАВОЧНИКИ ══════════════════════════════════ */}
       {activeRibbon === "general" && !ribbonCollapsed && (
       <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
-        style={{ background: "linear-gradient(180deg,#fafafa,#ececec)", borderBottom: "1px solid #b8b8b8" }}>
+        style={{ background: "linear-gradient(180deg,var(--c-s2, #fafafa),var(--c-s3, #ececec))", borderBottom: "1px solid var(--c-b3, #b8b8b8)" }}>
         <RibbonGroup label="Вентиляция">
           <div className="flex items-stretch gap-1">
             <RibbonBigBtn icon="Wind" label="Вентиляторы" sublabel="" onClick={() => { setEquipRefTab("fans"); setShowEquipRef(true); }} />
@@ -4962,7 +4962,7 @@ export default function CadPage() {
       {/* ═══ RIBBON CONTENT: АВАРИИ ════════════════════════════════════════ */}
       {activeRibbon === "involve" && !ribbonCollapsed && (
       <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
-        style={{ background: "linear-gradient(180deg,#fff5f5,#fce8e8)", borderBottom: "1px solid #fca5a5" }}>
+        style={{ background: "linear-gradient(180deg,var(--c-tint-red, #fff5f5),#fce8e8)", borderBottom: "1px solid #fca5a5" }}>
 
         {/* ── Группа: Пожар ── */}
         <RibbonGroup label="Пожар">
@@ -5628,9 +5628,9 @@ export default function CadPage() {
             <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
               <div className="font-semibold" style={{ color: "#b91c1c" }}>T очага: {safeFixed(fireResult.fireTemp, 1)} °C</div>
               <div style={{ color: "#c2410c" }}>h_t = {safeFixed(fireResult.fireThermalDep, 1)} Па</div>
-              <div style={{ color: "#374151" }}>Задымлено: {fireResult.branches.size} вет.</div>
+              <div style={{ color: "var(--c-t2, #374151)" }}>Задымлено: {fireResult.branches.size} вет.</div>
               {fireResult.reversedBranches.size > 0
-                ? <div className="font-semibold px-1 rounded" style={{ background: "#fef2f2", color: "#dc2626", border: "1px solid #fca5a5" }}>⚠ Опрокид.: {fireResult.reversedBranches.size}</div>
+                ? <div className="font-semibold px-1 rounded" style={{ background: "var(--c-tint-red, #fef2f2)", color: "#dc2626", border: "1px solid #fca5a5" }}>⚠ Опрокид.: {fireResult.reversedBranches.size}</div>
                 : <div style={{ color: "#15803d" }}>✓ Струя устойчива</div>
               }
             </div>
@@ -5643,7 +5643,7 @@ export default function CadPage() {
             <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
               <div className="font-semibold" style={{ color: "#92400e" }}>Q_тнт: {explosionResult.q_tnt_kg} кг</div>
               <div style={{ color: "#c2410c" }}>ΔP_max = {explosionResult.maxDeltaP_kPa} кПа</div>
-              <div style={{ color: "#374151" }}>D = {explosionResult.waveFrontSpeed_ms} м/с</div>
+              <div style={{ color: "var(--c-t2, #374151)" }}>D = {explosionResult.waveFrontSpeed_ms} м/с</div>
               <div style={{ color: "#b91c1c" }}>R_лет. = {explosionResult.zones[0]?.radius_m ?? 0} м</div>
             </div>
           </RibbonGroup>
@@ -5654,7 +5654,7 @@ export default function CadPage() {
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
       {activeRibbon !== "general" && activeRibbon !== "involve" && !ribbonCollapsed && (
       <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
-        style={{ background: "linear-gradient(180deg,#f5f5f5,#e8e8e8)", borderBottom: "1px solid #b0b0b0" }}>
+        style={{ background: "linear-gradient(180deg,var(--c-s2, #f5f5f5),var(--c-s4, #e8e8e8))", borderBottom: "1px solid #b0b0b0" }}>
 
         {/* ── Группа: Объекты ── */}
         <RibbonGroup label="Объекты">
@@ -5712,7 +5712,7 @@ export default function CadPage() {
           const hasActive = tool === "symbol" && !!activeLt;
 
           return (
-            <div className="relative flex-shrink-0 h-full" style={{ borderRight: "1px solid #d0d0d0" }}>
+            <div className="relative flex-shrink-0 h-full" style={{ borderRight: "1px solid var(--c-b2, #d0d0d0)" }}>
               {/* ── Кнопка-триггер + встроенная превью-сетка (как «Объекты на выработках» в Аэросети) ── */}
               <div className="flex flex-col h-full">
                 <div className="flex-1 flex items-stretch gap-1 px-1.5 pt-1 min-h-0">
@@ -5856,7 +5856,7 @@ export default function CadPage() {
 
                     {/* Шапка */}
                     <div className="flex items-center justify-between px-3 py-1.5 sticky top-0 z-10"
-                      style={{ background: "linear-gradient(180deg,#e8eef8,#dde7f4)", borderBottom: "1px solid #c8d4e8" }}>
+                      style={{ background: "linear-gradient(180deg,var(--c-tint-blue, #e8eef8),#dde7f4)", borderBottom: "1px solid #c8d4e8" }}>
                       <span className="text-[11px] font-semibold text-gray-700">Условные обозначения</span>
                       <button onClick={() => { setShowUOPanel(false); setUoTooltip(null); }}
                         className="text-gray-400 hover:text-gray-700 w-5 h-5 flex items-center justify-center text-[14px] leading-none rounded hover:bg-gray-200">×</button>
@@ -5867,7 +5867,7 @@ export default function CadPage() {
                       {symGroups.map(({ label, items }) => (
                         <div key={label}>
                           <div className="text-[8.5px] font-semibold uppercase tracking-wide px-2 py-[3px]"
-                            style={{ background: "#f0f3f8", borderTop: "1px solid #e2e8f2", borderBottom: "1px solid #e2e8f2", color: "#64748b" }}>
+                            style={{ background: "#f0f3f8", borderTop: "1px solid #e2e8f2", borderBottom: "1px solid #e2e8f2", color: "var(--c-t3, #64748b)" }}>
                             {label}
                           </div>
                           <div style={{ display: "flex", flexWrap: "wrap", gap: 1, padding: "3px 4px" }}>
@@ -5996,7 +5996,7 @@ export default function CadPage() {
               <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", color: (showPositions || posColorInner || posColorOuter) ? "#7c3aed" : "#374151", fontWeight: 500 }}>
                 <div>ПЛА</div>
               </div>
-              <Icon name="ChevronDown" size={9} style={{ color: "#9ca3af", marginTop: -1 }} />
+              <Icon name="ChevronDown" size={9} style={{ color: "var(--c-t4, #9ca3af)", marginTop: -1 }} />
             </button>
 
             {showPlaPanel && (
@@ -6004,14 +6004,14 @@ export default function CadPage() {
                 style={{
                   position: "fixed", zIndex: 9999,
                   top: 160, left: "auto",
-                  background: "white", border: "1px solid #d1d5db",
+                  background: "white", border: "1px solid var(--c-b2, #d1d5db)",
                   borderRadius: 6, boxShadow: "0 4px 16px rgba(0,0,0,0.15)",
                   minWidth: 220, padding: "8px 0",
                   fontSize: 12, color: "#1a1a1a",
                 }}
                 onMouseDown={e => e.stopPropagation()}
               >
-                <div style={{ padding: "3px 12px 5px", fontSize: 10, fontWeight: 700, color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                <div style={{ padding: "3px 12px 5px", fontSize: 10, fontWeight: 700, color: "var(--c-t3, #6b7280)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                   Отображение
                 </div>
 
@@ -6023,8 +6023,8 @@ export default function CadPage() {
                   <span>Позиции</span>
                 </label>
 
-                <div style={{ margin: "4px 12px", borderTop: "1px solid #f0f0f0" }} />
-                <div style={{ padding: "3px 12px 5px", fontSize: 10, fontWeight: 700, color: "#6b7280", letterSpacing: "0.05em", textTransform: "uppercase" }}>
+                <div style={{ margin: "4px 12px", borderTop: "1px solid var(--c-b1, #f0f0f0)" }} />
+                <div style={{ padding: "3px 12px 5px", fontSize: 10, fontWeight: 700, color: "var(--c-t3, #6b7280)", letterSpacing: "0.05em", textTransform: "uppercase" }}>
                   Окраска ветвей
                 </div>
 
@@ -6044,10 +6044,10 @@ export default function CadPage() {
                   <span>Цвет позиции снаружи</span>
                 </label>
 
-                <div style={{ margin: "4px 12px", borderTop: "1px solid #f0f0f0" }} />
+                <div style={{ margin: "4px 12px", borderTop: "1px solid var(--c-b1, #f0f0f0)" }} />
                 <button onClick={() => setShowPlaPanel(false)}
                   style={{ display: "block", width: "calc(100% - 24px)", margin: "2px 12px 4px", padding: "3px 0",
-                    fontSize: 11, color: "#6b7280", background: "none", border: "none", cursor: "pointer", textAlign: "center" }}>
+                    fontSize: 11, color: "var(--c-t3, #6b7280)", background: "none", border: "none", cursor: "pointer", textAlign: "center" }}>
                   Закрыть
                 </button>
               </div>
@@ -6085,7 +6085,7 @@ export default function CadPage() {
                 onMouseLeave={e => { if (!showSolverParams) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}
                 title="Параметры расчёта">
                 <Icon name="Settings" size={20} className="text-gray-500" />
-                <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "#6b7280", marginTop: 2 }}>Параметры</div>
+                <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "var(--c-t3, #6b7280)", marginTop: 2 }}>Параметры</div>
               </button>
               {showSolverParams && (
                 <div
@@ -6265,8 +6265,8 @@ export default function CadPage() {
                   <Icon name={solveResult.ok ? "CircleCheck" : "CircleAlert"} size={12} />
                   {solveResult.ok ? "Сошлось" : "Не сошлось"}
                 </div>
-                <div style={{ color: "#64748b" }}>Ит: {solveResult.iterations}</div>
-                <div style={{ color: "#64748b" }}>|ΔH|: {solveResult.maxDeltaH?.toExponential(2)}</div>
+                <div style={{ color: "var(--c-t3, #64748b)" }}>Ит: {solveResult.iterations}</div>
+                <div style={{ color: "var(--c-t3, #64748b)" }}>|ΔH|: {solveResult.maxDeltaH?.toExponential(2)}</div>
               </div>
             )}
         </RibbonGroup>
@@ -6353,7 +6353,7 @@ export default function CadPage() {
                   <button
                     onClick={() => { setCompareResult(null); setCompareSelectedId(null); }}
                     className="px-1.5 py-0.5 rounded text-[9px] font-medium"
-                    style={{ background: "#fee2e2", color: "#dc2626" }}>
+                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "#dc2626" }}>
                     Сбросить
                   </button>
                 </div>
@@ -6388,7 +6388,7 @@ export default function CadPage() {
         {!leftPanelOpen && (
           <button onClick={() => setLeftPanelOpen(true)}
             className="flex-shrink-0 flex items-center justify-center w-6 h-full border-r"
-            style={{ background: "#f5f5f5", borderColor: "#b8b8b8", color: "#374151", cursor: "pointer" }}
+            style={{ background: "var(--c-s2, #f5f5f5)", borderColor: "var(--c-b3, #b8b8b8)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
             title="Показать панель свойств">
             <Icon name="PanelLeftOpen" size={14} />
           </button>
@@ -6397,7 +6397,7 @@ export default function CadPage() {
         {/* ── ВЕРТИКАЛЬНЫЕ ВКЛАДКИ СЛЕВА ────────────────────────────── */}
         {leftPanelOpen && (<>
         <div className="flex flex-col flex-shrink-0"
-          style={{ width: 24, background: "#e8e8e8", borderRight: "1px solid #b8b8b8", overflow: "hidden" }}>
+          style={{ width: 24, background: "var(--c-s4, #e8e8e8)", borderRight: "1px solid var(--c-b3, #b8b8b8)", overflow: "hidden" }}>
           {(selectedNodeId || selectedBranchId || fanSymbolBranchId) && (selectedNodeId
             ? ([
                 { id: "params", label: "Параметры" },
@@ -6457,10 +6457,10 @@ export default function CadPage() {
 
         {/* ── ПАНЕЛЬ СВОЙСТВ ─────────────────────────────────────────── */}
         <div className="flex flex-col flex-shrink-0"
-          style={{ width: leftPanelWidth, background: "#ffffff", borderRight: "1px solid #b8b8b8" }}>
+          style={{ width: leftPanelWidth, background: "var(--c-s1, #ffffff)", borderRight: "1px solid var(--c-b3, #b8b8b8)" }}>
 
           {/* Селектор объекта */}
-          <div className="px-1 py-1" style={{ borderBottom: "1px solid #d0d0d0" }}>
+          <div className="px-1 py-1" style={{ borderBottom: "1px solid var(--c-b2, #d0d0d0)" }}>
             <div className="flex items-center gap-1">
               <button className="w-4 h-4 hover:bg-black/10 flex items-center justify-center">
                 <svg width="8" height="8" viewBox="0 0 8 8"><path d="M5 1 L1 4 L5 7" stroke="#444" fill="none" strokeWidth="1.2" /></svg>
@@ -6489,7 +6489,7 @@ export default function CadPage() {
                 <option value="ventsections">Участки</option>
                 {/* Разделитель: «Проверка» — отдельный по смыслу раздел (аудит схемы),
                     поэтому визуально отделяем его от разделов отображения. */}
-                <option disabled style={{ color: "#d1d5db" }}>──────────</option>
+                <option disabled style={{ color: "var(--c-t4, #d1d5db)" }}>──────────</option>
                 <option value="check">Проверка</option>
               </select>
             </div>
@@ -6522,7 +6522,7 @@ export default function CadPage() {
               {(activeSide === "topology" || activeSide === "general") && (
                 <button onClick={() => setShowRenumberDialog(true)}
                   className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
-                  style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
+                  style={{ background: "none", border: "1px solid var(--c-b2, #c8c8c8)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
                   title="Автонумерация объектов">
                   <Icon name="Hash" size={12} />
                   Перенумеровать
@@ -6530,7 +6530,7 @@ export default function CadPage() {
               )}
               <button onClick={() => setLeftPanelOpen(false)}
                 className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
-                style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
+                style={{ background: "none", border: "1px solid var(--c-b2, #c8c8c8)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
                 title="Скрыть панель свойств">
                 <Icon name="PanelLeftClose" size={12} />
                 Свернуть
@@ -6843,7 +6843,7 @@ export default function CadPage() {
                   <span>{label}</span>
                   {count > 0 && (
                     <span className="absolute top-0.5 right-1 text-[9px] font-bold px-1 rounded-full"
-                      style={{ background: "#fee2e2", color: "#dc2626" }}>
+                      style={{ background: "var(--c-tint-red2, #fee2e2)", color: "#dc2626" }}>
                       {count}
                     </span>
                   )}
@@ -6905,7 +6905,7 @@ export default function CadPage() {
                 <div className="flex flex-col h-full overflow-hidden" style={{ fontSize: 11 }}>
 
                   {/* Шапка */}
-                  <div className="px-2 py-1.5 flex items-center gap-1.5" style={{ background: totalIssues > 0 ? "#fff7ed" : "#f0fdf4", borderBottom: "1px solid #e5e7eb" }}>
+                  <div className="px-2 py-1.5 flex items-center gap-1.5" style={{ background: totalIssues > 0 ? "#fff7ed" : "#f0fdf4", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                     <Icon name={totalIssues > 0 ? "AlertTriangle" : "CheckCircle"} size={13}
                       className={totalIssues > 0 ? "text-amber-500" : "text-green-500"} />
                     <span className="text-[11px] font-semibold text-gray-700">
@@ -6915,7 +6915,7 @@ export default function CadPage() {
 
                   {truncated && (
                     <div className="px-2 py-1 text-[10px] flex items-center gap-1"
-                      style={{ background: "#fffbeb", color: "#b45309", borderBottom: "1px solid #fde68a" }}>
+                      style={{ background: "var(--c-tint-amber, #fffbeb)", color: "#b45309", borderBottom: "1px solid #fde68a" }}>
                       <Icon name="Info" size={11} className="flex-shrink-0" />
                       Показаны первые результаты — устраните их и запустите проверку повторно.
                     </div>
@@ -6923,8 +6923,8 @@ export default function CadPage() {
 
                   {/* Навигация — Узлы */}
                   <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
-                    style={{ background: "#f3f4f6" }}>Узлы</div>
-                  <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
+                    style={{ background: "var(--c-s3, #f3f4f6)" }}>Узлы</div>
+                  <div className="flex" style={{ background: "var(--c-s3, #f3f4f6)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                     {navBtn("near",     "Несоед.", tabCounts.near,     "GitMerge")}
                     {navBtn("isolated", "Тупики",  tabCounts.isolated, "Unlink")}
                     {navBtn("dupes",    "Дубли",   tabCounts.dupes,    "Copy")}
@@ -6932,8 +6932,8 @@ export default function CadPage() {
 
                   {/* Навигация — Ветви */}
                   <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
-                    style={{ background: "#f3f4f6" }}>Ветви</div>
-                  <div className="flex" style={{ background: "#f3f4f6", borderBottom: "1px solid #e5e7eb" }}>
+                    style={{ background: "var(--c-s3, #f3f4f6)" }}>Ветви</div>
+                  <div className="flex" style={{ background: "var(--c-s3, #f3f4f6)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                     {navBtn("dupbranch",      "Дубли",   tabCounts.dupbranch,     "CopyPlus")}
                     {navBtn("zeroR",          "R = 0",   tabCounts.zeroR,         "CircleSlash")}
                     {navBtn("zeroLen",        "L = 0",   tabCounts.zeroLen,       "MoveHorizontal")}
@@ -6950,7 +6950,7 @@ export default function CadPage() {
                   {/* ── Вкладка: Несоединённые близкие узлы ── */}
                   {checkTab === "near" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                         <div className="text-[10px] text-gray-500 mb-1">Узлы близки в пространстве (X, Y, Z), но не соединены ветвью.</div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-gray-600 flex-shrink-0">Порог:</span>
@@ -6967,7 +6967,7 @@ export default function CadPage() {
                       <div className="flex-1 overflow-y-auto">
                         {nearPairs.length === 0 ? <EmptyOk text="Близких несоединённых узлов не найдено" /> : (
                           <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                               Пар: <b className="text-amber-700">{nearPairs.length}</b>
                             </div>
                             {nearPairs.map(({ a, b, dist }) => {
@@ -7006,7 +7006,7 @@ export default function CadPage() {
                     <div className="flex-1 overflow-y-auto">
                       {isolated.length === 0 ? <EmptyOk text="Изолированных узлов нет" /> : (
                         <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                             Узлов без ветвей: <b className="text-red-600">{isolated.length}</b>
                           </div>
                           {isolated.map(n => {
@@ -7037,7 +7037,7 @@ export default function CadPage() {
                     <div className="flex-1 overflow-y-auto">
                       {dupes.length === 0 ? <EmptyOk text="Узлов с одинаковыми координатами нет" /> : (
                         <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                             Дублей: <b className="text-red-600">{dupes.length}</b>
                           </div>
                           {dupes.map(({ a, b }) => {
@@ -7075,7 +7075,7 @@ export default function CadPage() {
                     <div className="flex-1 overflow-y-auto">
                       {dupBranches.length === 0 ? <EmptyOk text="Дублирующих ветвей нет" /> : (
                         <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                             Несколько ветвей соединяют одну пару узлов. Групп: <b className="text-amber-700">{dupBranches.length}</b>
                           </div>
                           {dupBranches.map(({ branches: grp, key }) => (
@@ -7105,7 +7105,7 @@ export default function CadPage() {
                     <div className="flex-1 overflow-y-auto">
                       {zeroRBranches.length === 0 ? <EmptyOk text="Ветвей с нулевым сопротивлением нет" /> : (
                         <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                             R = 0 приводит к некорректному расчёту. Ветвей: <b className="text-red-600">{zeroRBranches.length}</b>
                           </div>
                           {zeroRBranches.map(b => {
@@ -7138,7 +7138,7 @@ export default function CadPage() {
                     <div className="flex-1 overflow-y-auto">
                       {zeroLenBranches.length === 0 ? <EmptyOk text="Ветвей с длиной = 0 нет" /> : (
                         <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "#fafafa", borderBottom: "1px solid #f0f0f0" }}>
+                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                             Длина = 0 → нет сопротивления, расчёт воздухораспределения невозможен. Ветвей: <b className="text-red-600">{zeroLenBranches.length}</b>
                           </div>
                           {zeroLenBranches.map(b => {
@@ -7171,7 +7171,7 @@ export default function CadPage() {
                                         updateBranch(b.id, { manualLength: false, length: autoLen });
                                       }}
                                       className="mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded border"
-                                      style={{ borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" }}
+                                      style={{ borderColor: "#93c5fd", background: "var(--c-tint-blue, #eff6ff)", color: "#1d4ed8" }}
                                     >
                                       Задать длину по координатам ({autoLen}м)
                                     </button>
@@ -7188,7 +7188,7 @@ export default function CadPage() {
                   {/* ── Вкладка: Ветви с большим сопротивлением ── */}
                   {checkTab === "highR" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                         <div className="text-[10px] text-gray-500 mb-1">Сопротивление ветви выше порога — вероятна ошибка в сечении/длине.</div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-gray-600 flex-shrink-0">Порог R:</span>
@@ -7205,7 +7205,7 @@ export default function CadPage() {
                       <div className="flex-1 overflow-y-auto">
                         {highRBranches.length === 0 ? <EmptyOk text="Ветвей с большим сопротивлением не найдено" /> : (
                           <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                               Ветвей: <b className="text-amber-700">{highRBranches.length}</b>
                             </div>
                             {highRBranches.map(b => {
@@ -7237,7 +7237,7 @@ export default function CadPage() {
                   {/* ── Вкладка: Перемычки с большим R ── */}
                   {checkTab === "bulkR" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                         <div className="text-[10px] text-gray-500 mb-1">Сопротивление перемычки выше норматива.</div>
                         <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-gray-600 flex-shrink-0">Норматив:</span>
@@ -7254,7 +7254,7 @@ export default function CadPage() {
                       <div className="flex-1 overflow-y-auto">
                         {bulkBranches.length === 0 ? <EmptyOk text="Перемычек с превышением норматива нет" /> : (
                           <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                               Перемычек: <b className="text-red-600">{bulkBranches.length}</b>
                             </div>
                             {bulkBranches.map(({ branch: b, rKmu }) => {
@@ -7286,7 +7286,7 @@ export default function CadPage() {
                   {/* ── Вкладка: Ветви с длиной, заданной вручную ── */}
                   {checkTab === "manualLen" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                         <div className="text-[10px] text-gray-500 mb-1.5">
                           У этих ветвей длина задана вручную и не пересчитывается из координат.
                           Если она меньше реальной — сопротивление занижено, если больше — завышено.
@@ -7302,7 +7302,7 @@ export default function CadPage() {
                               return { ...b, manualLength: false, length: len };
                             }))}
                             className="text-[10px] font-medium px-2 py-1 rounded border"
-                            style={{ borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" }}
+                            style={{ borderColor: "#93c5fd", background: "var(--c-tint-blue, #eff6ff)", color: "#1d4ed8" }}
                           >
                             Все на авто (из координат)
                           </button>
@@ -7311,7 +7311,7 @@ export default function CadPage() {
                       <div className="flex-1 overflow-y-auto">
                         {manualLenBranches.length === 0 ? <EmptyOk text="Ветвей с ручной длиной нет" /> : (
                           <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                               Ветвей: <b className="text-amber-700">{manualLenBranches.length}</b>
                             </div>
                             {manualLenBranches.map(b => {
@@ -7344,7 +7344,7 @@ export default function CadPage() {
                                         updateBranch(b.id, { manualLength: false, length: autoLen ?? b.length });
                                       }}
                                       className="mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded border"
-                                      style={{ borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" }}
+                                      style={{ borderColor: "#93c5fd", background: "var(--c-tint-blue, #eff6ff)", color: "#1d4ed8" }}
                                     >
                                       На авто
                                     </button>
@@ -7361,7 +7361,7 @@ export default function CadPage() {
                   {/* ── Вкладка: Изолированные ветви (нет выхода на поверхность) ── */}
                   {checkTab === "isolatedBranch" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                         <div className="text-[10px] text-gray-500 mb-1.5">
                           Ветви построены, но их подсеть не связана с поверхностью —
                           нет ни одного пути к атмосферному узлу (выхода на поверхность).
@@ -7369,7 +7369,7 @@ export default function CadPage() {
                         </div>
                         {noAtmosphere && (
                           <div className="text-[10px] font-medium px-2 py-1 rounded flex items-start gap-1"
-                            style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}>
+                            style={{ background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c", border: "1px solid #fecaca" }}>
                             <Icon name="AlertTriangle" size={12} className="flex-shrink-0 mt-0.5" />
                             В схеме нет ни одного выхода на поверхность (атмосферного узла).
                             Отметьте хотя бы один узел как связанный с атмосферой.
@@ -7387,7 +7387,7 @@ export default function CadPage() {
                               setFocusNonce(Date.now());
                             }}
                             className="mt-1.5 text-[10px] font-medium px-2 py-1 rounded border"
-                            style={{ borderColor: "#fca5a5", background: "#fef2f2", color: "#b91c1c" }}
+                            style={{ borderColor: "#fca5a5", background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c" }}
                           >
                             Выделить все на схеме
                           </button>
@@ -7400,7 +7400,7 @@ export default function CadPage() {
                             : "Изолированных ветвей не найдено — вся сеть связана с поверхностью"} />
                         ) : (
                           <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                               Ветвей: <b className="text-red-600">{isolatedBranches.length}</b>
                             </div>
                             {isolatedBranches.map(b => {
@@ -7432,7 +7432,7 @@ export default function CadPage() {
                   {/* ── Вкладка: Обрыв связи (ветвь ссылается на удалённый узел) ── */}
                   {checkTab === "brokenBranch" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                         <div className="text-[10px] text-gray-500 mb-1.5">
                           У ветви оборван конец: она ссылается на узел, которого в схеме
                           больше нет. Обычно так получается после удаления или
@@ -7453,7 +7453,7 @@ export default function CadPage() {
                               setFocusNonce(Date.now());
                             }}
                             className="mt-1.5 text-[10px] font-medium px-2 py-1 rounded border"
-                            style={{ borderColor: "#fca5a5", background: "#fef2f2", color: "#b91c1c" }}
+                            style={{ borderColor: "#fca5a5", background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c" }}
                           >
                             Выделить все на схеме
                           </button>
@@ -7464,7 +7464,7 @@ export default function CadPage() {
                           <EmptyOk text="Обрывов не найдено — все ветви привязаны к существующим узлам" />
                         ) : (
                           <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                               Ветвей: <b className="text-red-600">{brokenBranches.length}</b>
                             </div>
                             {brokenBranches.map(({ branch: b, missing, missingIds }) => {
@@ -7501,7 +7501,7 @@ export default function CadPage() {
                       схеме в тысячи ветвей было практически невозможно. */}
                   {checkTab === "solveBlock" && (
                     <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "#fafafa", borderBottom: "1px solid #e5e7eb" }}>
+                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                         <div className="text-[10px] text-gray-500 mb-1.5">
                           Участки, из-за которых расчёт воздухораспределения не прошёл.
                           Определяются при расчёте сети (F9): сеть распадается на
@@ -7510,7 +7510,7 @@ export default function CadPage() {
                         {solveBlockers && (
                           <>
                             <div className="text-[10px] px-2 py-1 rounded flex items-start gap-1 mb-1.5"
-                              style={{ background: "#fef2f2", color: "#b91c1c", border: "1px solid #fecaca" }}>
+                              style={{ background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c", border: "1px solid #fecaca" }}>
                               <Icon name="CircleAlert" size={12} className="flex-shrink-0 mt-0.5" />
                               <span>{solveBlockers.message}</span>
                             </div>
@@ -7518,7 +7518,7 @@ export default function CadPage() {
                               type="button"
                               onClick={() => focusSolveBlocker(solveBlockers.nodeIds, solveBlockers.branchIds)}
                               className="text-[10px] font-medium px-2 py-1 rounded border"
-                              style={{ borderColor: "#fca5a5", background: "#fef2f2", color: "#b91c1c" }}
+                              style={{ borderColor: "#fca5a5", background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c" }}
                             >
                               Показать на схеме
                             </button>
@@ -7532,7 +7532,7 @@ export default function CadPage() {
                           <div className="flex flex-col">
                             {solveBlockers.nodeIds.length > 0 && (
                               <>
-                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                                   Узлов: <b className="text-red-600">{solveBlockers.nodeIds.length}</b> — не связаны с выходом на поверхность
                                 </div>
                                 {solveBlockers.nodeIds.map(id => {
@@ -7563,7 +7563,7 @@ export default function CadPage() {
                             )}
                             {solveBlockers.branchIds.length > 0 && (
                               <>
-                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid #f0f0f0", background: "#fafafa" }}>
+                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)", background: "var(--c-s2, #fafafa)" }}>
                                   Ветвей: <b className="text-red-600">{solveBlockers.branchIds.length}</b>
                                 </div>
                                 {solveBlockers.branchIds.map(id => {
@@ -7687,7 +7687,7 @@ export default function CadPage() {
                   <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
                     <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Задаётся:</span>
                     <select value={b.fireMode ?? "heat"} onChange={e => updateBranch(b.id, { fireMode: e.target.value as "heat" | "temp" })}
-                      className="flex-1 text-[11px] px-1" style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                      className="flex-1 text-[11px] px-1" style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }}>
                       <option value="heat">Мощностью (МВт)</option>
                       <option value="temp">Температурой (°C)</option>
                     </select>
@@ -7706,7 +7706,7 @@ export default function CadPage() {
                           readOnly={isAuto}
                           onChange={e => { if (!isAuto) updateBranch(b.id, { fireHeatRelease: parseFloat(e.target.value) || 5 }); }}
                           className="flex-1 text-[11px] text-right px-1"
-                          style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: isAuto ? "#f3f4f6" : "white", color: isAuto ? "#6b7280" : "inherit" }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: isAuto ? "#f3f4f6" : "white", color: isAuto ? "#6b7280" : "inherit" }} />
                         {isAuto && <span className="text-[10px] text-gray-400 flex-shrink-0 ml-1">авто</span>}
                       </div>
                     );
@@ -7718,14 +7718,14 @@ export default function CadPage() {
                         value={b.fireTemperature ?? 300}
                         onChange={e => updateBranch(b.id, { fireTemperature: parseFloat(e.target.value) || 300 })}
                         className="flex-1 text-[11px] text-right px-1"
-                        style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                        style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                     </div>
                   )}
 
                   <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
                     <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Горючий материал:</span>
                     <select value={b.fireCombustible ?? "coal"} onChange={e => updateBranch(b.id, { fireCombustible: e.target.value })}
-                      className="flex-1 text-[11px] px-1" style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                      className="flex-1 text-[11px] px-1" style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }}>
                       {COMBUSTIBLES.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
@@ -7744,7 +7744,7 @@ export default function CadPage() {
                             value={area}
                             onChange={e => updateBranch(b.id, { fireSourceArea: parseFloat(e.target.value) || 0 })}
                             className="flex-1 text-[11px] text-right px-1"
-                            style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                         </div>
                         <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
                           <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Скорость выгор. ψ, кг/(м²·с):</span>
@@ -7752,7 +7752,7 @@ export default function CadPage() {
                             value={psi}
                             onChange={e => updateBranch(b.id, { fireSourceBurnRate: parseFloat(e.target.value) || 0 })}
                             className="flex-1 text-[11px] text-right px-1"
-                            style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                         </div>
                       </>
                     );
@@ -7770,7 +7770,7 @@ export default function CadPage() {
                     return (
                       <>
                         {/* Заголовок блока ввода */}
-                        <div className="px-1 py-0.5 text-[10px] font-semibold mt-0.5" style={{ background: "#fff7ed", borderBottom: "1px solid #fed7aa", color: "#c2410c" }}>
+                        <div className="px-1 py-0.5 text-[10px] font-semibold mt-0.5" style={{ background: "var(--c-tint-amber, #fff7ed)", borderBottom: "1px solid #fed7aa", color: "#c2410c" }}>
                           Исходные данные — состав техники
                         </div>
 
@@ -7778,9 +7778,9 @@ export default function CadPage() {
                         <div className="px-1 pt-1 pb-0.5">
                           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
                             <thead>
-                              <tr style={{ background: "#f5f5f5" }}>
-                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "left", fontWeight: 600 }}>Материал</th>
-                                <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>Масса, кг</th>
+                              <tr style={{ background: "var(--c-s2, #f5f5f5)" }}>
+                                <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "left", fontWeight: 600 }}>Материал</th>
+                                <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 600 }}>Масса, кг</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -7789,8 +7789,8 @@ export default function CadPage() {
                                 const val = masses[i];
                                 return (
                                   <tr key={mat.name} style={{ background: i % 2 === 0 ? "#fff" : "#fafafa" }}>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px" }}>{mat.name}</td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "1px 2px" }}>
+                                    <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px" }}>{mat.name}</td>
+                                    <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "1px 2px" }}>
                                       <input
                                         type="number" min="0" step="50"
                                         value={val}
@@ -7812,24 +7812,24 @@ export default function CadPage() {
                             <div className="px-1 pb-0.5">
                               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
                                 <thead>
-                                  <tr style={{ background: "#fef3c7" }}>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Мощность, МВт</th>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Расход, м³/с</th>
-                                    <th style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>t прод., °C</th>
+                                  <tr style={{ background: "var(--c-tint-amber2, #fef3c7)" }}>
+                                    <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Мощность, МВт</th>
+                                    <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Расход, м³/с</th>
+                                    <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>t прод., °C</th>
                                   </tr>
                                 </thead>
                                 <tbody>
                                   <tr>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700, color: "#b91c1c" }}>{safeFixed(vfr.power_MW, 2)}</td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", color: "#15803d" }}>{airQ > 0 ? safeFixed(airQ, 1) : "—"}</td>
-                                    <td style={{ border: "1px solid #d1d5db", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? safeFixed(vfr.deltaT_C + 20, 1) : "—"}</td>
+                                    <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700, color: "#b91c1c" }}>{safeFixed(vfr.power_MW, 2)}</td>
+                                    <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", color: "#15803d" }}>{airQ > 0 ? safeFixed(airQ, 1) : "—"}</td>
+                                    <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? safeFixed(vfr.deltaT_C + 20, 1) : "—"}</td>
                                   </tr>
                                 </tbody>
                               </table>
                               <div className="flex items-center gap-3 mt-0.5 px-0.5">
-                                <span style={{ fontSize: 10, color: "#6b7280" }}>Время горения:</span>
+                                <span style={{ fontSize: 10, color: "var(--c-t3, #6b7280)" }}>Время горения:</span>
                                 <span style={{ fontSize: 10, fontWeight: 700 }}>{safeFixed(vfr.burnTime_h, 2)} ч</span>
-                                <span style={{ fontSize: 10, color: "#6b7280" }}>или</span>
+                                <span style={{ fontSize: 10, color: "var(--c-t3, #6b7280)" }}>или</span>
                                 <span style={{ fontSize: 10, fontWeight: 700 }}>{safeFixed(vfr.burnTime_min, 1)} мин</span>
                               </div>
                             </div>
@@ -7882,7 +7882,7 @@ export default function CadPage() {
                           value={normFireTime}
                           onChange={e => changeNormFireTime(parseFloat(e.target.value))}
                           className="flex-1 text-[11px] text-right px-1"
-                          style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                       </div>
                       <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
                         title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). 0 — авто по положению очага.">
@@ -7891,7 +7891,7 @@ export default function CadPage() {
                           value={normMouthDist}
                           onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
                           className="flex-1 text-[11px] text-right px-1"
-                          style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                       </div>
                     </>
                   )}
@@ -7902,7 +7902,7 @@ export default function CadPage() {
                       value={smokeVisThreshold}
                       onChange={e => setSmokeVisThreshold(Math.max(1, Math.min(1000, Number(e.target.value))))}
                       className="flex-1 text-[11px] text-right px-1"
-                      style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                      style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                   </div>
 
                   {/* Контекст из сетевого расчёта */}
@@ -7919,7 +7919,7 @@ export default function CadPage() {
                   <Row label="Угол наклона, °:" value={`${(b.angle ?? 0).toFixed(1)}`} />
                   <Row label="Длина ветви, м:" value={`${b.length.toFixed(1)}`} />
                   {Math.abs(b.flow) < 0.001 && (
-                    <div className="px-2 py-1 mx-1 my-1 text-[10px] rounded" style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
+                    <div className="px-2 py-1 mx-1 my-1 text-[10px] rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d", color: "#92400e" }}>
                       Сначала выполните расчёт вентиляционной сети (F9), затем запустите расчёт пожара
                     </div>
                   )}
@@ -7941,7 +7941,7 @@ export default function CadPage() {
                       <Row label="Тепловая депрессия h_t, Па:" value={safeFixed(fr.thermalDepression, 1)} bold={Math.abs(fr.thermalDepression) > 10} />
                       {fr.normative && (
                         <>
-                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>Норматив (формулы 4.5–4.13)</div>
+                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-t2, #374151)" }}>Норматив (формулы 4.5–4.13)</div>
                           <Row label="Длина зоны горения l, м:" value={safeFixed(fr.normative.l, 1)} />
                           <Row label="Δz = l·sinβ, м:" value={safeFixed(fr.normative.dz, 1)} />
                           <Row label="Коэффициент A:" value={safeFixed(fr.normative.A, 3)} />
@@ -7961,8 +7961,8 @@ export default function CadPage() {
                               : "≈ депрессии всего уклонного поля (одна воздухоподающая выработка)";
                             return (
                               <>
-                                <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>{title}</div>
-                                <div className="px-1 py-0.5 text-[9px]" style={{ color: "#6b7280", borderBottom: "1px solid #ebebeb" }}>{note}</div>
+                                <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-t2, #374151)" }}>{title}</div>
+                                <div className="px-1 py-0.5 text-[9px]" style={{ color: "var(--c-t3, #6b7280)", borderBottom: "1px solid #ebebeb" }}>{note}</div>
                               </>
                             );
                           })()}
@@ -7981,7 +7981,7 @@ export default function CadPage() {
                             </span>
                           </div>
                           {/* Показатель устойчивости p_у = h_кр/h_т (Прил. 3, ф. 3.1) */}
-                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "#374151" }}>Устойчивость проветривания (3.1)</div>
+                          <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-t2, #374151)" }}>Устойчивость проветривания (3.1)</div>
                           <Row label="Показатель p_у = h_кр/h_т:" value={safeFixed(fr.critical.p_u, 2)} bold />
                           <div className="flex items-center px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                             <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Класс выработки:</span>
@@ -8031,7 +8031,7 @@ export default function CadPage() {
                                   branchName: `Ветвь ${b.num ?? b.id}${b.name ? ` — ${b.name}` : ""}`,
                                 })}
                                 className="flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded border bg-white hover:bg-gray-50 shrink-0"
-                                style={{ borderColor: "#d1d5db", color: "#374151" }}
+                                style={{ borderColor: "var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)" }}
                                 title="Увеличить диаграмму и экспортировать в Excel"
                               >
                                 <Icon name="Maximize2" size={10} /> Увеличить
@@ -8063,7 +8063,7 @@ export default function CadPage() {
                             </div>
                             {ascending ? (
                               <>
-                                <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "#6b7280" }}>
+                                <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "var(--c-t3, #6b7280)" }}>
                                   <span style={{ color: "#0369a1", fontWeight: 700 }}>A</span> — режим до пожара (Q={safeFixed(Qa, 1)} м³/с) ·{" "}
                                   <span style={{ color: "#dc2626", fontWeight: 700 }}>E</span> — при пожаре (Q={safeFixed(Math.abs(Qb), 1)} м³/с, расход растёт) ·{" "}
                                   <span style={{ color: "#7c3aed", fontWeight: 700 }}>F</span> — критическая: h_т=R·Q₀² (депрессия ВГП=0) ·{" "}
@@ -8075,7 +8075,7 @@ export default function CadPage() {
                               </>
                             ) : (
                               <>
-                                <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "#6b7280" }}>
+                                <div className="mt-1 text-[9px] leading-relaxed" style={{ color: "var(--c-t3, #6b7280)" }}>
                                   <span style={{ color: "#0369a1", fontWeight: 700 }}>A</span> — режим до пожара (Q={safeFixed(Qa, 1)} м³/с) ·{" "}
                                   <span style={{ color: "#dc2626", fontWeight: 700 }}>B</span> — при пожаре (Q={safeFixed(Math.abs(Qb), 1)} м³/с) ·{" "}
                                   <span style={{ color: "#7c3aed", fontWeight: 700 }}>C</span> — критическая (Q=0){fr.actuallyReversed ? " · " : ""}
@@ -8155,7 +8155,7 @@ export default function CadPage() {
                         </div>
                       )}
                       {!fr.actuallyReversed && fr.willReverse && (
-                        <div className="px-2 py-2 mx-1 my-1 text-[10px] rounded" style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626" }}>
+                        <div className="px-2 py-2 mx-1 my-1 text-[10px] rounded" style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5", color: "#dc2626" }}>
                           <strong>Риск опрокидывания!</strong> Тепловая депрессия пожара ({Math.abs(fr.thermalDepression).toFixed(0)} Па) близка к аэродинамической депрессии ветви. При увеличении мощности пожара возможна смена направления потока.
                         </div>
                       )}
@@ -8167,11 +8167,11 @@ export default function CadPage() {
                     const speed = airQ > 0 && b.area > 0 ? airQ / b.area : 0;
                     return (
                       <div style={{ margin: 4 }}>
-                        <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 3, color: "#15803d" }}>
+                        <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac", borderRadius: 3, color: "#15803d" }}>
                           ✅ Ветвь не затронута задымлением
                         </div>
                         {speed > 0 && b.length > 0 && (
-                          <div className="mt-1 px-2 py-1.5 text-[10px]" style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 3, color: "#475569" }}>
+                          <div className="mt-1 px-2 py-1.5 text-[10px]" style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0", borderRadius: 3, color: "#475569" }}>
                             <div className="font-semibold mb-0.5 text-[11px]">Справочно (если дым войдёт):</div>
                             <div className="flex justify-between">
                               <span>Скорость воздуха:</span>
@@ -8187,7 +8187,7 @@ export default function CadPage() {
                     );
                   })()}
                   {!fireCalcDone && (
-                    <div className="px-2 py-2 text-[11px] text-orange-700" style={{ background: "#fffbeb", border: "1px solid #fcd34d", margin: 4, borderRadius: 4 }}>
+                    <div className="px-2 py-2 text-[11px] text-orange-700" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d", margin: 4, borderRadius: 4 }}>
                       Нажмите «Расчёт пожара» на вкладке Аварии для получения результатов
                     </div>
                   )}
@@ -8257,7 +8257,7 @@ export default function CadPage() {
                     <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Способ:</span>
                     <select value={b.explosionSourceType ?? "gas"}
                       onChange={e => updateBranch(b.id, { explosionSourceType: e.target.value as ExplosionSourceType })}
-                      className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }}>
+                      className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
                       <option value="gas">По газу</option>
                       <option value="mass">По массе вещества</option>
                     </select>
@@ -8269,7 +8269,7 @@ export default function CadPage() {
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Горючий газ:</span>
                       <select value={b.explosionGasId ?? "methane"}
                         onChange={e => updateBranch(b.id, { explosionGasId: e.target.value })}
-                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }}>
+                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
                         {GAS_TYPES.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                       </select>
                     </div>
@@ -8278,14 +8278,14 @@ export default function CadPage() {
                       <input type="number" step="10" min="1"
                         value={b.explosionGasVolume ?? 100}
                         onChange={e => updateBranch(b.id, { explosionGasVolume: parseFloat(e.target.value) || 100 })}
-                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }} />
+                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
                     <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Концентрация, %:</span>
                       <input type="number" step="0.5" min="0" max="100"
                         value={b.explosionGasConcentration ?? 9.5}
                         onChange={e => updateBranch(b.id, { explosionGasConcentration: parseFloat(e.target.value) || 9.5 })}
-                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }} />
+                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
                     {(() => {
                       const gas = GAS_TYPES.find(g => g.id === (b.explosionGasId ?? "methane"));
@@ -8307,7 +8307,7 @@ export default function CadPage() {
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Взрывчатое вещество:</span>
                       <select value={b.explosionExplosiveId ?? "ammonit"}
                         onChange={e => updateBranch(b.id, { explosionExplosiveId: e.target.value })}
-                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }}>
+                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
                         {EXPLOSIVE_TYPES.map(ex => <option key={ex.id} value={ex.id}>{ex.name}</option>)}
                       </select>
                     </div>
@@ -8316,13 +8316,13 @@ export default function CadPage() {
                       <input type="number" step="1" min="0.1"
                         value={b.explosionExplosiveMass ?? 10}
                         onChange={e => updateBranch(b.id, { explosionExplosiveMass: parseFloat(e.target.value) || 10 })}
-                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid #d1d5db", height: 20, background: "white" }} />
+                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
                     {(() => {
                       const expl = EXPLOSIVE_TYPES.find(ex => ex.id === (b.explosionExplosiveId ?? "ammonit"));
                       if (!expl) return null;
                       return (
-                        <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]" style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#713f12" }}>
+                        <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]" style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#713f12" }}>
                           k_тнт = {expl.tntEq} · Q_уд = {expl.qSpec} кДж/кг
                         </div>
                       );
@@ -8348,7 +8348,7 @@ export default function CadPage() {
                       </div>
                     ))}
                     {explosionResult?.warnings && explosionResult.warnings.length > 0 && (
-                      <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#713f12" }}>
+                      <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#713f12" }}>
                         {explosionResult.warnings.map((w, i) => <div key={i}>{w}</div>)}
                       </div>
                     )}
@@ -8361,7 +8361,7 @@ export default function CadPage() {
                     );
                     if (destroyedBranches.length === 0) return null;
                     return (<>
-                      <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: "#fee2e2", borderBottom: "1px solid #fca5a5", color: "#991b1b" }}>
+                      <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: "var(--c-tint-red2, #fee2e2)", borderBottom: "1px solid #fca5a5", color: "#991b1b" }}>
                         ⚡ Разрушенные перемычки ({destroyedBranches.length})
                       </div>
                       {destroyedBranches.map(br => {
@@ -8369,7 +8369,7 @@ export default function CadPage() {
                         const fp = bkSym?.bkFailurePressure ?? br.bulkheadFailurePressure;
                         const name = (bkSym?.bkBulkheadName ?? br.bulkheadName) || br.id;
                         return (
-                          <div key={br.id} className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6", background: "#fff5f5" }}>
+                          <div key={br.id} className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6", background: "var(--c-tint-red, #fff5f5)" }}>
                             <span className="text-[10px] mr-1">🔴</span>
                             <span className="text-[11px] text-gray-700 flex-1 truncate">{name}</span>
                             {fp > 0 && (
@@ -8378,22 +8378,22 @@ export default function CadPage() {
                           </div>
                         );
                       })}
-                      <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b" }}>
+                      <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "#991b1b" }}>
                         Разрушенные перемычки окрашены красным и отмечены «РАЗР.» на схеме. Пересчитайте сеть (F9).
                       </div>
                     </>);
                   })()}
 
                   {/* Легенда обозначений перемычек */}
-                  <div className="px-1 py-0.5 text-[10px] font-semibold mt-2" style={{ background: "#f5f5f5", borderBottom: "1px solid #e0e0e0", color: "#374151" }}>
+                  <div className="px-1 py-0.5 text-[10px] font-semibold mt-2" style={{ background: "var(--c-s2, #f5f5f5)", borderBottom: "1px solid var(--c-b1, #e0e0e0)", color: "var(--c-t2, #374151)" }}>
                     Обозначения на схеме
                   </div>
-                  <div className="px-2 py-1.5 text-[10px] space-y-1" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                  <div className="px-2 py-1.5 text-[10px] space-y-1" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                     <div className="flex items-center gap-2">
                       <svg width="22" height="18" viewBox="-11 -9 22 18">
                         <rect x="-3" y="-7" width="6" height="14" fill="white" stroke="#1a1a1a" strokeWidth="1" />
                       </svg>
-                      <span style={{ color: "#374151" }}>Перемычка — цела</span>
+                      <span style={{ color: "var(--c-t2, #374151)" }}>Перемычка — цела</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <svg width="22" height="18" viewBox="-11 -9 22 18">
@@ -8411,7 +8411,7 @@ export default function CadPage() {
                   </div>
 
                   {!explosionCalcDone && (
-                    <div className="mx-2 my-2 px-2 py-2 text-[11px] rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
+                    <div className="mx-2 my-2 px-2 py-2 text-[11px] rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "#92400e" }}>
                       Нажмите «Расчёт взрыва» на вкладке Аварии для получения результатов
                     </div>
                   )}
@@ -8603,7 +8603,7 @@ export default function CadPage() {
                       rows={2}
                       className="flex-1 px-1 py-0.5 text-[11px] resize-none"
                       placeholder="Введите описание объекта..."
-                      style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                      style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                   </div>
 
                   {/* ── Калорифер ── */}
@@ -8624,7 +8624,7 @@ export default function CadPage() {
                           value={sym.htMode ?? "winter"}
                           onChange={e => updSym({ htMode: e.target.value as "winter" | "always" | "off" })}
                           className="flex-1 text-[11px] px-1"
-                          style={{ background: "white", border: "1px solid #c8c8c8", height: 20, outline: "none", borderRadius: 2 }}>
+                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", borderRadius: 2 }}>
                           <option value="winter">Только зимой</option>
                           <option value="always">Круглый год</option>
                           <option value="off">Выключен</option>
@@ -8650,7 +8650,7 @@ export default function CadPage() {
                           value={method}
                           onChange={e => updSym({ htMethod: e.target.value as "power" | "temp" })}
                           className="flex-1 text-[11px] px-1"
-                          style={{ background: "white", border: "1px solid #c8c8c8", height: 20, outline: "none", borderRadius: 2 }}>
+                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", borderRadius: 2 }}>
                           <option value="power">По тепловой мощности</option>
                           <option value="temp">По температуре за калорифером</option>
                         </select>
@@ -8664,7 +8664,7 @@ export default function CadPage() {
                             onChange={e => updSym({ htPower: e.target.value === "" ? undefined : Number(e.target.value) })}
                             placeholder="0"
                             className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                            style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                           <span className="text-gray-400 flex-shrink-0">кВт</span>
                         </div>
                       ) : (
@@ -8675,7 +8675,7 @@ export default function CadPage() {
                             onChange={e => updSym({ htOutTemp: e.target.value === "" ? undefined : Number(e.target.value) })}
                             placeholder={String(MIN_SHAFT_TEMP_C)}
                             className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                            style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                           <span className="text-gray-400 flex-shrink-0">°C</span>
                         </div>
                       )}
@@ -8690,7 +8690,7 @@ export default function CadPage() {
                             updSym({ htEfficiency: v / 100 });
                           }}
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                         <span className="text-gray-400 flex-shrink-0">%</span>
                       </div>
 
@@ -8758,7 +8758,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msNumber: e.target.value })}
                           placeholder="№"
                           className="flex-1 px-1 py-0.5 text-[11px]"
-                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                       </div>
 
                       {/* Местоположение */}
@@ -8770,7 +8770,7 @@ export default function CadPage() {
                           rows={2}
                           placeholder="Введите местоположение..."
                           className="flex-1 px-1 py-0.5 text-[11px] resize-none"
-                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                       </div>
 
                       <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
@@ -8785,7 +8785,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msArea: e.target.value === "" ? undefined : Number(e.target.value) })}
                           placeholder="0.0"
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                         <span className="text-gray-400 flex-shrink-0">м²</span>
                       </div>
 
@@ -8797,7 +8797,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msFlow: e.target.value === "" ? undefined : Number(e.target.value) })}
                           placeholder="0.0"
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                         <span className="text-gray-400 flex-shrink-0">м³/с</span>
                       </div>
 
@@ -8809,7 +8809,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msVelocity: e.target.value === "" ? undefined : Number(e.target.value) })}
                           placeholder="0.0"
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
                         <span className="text-gray-400 flex-shrink-0">м/с</span>
                       </div>
 
@@ -8983,7 +8983,7 @@ export default function CadPage() {
                           value={sym.bkResMode ?? "project"}
                           onChange={e => updSym({ bkResMode: e.target.value as "project" | "survey" | "manual" })}
                           className="flex-1 text-[11px] px-1"
-                          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
                           <option value="project">Проектными данными</option>
                           <option value="survey">Воздушной съемкой</option>
                           <option value="manual">Вручную</option>
@@ -9000,7 +9000,7 @@ export default function CadPage() {
                                 value={sym.bkWindowArea ?? 0}
                                 onChange={e => updSym({ bkWindowArea: parseFloat(e.target.value) || 0 })}
                                 className="flex-1 text-[11px] px-1 text-right"
-                                style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                                style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                               <span className="text-[11px] text-gray-400 flex-shrink-0">м²</span>
                             </div>
                           ) : (
@@ -9029,7 +9029,7 @@ export default function CadPage() {
                                       }
                                     }}
                                     className="flex-1 text-[11px] px-1"
-                                    style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }}>
+                                    style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }}>
                                     <option value="">— не выбрано —</option>
                                     {mineBulkheads.map(b => (
                                       <option key={b.id} value={b.id}>{b.name}</option>
@@ -9055,7 +9055,7 @@ export default function CadPage() {
                                     value={sym.bkCustomAirPerm ?? 0}
                                     onChange={e => updSym({ bkCustomAirPerm: parseFloat(e.target.value) || 0 })}
                                     className="flex-1 text-[11px] px-1 text-right"
-                                    style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                                    style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                                 ) : (
                                   <span className="flex-1 text-right text-gray-700 text-[11px]">
                                     {(() => {
@@ -9087,7 +9087,7 @@ export default function CadPage() {
                               value={sym.bkSurveyQ ?? 0}
                               onChange={e => updSym({ bkSurveyQ: parseFloat(e.target.value) || 0 })}
                               className="flex-1 text-[11px] px-1 text-right"
-                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                              style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                           </div>
                           <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
                             <span className="text-gray-500 flex-shrink-0" style={{ width: 72 }}>Падение Р:</span>
@@ -9095,7 +9095,7 @@ export default function CadPage() {
                               value={sym.bkSurveyDP ?? 0}
                               onChange={e => updSym({ bkSurveyDP: parseFloat(e.target.value) || 0 })}
                               className="flex-1 text-[11px] px-1 text-right"
-                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                              style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
@@ -9115,7 +9115,7 @@ export default function CadPage() {
                               value={sym.bkManualR ?? 0}
                               onChange={e => updSym({ bkManualR: parseFloat(e.target.value) || 0 })}
                               className="flex-1 text-[11px] px-1 text-right"
-                              style={{ border: "1px solid #c8c8c8", height: 18, outline: "none", background: "white" }} />
+                              style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                           </div>
                           <div className="flex items-center gap-1">
                             <span className="text-gray-500 flex-shrink-0 font-semibold" style={{ width: 72 }}>ΔP:</span>
@@ -9151,7 +9151,7 @@ export default function CadPage() {
                         <select value={sym.airDirection ?? "forward"}
                           onChange={(e) => updSym({ airDirection: e.target.value as "forward" | "reverse" })}
                           className="flex-1 text-[11px] px-1"
-                          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
                           <option value="forward">По ветви (→)</option>
                           <option value="reverse">Против ветви (←)</option>
                         </select>
@@ -9173,7 +9173,7 @@ export default function CadPage() {
                       <select value={sym.airDirection ?? "forward"}
                         onChange={(e) => updSym({ airDirection: e.target.value as "forward" | "reverse" })}
                         className="flex-1 text-[11px] px-1"
-                        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
                         <option value="forward">По ветви (→)</option>
                         <option value="reverse">Развернуть (←)</option>
                       </select>
@@ -9245,7 +9245,7 @@ export default function CadPage() {
                         if (rMkyurg === 0 && brForSym.bulkheadR > 0) rMkyurg = brForSym.bulkheadR / 1000;
                         return (
                           <div className="mt-2 p-1.5 rounded text-[10px] space-y-0.5"
-                            style={{ background: "#f0f4ff", border: "1px solid #c8d8f0" }}>
+                            style={{ background: "var(--c-tint-blue, #f0f4ff)", border: "1px solid #c8d8f0" }}>
                             {sym.indResistance && (
                               <div className="text-gray-600">
                                 <span className="text-gray-400">R перемычки: </span>
@@ -9445,7 +9445,7 @@ export default function CadPage() {
                   </div>
                   {surveyEditMode && (
                     <div className="mx-1 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
-                      style={{ background: "#fef2f2", border: "1px solid #fca5a5", color: "#991b1b" }}>
+                      style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5", color: "#991b1b" }}>
                       Режим правки включён. Перетаскивание узла меняет его
                       настоящие координаты, а значит длины выработок,
                       сопротивление и результат расчёта.
@@ -9460,7 +9460,7 @@ export default function CadPage() {
                       className="px-2 py-1 rounded text-[11px]"
                       style={{
                         background: movedNodeCount ? "#fff" : "#f3f4f6",
-                        border: "1px solid #d1d5db",
+                        border: "1px solid var(--c-b2, #d1d5db)",
                         color: movedNodeCount ? "#374151" : "#9ca3af",
                         cursor: movedNodeCount ? "pointer" : "default",
                       }}>
@@ -9468,7 +9468,7 @@ export default function CadPage() {
                     </button>
                     <button onClick={fixCurrentAsSurvey}
                       className="px-2 py-1 rounded text-[11px]"
-                      style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}
+                      style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
                       title="Считать нынешнее положение узлов выверенным и записать его как маркшейдерское">
                       Зафиксировать текущее как эталон
                     </button>
@@ -9493,7 +9493,7 @@ export default function CadPage() {
                         value={selectedBranch.labelAngle ?? 0}
                         onChange={(e) => updateBranch(selectedBranch.id, { labelAngle: Number(e.target.value) || 0 })}
                         className="text-[11px] text-right px-1"
-                        style={{ width: 46, border: "1px solid #c8c8c8", height: 20, outline: "none", background: "white" }}
+                        style={{ width: 46, border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", background: "white" }}
                       />
                       <span className="text-[11px] text-gray-500">°</span>
                       <button
@@ -9536,7 +9536,7 @@ export default function CadPage() {
                         value={selectedBranch.labelSize ?? 1}
                         onChange={(e) => updateBranch(selectedBranch.id, { labelSize: Math.max(0.3, Math.min(4, Number(e.target.value) || 1)) })}
                         className="text-[11px] text-right px-1"
-                        style={{ width: 46, border: "1px solid #c8c8c8", height: 20, outline: "none", background: "white" }}
+                        style={{ width: 46, border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", background: "white" }}
                       />
                       <button
                         onClick={() => updateBranch(selectedBranch.id, { labelSize: undefined })}
@@ -9568,7 +9568,7 @@ export default function CadPage() {
                       rows={4}
                       placeholder="Произвольный текст..."
                       className="w-full text-[11px] px-1"
-                      style={{ border: "1px solid #c8c8c8", outline: "none", resize: "vertical", background: "white", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
+                      style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", resize: "vertical", background: "white", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
                     />
                   </FrameGroup>
                 )}
@@ -9602,7 +9602,7 @@ export default function CadPage() {
                   </div>
                   {activeHorizon && (
                     <div className="px-1 py-1 mt-1 text-[11px]"
-                      style={{ background: "#dcfce7", color: "#166534", border: "1px solid #86efac", borderRadius: 3 }}>
+                      style={{ background: "var(--c-tint-green2, #dcfce7)", color: "#166534", border: "1px solid #86efac", borderRadius: 3 }}>
                       ● Новые узлы будут создаваться на отметке <b>{activeHorizon.z} м</b>
                     </div>
                   )}
@@ -9708,7 +9708,7 @@ export default function CadPage() {
                             onClick={() => toggleHorizonExpand(h.id)}
                             className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium hover:bg-blue-50"
                             style={{
-                              borderTop: "1px solid #e5e7eb",
+                              borderTop: "1px solid var(--c-b1, #e5e7eb)",
                               color: expandedHorizons.has(h.id) ? "#1d4ed8" : "#374151",
                               background: expandedHorizons.has(h.id) ? "#eff6ff" : "transparent",
                             }}>
@@ -9718,7 +9718,7 @@ export default function CadPage() {
                               <span className="ml-auto flex items-center gap-1">
                                 {h.image && (
                                   <span className="px-1 rounded text-[9px] font-semibold"
-                                    style={{ background: "#dbeafe", color: "#1d4ed8" }}
+                                    style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "#1d4ed8" }}
                                     title="Загружен план горизонта">ПЛАН</span>
                                 )}
                                 {h.printLayer?.visible && (
@@ -9998,7 +9998,7 @@ export default function CadPage() {
                         </select>
                       ) : (
                         <div className="text-[10px] text-amber-700 px-1 py-1 rounded"
-                          style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                          style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d" }}>
                           Добавьте типы выработок в{" "}
                           <button onClick={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
                             className="underline text-blue-600"
@@ -10066,7 +10066,7 @@ export default function CadPage() {
               const indSection = (title: string, rows: React.ReactNode) => (
                 <div className="mb-2" key={title}>
                   <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
-                    style={{ borderBottom: "1px solid #e5e7eb" }}>{title}</div>
+                    style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>{title}</div>
                   <div className="pt-0.5">{rows}</div>
                 </div>
               );
@@ -10135,7 +10135,7 @@ export default function CadPage() {
               const indSection = (title: string, rows: React.ReactNode) => (
                 <div className="mb-2" key={title}>
                   <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
-                    style={{ borderBottom: "1px solid #e5e7eb" }}>{title}</div>
+                    style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>{title}</div>
                   <div className="pt-0.5">{rows}</div>
                 </div>
               );
@@ -10224,7 +10224,7 @@ export default function CadPage() {
                 <div className="flex flex-col h-full">
                   {/* Шапка */}
                   <div className="px-2 py-1.5 border-b border-gray-200 flex-shrink-0"
-                    style={{ background: "linear-gradient(180deg,#eff6ff,#dbeafe)" }}>
+                    style={{ background: "linear-gradient(180deg,var(--c-tint-blue, #eff6ff),var(--c-tint-blue2, #dbeafe))" }}>
                     <div className="text-[11px] font-semibold text-blue-800">↔ Сравнение схем</div>
                     {compareResult ? (
                       <div className="text-[10px] text-blue-600 mt-0.5 truncate" title={compareResult.fileName}>
@@ -10253,7 +10253,7 @@ export default function CadPage() {
                       {/* Счётчики */}
                       <div className="flex gap-1 px-2 py-1.5 flex-shrink-0 border-b border-gray-100">
                         {[
-                          { key: "all",     label: `Все (${allDiffs.length})`,     color: "#374151", bg: "#f3f4f6" },
+                          { key: "all",     label: `Все (${allDiffs.length})`,     color: "var(--c-t2, #374151)", bg: "#f3f4f6" },
                           { key: "changed", label: `Изм. (${changed})`,            color: "#d97706", bg: "#fffbeb" },
                           { key: "added",   label: `Доб. (${added})`,              color: "#16a34a", bg: "#f0fdf4" },
                           { key: "removed", label: `Уд. (${removed})`,             color: "#dc2626", bg: "#fef2f2" },
@@ -10291,7 +10291,7 @@ export default function CadPage() {
                               <div className="flex items-center gap-1.5 px-2 py-1.5">
                                 <div className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                                   style={{ background: statusColor(diff.status) }} />
-                                <span className="text-[10px] font-medium flex-1 truncate" style={{ color: "#1f2937" }}>
+                                <span className="text-[10px] font-medium flex-1 truncate" style={{ color: "var(--c-t1, #1f2937)" }}>
                                   {diff.name || diff.id}
                                 </span>
                                 <span className="text-[9px] px-1 rounded flex-shrink-0"
@@ -10302,9 +10302,9 @@ export default function CadPage() {
                               {/* Изменения — раскрываются при выборе */}
                               {compareSelectedId === diff.id && diff.changes && diff.changes.length > 0 && (
                                 <div className="mx-2 mb-1.5 rounded overflow-hidden border border-amber-200"
-                                  style={{ background: "#fffbeb" }}>
+                                  style={{ background: "var(--c-tint-amber, #fffbeb)" }}>
                                   <div className="px-2 py-0.5 text-[9px] font-semibold text-amber-700"
-                                    style={{ background: "#fef3c7", borderBottom: "1px solid #fde68a" }}>
+                                    style={{ background: "var(--c-tint-amber2, #fef3c7)", borderBottom: "1px solid #fde68a" }}>
                                     Изменённые поля
                                   </div>
                                   {diff.changes.map(ch => (
@@ -10329,13 +10329,13 @@ export default function CadPage() {
                         <button
                           onClick={() => setCompareShowDialog(true)}
                           className="flex-1 py-1 rounded text-[10px] font-medium border"
-                          style={{ background: "white", color: "#374151", borderColor: "#d1d5db" }}>
+                          style={{ background: "white", color: "var(--c-t2, #374151)", borderColor: "var(--c-b2, #d1d5db)" }}>
                           Сменить файл
                         </button>
                         <button
                           onClick={() => { setCompareResult(null); setCompareSelectedId(null); }}
                           className="flex-1 py-1 rounded text-[10px] font-medium"
-                          style={{ background: "#fee2e2", color: "#dc2626" }}>
+                          style={{ background: "var(--c-tint-red2, #fee2e2)", color: "#dc2626" }}>
                           Сбросить
                         </button>
                       </div>
@@ -10464,7 +10464,7 @@ export default function CadPage() {
               };
               return (
                 <div className="flex flex-col h-full">
-                  <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid #e5e7eb" }}>
+                  <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                     <button
                       onClick={() => setColorMode(colorMode === "section" ? "none" : "section")}
                       className="h-6 px-3 rounded text-[11px] font-semibold"
@@ -10501,7 +10501,7 @@ export default function CadPage() {
                         </div>
                       );
                     })}
-                    <div className="mt-3 pt-2 text-[10px] text-gray-400" style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <div className="mt-3 pt-2 text-[10px] text-gray-400" style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                       Всего ветвей: {total}
                     </div>
                     <div className="mt-2 text-[10px] text-gray-400 leading-snug">
@@ -10573,7 +10573,7 @@ export default function CadPage() {
               return (
                 <div className="flex flex-col h-full">
                   {/* Переключатель вкл/выкл */}
-                  <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid #e5e7eb" }}>
+                  <div className="flex items-center gap-2 px-3 py-2" style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
                     <button
                       onClick={() => setColorMode(colorMode === mode ? "none" : mode)}
                       className="h-6 px-3 rounded text-[11px] font-semibold"
@@ -10594,7 +10594,7 @@ export default function CadPage() {
                       <div style={{
                         width: 22, height: BAR_H,
                         background: `linear-gradient(to bottom, ${stopHi}, ${stopLo})`,
-                        border: "1px solid #d1d5db", borderRadius: 4, flexShrink: 0,
+                        border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 4, flexShrink: 0,
                       }} />
                       {/* Подписи делений */}
                       <div style={{ position: "relative", height: BAR_H, width: 72, flexShrink: 0 }}>
@@ -10605,7 +10605,7 @@ export default function CadPage() {
                             left: 0, display: "flex", alignItems: "center", gap: 4,
                           }}>
                             <div style={{ width: 5, height: 1, background: "#9ca3af" }} />
-                            <span style={{ fontSize: 10, color: "#374151", whiteSpace: "nowrap" }}>
+                            <span style={{ fontSize: 10, color: "var(--c-t2, #374151)", whiteSpace: "nowrap" }}>
                               {val % 1 === 0 ? val.toFixed(0) : val.toFixed(1)} {unit}
                             </span>
                           </div>
@@ -10615,7 +10615,7 @@ export default function CadPage() {
                   </div>
 
                   {/* Настройки шкалы */}
-                  <div className="px-3 py-3" style={{ borderTop: "1px solid #e5e7eb" }}>
+                  <div className="px-3 py-3" style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                     <div className="flex items-center justify-between mb-2">
                       <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">Настройки шкалы</span>
                       <button
@@ -10645,14 +10645,14 @@ export default function CadPage() {
                       <input type="number" min="0" step={isVel ? 1 : 5} value={scaleMin}
                         onChange={e => setScaleMin(Number(e.target.value))}
                         className="flex-1 text-[11px] text-right px-1"
-                        style={{ border: "1px solid #d1d5db", borderRadius: 3, height: 22, outline: "none" }} />
+                        style={{ border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 3, height: 22, outline: "none" }} />
                     </div>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Макс, {unit}</span>
                       <input type="number" min="1" step={isVel ? 1 : 5} value={scaleMax}
                         onChange={e => setScaleMax(Number(e.target.value))}
                         className="flex-1 text-[11px] text-right px-1"
-                        style={{ border: "1px solid #d1d5db", borderRadius: 3, height: 22, outline: "none" }} />
+                        style={{ border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 3, height: 22, outline: "none" }} />
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -10685,11 +10685,11 @@ export default function CadPage() {
         </>)}
 
         {/* ── РАБОЧАЯ ОБЛАСТЬ (CANVAS + ИНСТРУМЕНТЫ) ────────────────── */}
-        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "#ffffff" }}>
+        <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "var(--c-s1, #ffffff)" }}>
 
           {/* Локальная панель инструментов рисования */}
           <div className="h-8 flex items-center gap-1 px-2 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 cad-toolbar-scroll"
-            style={{ background: "#f5f5f5", borderBottom: "1px solid #d0d0d0" }}>
+            style={{ background: "var(--c-s2, #f5f5f5)", borderBottom: "1px solid var(--c-b2, #d0d0d0)" }}>
             <ToolBtn icon="MousePointer2" label="Выбрать" active={tool === "select"} onClick={() => setTool("select")} />
             <ToolBtn icon="Plus" label="Узел" active={tool === "node"} onClick={() => setTool("node")} />
             <ToolBtn icon="GitBranch" label="Ветвь" active={tool === "branch"} onClick={() => setTool("branch")} />
@@ -10715,7 +10715,7 @@ export default function CadPage() {
               value={colorMode}
               onChange={e => setColorMode(e.target.value as "none" | "flowQ" | "velocityV" | "section" | "ventsection" | "horizon")}
               className="h-6 text-[11px] px-1 rounded"
-              style={{ border: "1px solid #d0d0d0", background: colorMode !== "none" ? "#eff6ff" : "white", color: colorMode !== "none" ? "#1d4ed8" : "#1f1f1f", fontWeight: colorMode !== "none" ? 600 : 400, outline: "none" }}
+              style={{ border: "1px solid var(--c-b2, #d0d0d0)", background: colorMode !== "none" ? "#eff6ff" : "white", color: colorMode !== "none" ? "#1d4ed8" : "#1f1f1f", fontWeight: colorMode !== "none" ? 600 : 400, outline: "none" }}
               title="Режим цветовой заливки ветвей">
               <option value="none">— Заливка выкл</option>
               <option value="flowQ">Расход воздуха</option>
@@ -10747,7 +10747,7 @@ export default function CadPage() {
                 value={animSpeed}
                 onChange={e => setAnimSpeed(Number(e.target.value))}
                 className="h-6 px-1 rounded text-[11px] bg-white"
-                style={{ border: "1px solid #d0d0d0", color: "#1f1f1f" }}
+                style={{ border: "1px solid var(--c-b2, #d0d0d0)", color: "var(--c-t1, #1f1f1f)" }}
                 title="Скорость движения стрелок">
                 <option value={0.25}>Очень медленно</option>
                 <option value={0.5}>Медленно</option>
@@ -10783,8 +10783,8 @@ export default function CadPage() {
               className="h-6 px-2 flex items-center rounded text-[11px]"
               style={{
                 background: "white",
-                color: "#374151",
-                border: "1px solid #d0d0d0",
+                color: "var(--c-t2, #374151)",
+                border: "1px solid var(--c-b2, #d0d0d0)",
               }}
               title="Настройки пределов масштабирования">
               <Icon name="Settings2" size={11} />
@@ -11941,12 +11941,12 @@ export default function CadPage() {
                         }} />
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 600, color: isActive ? "#fff" : "#d1d5db", fontSize: 11 }}>{label}</div>
-                          <div style={{ color: "#9ca3af", fontSize: 10 }}>{dp}</div>
+                          <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 10 }}>{dp}</div>
                         </div>
                         {/* Радиус */}
                         <div style={{
                           fontSize: 11, fontWeight: 700, textAlign: "right", flexShrink: 0,
-                          color: r > 0 ? color : "#4b5563",
+                          color: r > 0 ? color: "var(--c-t2, #4b5563)",
                           background: r > 0 ? `${color}20` : "transparent",
                           border: `1px solid ${r > 0 ? color + "60" : "transparent"}`,
                           borderRadius: 4, padding: "1px 6px", minWidth: 54,
@@ -12790,22 +12790,22 @@ export default function CadPage() {
         {!rightPanelOpen && (
           <button onClick={() => setRightPanelOpen(true)}
             className="flex-shrink-0 flex items-center justify-center w-6 h-full border-l"
-            style={{ background: "#f5f5f5", borderColor: "#b8b8b8", color: "#374151", cursor: "pointer" }}
+            style={{ background: "var(--c-s2, #f5f5f5)", borderColor: "var(--c-b3, #b8b8b8)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
             title="Показать панель свойств">
             <Icon name="PanelRightOpen" size={14} />
           </button>
         )}
         {rightPanelOpen && (
           <div className="w-[280px] flex-shrink-0 flex flex-col"
-            style={{ background: "#ffffff", borderLeft: "1px solid #b8b8b8" }}>
+            style={{ background: "var(--c-s1, #ffffff)", borderLeft: "1px solid var(--c-b3, #b8b8b8)" }}>
             {/* Заголовок */}
             <div className="flex items-center gap-1 px-2 h-8 border-b border-gray-300"
-              style={{ background: "#f5f5f5", fontSize: 11, fontWeight: 600 }}>
+              style={{ background: "var(--c-s2, #f5f5f5)", fontSize: 11, fontWeight: 600 }}>
               <Icon name="LayoutList" size={12} />
               <span className="flex-1">Панель информации</span>
               <button onClick={() => setRightPanelOpen(false)}
                 className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
-                style={{ background: "none", border: "1px solid #c8c8c8", color: "#374151", cursor: "pointer" }}
+                style={{ background: "none", border: "1px solid var(--c-b2, #c8c8c8)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
                 title="Скрыть панель свойств">
                 <Icon name="PanelRightClose" size={12} />
                 Свернуть
@@ -12836,7 +12836,7 @@ export default function CadPage() {
               </div>
 
               {/* Масштаб XY и Z */}
-              <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "#f5f5f5" }}>
+              <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "var(--c-s2, #f5f5f5)" }}>
                 {/* XY */}
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[11px] font-semibold" style={{ color: "#1a3a6b" }}>Масштаб XY: ×{xyScale.toFixed(1)}</span>
@@ -12955,7 +12955,7 @@ export default function CadPage() {
             </div>
 
             {/* ── Подвал панели: быстрые действия ── */}
-            <div className="border-t border-gray-300 p-2 flex gap-1" style={{ background: "#f5f5f5" }}>
+            <div className="border-t border-gray-300 p-2 flex gap-1" style={{ background: "var(--c-s2, #f5f5f5)" }}>
               <button onClick={handleSolve}
                 className="flex-1 h-7 text-xs rounded flex items-center justify-center gap-1"
                 style={{ background: "#16a34a", color: "white" }}

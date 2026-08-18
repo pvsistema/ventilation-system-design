@@ -108,8 +108,8 @@ export default function LicensesTab({
                         onClick={() => toggleLicense(lic.id, !lic.is_active)}
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors"
                         style={lic.is_active
-                          ? { borderColor: "#fca5a5", color: "#dc2626", background: "#fff5f5" }
-                          : { borderColor: "#86efac", color: "#16a34a", background: "#f0fdf4" }}>
+                          ? { borderColor: "#fca5a5", color: "#dc2626", background: "var(--c-tint-red, #fff5f5)" }
+                          : { borderColor: "#86efac", color: "#16a34a", background: "var(--c-tint-green, #f0fdf4)" }}>
                         <Icon name={lic.is_active ? "PauseCircle" : "PlayCircle"} size={12} />
                         {lic.is_active ? "Отозвать" : "Активировать"}
                       </button>
@@ -163,7 +163,7 @@ export default function LicensesTab({
                             return (
                               <div key={seat.id} className="flex items-start gap-3 p-3 bg-white rounded-lg border border-blue-100">
                                 <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                                  style={{ background: "#eff6ff" }}>
+                                  style={{ background: "var(--c-tint-blue, #eff6ff)" }}>
                                   <span className="text-[17px]">{osIcon}</span>
                                 </div>
                                 <div className="flex-1 min-w-0">

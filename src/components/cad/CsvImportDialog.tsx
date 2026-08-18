@@ -14,7 +14,7 @@ const FILE_TYPE_LABELS: Record<string, { label: string; color: string; bg: strin
   positions:   { label: "Позиции",    color: "#7c3aed", bg: "#ede9fe" },
   bulkheads:   { label: "Перемычки",  color: "#92400e", bg: "#fef3c7" },
   fans:        { label: "Вент-ры",    color: "#9f1239", bg: "#ffe4e6" },
-  unknown:     { label: "?",          color: "#374151", bg: "#f3f4f6" },
+  unknown:     { label: "?",          color: "var(--c-t2, #374151)", bg: "#f3f4f6" },
 };
 
 export default function CsvImportDialog({ onImport, onClose }: Props) {
@@ -71,14 +71,14 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
       style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="flex flex-col shadow-2xl"
-        style={{ width: 520, maxHeight: "88vh", background: "#f5f5f5", border: "1px solid #999" }}>
+        style={{ width: 520, maxHeight: "88vh", background: "var(--c-s2, #f5f5f5)", border: "1px solid var(--c-b3, #999)" }}>
 
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-400"
-          style={{ background: "linear-gradient(180deg,#e8e8e8,#d8d8d8)" }}>
+          style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
           <div className="flex items-center gap-2">
             <span className="text-sm font-semibold text-gray-800">Импорт CSV из АэроСети</span>
             <span className="text-[10px] px-1.5 py-0.5 rounded text-green-700 border border-green-300"
-              style={{ background: "#dcfce7" }}>Рекомендуется</span>
+              style={{ background: "var(--c-tint-green2, #dcfce7)" }}>Рекомендуется</span>
           </div>
           <button onClick={onClose}
             className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white text-gray-600">✕</button>
@@ -86,7 +86,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
 
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
 
-          <div className="text-xs rounded border border-green-100 px-3 py-2 space-y-1" style={{ background: "#f0fdf4" }}>
+          <div className="text-xs rounded border border-green-100 px-3 py-2 space-y-1" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
             <div className="font-semibold text-green-800">Как экспортировать из АэроСети:</div>
             <div className="text-green-700">1. <b>Файл → Экспорт в CSV</b>, схема <b>Aeroset</b>, разделитель <b>;</b></div>
             <div className="text-green-700">2. Единицы измерения → <b>Метры</b></div>
@@ -121,7 +121,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
             </div>
             {rUnit === "auto" && detectedUnit && (
               <div className="mt-1 px-2 py-0.5 rounded text-[10px] inline-block"
-                style={{ background: "#dbeafe", color: "#1e40af" }}>
+                style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "#1e40af" }}>
                 Определено: {detectedUnit === "kmu" ? "кмю — значения будут делиться на 1000" : "СИ — значения без изменений"}
               </div>
             )}
@@ -152,7 +152,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
               Анализ файлов...
             </div>
           )}
-          {error && <div className="px-3 py-2 rounded text-xs text-red-700 border border-red-300" style={{ background: "#fef2f2" }}>{error}</div>}
+          {error && <div className="px-3 py-2 rounded text-xs text-red-700 border border-red-300" style={{ background: "var(--c-tint-red, #fef2f2)" }}>{error}</div>}
 
           {files.length > 0 && (
             <div className="space-y-1">
@@ -204,7 +204,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
               )}
 
               {result.warnings.length > 0 && (
-                <div className="rounded border border-yellow-300 px-3 py-2 space-y-1" style={{ background: "#fffbeb" }}>
+                <div className="rounded border border-yellow-300 px-3 py-2 space-y-1" style={{ background: "var(--c-tint-amber, #fffbeb)" }}>
                   {result.warnings.map((w, i) => (
                     <div key={i} className="flex items-start gap-1.5 text-xs text-yellow-800">
                       <Icon name="AlertTriangle" size={12} className="mt-0.5 shrink-0" /><span>{w}</span>
@@ -218,7 +218,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
               </button>
               {showDebug && <pre className="text-[10px] bg-gray-900 text-green-400 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">{result.debug}</pre>}
 
-              <div className="border rounded px-3 py-2 space-y-1.5" style={{ background: "#f9f9f9" }}>
+              <div className="border rounded px-3 py-2 space-y-1.5" style={{ background: "var(--c-s2, #f9f9f9)" }}>
                 <div className="text-[11px] font-semibold text-gray-700">Способ добавления:</div>
                 {(["replace", "append"] as const).map(m => (
                   <label key={m} className="flex items-center gap-2 cursor-pointer">
@@ -231,7 +231,7 @@ export default function CsvImportDialog({ onImport, onClose }: Props) {
           )}
         </div>
 
-        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-300" style={{ background: "#ececec" }}>
+        <div className="flex items-center justify-between px-4 py-3 border-t border-gray-300" style={{ background: "var(--c-s3, #ececec)" }}>
           <button onClick={onClose} className="px-4 py-1.5 text-sm border border-gray-400 rounded hover:bg-gray-200">Отмена</button>
           <button
             disabled={!result || result.branches.length === 0}

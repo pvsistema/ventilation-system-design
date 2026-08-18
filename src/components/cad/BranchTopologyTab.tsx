@@ -74,7 +74,7 @@ export default function BranchTopologyTab({
           <button
             onClick={() => onUpdate({ manualLength: !branch.manualLength })}
             title={branch.manualLength ? "Вычислять автоматически из координат" : "Задать вручную"}
-            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid #c8c8c8", borderRadius: 2, background: branch.manualLength ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualLength ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
             {branch.manualLength ? "рук" : "авт"}
           </button>
         </div>
@@ -97,7 +97,7 @@ export default function BranchTopologyTab({
           <button
             onClick={() => onUpdate({ manualAngle: !branch.manualAngle })}
             title={branch.manualAngle ? "Вычислять автоматически из координат" : "Задать вручную"}
-            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid #c8c8c8", borderRadius: 2, background: branch.manualAngle ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualAngle ? "#dbeafe" : "#f5f5f5", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
             {branch.manualAngle ? "рук" : "авт"}
           </button>
         </div>
@@ -115,7 +115,7 @@ export default function BranchTopologyTab({
             onUpdate(extra);
           }}
           className="w-full text-[11px] px-1"
-          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
           <option value="round">Круглое</option>
           <option value="rect">Прямоугольное</option>
           <option value="trap">Трапециевидное</option>
@@ -200,7 +200,7 @@ export default function BranchTopologyTab({
         <ComputedInput value={numFmt(branch.dh, 3)} />
       </InlineLabel>
 
-      <div style={{ borderBottom: "1px solid #e0e0e0", margin: "2px 0" }} />
+      <div style={{ borderBottom: "1px solid var(--c-b1, #e0e0e0)", margin: "2px 0" }} />
 
       <InlineLabel label="Капитальная">
         <CheckField checked={isCapital} onChange={setIsCapital} />
@@ -217,7 +217,7 @@ export default function BranchTopologyTab({
           value={branch.resistanceMode}
           onChange={(e) => onUpdate({ resistanceMode: e.target.value as TopoBranch["resistanceMode"] })}
           className="w-full text-[11px] px-1"
-          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
           <option value="surface">По типу поверхности</option>
           <option value="alpha">По коэф. α</option>
           <option value="roughness">По шероховатости Δ</option>
@@ -234,7 +234,7 @@ export default function BranchTopologyTab({
               if (s) onUpdate({ surfaceId: s.id, surface: s.name, alphaCoef: s.alpha, roughness: s.roughness });
             }}
             className="w-full text-[11px] px-1"
-            style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+            style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
             {SURFACE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </InlineLabel>
@@ -321,7 +321,7 @@ export default function BranchTopologyTab({
               style={{ width: 52, height: 18, fontSize: 11, border: "1px solid #fca5a5",
                 background: "white", outline: "none", textAlign: "right", paddingRight: 2 }}
             />
-            <span style={{ fontSize: 10, color: "#9ca3af" }}>
+            <span style={{ fontSize: 10, color: "var(--c-t4, #9ca3af)" }}>
               {branch.leakageCoeff > 0
                 ? `${(branch.leakageCoeff * 100).toFixed(0)}% от Q`
                 : "не задан"}
@@ -349,7 +349,7 @@ export default function BranchTopologyTab({
       </InlineLabel>
       {branch.isDead && (
         <div className="mx-1 mb-1 px-2 py-1 text-[10px] rounded"
-          style={{ background: "#f9fafb", border: "1px solid #d1d5db", color: "#6b7280" }}>
+          style={{ background: "var(--c-s2, #f9fafb)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t3, #6b7280)" }}>
           Расчёт задаст Q=0. Контролируется MIN_DEAD_END_FLOW = 0.5 м³/с
         </div>
       )}
@@ -459,7 +459,7 @@ export default function BranchTopologyTab({
           value={branch.type ?? ""}
           onChange={(e) => onUpdate({ type: e.target.value })}
           className="w-full text-[11px] px-1"
-          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
           <option value="">— не задан —</option>
           {BRANCH_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
         </select>
@@ -470,7 +470,7 @@ export default function BranchTopologyTab({
           value={branch.horizonId ?? ""}
           onChange={(e) => onUpdate({ horizonId: e.target.value })}
           className="w-full text-[11px] px-1"
-          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
           <option value="">— без горизонта —</option>
           {PLAST_OPTIONS.slice(1).map((p) => <option key={p} value={p}>{p}</option>)}
         </select>
@@ -482,7 +482,7 @@ export default function BranchTopologyTab({
           value={branch.comment ?? ""}
           onChange={(e) => onUpdate({ comment: e.target.value })}
           className="w-full text-[11px] px-1"
-          style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}
+          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}
         />
       </InlineLabel>
     </div>

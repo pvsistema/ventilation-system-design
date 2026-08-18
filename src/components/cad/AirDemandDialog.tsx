@@ -44,7 +44,7 @@ export default function AirDemandDialog({
   const th = (label: string, w?: number, align: "left" | "right" | "center" = "right") => (
     <th className="px-1 py-1 font-medium text-gray-600 sticky top-0"
       style={{
-        border: "1px solid #d1d5db", background: "#eef2f7",
+        border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-s3, #eef2f7)",
         textAlign: align, width: w, fontSize: 10, whiteSpace: "nowrap", zIndex: 1,
       }}>
       {label}
@@ -54,11 +54,11 @@ export default function AirDemandDialog({
   const FaceRow = ({ f }: { f: FaceDemand }) => {
     const ok = f.flowOk && f.velocityOk;
     const cell = (v: React.ReactNode, align: "left" | "right" | "center" = "right", extra?: React.CSSProperties) => (
-      <td className="px-1 py-0.5" style={{ border: "1px solid #e5e7eb", textAlign: align, ...extra }}>{v}</td>
+      <td className="px-1 py-0.5" style={{ border: "1px solid var(--c-b1, #e5e7eb)", textAlign: align, ...extra }}>{v}</td>
     );
     const num = (v: number) => (v > 0 ? v.toFixed(2) : "—");
     const hl = (active: boolean): React.CSSProperties => active
-      ? { background: "#eff6ff", color: "#1d4ed8", fontWeight: 700 }
+      ? { background: "var(--c-tint-blue, #eff6ff)", color: "#1d4ed8", fontWeight: 700 }
       : {};
 
     return (
@@ -69,7 +69,7 @@ export default function AirDemandDialog({
             {f.branchId}
           </button>, "center")}
         {cell(<span title={f.name}>{f.name}</span>, "left")}
-        {cell(FACE_TYPE_LABEL[f.faceType as FaceType] ?? f.faceType, "left", { color: "#6b7280" })}
+        {cell(FACE_TYPE_LABEL[f.faceType as FaceType] ?? f.faceType, "left", { color: "var(--c-t3, #6b7280)" })}
         {cell(f.area.toFixed(1))}
         {cell(num(f.byPeople), "right", hl(f.factor === "people"))}
         {cell(num(f.byBlast), "right", hl(f.factor === "blast"))}
@@ -107,7 +107,7 @@ export default function AirDemandDialog({
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-4 py-2.5 flex-shrink-0"
-          style={{ background: "#e8edf5", borderBottom: "1px solid #c0cad8" }}>
+          style={{ background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}>
           <div className="flex items-center gap-2">
             <Icon name="Calculator" size={15} className="text-blue-700" />
             <span className="text-[13px] font-semibold text-gray-800">
@@ -139,10 +139,10 @@ export default function AirDemandDialog({
         ) : (<>
           {/* Сводка */}
           <div className="flex items-stretch gap-0 flex-shrink-0"
-            style={{ borderBottom: "1px solid #e0e4ee", background: "#f8fafc" }}>
+            style={{ borderBottom: "1px solid #e0e4ee", background: "var(--c-s2, #f8fafc)" }}>
             {[
-              { label: "Забоев в расчёте", value: String(result.faces.length), color: "#0f172a" },
-              { label: "Участков", value: String(result.sections.length), color: "#0f172a" },
+              { label: "Забоев в расчёте", value: String(result.faces.length), color: "var(--c-t1, #0f172a)" },
+              { label: "Участков", value: String(result.sections.length), color: "var(--c-t1, #0f172a)" },
               { label: "Потребность, м³/с", value: result.totalDemand.toFixed(2), color: "#1d4ed8" },
               { label: "Фактически, м³/с", value: result.totalActual.toFixed(2),
                 color: result.totalActual >= result.totalDemand ? "#15803d" : "#dc2626" },
@@ -176,12 +176,12 @@ export default function AirDemandDialog({
                   {th("Заключение", 160, "left")}
                 </tr>
                 <tr>
-                  <th colSpan={4} style={{ border: "1px solid #d1d5db", background: "#f6f8fb" }} />
+                  <th colSpan={4} style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-s3, #f6f8fb)" }} />
                   <th colSpan={4} className="px-1 font-normal text-gray-400"
-                    style={{ border: "1px solid #d1d5db", background: "#f6f8fb", fontSize: 9 }}>
+                    style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-s3, #f6f8fb)", fontSize: 9 }}>
                     потребность по факторам, м³/с
                   </th>
-                  <th colSpan={5} style={{ border: "1px solid #d1d5db", background: "#f6f8fb" }} />
+                  <th colSpan={5} style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-s3, #f6f8fb)" }} />
                 </tr>
               </thead>
               <tbody>
@@ -192,7 +192,7 @@ export default function AirDemandDialog({
                     <Fragment key={sec.sectionId}>
                       <tr>
                         <td colSpan={COLSPAN} className="px-2 py-1"
-                          style={{ border: "1px solid #d1d5db", background: "#dbeafe" }}>
+                          style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-tint-blue2, #dbeafe)" }}>
                           <div className="flex items-center gap-2">
                             <span style={{ width: 9, height: 9, borderRadius: 2, background: sec.color }} />
                             <b className="text-[11px]">
@@ -206,21 +206,21 @@ export default function AirDemandDialog({
                       {list.map(f => <FaceRow key={f.branchId} f={f} />)}
                       <tr>
                         <td colSpan={9} className="px-2 py-0.5 text-right font-semibold text-[11px]"
-                          style={{ border: "1px solid #e5e7eb", background: "#f1f5f9" }}>
+                          style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)" }}>
                           Итого по участку:
                         </td>
                         <td className="px-1 py-0.5 text-right font-bold"
-                          style={{ border: "1px solid #e5e7eb", background: "#f1f5f9" }}>
+                          style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)" }}>
                           {sec.total.toFixed(2)}
                         </td>
                         <td className="px-1 py-0.5 text-right font-bold"
-                          style={{ border: "1px solid #e5e7eb", background: "#f1f5f9",
+                          style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)",
                             color: sec.ok ? "#15803d" : "#dc2626" }}>
                           {sec.actual.toFixed(2)}
                         </td>
-                        <td style={{ border: "1px solid #e5e7eb", background: "#f1f5f9" }} />
+                        <td style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)" }} />
                         <td className="px-1 py-0.5 text-[10px] font-semibold"
-                          style={{ border: "1px solid #e5e7eb", background: "#f1f5f9",
+                          style={{ border: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s3, #f1f5f9)",
                             color: sec.ok ? "#15803d" : "#b91c1c" }}>
                           {sec.ok ? "обеспечено" : `не обеспечено: ${sec.failed}`}
                         </td>
@@ -237,7 +237,7 @@ export default function AirDemandDialog({
                     <>
                       <tr>
                         <td colSpan={COLSPAN} className="px-2 py-1"
-                          style={{ border: "1px solid #d1d5db", background: "#fef3c7" }}>
+                          style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-tint-amber2, #fef3c7)" }}>
                           <b className="text-[11px]">Забои вне участков</b>
                           <span className="text-[10px] text-gray-600 pl-2">
                             отнесите их к участкам, чтобы получить итоги по участкам

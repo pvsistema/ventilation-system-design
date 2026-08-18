@@ -207,7 +207,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
       <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 760, height: 520 }}>
         {/* Шапка */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#f0f4f8" }}>
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f4f8)" }}>
           <Icon name="BookOpen" size={14} className="text-blue-600" />
           <span className="text-[13px] font-semibold text-gray-800">Библиотека вентиляторов</span>
           <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700"><Icon name="X" size={16} /></button>
@@ -297,7 +297,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                       <div className="space-y-2">
                         <div>
                           <div className="text-[10px] text-gray-500 font-medium mb-1">Напор — Расход</div>
-                          <div style={{ border: "1px solid #e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 4, overflow: "hidden" }}>
                             <FanChart curves={[...curves, ...reverseCurves]} type="qh" />
                           </div>
                         </div>
@@ -329,7 +329,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
           </div>
         </div>
         {/* Кнопки */}
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+        <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
           <span className="text-[11px] text-gray-500 flex-1">
             {preview ? `Выбран: ${preview.name}` : "Выберите вентилятор из списка для импорта"}
           </span>
@@ -366,7 +366,7 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
       <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 520, maxHeight: 520 }}>
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#f0f4f8" }}>
+        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f4f8)" }}>
           <Icon name="Plus" size={14} className="text-blue-600" />
           <span className="text-[13px] font-semibold">Новая рабочая характеристика — {fan.name}</span>
           <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700"><Icon name="X" size={16} /></button>
@@ -417,7 +417,7 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
           {catalog && (
             <div>
               <div className="text-[10px] text-gray-500 font-medium mb-1">Предпросмотр Q–H</div>
-              <div style={{ border: "1px solid #e5e7eb", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 4, overflow: "hidden" }}>
                 <FanChart
                   curves={[
                     { pts: preview, color: "#2196f3" },
@@ -430,7 +430,7 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
             </div>
           )}
         </div>
-        <div className="flex gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+        <div className="flex gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
           <button onClick={onClose} className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">Отмена</button>
           <button onClick={() => {
             onAdd({
@@ -570,7 +570,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
       {/* Левая панель — список вентиляторов рудника */}
       <div className="flex flex-col border-r border-gray-200" style={{ width: 220, flexShrink: 0 }}>
         {/* Шапка */}
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#e8eef8" }}>
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-tint-blue, #e8eef8)" }}>
           <span className="text-[11px] font-semibold text-gray-700">Вентиляторы рудника</span>
           <button onClick={() => setShowLibrary(true)}
             className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
@@ -621,7 +621,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
       {selected && catalog ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Шапка */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
             <span className="text-[13px] font-bold text-gray-900">{selected.name}</span>
             <span className="text-[11px] text-gray-500">Ø{selected.diameter} м</span>
             <span className="text-[10px] text-gray-400">·</span>
@@ -640,7 +640,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
             {/* Таблица характеристик */}
             <div className="flex flex-col border-r border-gray-200 flex-shrink-0" style={{ width: 240 }}>
               <div className="grid text-[10px] font-semibold text-gray-600 border-b border-gray-200 px-1 py-1.5 select-none"
-                style={{ background: "#f0f4f8", gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
+                style={{ background: "var(--c-s3, #f0f4f8)", gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
                 <div />
                 <div>Угол</div>
                 <div className="text-center">Реверс</div>
@@ -689,7 +689,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
               </div>
               {/* Рабочие точки */}
               {selected.bladeAngles.some(a => a.operatingQ) && (
-                <div className="border-t border-gray-200 px-2 py-1.5 flex-shrink-0" style={{ background: "#fefce8" }}>
+                <div className="border-t border-gray-200 px-2 py-1.5 flex-shrink-0" style={{ background: "var(--c-tint-amber, #fefce8)" }}>
                   <div className="text-[10px] font-semibold text-yellow-800 mb-1">Рабочие точки</div>
                   {selected.bladeAngles.filter(a => a.operatingQ).map(a => (
                     <div key={a.id} className="flex items-center gap-1.5 mb-0.5">
@@ -731,13 +731,13 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
                   <>
                     <div>
                       <div className="text-[11px] font-semibold text-gray-700 mb-1">Напор — Расход</div>
-                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, overflow: "hidden" }}>
+                      <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden" }}>
                         <FanChart curves={curves} type="qh" operatingPoints={opPoints} />
                       </div>
                     </div>
                     <div>
                       <div className="text-[11px] font-semibold text-gray-700 mb-1">Мощность — Расход</div>
-                      <div style={{ border: "1px solid #e5e7eb", borderRadius: 6, overflow: "hidden" }}>
+                      <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden" }}>
                         <FanChart curves={curves} type="qp" />
                       </div>
                     </div>
@@ -893,7 +893,7 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
       <div className="flex flex-col border-r border-gray-200" style={{ width: 380 }}>
         {/* Шапка */}
         <div className="grid text-[11px] font-semibold text-gray-700 border-b border-gray-300 flex-shrink-0 select-none"
-          style={{ background: "#e8eef8", gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px" }}>
+          style={{ background: "var(--c-tint-blue, #e8eef8)", gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px" }}>
           <div className="px-1 py-1.5" />
           <div className="px-2 py-1.5">Название</div>
           <div className="px-1 py-1.5 text-center">Цвет</div>
@@ -944,7 +944,7 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
         </div>
 
         {/* Добавление */}
-        <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-gray-300 flex-shrink-0" style={{ background: "#f0f0f0" }}>
+        <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-gray-300 flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
           <input className="flex-1 text-[12px] border border-gray-300 rounded px-2 py-1 bg-white text-gray-900"
             placeholder="Укажите название нового типа"
             value={newName} onChange={e => setNewName(e.target.value)}
@@ -961,7 +961,7 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
         {selected ? (
           <>
             {/* Заголовок панели */}
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
               <div className="w-6 h-6 rounded border border-gray-300 flex-shrink-0" style={{ background: isEditing ? editForm.color : selected.color }} />
               <span className="text-[13px] font-semibold text-gray-900 truncate">
                 {isEditing ? (editForm.name || "Новый тип") : selected.name}
@@ -1192,7 +1192,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
     <div className="flex h-full overflow-hidden">
       {/* Левая панель — список рудника */}
       <div className="flex flex-col border-r border-gray-200" style={{ width: 260, flexShrink: 0 }}>
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#e8eef8" }}>
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-tint-blue, #e8eef8)" }}>
           <span className="text-[11px] font-semibold text-gray-700">Перемычки рудника</span>
           <div className="flex gap-1">
             <button onClick={() => setShowCatalog(true)}
@@ -1234,7 +1234,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
           ))}
         </div>
 
-        <div className="flex gap-1 px-2 py-1.5 border-t border-gray-200 flex-shrink-0" style={{ background: "#f0f0f0" }}>
+        <div className="flex gap-1 px-2 py-1.5 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
           <button onClick={() => setShowCatalog(true)}
             className="flex-1 flex items-center justify-center gap-1 py-1 text-[11px] text-blue-600 hover:bg-blue-50 rounded border border-blue-300">
             <Icon name="Plus" size={11} /> Из каталога
@@ -1250,7 +1250,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
       {selected ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Шапка */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
             <div className="w-5 h-5 rounded-sm border border-gray-300 flex-shrink-0" style={{ background: selected.color }} />
             <span className="text-[13px] font-bold text-gray-900 truncate flex-1">
               {isEditing ? (editForm.name || "Перемычка") : selected.name}
@@ -1362,7 +1362,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                     <span className="text-[13px] text-gray-900 font-medium">{value}</span>
                   </div>
                 ))}
-                <div className="mt-3 p-3 rounded-lg text-[11px] text-blue-800" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+                <div className="mt-3 p-3 rounded-lg text-[11px] text-blue-800" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
                   Чтобы применить перемычку к выработке — выберите ветвь на схеме и укажите перемычку в панели свойств ветви.
                 </div>
               </>
@@ -1381,7 +1381,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
       {showCatalog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
           <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 720, height: 540 }}>
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "#f0f4f8" }}>
+            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f4f8)" }}>
               <Icon name="Library" size={14} className="text-blue-600" />
               <span className="text-[13px] font-semibold text-gray-800">Каталог перемычек</span>
               <button onClick={() => setShowCatalog(false)} className="ml-auto text-gray-400 hover:text-gray-700">
@@ -1414,7 +1414,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                 <div className="flex-1 overflow-y-auto">
                   {/* Шапка */}
                   <div className="grid text-[10px] font-semibold text-gray-600 px-2 py-1 border-b border-gray-200 sticky top-0"
-                    style={{ background: "#e8eef8", gridTemplateColumns: "14px 1fr 110px 90px 80px" }}>
+                    style={{ background: "var(--c-tint-blue, #e8eef8)", gridTemplateColumns: "14px 1fr 110px 90px 80px" }}>
                     <div />
                     <div>Название</div>
                     <div className="text-right">A, м²/(с·√Па)</div>
@@ -1453,7 +1453,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                 </div>
               </div>
             </div>
-            <div className="flex items-center px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+            <div className="flex items-center px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
               <span className="text-[11px] text-gray-500 flex-1">Нажмите на строку для добавления в справочник рудника</span>
               <button onClick={() => setShowCatalog(false)}
                 className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
@@ -1520,52 +1520,52 @@ function VehicleCatalogSection() {
     v.type.toLowerCase().includes(search.toLowerCase())
   );
   return (
-    <div style={{ background: "#fff", minHeight: "100%", padding: "12px" }}>
+    <div style={{ background: "var(--c-s1, #fff)", minHeight: "100%", padding: "12px" }}>
       <div style={{ position: "relative", marginBottom: 12 }}>
-        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "#9ca3af", fontSize: 14 }}>🔍</span>
+        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--c-t4, #9ca3af)", fontSize: 14 }}>🔍</span>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Поиск по названию или типу..."
           style={{
             width: "100%", boxSizing: "border-box",
-            background: "#f3f4f6", border: "1px solid #d1d5db", borderRadius: 8,
-            color: "#111827", fontSize: 12, padding: "8px 10px 8px 32px", outline: "none",
+            background: "var(--c-s3, #f3f4f6)", border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 8,
+            color: "var(--c-t1, #111827)", fontSize: 12, padding: "8px 10px 8px 32px", outline: "none",
           }}
         />
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {filtered.map((v, i) => (
           <div key={i} style={{
-            background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px",
+            background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px",
             cursor: "default",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
               <div>
-                <div style={{ color: "#111827", fontWeight: 600, fontSize: 13 }}>{v.name}</div>
-                <div style={{ color: "#6b7280", fontSize: 11, marginTop: 1 }}>
+                <div style={{ color: "var(--c-t1, #111827)", fontWeight: 600, fontSize: 13 }}>{v.name}</div>
+                <div style={{ color: "var(--c-t3, #6b7280)", fontSize: 11, marginTop: 1 }}>
                   {v.type}{v.tonnage ? ` · ${v.tonnage}` : ""}
                 </div>
               </div>
-              <span style={{ color: "#d1d5db", fontSize: 14 }}>›</span>
+              <span style={{ color: "var(--c-t4, #d1d5db)", fontSize: 14 }}>›</span>
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
               {[
-                { label: "РЕЗИНА", val: v.rubber, color: "#374151" },
+                { label: "РЕЗИНА", val: v.rubber, color: "var(--c-t2, #374151)" },
                 { label: "ДИЗЕЛЬ", val: v.diesel, color: "#2563eb" },
                 { label: "МАСЛО",  val: v.oil,    color: "#ea580c" },
               ].map(({ label, val, color }) => (
-                <div key={label} style={{ background: "#eef2f7", borderRadius: 6, padding: "5px 6px" }}>
-                  <div style={{ color: "#9ca3af", fontSize: 9, fontWeight: 600, letterSpacing: "0.05em" }}>{label}</div>
+                <div key={label} style={{ background: "var(--c-s3, #eef2f7)", borderRadius: 6, padding: "5px 6px" }}>
+                  <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 9, fontWeight: 600, letterSpacing: "0.05em" }}>{label}</div>
                   <div style={{ color, fontSize: 16, fontWeight: 700, lineHeight: 1.1 }}>{val}</div>
-                  <div style={{ color: "#9ca3af", fontSize: 9 }}>КГ</div>
+                  <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 9 }}>КГ</div>
                 </div>
               ))}
             </div>
           </div>
         ))}
       </div>
-      <div style={{ color: "#9ca3af", fontSize: 10, marginTop: 12, textAlign: "center", fontStyle: "italic" }}>
+      <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 10, marginTop: 12, textAlign: "center", fontStyle: "italic" }}>
         Данные приблизительные. После выбора можно скорректировать значения вручную.
       </div>
     </div>
@@ -1578,7 +1578,7 @@ const DEMO_TRANSPORT = [
 ];
 
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="px-2 py-1 text-left text-[11px] font-semibold text-gray-700 border-b border-gray-300 select-none whitespace-nowrap" style={{ background: "#e8eef8" }}>{children}</th>;
+  return <th className="px-2 py-1 text-left text-[11px] font-semibold text-gray-700 border-b border-gray-300 select-none whitespace-nowrap" style={{ background: "var(--c-tint-blue, #e8eef8)" }}>{children}</th>;
 }
 function Td({ children }: { children: React.ReactNode }) {
   return <td className="px-2 py-1 text-[11px] text-gray-800 border-b border-gray-100">{children}</td>;
@@ -1750,7 +1750,7 @@ function AirNormsSection({ norms, onChange }: {
       <input type="number" step={step} value={value}
         onChange={e => onSet(parseFloat(e.target.value) || 0)}
         className="text-[11px] px-1 text-right flex-shrink-0"
-        style={{ background: "white", border: "1px solid #c8c8c8", height: 20, width: 80, outline: "none" }} />
+        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, width: 80, outline: "none" }} />
       <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 74 }}>{unit ?? ""}</span>
     </div>
   );
@@ -1867,12 +1867,12 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
       <div className="flex flex-col shadow-2xl border border-gray-400"
-        style={{ width: 900, height: 580, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+        style={{ width: 900, height: 580, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
         onClick={e => e.stopPropagation()}>
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300 flex-shrink-0"
-          style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+          style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
           <div className="flex items-center gap-2">
             <Icon name="BookOpen" size={13} className="text-blue-700" />
             <span className="text-[12px] font-semibold text-gray-800">Справочники — {currentTab.label}</span>
@@ -1887,7 +1887,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
 
         <div className="flex flex-1 overflow-hidden">
           {/* Левая навигация */}
-          <div className="w-40 flex-shrink-0 border-r border-gray-300 overflow-y-auto" style={{ background: "#f0f0f0" }}>
+          <div className="w-40 flex-shrink-0 border-r border-gray-300 overflow-y-auto" style={{ background: "var(--c-s3, #f0f0f0)" }}>
             {["Вентиляция", "Аварии", "Трубопровод", "Общее"].map(group => (
               <div key={group}>
                 <div className="px-2 py-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200" style={{ background: "#e4e4e4" }}>{group}</div>
@@ -1905,7 +1905,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
 
           {/* Основная область */}
           <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-200 flex-shrink-0" style={{ background: "#f8f8f8" }}>
+            <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
               <span className="text-[11px] font-semibold text-gray-700">{currentTab.label}</span>
               <div className="ml-auto flex gap-1">
                 <button className="h-5 px-1.5 text-[10px] border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1">
@@ -1916,7 +1916,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
             <div className="flex-1 overflow-auto">
               <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} />
             </div>
-            <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "#f0f0f0" }}>
+            <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
               Дважды кликните по строке для редактирования характеристик
             </div>
           </div>

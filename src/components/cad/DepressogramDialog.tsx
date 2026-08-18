@@ -415,28 +415,28 @@ export default function DepressogramDialog({
       {/* ── Заголовок (перетаскивание) ── */}
       <div
         onMouseDown={onHeaderDrag}
-        style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "1px solid #e5e7eb", background: "linear-gradient(180deg,#f0f6ff,#e8f0fb)", flexShrink: 0, cursor: "grab", userSelect: "none" }}>
+        style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 12px", borderBottom: "1px solid var(--c-b1, #e5e7eb)", background: "linear-gradient(180deg,#f0f6ff,#e8f0fb)", flexShrink: 0, cursor: "grab", userSelect: "none" }}>
         <Icon name="TrendingDown" size={15} style={{ color: "#2563eb", flexShrink: 0 }} />
-        <span style={{ fontWeight: 700, fontSize: 13, color: "#1e293b" }}>Депрессиограмма</span>
+        <span style={{ fontWeight: 700, fontSize: 13, color: "var(--c-t1, #1e293b)" }}>Депрессиограмма</span>
         {points.length > 1 && (
-          <span style={{ fontSize: 11, background: "#dbeafe", color: "#1d4ed8", borderRadius: 12, padding: "2px 9px", fontWeight: 600, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, background: "var(--c-tint-blue2, #dbeafe)", color: "#1d4ed8", borderRadius: 12, padding: "2px 9px", fontWeight: 600, flexShrink: 0 }}>
             h = {totalDep.toFixed(1)} Па · L = {totalLength.toFixed(0)} м · {points.length - 1} вет.
           </span>
         )}
         {fanCount > 1 && mode === "auto" && (
-          <span style={{ fontSize: 10, background: "#fef3c7", color: "#92400e", borderRadius: 10, padding: "2px 8px", fontWeight: 600 }}>
+          <span style={{ fontSize: 10, background: "var(--c-tint-amber2, #fef3c7)", color: "#92400e", borderRadius: 10, padding: "2px 8px", fontWeight: 600 }}>
             ВГП: {fanCount} · выбран маршрут с наибольшим расходом
           </span>
         )}
         <div style={{ flex: 1 }} />
-        <Icon name="GripHorizontal" size={14} style={{ color: "#9ca3af" }} />
-        <button onClick={onClose} style={{ width: 22, height: 22, border: "none", background: "transparent", cursor: "pointer", fontSize: 17, color: "#6b7280", lineHeight: 1, flexShrink: 0, marginLeft: 4 }}>×</button>
+        <Icon name="GripHorizontal" size={14} style={{ color: "var(--c-t4, #9ca3af)" }} />
+        <button onClick={onClose} style={{ width: 22, height: 22, border: "none", background: "transparent", cursor: "pointer", fontSize: 17, color: "var(--c-t3, #6b7280)", lineHeight: 1, flexShrink: 0, marginLeft: 4 }}>×</button>
       </div>
 
       {/* ── Панель: маршрут + вкладки ── */}
-      <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid #e5e7eb", background: "#f9fafb", flexShrink: 0, flexWrap: "wrap" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRight: "1px solid #e5e7eb" }}>
-          <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Маршрут:</span>
+      <div style={{ display: "flex", alignItems: "center", borderBottom: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s2, #f9fafb)", flexShrink: 0, flexWrap: "wrap" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRight: "1px solid var(--c-b1, #e5e7eb)" }}>
+          <span style={{ fontSize: 11, color: "var(--c-t3, #6b7280)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Маршрут:</span>
           <button onClick={() => handleModeChange("auto")}
             style={{ padding: "3px 11px", fontSize: 11, fontWeight: 600, borderRadius: 4, border: "1px solid", cursor: "pointer", background: mode === "auto" ? "#2563eb" : "#f1f5f9", color: mode === "auto" ? "white" : "#374151", borderColor: mode === "auto" ? "#1d4ed8" : "#d1d5db" }}>
             Авто
@@ -447,11 +447,11 @@ export default function DepressogramDialog({
           </button>
           {mode === "auto" && fanBranchList.length > 0 && (
             <>
-              <span style={{ fontSize: 11, color: "#6b7280", fontWeight: 600, marginLeft: 4 }}>ВГП:</span>
+              <span style={{ fontSize: 11, color: "var(--c-t3, #6b7280)", fontWeight: 600, marginLeft: 4 }}>ВГП:</span>
               <select
                 value={selectedFanId}
                 onChange={e => setSelectedFanId(e.target.value)}
-                style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid #d1d5db", background: "white", color: "#374151", cursor: "pointer", maxWidth: 220 }}
+                style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--c-b2, #d1d5db)", background: "white", color: "var(--c-t2, #374151)", cursor: "pointer", maxWidth: 220 }}
                 title="Ветвь главного вентилятора, от которой строится маршрут">
                 <option value="">Авто (наибольший расход)</option>
                 {fanBranchList.map(f => (
@@ -469,7 +469,7 @@ export default function DepressogramDialog({
           )}
           {mode === "manual" && manualBranchIds.size > 0 && (
             <button onClick={onClearManual}
-              style={{ padding: "2px 7px", fontSize: 10, color: "#ef4444", background: "#fef2f2", border: "1px solid #fca5a5", borderRadius: 3, cursor: "pointer" }}>
+              style={{ padding: "2px 7px", fontSize: 10, color: "#ef4444", background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5", borderRadius: 3, cursor: "pointer" }}>
               Сбросить
             </button>
           )}
@@ -488,8 +488,8 @@ export default function DepressogramDialog({
         {mode === "manual" && manualBranchIds.size === 0 ? (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 260, gap: 10 }}>
             <Icon name="MousePointer2" size={36} style={{ color: "#7c3aed" }} />
-            <div style={{ fontWeight: 600, fontSize: 13, color: "#1e293b" }}>Выберите ветви маршрута на схеме</div>
-            <div style={{ fontSize: 12, maxWidth: 360, textAlign: "center", lineHeight: 1.6, color: "#6b7280" }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--c-t1, #1e293b)" }}>Выберите ветви маршрута на схеме</div>
+            <div style={{ fontSize: 12, maxWidth: 360, textAlign: "center", lineHeight: 1.6, color: "var(--c-t3, #6b7280)" }}>
               Кликайте по выработкам на схеме — каждая добавляется в маршрут.<br />
               Повторный клик убирает ветвь. Схема полностью активна.
             </div>
@@ -497,8 +497,8 @@ export default function DepressogramDialog({
         ) : points.length === 0 ? (
           <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: 260, gap: 8 }}>
             <Icon name="AlertCircle" size={30} style={{ color: "#f59e0b" }} />
-            <div style={{ fontWeight: 600, fontSize: 13, color: "#1e293b" }}>Маршрут не найден</div>
-            <div style={{ fontSize: 11, maxWidth: 360, textAlign: "center", lineHeight: 1.5, color: "#6b7280" }}>
+            <div style={{ fontWeight: 600, fontSize: 13, color: "var(--c-t1, #1e293b)" }}>Маршрут не найден</div>
+            <div style={{ fontSize: 11, maxWidth: 360, textAlign: "center", lineHeight: 1.5, color: "var(--c-t3, #6b7280)" }}>
               Убедитесь, что выполнен расчёт сети (F9), в схеме есть ветвь ВГП с ненулевым расходом и поверхностный узел (atmosphereLink = true).
             </div>
           </div>
@@ -507,9 +507,9 @@ export default function DepressogramDialog({
         ) : (
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 11 }}>
             <thead>
-              <tr style={{ background: "#f1f5f9" }}>
+              <tr style={{ background: "var(--c-s3, #f1f5f9)" }}>
                 {["Нач. узел", "Кон. узел", "Название выработки", "Номер", "Длина, м", "ΔP, Па", "Напор, Па"].map(h => (
-                  <th key={h} style={{ padding: "5px 8px", textAlign: h === "Название выработки" ? "left" : "right", fontWeight: 600, color: "#374151", borderBottom: "2px solid #cbd5e1", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.03em", position: "sticky", top: 0, background: "#f1f5f9" }}>{h}</th>
+                  <th key={h} style={{ padding: "5px 8px", textAlign: h === "Название выработки" ? "left" : "right", fontWeight: 600, color: "var(--c-t2, #374151)", borderBottom: "2px solid #cbd5e1", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.03em", position: "sticky", top: 0, background: "var(--c-s3, #f1f5f9)" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -520,9 +520,9 @@ export default function DepressogramDialog({
                   <tr key={i} style={{ background: i % 2 === 0 ? "white" : "#f8faff", borderBottom: "1px solid #f1f5f9" }}>
                     <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 600, color: "#475569" }}>{prev ? (prev.nodeNumber || prev.nodeId) : "—"}</td>
                     <td style={{ padding: "4px 8px", textAlign: "right", fontWeight: 600, color: "#475569" }}>{p.nodeNumber || p.nodeId}</td>
-                    <td style={{ padding: "4px 8px", color: "#1e293b" }}>{p.branchName || (i === 0 ? "(начало маршрута)" : "—")}</td>
-                    <td style={{ padding: "4px 8px", textAlign: "right", color: "#94a3b8" }}>{p.branchNumber ?? ""}</td>
-                    <td style={{ padding: "4px 8px", textAlign: "right", color: "#374151" }}>{p.cumulativeLength.toFixed(2)}</td>
+                    <td style={{ padding: "4px 8px", color: "var(--c-t1, #1e293b)" }}>{p.branchName || (i === 0 ? "(начало маршрута)" : "—")}</td>
+                    <td style={{ padding: "4px 8px", textAlign: "right", color: "var(--c-t4, #94a3b8)" }}>{p.branchNumber ?? ""}</td>
+                    <td style={{ padding: "4px 8px", textAlign: "right", color: "var(--c-t2, #374151)" }}>{p.cumulativeLength.toFixed(2)}</td>
                     <td style={{ padding: "4px 8px", textAlign: "right", color: "#ef4444", fontWeight: 500 }}>{p.dP > 0 ? `−${p.dP.toFixed(2)}` : "—"}</td>
                     <td style={{ padding: "4px 8px", textAlign: "right", color: "#2563eb", fontWeight: 700 }}>{p.pressure.toFixed(2)}</td>
                   </tr>
@@ -534,8 +534,8 @@ export default function DepressogramDialog({
       </div>
 
       {/* ── Футер ── */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 12px", borderTop: "1px solid #e5e7eb", background: "#f9fafb", flexShrink: 0 }}>
-        <div style={{ fontSize: 10, color: "#6b7280" }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "7px 12px", borderTop: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s2, #f9fafb)", flexShrink: 0 }}>
+        <div style={{ fontSize: 10, color: "var(--c-t3, #6b7280)" }}>
           {mode === "auto"
             ? (selectedFanId
                 ? `Авто: маршрут наибольшего расхода от выбранного ВГП до поверхности (без перемычек)`
@@ -544,7 +544,7 @@ export default function DepressogramDialog({
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {points.length > 1 && (
-            <button onClick={handleExport} style={{ padding: "4px 12px", fontSize: 11, fontWeight: 500, background: "#f0fdf4", color: "#15803d", border: "1px solid #86efac", borderRadius: 4, cursor: "pointer" }}>
+            <button onClick={handleExport} style={{ padding: "4px 12px", fontSize: 11, fontWeight: 500, background: "var(--c-tint-green, #f0fdf4)", color: "#15803d", border: "1px solid #86efac", borderRadius: 4, cursor: "pointer" }}>
               Экспорт в Excel
             </button>
           )}

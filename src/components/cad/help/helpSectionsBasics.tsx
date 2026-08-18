@@ -9,7 +9,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
       title: "Обзор программы",
       content: (
         <div className="space-y-4">
-          <div className="p-3 rounded-lg border-l-4 border-blue-500" style={{ background: "#eff6ff" }}>
+          <div className="p-3 rounded-lg border-l-4 border-blue-500" style={{ background: "var(--c-tint-blue, #eff6ff)" }}>
             <div className="font-bold text-blue-800 text-[13px] mb-1">ПВ-Система — программа вентиляции шахт и рудников</div>
             <div className="text-[12px] text-blue-700 leading-relaxed">
               Профессиональный инструмент для проектирования и расчёта систем вентиляции горных выработок.
@@ -83,7 +83,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
       title: "Быстрый старт",
       content: (
         <div className="space-y-4">
-          <div className="p-3 rounded-lg border-l-4 border-green-500" style={{ background: "#f0fdf4" }}>
+          <div className="p-3 rounded-lg border-l-4 border-green-500" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
             <div className="font-bold text-green-800 text-[13px] mb-1">От пустого листа до первого расчёта за 7 шагов</div>
             <div className="text-[12px] text-green-700 leading-relaxed">
               Ниже — минимальный сценарий: построить простую сеть, задать вентилятор и атмосферу, запустить расчёт.
@@ -122,7 +122,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
             </QStep>
           </ol>
 
-          <div className="p-2 rounded" style={{ background: "#eff6ff", border: "1px solid #bfdbfe" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
             <span className="text-[12px] text-blue-700">
               💡 Расчёт не сходится? Проверьте, что есть поверхностный узел (атмосфера) и что вся схема связна
               (нет изолированных фрагментов). Подробнее — в разделе «Советы и приёмы».
@@ -197,7 +197,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
         <div className="space-y-4">
           <H3>Управление файлами</H3>
           <table className="w-full text-[12px] border-collapse">
-            <thead><tr style={{ background: "#f0f4ff" }}>
+            <thead><tr style={{ background: "var(--c-tint-blue, #f0f4ff)" }}>
               <th className="text-left p-2 border border-gray-200">Действие</th>
               <th className="text-left p-2 border border-gray-200">Горячая клавиша</th>
               <th className="text-left p-2 border border-gray-200">Описание</th>
@@ -263,7 +263,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
       title: "Импорт данных",
       content: (
         <div className="space-y-4">
-          <div className="p-3 rounded-lg border-l-4 border-blue-500" style={{ background: "#eff6ff" }}>
+          <div className="p-3 rounded-lg border-l-4 border-blue-500" style={{ background: "var(--c-tint-blue, #eff6ff)" }}>
             <div className="text-[12px] text-blue-700 leading-relaxed">
               Готовую схему можно загрузить из внешних форматов: <b>Файл → Добавить схему из файла</b>.
               При импорте выбирается режим: <b>заменить</b> текущую схему или <b>добавить</b> к существующей.
@@ -303,7 +303,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
             <li>• <b>.txt</b> — текстовый обменный формат</li>
           </ul>
 
-          <div className="p-2 rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a" }}>
             <span className="text-[11px] text-amber-800">
               После импорта из CSV/DXF рекомендуется проверить связность схемы и наличие
               поверхностного узла (атмосферы) перед первым расчётом (F9).

@@ -77,9 +77,9 @@ export default function HelpDialog({ onClose }: Props) {
         <div className="flex flex-col flex-1 min-w-0">
           {/* Заголовок */}
           <div className="flex items-center justify-between px-6 py-4 flex-shrink-0"
-            style={{ borderBottom: "1px solid #e5e7eb", background: "#f8fafc" }}>
+            style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s2, #f8fafc)" }}>
             <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "#dbeafe" }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: "var(--c-tint-blue2, #dbeafe)" }}>
                 <Icon name={active.icon as Parameters<typeof Icon>[0]["name"]} size={18} className="text-blue-600" />
               </div>
               <h2 className="font-bold text-gray-800 text-[16px]">{active.title}</h2>
@@ -97,7 +97,7 @@ export default function HelpDialog({ onClose }: Props) {
 
           {/* Кнопки внизу */}
           <div className="flex items-center justify-between px-6 py-3 flex-shrink-0"
-            style={{ borderTop: "1px solid #e5e7eb", background: "#f8fafc" }}>
+            style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s2, #f8fafc)" }}>
             <div className="flex gap-2">
               <button
                 onClick={() => {

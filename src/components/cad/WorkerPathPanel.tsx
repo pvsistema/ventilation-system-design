@@ -133,9 +133,9 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
         {/* Заголовок — область перетаскивания */}
         <div onMouseDown={onDragStart}
           className="flex items-center justify-between px-4 py-3 border-b select-none"
-          style={{ background: "#f0f9ff", borderRadius: "8px 8px 0 0", cursor: "move" }}>
+          style={{ background: "var(--c-tint-blue, #f0f9ff)", borderRadius: "8px 8px 0 0", cursor: "move" }}>
           <div className="flex items-center gap-2">
-            <Icon name="Move" size={14} style={{ color: "#94a3b8" }} />
+            <Icon name="Move" size={14} style={{ color: "var(--c-t4, #94a3b8)" }} />
             <Icon name="PersonStanding" size={18} style={{ color: "#0369a1" }} />
             <span className="font-semibold text-[13px] text-blue-900">
               Время хода горнорабочего — {method}
@@ -158,7 +158,7 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                 {result.ok ? "✓ Маршрут построен" : "✗ Маршрут не найден"}
               </div>
             </div>
-            <div className="border rounded p-3" style={{ background: "#f0f9ff" }}>
+            <div className="border rounded p-3" style={{ background: "var(--c-tint-blue, #f0f9ff)" }}>
               <div className="text-[10px] text-gray-500 mb-1 font-medium">ДЛИНА МАРШРУТА</div>
               <div className="text-[24px] font-bold text-blue-900">
                 {totalLen} м
@@ -189,13 +189,13 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
 
           {/* Таблица сегментов */}
           <div className="border rounded overflow-hidden">
-            <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 border-b" style={{ background: "#f8fafc" }}>
+            <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 border-b" style={{ background: "var(--c-s2, #f8fafc)" }}>
               Маршрут по выработкам
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-[11px]">
                 <thead>
-                  <tr style={{ background: "#f1f5f9" }}>
+                  <tr style={{ background: "var(--c-s3, #f1f5f9)" }}>
                     <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">№</th>
                     <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">Выработка</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Длина, м</th>
@@ -246,11 +246,11 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
         </div>
 
         {/* Подвал */}
-        <div className="px-4 py-2 border-t flex justify-between items-center" style={{ background: "#f8fafc" }}>
+        <div className="px-4 py-2 border-t flex justify-between items-center" style={{ background: "var(--c-s2, #f8fafc)" }}>
           <button
             onClick={() => exportCsv(result)}
             className="flex items-center gap-1.5 px-3 py-1 rounded border text-[11px] hover:bg-gray-100"
-            style={{ borderColor: "#d1d5db", color: "#374151" }}
+            style={{ borderColor: "var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)" }}
           >
             <Icon name="Download" size={13} />
             Экспорт в CSV
@@ -350,7 +350,7 @@ export default function WorkerPathPanel({
   };
 
   const inputStyle: React.CSSProperties = {
-    height: 22, fontSize: 11, border: "1px solid #c8c8c8",
+    height: 22, fontSize: 11, border: "1px solid var(--c-b2, #c8c8c8)",
     background: "white", outline: "none", paddingLeft: 4, paddingRight: 4,
     width: "100%",
   };
@@ -367,13 +367,13 @@ export default function WorkerPathPanel({
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
       <div className="flex-1 overflow-y-auto">
         {/* Методика */}
-        <div className="px-2 py-1 border-b" style={{ background: "#f0f9ff", fontSize: 10, color: "#0369a1", fontWeight: 600 }}>
+        <div className="px-2 py-1 border-b" style={{ background: "var(--c-tint-blue, #f0f9ff)", fontSize: 10, color: "#0369a1", fontWeight: 600 }}>
           Расчёт времени хода горнорабочего
         </div>
 
         {/* Статус учёта задымления */}
         {fireCalcDone && (
-          <div className="px-2 py-1 flex items-center gap-1.5 border-b" style={{ background: "#fff7ed", borderColor: "#fed7aa" }}>
+          <div className="px-2 py-1 flex items-center gap-1.5 border-b" style={{ background: "var(--c-tint-amber, #fff7ed)", borderColor: "#fed7aa" }}>
             <Icon name="Flame" size={11} style={{ color: "#ea580c" }} />
             <span className="text-[10px] text-orange-700 font-medium">Учёт задымления активен — скорость снижена в задымлённых зонах</span>
           </div>
@@ -518,7 +518,7 @@ export default function WorkerPathPanel({
 
           {/* Результат (краткий) */}
           {result && (result.segments?.length ?? 0) > 0 && (
-            <div className="border rounded p-2 mt-1" style={{ background: "#f0f9ff" }}>
+            <div className="border rounded p-2 mt-1" style={{ background: "var(--c-tint-blue, #f0f9ff)" }}>
               <div className="text-[10px] text-gray-500 font-medium mb-1">Результат расчёта</div>
               <div className="flex gap-3">
                 <div>
@@ -544,7 +544,7 @@ export default function WorkerPathPanel({
             <div className="px-2 pb-2">
               <table className="w-full text-[10px] mt-1">
                 <thead>
-                  <tr style={{ background: "#f1f5f9" }}>
+                  <tr style={{ background: "var(--c-s3, #f1f5f9)" }}>
                     <th className="px-1 py-0.5 text-left text-gray-600">Угол наклона</th>
                     <th className="px-1 py-0.5 text-right text-gray-600">РД 15-11-2007, м/мин</th>
                     <th className="px-1 py-0.5 text-right text-gray-600">ФНиП №467, м/мин</th>

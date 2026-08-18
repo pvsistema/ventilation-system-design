@@ -142,11 +142,11 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
       onClick={e => e.target === e.currentTarget && onClose()}>
 
       <div className="flex flex-col shadow-2xl overflow-hidden"
-        style={{ width: 780, maxHeight: "93vh", background: "#f4f4f4", border: "1px solid #999", borderRadius: 4 }}>
+        style={{ width: 780, maxHeight: "93vh", background: "#f4f4f4", border: "1px solid var(--c-b3, #999)", borderRadius: 4 }}>
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-3 py-2 flex-shrink-0"
-          style={{ background: "linear-gradient(180deg,#e8e8e8,#d5d5d5)", borderBottom: "1px solid #bbb" }}>
+          style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d5d5d5))", borderBottom: "1px solid #bbb" }}>
           <div className="flex items-center gap-2">
             <Icon name="FileText" size={16} className="text-blue-700" />
             <span className="text-[13px] font-semibold text-gray-800">Импорт CSV из ПО Вентиляция 2.0</span>
@@ -159,12 +159,12 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
 
           {/* ── Левая панель: файлы + настройки ─────────────────────────── */}
           <div className="flex flex-col gap-3 p-3 overflow-y-auto flex-shrink-0"
-            style={{ width: 310, borderRight: "1px solid #ccc" }}>
+            style={{ width: 310, borderRight: "1px solid var(--c-b2, #ccc)" }}>
 
             {/* Схема и разделитель */}
             <div className="flex items-center gap-2 flex-wrap">
               <div className="px-2 py-0.5 rounded text-[11px] font-semibold"
-                style={{ background: "#dbeafe", color: "#1e40af" }}>Вентиляция 2.0</div>
+                style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "#1e40af" }}>Вентиляция 2.0</div>
               <div className="ml-auto flex items-center gap-1 text-[11px] text-gray-600">
                 Разд.:
                 <select value={sep} onChange={e => setSep(e.target.value as Sep)}
@@ -275,7 +275,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
             {/* Выработки */}
             <div className="rounded border overflow-hidden" style={{ borderColor: "#93c5fd" }}>
               <div className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2"
-                style={{ background: "#dbeafe", borderBottom: "1px solid #bfdbfe", color: "#1e3a8a" }}>
+                style={{ background: "var(--c-tint-blue2, #dbeafe)", borderBottom: "1px solid #bfdbfe", color: "#1e3a8a" }}>
                 <Icon name="GitBranch" size={13} />
                 Столбцы в файле выработок
                 <span className="ml-auto text-[10px] font-normal text-blue-500">0 = не импортировать</span>
@@ -302,7 +302,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
             {hasBulkheads && (
               <div className="rounded border overflow-hidden" style={{ borderColor: "#fcd34d" }}>
                 <div className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2"
-                  style={{ background: "#fef3c7", borderBottom: "1px solid #fde68a", color: "#78350f" }}>
+                  style={{ background: "var(--c-tint-amber2, #fef3c7)", borderBottom: "1px solid #fde68a", color: "#78350f" }}>
                   <Icon name="Square" size={13} />
                   Столбцы в файле перемычек
                 </div>
@@ -319,7 +319,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
             {hasFans && (
               <div className="rounded border overflow-hidden" style={{ borderColor: "#fca5a5" }}>
                 <div className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2"
-                  style={{ background: "#fee2e2", borderBottom: "1px solid #fecaca", color: "#7f1d1d" }}>
+                  style={{ background: "var(--c-tint-red2, #fee2e2)", borderBottom: "1px solid #fecaca", color: "#7f1d1d" }}>
                   <Icon name="Wind" size={13} />
                   Столбцы в файле источников тяги
                 </div>
@@ -357,7 +357,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
             {/* Результат */}
             {result && (
               <div className="rounded border px-3 py-2 text-[11px] space-y-0.5"
-                style={{ background: "#f0fdf4", borderColor: "#86efac" }}>
+                style={{ background: "var(--c-tint-green, #f0fdf4)", borderColor: "#86efac" }}>
                 <div className="font-semibold text-green-800">Результат анализа:</div>
                 <div className="text-green-700">
                   ✓ Узлов: {result.stats.nodes} · Ветвей: {result.stats.branches}
@@ -382,14 +382,14 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
 
             {error && (
               <div className="rounded border border-red-300 px-3 py-2 text-[11px] text-red-700"
-                style={{ background: "#fef2f2" }}>⚠ {error}</div>
+                style={{ background: "var(--c-tint-red, #fef2f2)" }}>⚠ {error}</div>
             )}
           </div>
         </div>
 
         {/* Кнопки */}
         <div className="flex items-center justify-between px-4 py-2 flex-shrink-0"
-          style={{ background: "#e8e8e8", borderTop: "1px solid #ccc" }}>
+          style={{ background: "var(--c-s4, #e8e8e8)", borderTop: "1px solid var(--c-b2, #ccc)" }}>
           <button onClick={onClose}
             className="px-4 py-1 text-[12px] rounded border border-gray-400 bg-white hover:bg-gray-100">
             Отмена
@@ -397,7 +397,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
           <div className="flex gap-2">
             <button onClick={handleParse} disabled={!branchFile || loading}
               className="flex items-center gap-2 px-4 py-1 text-[12px] rounded border disabled:opacity-40"
-              style={{ background: "#dbeafe", borderColor: "#93c5fd", color: "#1e40af" }}>
+              style={{ background: "var(--c-tint-blue2, #dbeafe)", borderColor: "#93c5fd", color: "#1e40af" }}>
               {loading
                 ? <><div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />Анализ...</>
                 : <><Icon name="Play" size={13} />Анализ</>}

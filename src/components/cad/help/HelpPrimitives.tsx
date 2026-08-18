@@ -13,7 +13,7 @@ export interface Section {
 export function H3({ children }: { children: React.ReactNode }) {
   return (
     <h3 className="font-bold text-gray-800 text-[13px] mt-3 mb-1.5 pb-1"
-      style={{ borderBottom: "1px solid #e5e7eb" }}>
+      style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
       {children}
     </h3>
   );
@@ -42,7 +42,7 @@ export function Block({ title, children, color }: { title: string; children: Rea
 export function KBD({ children }: { children: React.ReactNode }) {
   return (
     <kbd className="inline-block px-1.5 py-0.5 rounded text-[11px] font-mono font-bold"
-      style={{ background: "#f3f4f6", border: "1px solid #d1d5db", color: "#374151", boxShadow: "0 1px 0 #9ca3af" }}>
+      style={{ background: "var(--c-s3, #f3f4f6)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", boxShadow: "0 1px 0 #9ca3af" }}>
       {children}
     </kbd>
   );

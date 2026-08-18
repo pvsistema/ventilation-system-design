@@ -59,7 +59,7 @@ export default function NodePropsPanel({ node, onUpdate, onResetToSurvey }: Node
           даём вернуть его на место — раньше исходные координаты терялись. */}
       {moved && (
         <div className="mx-1 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
-          style={{ background: "#fffbeb", border: "1px solid #fcd34d", color: "#92400e" }}>
+          style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d", color: "#92400e" }}>
           <div className="font-semibold mb-0.5">
             Узел сдвинут на {offset < 10 ? offset.toFixed(1) : Math.round(offset)} м
           </div>
@@ -70,7 +70,7 @@ export default function NodePropsPanel({ node, onUpdate, onResetToSurvey }: Node
           {onResetToSurvey && (
             <button onClick={onResetToSurvey}
               className="mt-1 px-2 py-0.5 rounded text-[10px] font-semibold"
-              style={{ background: "#fff", border: "1px solid #d97706", color: "#92400e", cursor: "pointer" }}>
+              style={{ background: "var(--c-s1, #fff)", border: "1px solid #d97706", color: "#92400e", cursor: "pointer" }}>
               Вернуть на маркшейдерское место
             </button>
           )}

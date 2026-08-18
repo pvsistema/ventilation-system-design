@@ -62,7 +62,7 @@ export default function HQFireDiagramDialog({ open, onClose, data, branchName }:
     <Dialog open={open} onOpenChange={v => { if (!v) onClose(); }}>
       <DialogContent className="max-w-[1000px] p-0 gap-0">
         {/* Заголовок */}
-        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "#fef2f2", borderColor: "#fecaca" }}>
+        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "var(--c-tint-red, #fef2f2)", borderColor: "#fecaca" }}>
           <div>
             <div className="text-[13px] font-semibold" style={{ color: "#991b1b" }}>
               Режим проветривания уклонного поля (h–Q, {ascending ? "восходящее, рис. 2.2" : "нисходящее, рис. 2.1,б"})
@@ -73,7 +73,7 @@ export default function HQFireDiagramDialog({ open, onClose, data, branchName }:
             <button
               onClick={handlePng}
               className="flex items-center gap-1 px-2.5 py-1 text-[11px] rounded border bg-white hover:bg-gray-50"
-              style={{ borderColor: "#d1d5db", color: "#374151" }}
+              style={{ borderColor: "var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)" }}
               title="Сохранить диаграмму как изображение PNG"
             >
               <Icon name="Image" size={13} /> PNG

@@ -43,7 +43,7 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
             <li>• <b>Соединить узлы</b> — выделить несколько узлов (Ctrl+клик) и объединить в один</li>
             <li>• <b>Выравнивание</b> — при выборе нескольких узлов: по левому/правому краю, по верху/низу, по центру (X или Y)</li>
           </ul>
-          <div className="p-2 rounded" style={{ background: "#f0fdf4", border: "1px solid #86efac" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac" }}>
             <span className="text-[11px] text-green-800">
               Перетаскивание узла мышью двигает <b>только его изображение</b>
               на схеме. Длины выработок и весь расчёт остаются привязаны
@@ -79,7 +79,7 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
             <li>• <b>Какие узлы останутся без выработок</b> — так называемые
               изолированные узлы</li>
           </ul>
-          <div className="p-2 rounded" style={{ background: "#eff6ff", border: "1px solid #93c5fd" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
             <span className="text-[11px] text-blue-800">
               Изолированные узлы разрывают связность сети, и расчёт
               воздухораспределения после этого может не сойтись. Кнопка
@@ -206,7 +206,7 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
             источником взрыва. Содержат исходные данные аварии и её результаты.
           </p>
 
-          <div className="p-2 rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a" }}>
             <span className="text-[11px] text-amber-800">
               Вентиляционный став для тупиковых выработок добавляется отдельной командой:
               правый клик по ветви → <b>«+ Вентрубопровод»</b>. У готового става есть
@@ -299,7 +299,7 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
             забои с недостатком воздуха или выходом скорости за пределы. Кнопка «Excel»
             выгружает отчёт: лист с расчётом и лист с применёнными нормами.
           </p>
-          <div className="p-2 rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a" }}>
             <span className="text-[11px] text-amber-800">
               Норма подачи воздуха на дизельное оборудование установлена в 1970-х годах
               и для современной техники считается завышенной — предприятия согласовывают

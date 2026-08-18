@@ -41,7 +41,7 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded-xl shadow-2xl w-[480px] max-h-[90vh] overflow-y-auto flex flex-col" style={{ border: "1.5px solid #d1d5db" }}>
+      <div className="bg-white rounded-xl shadow-2xl w-[480px] max-h-[90vh] overflow-y-auto flex flex-col" style={{ border: "1.5px solid var(--c-b2, #d1d5db)" }}>
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-200">
@@ -54,7 +54,7 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
         <div className="px-5 py-4 space-y-4 flex-1">
 
           {/* Инструкция */}
-          <div className="rounded-lg px-3 py-2.5 text-[11px] space-y-0.5" style={{ background: "#f0fdf4", border: "1px solid #86efac" }}>
+          <div className="rounded-lg px-3 py-2.5 text-[11px] space-y-0.5" style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac" }}>
             <div className="font-semibold text-green-800 mb-1">Как экспортировать из Ventsim:</div>
             <div className="text-green-700">1. Reports → Branch Report → Export to CSV</div>
             <div className="text-green-700">2. Убедитесь что включены колонки: From, To, Length, Area, Resistance, Airflow</div>
@@ -104,7 +104,7 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
 
               {/* Предупреждения */}
               {result.warnings.length > 0 && (
-                <div className="rounded border border-yellow-300 px-3 py-2 space-y-1" style={{ background: "#fffbeb" }}>
+                <div className="rounded border border-yellow-300 px-3 py-2 space-y-1" style={{ background: "var(--c-tint-amber, #fffbeb)" }}>
                   {result.warnings.map((w, i) => (
                     <div key={i} className="flex items-start gap-1.5 text-xs text-yellow-800">
                       <Icon name="AlertTriangle" size={12} className="mt-0.5 shrink-0" /><span>{w}</span>
@@ -120,7 +120,7 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
               {showDebug && <pre className="text-[10px] bg-gray-900 text-green-400 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">{result.debug}</pre>}
 
               {/* Режим */}
-              <div className="border rounded px-3 py-2 space-y-1.5" style={{ background: "#f9f9f9" }}>
+              <div className="border rounded px-3 py-2 space-y-1.5" style={{ background: "var(--c-s2, #f9f9f9)" }}>
                 <div className="text-[11px] font-semibold text-gray-700">Способ добавления:</div>
                 {(["replace", "append"] as const).map(m => (
                   <label key={m} className="flex items-center gap-2 cursor-pointer">

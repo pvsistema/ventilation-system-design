@@ -215,7 +215,7 @@ export function PropGroup({ title, children }: { title: string; children: React.
   return (
     <div>
       <div className="px-2 py-1 text-xs font-semibold text-gray-800"
-        style={{ background: "#f5f5f5", borderTop: "1px solid #e0e0e0", borderBottom: "1px solid #e0e0e0" }}>
+        style={{ background: "var(--c-s2, #f5f5f5)", borderTop: "1px solid var(--c-b1, #e0e0e0)", borderBottom: "1px solid var(--c-b1, #e0e0e0)" }}>
         {title}
       </div>
       <div className="px-2 py-1 space-y-0.5">{children}</div>
@@ -279,7 +279,7 @@ export function CheckRow({ label, caption }: { label: string; caption: string })
 export function FrameGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <fieldset className="relative pt-2 pb-2 px-2"
-      style={{ border: "1px solid #b8b8b8", borderRadius: "0" }}>
+      style={{ border: "1px solid var(--c-b3, #b8b8b8)", borderRadius: "0" }}>
       <legend className="px-1 text-xs text-gray-700"
         style={{ marginLeft: "4px", fontWeight: 400 }}>
         {title}
@@ -334,7 +334,7 @@ export function ComputedRow({ label, value }: { label: string; value: string }) 
     <div className="flex items-start gap-1.5 py-0.5">
       <span className="text-xs text-gray-700 w-[140px] flex-shrink-0 text-right whitespace-normal break-words leading-tight pt-1">{label}</span>
       <div className="flex-1 min-w-0 px-2 py-1 text-right text-xs font-bold break-words"
-        style={{ background: "#cfcfcf", color: "#1f1f1f", border: "1px solid #b8b8b8" }}>
+        style={{ background: "#cfcfcf", color: "var(--c-t1, #1f1f1f)", border: "1px solid var(--c-b3, #b8b8b8)" }}>
         {value}
       </div>
     </div>

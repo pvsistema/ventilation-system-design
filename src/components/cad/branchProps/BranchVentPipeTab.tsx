@@ -47,7 +47,7 @@ export default function BranchVentPipeTab({
       <div>
         <SectionHeader title="Вентиляционный став" />
         <div className="mx-2 my-2 px-2 py-2 rounded text-[11px] leading-snug"
-          style={{ background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569" }}>
+          style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0", color: "#475569" }}>
           На этой выработке вентиляционный став не задан. Постройте став
           (маршрут от вентилятора до забоя), и здесь появится расчёт доставки
           воздуха: сколько воздуха дойдёт до забоя и на какую длину хватит става.
@@ -171,14 +171,14 @@ export default function BranchVentPipeTab({
 
   const Warn = ({ children }: { children: React.ReactNode }) => (
     <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded leading-snug"
-      style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
+      style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #f59e0b", color: "#92400e" }}>
       {children}
     </div>
   );
 
   const Ok = ({ children }: { children: React.ReactNode }) => (
     <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded leading-snug"
-      style={{ background: "#ecfdf5", border: "1px solid #6ee7b7", color: "#065f46" }}>
+      style={{ background: "var(--c-tint-green, #ecfdf5)", border: "1px solid #6ee7b7", color: "#065f46" }}>
       {children}
     </div>
   );
@@ -187,7 +187,7 @@ export default function BranchVentPipeTab({
     <div>
       <SectionHeader title="Схема проветривания" />
       <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
-        style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
+        style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "#1e40af" }}>
         Нагнетательная схема: вентилятор подаёт свежий воздух по ставу в забой,
         отработанный выходит по выработке.
       </div>
@@ -206,7 +206,7 @@ export default function BranchVentPipeTab({
       </InlineLabel>
 
       <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
-        style={{ background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569" }}>
+        style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0", color: "#475569" }}>
         {method === "kolavent" ? (
           <>Коэффициент утечек берётся из таблиц изготовителя KolaVent Flex.
           До 200 м — по формуле, дальше — по таблицам, где значение зависит от
@@ -235,7 +235,7 @@ export default function BranchVentPipeTab({
 
       {method === "kolavent" && !res.leakUnsupported && res.leakNote && (
         <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
-          style={{ background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
+          style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #bbf7d0", color: "#166534" }}>
           {res.leakNote} Коэффициент утечек Kу.т = {numFmt(1 / res.delivery, 3)}.
         </div>
       )}
@@ -290,7 +290,7 @@ export default function BranchVentPipeTab({
         if (!others.length) return null;
         return (
           <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
-            style={{ background: "#fafafa", border: "1px solid #e5e7eb", color: "#4b5563" }}>
+            style={{ background: "var(--c-s2, #fafafa)", border: "1px solid var(--c-b1, #e5e7eb)", color: "var(--c-t2, #4b5563)" }}>
             Для сравнения:
             {others.map(({ m, r }) => (
               <div key={m}>
@@ -365,7 +365,7 @@ export default function BranchVentPipeTab({
 
       {/* Наглядная цепочка: сколько дал вентилятор → сколько дошло */}
       <div className="mx-2 my-1 px-2 py-2 rounded"
-        style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+        style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0" }}>
         <div className="flex items-center justify-between text-[11px]">
           <span className="text-gray-600">Вентилятор</span>
           <span className="tabular-nums font-semibold" style={{ color: "#1e40af" }}>
@@ -493,7 +493,7 @@ export default function BranchVentPipeTab({
 
           {limit.maxLength > 0 && limit.limitedBy !== "none" && (
             <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
-              style={{ background: "#f8fafc", border: "1px solid #e2e8f0", color: "#475569" }}>
+              style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0", color: "#475569" }}>
               Ограничивает {limit.limitedBy === "flow"
                 ? "нехватка воздуха в забое: дальше утечки съедают требуемый расход"
                 : "давление: дальше депрессия става превысит допустимую"}.
@@ -502,7 +502,7 @@ export default function BranchVentPipeTab({
         </>
       ) : (
         <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] text-gray-500"
-          style={{ background: "#f8fafc", border: "1px solid #e2e8f0" }}>
+          style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid #e2e8f0" }}>
           Задайте требуемый расход в забое, чтобы рассчитать предельную длину.
         </div>
       )}

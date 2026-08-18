@@ -95,7 +95,7 @@ export default function SelectSimilarDialog({ selectedBranch, selectedSymbol, br
       <div className="bg-white rounded shadow-lg" style={{ width: 360, maxHeight: "90vh", overflow: "auto", border: "1px solid #9ca3af" }}>
         {/* Заголовок */}
         <div className="flex items-center justify-between px-3 py-2"
-          style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8" }}>
+          style={{ background: "var(--c-tint-blue, #e8eef8)", borderBottom: "1px solid #c8d4e8" }}>
           <span className="text-[12px] font-semibold text-gray-800">Выделение подобного</span>
           <button onClick={onClose}
             className="text-[12px] text-gray-500 hover:text-gray-800"
@@ -122,7 +122,7 @@ export default function SelectSimilarDialog({ selectedBranch, selectedSymbol, br
             return (
               <label key={c}
                 className="flex items-start gap-2 py-1 cursor-pointer"
-                style={{ opacity: enabled ? 1 : 0.4, borderBottom: "1px solid #f0f0f0" }}>
+                style={{ opacity: enabled ? 1 : 0.4, borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                 <input
                   type="checkbox"
                   checked={checked.has(c)}
@@ -138,7 +138,7 @@ export default function SelectSimilarDialog({ selectedBranch, selectedSymbol, br
           })}
 
           {/* Разделитель перед УО */}
-          <div className="my-1.5" style={{ borderTop: "1px solid #e5e7eb" }} />
+          <div className="my-1.5" style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }} />
 
           {symbolCriteria.map(c => {
             const enabled = c === "all_symbols" || !!selectedSymbol;
@@ -147,7 +147,7 @@ export default function SelectSimilarDialog({ selectedBranch, selectedSymbol, br
             return (
               <label key={c}
                 className="flex items-start gap-2 py-1 cursor-pointer"
-                style={{ opacity: enabled ? 1 : 0.4, borderBottom: "1px solid #f0f0f0" }}>
+                style={{ opacity: enabled ? 1 : 0.4, borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
                 <input
                   type="checkbox"
                   checked={checked.has(c)}
@@ -165,10 +165,10 @@ export default function SelectSimilarDialog({ selectedBranch, selectedSymbol, br
 
         {/* Кнопки */}
         <div className="flex justify-end gap-2 px-3 py-2"
-          style={{ borderTop: "1px solid #e5e7eb", background: "#f8faff" }}>
+          style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)", background: "#f8faff" }}>
           <button onClick={onClose}
             className="text-[11px] px-4 py-1 rounded"
-            style={{ background: "#e5e7eb", border: "1px solid #c8c8c8", cursor: "pointer" }}>
+            style={{ background: "var(--c-s4, #e5e7eb)", border: "1px solid var(--c-b2, #c8c8c8)", cursor: "pointer" }}>
             Отмена
           </button>
           <button onClick={handleSelect}

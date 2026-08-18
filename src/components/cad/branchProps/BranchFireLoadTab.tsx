@@ -86,9 +86,9 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
           />
           <table className="w-full text-[11px] border-collapse">
             <thead>
-              <tr style={{ background: "#f3f4f6" }}>
-                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "55%" }}>Материал</th>
-                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Масса, кг</th>
+              <tr style={{ background: "var(--c-s3, #f3f4f6)" }}>
+                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)", width: "55%" }}>Материал</th>
+                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Масса, кг</th>
               </tr>
             </thead>
             <tbody>
@@ -98,8 +98,8 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 { label: "Масло",   key: "fireVehicleMassOil"    as const, val: massOil    },
               ].map(({ label, key, val }) => (
                 <tr key={key}>
-                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
-                  <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{label}</td>
+                  <td className="px-0.5 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-tint-green, #f0fdf4)" }}>
                     <EditInput
                       type="number" step="10"
                       value={val}
@@ -115,21 +115,21 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
             <div className="mt-1">
               <table className="w-full text-[11px] border-collapse">
                 <thead>
-                  <tr style={{ background: "#fef9c3" }}>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>t прод., °C</th>
+                  <tr style={{ background: "var(--c-tint-amber, #fef9c3)" }}>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Мощность, МВт</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Расход, м³/с</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>t прод., °C</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>
                       {vfr.power_MW.toFixed(2)}
                     </td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>
                       {airFlow > 0 ? airFlow.toFixed(1) : "—"}
                     </td>
-                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>
+                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>
                       {vfr.deltaT_C > 0 ? (20 + vfr.deltaT_C).toFixed(1) : "—"}
                     </td>
                   </tr>
@@ -163,9 +163,9 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
           />
           <table className="w-full text-[11px] border-collapse mb-1">
             <thead>
-              <tr style={{ background: "#f3f4f6" }}>
-                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "60%" }}>Параметр</th>
-                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Значение</th>
+              <tr style={{ background: "var(--c-s3, #f3f4f6)" }}>
+                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)", width: "60%" }}>Параметр</th>
+                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Значение</th>
               </tr>
             </thead>
             <tbody>
@@ -178,8 +178,8 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 { label: "v пламени, м/с",   key: "fireBeltFlameSpeed" as const, def: "0.013" },
               ]).map(({ label, key, def }) => (
                 <tr key={key}>
-                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
-                  <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{label}</td>
+                  <td className="px-0.5 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-tint-green, #f0fdf4)" }}>
                     <EditInput
                       type="number" step="any"
                       value={branch[key] ?? def}
@@ -195,21 +195,21 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
             <div className="mt-1">
               <table className="w-full text-[11px] border-collapse">
                 <thead>
-                  <tr style={{ background: "#fef9c3" }}>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                  <tr style={{ background: "var(--c-tint-amber, #fef9c3)" }}>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Мощность, МВт</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Расход, м³/с</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>ΔT, °C</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>
                       {beltResult.powerMax.toFixed(2)}
                     </td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>
                       {airFlow > 0 ? airFlow.toFixed(1) : "—"}
                     </td>
-                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>
+                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>
                       {beltResult.deltaT_C > 0 ? beltResult.deltaT_C.toFixed(1) : "—"}
                     </td>
                   </tr>
@@ -255,9 +255,9 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
           />
           <table className="w-full text-[11px] border-collapse mb-1">
             <thead>
-              <tr style={{ background: "#f3f4f6" }}>
-                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "60%" }}>Параметр</th>
-                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Значение</th>
+              <tr style={{ background: "var(--c-s3, #f3f4f6)" }}>
+                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)", width: "60%" }}>Параметр</th>
+                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Значение</th>
               </tr>
             </thead>
             <tbody>
@@ -270,8 +270,8 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 { label: "Толщина сеч., м",    key: "fireCableThick"     as const, def: "0.05" },
               ]).map(({ label, key, def }) => (
                 <tr key={key}>
-                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
-                  <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{label}</td>
+                  <td className="px-0.5 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-tint-green, #f0fdf4)" }}>
                     <EditInput type="number" step="any" value={branch[key] ?? def} onChange={(v) => onUpdate({ [key]: v })} />
                   </td>
                 </tr>
@@ -282,17 +282,17 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
             <div className="mt-1">
               <table className="w-full text-[11px] border-collapse">
                 <thead>
-                  <tr style={{ background: "#fef9c3" }}>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                  <tr style={{ background: "var(--c-tint-amber, #fef9c3)" }}>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Мощность, МВт</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Расход, м³/с</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>ΔT, °C</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>{cableResult.powerMW.toFixed(2)}</td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
-                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>{cableResult.deltaT_C > 0 ? cableResult.deltaT_C.toFixed(1) : "—"}</td>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>{cableResult.powerMW.toFixed(2)}</td>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{cableResult.deltaT_C > 0 ? cableResult.deltaT_C.toFixed(1) : "—"}</td>
                   </tr>
                 </tbody>
               </table>
@@ -331,9 +331,9 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
           />
           <table className="w-full text-[11px] border-collapse mb-1">
             <thead>
-              <tr style={{ background: "#f3f4f6" }}>
-                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db", width: "60%" }}>Параметр</th>
-                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid #d1d5db" }}>Значение</th>
+              <tr style={{ background: "var(--c-s3, #f3f4f6)" }}>
+                <th className="text-left px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)", width: "60%" }}>Параметр</th>
+                <th className="text-right px-1 py-0.5 font-medium text-gray-600" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Значение</th>
               </tr>
             </thead>
             <tbody>
@@ -348,8 +348,8 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
                 { label: "Время расч., мин",     key: "fireWoodCalcTime"   as const, def: "10"    },
               ]).map(({ label, key, def }) => (
                 <tr key={key}>
-                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid #d1d5db" }}>{label}</td>
-                  <td className="px-0.5 py-0.5" style={{ border: "1px solid #d1d5db", background: "#f0fdf4" }}>
+                  <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{label}</td>
+                  <td className="px-0.5 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-tint-green, #f0fdf4)" }}>
                     <EditInput type="number" step="any" value={branch[key] ?? def} onChange={(v) => onUpdate({ [key]: v })} />
                   </td>
                 </tr>
@@ -360,17 +360,17 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
             <div className="mt-1">
               <table className="w-full text-[11px] border-collapse">
                 <thead>
-                  <tr style={{ background: "#fef9c3" }}>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
-                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                  <tr style={{ background: "var(--c-tint-amber, #fef9c3)" }}>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Мощность, МВт</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Расход, м³/с</th>
+                    <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>ΔT, °C</th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr>
-                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid #d1d5db", color: "#dc2626" }}>{woodResult.powerMW.toFixed(2)}</td>
-                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
-                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid #d1d5db" }}>{woodResult.deltaT_C > 0 ? woodResult.deltaT_C.toFixed(1) : "—"}</td>
+                    <td className="text-center px-1 py-0.5 font-semibold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#dc2626" }}>{woodResult.powerMW.toFixed(2)}</td>
+                    <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                    <td className="text-center px-1 py-0.5 font-semibold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{woodResult.deltaT_C > 0 ? woodResult.deltaT_C.toFixed(1) : "—"}</td>
                   </tr>
                 </tbody>
               </table>
@@ -413,17 +413,17 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
             </div>
             <table className="w-full text-[11px] border-collapse">
               <thead>
-                <tr style={{ background: "#fee2e2" }}>
-                  <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Мощность, МВт</th>
-                  <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>Расход, м³/с</th>
-                  <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>ΔT, °C</th>
+                <tr style={{ background: "var(--c-tint-red2, #fee2e2)" }}>
+                  <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Мощность, МВт</th>
+                  <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>Расход, м³/с</th>
+                  <th className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>ΔT, °C</th>
                 </tr>
               </thead>
               <tbody>
                 <tr>
-                  <td className="text-center px-1 py-0.5 font-bold" style={{ border: "1px solid #d1d5db", color: "#b91c1c" }}>{totalPower.toFixed(2)}</td>
-                  <td className="text-center px-1 py-0.5" style={{ border: "1px solid #d1d5db", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
-                  <td className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid #d1d5db" }}>{totalDT > 0 ? totalDT.toFixed(1) : "—"}</td>
+                  <td className="text-center px-1 py-0.5 font-bold" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#b91c1c" }}>{totalPower.toFixed(2)}</td>
+                  <td className="text-center px-1 py-0.5" style={{ border: "1px solid var(--c-b2, #d1d5db)", color: "#2563eb" }}>{airFlow > 0 ? airFlow.toFixed(1) : "—"}</td>
+                  <td className="text-center px-1 py-0.5 font-bold text-gray-800" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{totalDT > 0 ? totalDT.toFixed(1) : "—"}</td>
                 </tr>
               </tbody>
             </table>

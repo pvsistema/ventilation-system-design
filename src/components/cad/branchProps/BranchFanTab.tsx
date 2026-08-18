@@ -40,7 +40,7 @@ export default function BranchFanTab({
   return (
   <div>
     {onRemoveFan && (
-      <div className="px-1 py-1 flex justify-end" style={{ borderBottom: "1px solid #f0d0d0", background: "#fff5f5" }}>
+      <div className="px-1 py-1 flex justify-end" style={{ borderBottom: "1px solid #f0d0d0", background: "var(--c-tint-red, #fff5f5)" }}>
         <button
           onClick={onRemoveFan}
           className="text-[11px] px-3 py-0.5 rounded flex items-center gap-1"
@@ -57,7 +57,7 @@ export default function BranchFanTab({
         value={branch.fanName ?? ""}
         onChange={(e) => onUpdate({ fanName: e.target.value })}
         className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}
+        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}
         placeholder="Название вентилятора"
       />
     </InlineLabel>
@@ -104,7 +104,7 @@ export default function BranchFanTab({
         <button
           onClick={onFanIndResetOffset}
           className="text-[11px] px-2 py-0.5 rounded"
-          style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}
+          style={{ background: "var(--c-s3, #f1f5f9)", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}
           title="Подпись двигается мышью прямо на схеме — эта кнопка вернёт её на место">
           Вернуть подпись на место
         </button>
@@ -117,7 +117,7 @@ export default function BranchFanTab({
           <button
             onClick={onFanSymbolDelete}
             className="text-[11px] px-2 py-0.5 rounded"
-            style={{ background: "#f1f5f9", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}>
+            style={{ background: "var(--c-s3, #f1f5f9)", color: "#475569", border: "1px solid #cbd5e1", cursor: "pointer" }}>
             Удалить УО
           </button>
         )}
@@ -125,7 +125,7 @@ export default function BranchFanTab({
           <button
             onClick={onReverse}
             className="text-[11px] px-2 py-0.5 rounded flex items-center gap-1"
-            style={{ background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", cursor: "pointer" }}>
+            style={{ background: "var(--c-tint-blue, #eff6ff)", color: "#1d4ed8", border: "1px solid #bfdbfe", cursor: "pointer" }}>
             ⇄ Развернуть
           </button>
         )}
@@ -139,7 +139,7 @@ export default function BranchFanTab({
         value={branch.fanType ?? "ГВУ"}
         onChange={(e) => onUpdate({ fanType: e.target.value as "ГВУ" | "ВВУ" | "ВМП" })}
         className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
         <option value="ГВУ">ГВУ — главная вентиляторная установка</option>
         <option value="ВВУ">ВВУ — вспомогательная вентиляторная установка</option>
         <option value="ВМП">ВМП — вентилятор местного проветривания</option>
@@ -151,7 +151,7 @@ export default function BranchFanTab({
         value={branch.fanMode}
         onChange={(e) => onUpdate({ fanMode: e.target.value as "constant" | "curve" })}
         className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
         <option value="constant">Постоянный напор</option>
         <option value="curve">Напорная характеристика</option>
       </select>
@@ -177,7 +177,7 @@ export default function BranchFanTab({
         </InlineLabel>
         {branch.fanReverse && normalFlows && Object.keys(normalFlows).length === 0 && (
           <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
-            style={{ background: "#fef9c3", border: "1px solid #fde047", color: "#854d0e" }}>
+            style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#854d0e" }}>
             ⚠ Сначала выполните расчёт в прямом режиме — для проверки норматива ПБ (Q_рев ≥ 60%)
           </div>
         )}
@@ -185,7 +185,7 @@ export default function BranchFanTab({
     )}
     {branch.fanType === "ВМП" && (
       <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
-        style={{ background: "#f0f9ff", border: "1px solid #bae6fd", color: "#0369a1" }}>
+        style={{ background: "var(--c-tint-blue, #f0f9ff)", border: "1px solid #bae6fd", color: "#0369a1" }}>
         Для смены направления нагнетания — разверните ветвь (Ctrl+R)
       </div>
     )}
@@ -210,7 +210,7 @@ export default function BranchFanTab({
       <>
         {branch.fanPressure <= 0 && (
           <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-            style={{ background: "#fff7ed", border: "1px solid #fed7aa", color: "#c2410c" }}>
+            style={{ background: "var(--c-tint-amber, #fff7ed)", border: "1px solid #fed7aa", color: "#c2410c" }}>
             ⚠ Напор = 0 Па. Расчёт даст Q=0. Задайте напор вентилятора.
           </div>
         )}
@@ -382,7 +382,7 @@ export default function BranchFanTab({
         <>
           {(!mineFans || mineFans.length === 0) ? (
             <div className="px-2 py-2 mx-1 my-1 rounded text-[10px] text-amber-700 leading-tight"
-              style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+              style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d" }}>
               Вентиляторы не добавлены в библиотеку рудника.
               {onOpenFanLibrary && (
                 <button onClick={onOpenFanLibrary}
@@ -411,7 +411,7 @@ export default function BranchFanTab({
                   });
                 }}
                 className="w-full text-[11px] px-1"
-                style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
                 <option value="">— выберите модель —</option>
                 {FAN_CATALOG.filter(f => mineFans.some(mf => mf.catalogId === f.id)).map((f) => (
                   <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
@@ -426,7 +426,7 @@ export default function BranchFanTab({
                 value={bladeAngle}
                 onChange={(e) => onUpdate({ fanBladeAngle: Number(e.target.value) })}
                 className="w-full text-[11px] px-1"
-                style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+                style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
                 {curve.bladeAngles.map(a => (
                   <option key={a} value={a}>Угол {a}°</option>
                 ))}
@@ -479,7 +479,7 @@ export default function BranchFanTab({
         value={branch.fanInstall ?? "Внутри перемычки"}
         onChange={(e) => onUpdate({ fanInstall: e.target.value })}
         className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
         <option>Внутри перемычки</option>
         <option>Без перемычки</option>
       </select>
@@ -500,13 +500,13 @@ export default function BranchFanTab({
 
     {branch.fanStopped && (
       <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
-        style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}>
+        style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #fcd34d", color: "#92400e" }}>
         ⏹ Вентилятор остановлен — напор H=0, воздух движется по естественной тяге
       </div>
     )}
     {!branch.fanStopped && branch.fanReverse && branch.fanType !== "ВМП" && (
       <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
-        style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#b91c1c" }}>
+        style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "#b91c1c" }}>
         {(() => {
           const curve = getFanById(branch.fanCurveId);
           const eff = curve?.reverseEfficiencyFactor ?? 0.82;
@@ -527,7 +527,7 @@ export default function BranchFanTab({
       if (Q <= qMaxScaled * 1.02) return null;
       return (
         <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-          style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
+          style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #f59e0b", color: "#92400e" }}>
           ⚠ Q={Q.toFixed(2)} м³/с превышает max {qMaxScaled.toFixed(1)} м³/с для {curve.name} (угол {branch.fanBladeAngle ?? "-"}°). Вентилятор вне паспортной зоны.
         </div>
       );
@@ -568,7 +568,7 @@ export default function BranchFanTab({
           </InlineLabel>
           {windowTooBig && (
             <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-              style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
+              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #f59e0b", color: "#92400e" }}>
               ⚠ Площадь окна ΔS={numFmt(dS, 2)} м² не меньше сечения выработки
               S={numFmt(sBr, 2)} м² — окно не сужает поток, поэтому R окна = 0.
               Проверьте сечение выработки или уменьшите площадь окна.
@@ -576,7 +576,7 @@ export default function BranchFanTab({
           )}
           {noSection && (
             <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-              style={{ background: "#fef3c7", border: "1px solid #f59e0b", color: "#92400e" }}>
+              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #f59e0b", color: "#92400e" }}>
               ⚠ У выработки не задано сечение S — R окна посчитан без учёта
               скорости подхода (как для очень большой выработки).
             </div>

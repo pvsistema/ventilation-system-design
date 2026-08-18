@@ -110,13 +110,13 @@ export default function BranchWaterPipeTab({
           return (
             <>
               <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                style={{ background: "#f0f9ff", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
+                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
                 <span>Запорный вентиль</span>
                 {onRemoveGate && (
                   <button
                     onClick={onRemoveGate}
                     className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
+                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
                     title="Удалить запорный вентиль">
                     Удалить вентиль
                   </button>
@@ -169,13 +169,13 @@ export default function BranchWaterPipeTab({
           return (
             <>
               <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                style={{ background: "#f0f9ff", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
+                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid #0284c7", color: "#075985" }}>
                 <span>Редукционный клапан</span>
                 {onRemoveReducer && (
                   <button
                     onClick={onRemoveReducer}
                     className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: "#fee2e2", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
+                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "#991b1b", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
                     title="Удалить редукционный клапан">
                     Удалить клапан
                   </button>

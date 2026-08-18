@@ -74,7 +74,7 @@ export default function FanCurveChart({ curve, netResistance, workingQ, workingH
   const hTicks = [0, hMax * 0.33, hMax * 0.66, hMax];
 
   return (
-    <svg width={width} height={height} style={{ background: "#fafafa", border: "1px solid #d0d0d0" }}>
+    <svg width={width} height={height} style={{ background: "var(--c-s2, #fafafa)", border: "1px solid var(--c-b2, #d0d0d0)" }}>
       {/* Сетка */}
       {qTicks.map((q, i) => (
         <line key={`vx${i}`} x1={sx(q)} x2={sx(q)} y1={padT} y2={padT + H}

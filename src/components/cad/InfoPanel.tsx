@@ -38,7 +38,7 @@ interface SectionHeaderProps {
 function SectionHeader({ label, expanded, onToggle, onAll }: SectionHeaderProps) {
   return (
     <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
-      style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
+      style={{ background: "var(--c-tint-blue, #e8eef8)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
       <button
         onClick={onToggle}
         className="flex items-center gap-1 flex-1 text-left hover:bg-gray-100">
@@ -134,7 +134,7 @@ export default function InfoPanel({
   };
 
   return (
-    <div className="flex flex-col h-full text-xs" style={{ background: "#f5f5f5" }}>
+    <div className="flex flex-col h-full text-xs" style={{ background: "var(--c-s2, #f5f5f5)" }}>
       {/* Пресет */}
       <div className="flex items-center gap-1 px-1 py-1 border-b border-gray-300">
         <select
@@ -219,7 +219,7 @@ export default function InfoPanel({
         {onPositionVisibilityChange && (
           <>
             <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
-              style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
+              style={{ background: "var(--c-tint-blue, #e8eef8)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
               <button onClick={() => setPosVisOpen((v) => !v)}
                 className="flex items-center gap-1 flex-1 text-left">
                 <Icon name={posVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
@@ -249,7 +249,7 @@ export default function InfoPanel({
                   return (
                     <div key={pos.id}
                       style={{
-                        borderBottom: "1px solid #f0f0f0",
+                        borderBottom: "1px solid var(--c-b1, #f0f0f0)",
                         background: posVis ? "transparent" : "#fafafa",
                         paddingTop: 2, paddingBottom: 2,
                       }}>
@@ -281,7 +281,7 @@ export default function InfoPanel({
                         </span>
                         {pos.accidentType && pos.accidentType !== "Нет" && (
                           <span className="text-[9px] flex-shrink-0 px-1 rounded"
-                            style={{ background: "#f3f4f6", color: "#6b7280" }}>
+                            style={{ background: "var(--c-s3, #f3f4f6)", color: "var(--c-t3, #6b7280)" }}>
                             {pos.accidentType}
                           </span>
                         )}
@@ -315,7 +315,7 @@ export default function InfoPanel({
         {onNodeVisibilityChange && (
           <>
             <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
-              style={{ background: "#e8eef8", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
+              style={{ background: "var(--c-tint-blue, #e8eef8)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
               <button onClick={() => setNodeVisOpen((v) => !v)}
                 className="flex items-center gap-1 flex-1 text-left">
                 <Icon name={nodeVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
@@ -343,7 +343,7 @@ export default function InfoPanel({
                     className="flex items-center hover:bg-blue-50 select-none"
                     style={{
                       paddingLeft: 20, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
-                      borderBottom: "1px solid #f0f0f0",
+                      borderBottom: "1px solid var(--c-b1, #f0f0f0)",
                       background: selectedNodeId === node.id ? "#dbeafe" : "transparent",
                     }}>
                     <label className="flex items-center gap-1.5 flex-1 cursor-pointer min-w-0">

@@ -138,7 +138,7 @@ export default function WaterFireCheckDialog({
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: "#e8edf5", borderBottom: "1px solid #c0cad8" }}>
+          style={{ background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}>
           <span className="text-[13px] font-semibold text-gray-800">
             Проверка пожарно-оросительного трубопровода
           </span>
@@ -193,7 +193,7 @@ export default function WaterFireCheckDialog({
 
         {mode === "fire" && fireResult?.error && (
           <div className="px-4 py-2 text-[11px] flex items-center gap-2"
-            style={{ background: "#fff4e5", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
             <Icon name="TriangleAlert" size={14} />
             {fireResult.error}
           </div>
@@ -201,7 +201,7 @@ export default function WaterFireCheckDialog({
 
         {mode === "network" && result.error && (
           <div className="px-4 py-2 text-[11px] flex items-center gap-2"
-            style={{ background: "#fff4e5", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
             <Icon name="TriangleAlert" size={14} />
             {result.error}
           </div>
@@ -221,7 +221,7 @@ export default function WaterFireCheckDialog({
         {/* Сводка */}
         {mode === "network" && !result.error && (
           <div className="px-4 py-2 flex items-center gap-5 text-[11px]"
-            style={{ background: "#f6f8fc", borderBottom: "1px solid #e0e4ee" }}>
+            style={{ background: "var(--c-s3, #f6f8fc)", borderBottom: "1px solid #e0e4ee" }}>
             <span className="text-gray-600">Проверено точек: <b>{result.total}</b></span>
             {result.pumpCount > 0 && (
               <span style={{ color: "#1d4ed8" }}
@@ -254,7 +254,7 @@ export default function WaterFireCheckDialog({
 
         {/* Итог + действия */}
         <div className="px-4 py-2.5 flex items-center justify-between"
-          style={{ background: "#f2f5fb", borderTop: "1px solid #d8e0ee" }}>
+          style={{ background: "var(--c-s3, #f2f5fb)", borderTop: "1px solid #d8e0ee" }}>
           {mode === "network" ? (
             <label className="flex items-center gap-1.5 text-[11px] text-gray-600 cursor-pointer select-none">
               <input type="checkbox" checked={onlyFailed} onChange={e => setOnlyFailed(e.target.checked)} />

@@ -26,7 +26,7 @@ interface Props {
 }
 
 const inputCls = "flex-1 px-1 py-0.5 text-[11px] text-right";
-const inputStyle: React.CSSProperties = { border: "1px solid #c8c8c8", outline: "none", background: "white", borderRadius: 2 };
+const inputStyle: React.CSSProperties = { border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 };
 
 export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, waterBranchResult }: Props) {
   const [showLibrary, setShowLibrary] = useState(false);
@@ -202,7 +202,7 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, wat
 
       {/* Результат гидравлического расчёта водопровода на ветви насоса */}
       {waterBranchResult && (
-        <div className="mt-2 rounded p-2" style={{ background: waterBranchResult.pumpActive ? "#f0fdf4" : "#f9fafb", border: "1px solid #e5e7eb" }}>
+        <div className="mt-2 rounded p-2" style={{ background: waterBranchResult.pumpActive ? "#f0fdf4" : "#f9fafb", border: "1px solid var(--c-b1, #e5e7eb)" }}>
           <div className="text-[10px] font-medium text-gray-600 mb-1 flex items-center gap-1">
             <Icon name="Activity" size={11} /> Результат расчёта
           </div>

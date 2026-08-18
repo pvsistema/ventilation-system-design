@@ -49,7 +49,7 @@ export default function PumpChart({ pump, workQ, width = 250, height = 130 }: Pr
   const wH = pumpHead(pump, wQ);
 
   return (
-    <svg width={W} height={H} style={{ background: "#fafafa", border: "1px solid #e5e7eb", borderRadius: 3 }}>
+    <svg width={W} height={H} style={{ background: "var(--c-s2, #fafafa)", border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 3 }}>
       {/* Оси */}
       <line x1={pad.l} y1={pad.t} x2={pad.l} y2={H - pad.b} stroke="#9ca3af" strokeWidth={1} />
       <line x1={pad.l} y1={H - pad.b} x2={W - pad.r} y2={H - pad.b} stroke="#9ca3af" strokeWidth={1} />

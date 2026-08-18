@@ -26,7 +26,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 }
 
 const inputStyle = {
-  background: "white", border: "1px solid #c8c8c8", height: 20,
+  background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20,
   outline: "none", fontFamily: "inherit",
 } as const;
 
@@ -101,7 +101,7 @@ export default function VentSectionsDialog({
         style={{ width: 860, maxHeight: "84vh", border: "1px solid #b0b8cc" }}>
 
         <div className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: "#e8edf5", borderBottom: "1px solid #c0cad8" }}>
+          style={{ background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}>
           <span className="text-[13px] font-semibold text-gray-800">Участки рудника</span>
           <button onClick={onClose} className="hover:bg-black/10 rounded p-0.5">
             <Icon name="X" size={15} className="text-gray-600" />
@@ -250,7 +250,7 @@ export default function VentSectionsDialog({
         </div>
 
         <div className="px-4 py-2.5 flex items-center justify-between"
-          style={{ background: "#f2f5fb", borderTop: "1px solid #d8e0ee" }}>
+          style={{ background: "var(--c-s3, #f2f5fb)", borderTop: "1px solid #d8e0ee" }}>
           <span className="text-[10px] text-gray-400">
             Расход воздуха считается позабойно и суммируется по участкам (ФНиП № 505, п. 155)
           </span>

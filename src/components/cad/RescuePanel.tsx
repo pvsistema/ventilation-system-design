@@ -200,7 +200,7 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
       <div className="overflow-x-auto">
         <table className="w-full text-[10px] border-collapse">
           <thead>
-            <tr style={{ background: "#f3f4f6" }}>
+            <tr style={{ background: "var(--c-s3, #f3f4f6)" }}>
               <th className="border border-gray-200 px-1 py-0.5 text-left font-medium">Выработка</th>
               <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">Ветвь №</th>
               <th className="border border-gray-200 px-1 py-0.5 text-center font-medium">Сег.</th>
@@ -209,23 +209,23 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">Длина, м</th>
               <th className="border border-gray-200 px-1 py-0.5 text-right font-medium">Угол, °</th>
               {/* Фактическая зона */}
-              <th className="border border-gray-200 px-1 py-0.5 text-center font-medium" style={{ background: "#f0fdf4" }}>Зона</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>V, м/мин</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>t, мин</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>O₂, л</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>Σt, мин</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>ΣO₂, л</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>O₂/100м</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-center font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>Зона</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>V, м/мин</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>t, мин</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>O₂, л</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>Σt, мин</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>ΣO₂, л</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>O₂/100м</th>
               {/* Слабая задымлённость k3=1 */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#dcfce7", color: "#166534" }}>t слаб.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#dcfce7", color: "#166534" }}>O₂ слаб.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green2, #dcfce7)", color: "#166534" }}>t слаб.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green2, #dcfce7)", color: "#166534" }}>O₂ слаб.</th>
               {/* Средняя задымлённость k3=1,43 */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>t сред.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fff7ed", color: "#c2410c" }}>O₂ сред.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-amber, #fff7ed)", color: "#c2410c" }}>t сред.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-amber, #fff7ed)", color: "#c2410c" }}>O₂ сред.</th>
               {/* Сильная задымлённость k3=2 */}
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>t сильн.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#fef2f2", color: "#b91c1c" }}>O₂ сильн.</th>
-              <th className="border border-gray-200 px-1 py-0.5 text-left font-medium" style={{ background: "#f8fafc", color: "#475569" }}>Комментарий</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c" }}>t сильн.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-red, #fef2f2)", color: "#b91c1c" }}>O₂ сильн.</th>
+              <th className="border border-gray-200 px-1 py-0.5 text-left font-medium" style={{ background: "var(--c-s2, #f8fafc)", color: "#475569" }}>Комментарий</th>
             </tr>
           </thead>
           <tbody>
@@ -240,22 +240,22 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
                 <td className="border border-gray-200 px-1 py-0.5 text-center text-gray-500">{s.toNodeId}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right">{Math.round(s.length)}</td>
                 <td className="border border-gray-200 px-1 py-0.5 text-right">{s.angle.toFixed(0)}°</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-center" style={{ background: "#f0fdf4" }}>
+                <td className="border border-gray-200 px-1 py-0.5 text-center" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
                   <ZoneBadge zone={s.zone} />
                 </td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.speed_mpm.toFixed(2)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.time_min.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.o2_liters.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>{s.cumulTime.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "#f0fdf4" }}>{s.cumulO2.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#f0fdf4" }}>{s.o2_per_100m.toFixed(2)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#dcfce7" }}>{s.time_clean.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#dcfce7" }}>{s.o2_clean.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fff7ed" }}>{s.time_smoky_low.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fff7ed" }}>{s.o2_smoky_low.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fef2f2" }}>{s.time_smoky_high.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "#fef2f2" }}>{s.o2_smoky_high.toFixed(1)}</td>
-                <td className="border border-gray-200 px-1 py-0.5 text-left text-gray-500" style={{ background: "#f8fafc" }}>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>{s.speed_mpm.toFixed(2)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>{s.time_min.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>{s.o2_liters.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>{s.cumulTime.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right font-medium" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>{s.cumulO2.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>{s.o2_per_100m.toFixed(2)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-green2, #dcfce7)" }}>{s.time_clean.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-green2, #dcfce7)" }}>{s.o2_clean.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-amber, #fff7ed)" }}>{s.time_smoky_low.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-amber, #fff7ed)" }}>{s.o2_smoky_low.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-red, #fef2f2)" }}>{s.time_smoky_high.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-right" style={{ background: "var(--c-tint-red, #fef2f2)" }}>{s.o2_smoky_high.toFixed(1)}</td>
+                <td className="border border-gray-200 px-1 py-0.5 text-left text-gray-500" style={{ background: "var(--c-s2, #f8fafc)" }}>
                   {s.angle > 0 ? "вверх" : s.angle < 0 ? "вниз" : "горизонт."}
                   {s.zone !== "clean" ? ` в дыму` : ""}
                 </td>
@@ -263,7 +263,7 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
             ))}
           </tbody>
           <tfoot>
-            <tr style={{ background: "#eff6ff" }}>
+            <tr style={{ background: "var(--c-tint-blue, #eff6ff)" }}>
               <td colSpan={9} className="border border-gray-200 px-1 py-0.5 font-semibold text-right">Итого:</td>
               <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold">
                 {segments.reduce((s, seg) => s + seg.time_min, 0).toFixed(1)}
@@ -272,22 +272,22 @@ function SegmentsTable({ segments, title }: { segments: RescueSegment[]; title: 
                 {segments.reduce((s, seg) => s + seg.o2_liters, 0).toFixed(1)}
               </td>
               <td colSpan={3} />
-              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#dcfce7" }}>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "var(--c-tint-green2, #dcfce7)" }}>
                 {segments.reduce((s, seg) => s + seg.time_clean, 0).toFixed(1)}
               </td>
-              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#dcfce7" }}>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "var(--c-tint-green2, #dcfce7)" }}>
                 {segments.reduce((s, seg) => s + seg.o2_clean, 0).toFixed(1)}
               </td>
-              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fff7ed" }}>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "var(--c-tint-amber, #fff7ed)" }}>
                 {segments.reduce((s, seg) => s + seg.time_smoky_low, 0).toFixed(1)}
               </td>
-              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fff7ed" }}>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "var(--c-tint-amber, #fff7ed)" }}>
                 {segments.reduce((s, seg) => s + seg.o2_smoky_low, 0).toFixed(1)}
               </td>
-              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fef2f2" }}>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "var(--c-tint-red, #fef2f2)" }}>
                 {segments.reduce((s, seg) => s + seg.time_smoky_high, 0).toFixed(1)}
               </td>
-              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "#fef2f2" }}>
+              <td className="border border-gray-200 px-1 py-0.5 text-right font-semibold" style={{ background: "var(--c-tint-red, #fef2f2)" }}>
                 {segments.reduce((s, seg) => s + seg.o2_smoky_high, 0).toFixed(1)}
               </td>
             </tr>
@@ -402,29 +402,29 @@ function RescueResultDialog({
           <div className="border rounded overflow-hidden">
             <table className="w-full text-[11px]">
               <thead>
-                <tr style={{ background: "#f3f4f6" }}>
+                <tr style={{ background: "var(--c-s3, #f3f4f6)" }}>
                   <th className="px-2 py-1 text-left font-medium text-gray-600">Зона задымления</th>
                   <th className="px-2 py-1 text-right font-medium text-gray-600">Время, мин</th>
                   <th className="px-2 py-1 text-right font-medium text-gray-600">O₂, л</th>
                 </tr>
               </thead>
               <tbody>
-                <tr style={{ background: "#f0fdf4" }}>
+                <tr style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
                   <td className="px-2 py-1 text-green-800 font-medium">Фактическое (расчёт пожара)</td>
                   <td className="px-2 py-1 text-right font-semibold">{result.totalTime.toFixed(1)}</td>
                   <td className="px-2 py-1 text-right font-semibold">{result.totalO2.toFixed(1)}</td>
                 </tr>
-                <tr style={{ background: "#f0fdf4" }}>
+                <tr style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
                   <td className="px-2 py-1 text-green-700">Слабая задымлённость k3=1 (Рв &gt; 10 м)</td>
                   <td className="px-2 py-1 text-right">{result.totalTime_clean.toFixed(1)}</td>
                   <td className="px-2 py-1 text-right">{result.totalO2_clean.toFixed(1)}</td>
                 </tr>
-                <tr style={{ background: "#fff7ed" }}>
+                <tr style={{ background: "var(--c-tint-amber, #fff7ed)" }}>
                   <td className="px-2 py-1 text-orange-700">Средняя задымлённость k3=1,43 (Рв 5–10 м)</td>
                   <td className="px-2 py-1 text-right">{result.totalTime_smoky_low.toFixed(1)}</td>
                   <td className="px-2 py-1 text-right">{result.totalO2_smoky_low.toFixed(1)}</td>
                 </tr>
-                <tr style={{ background: "#fef2f2" }}>
+                <tr style={{ background: "var(--c-tint-red, #fef2f2)" }}>
                   <td className="px-2 py-1 text-red-700">Сильная задымлённость k3=2 (Рв &lt; 5 м)</td>
                   <td className="px-2 py-1 text-right">{result.totalTime_smoky_high.toFixed(1)}</td>
                   <td className="px-2 py-1 text-right">{result.totalO2_smoky_high.toFixed(1)}</td>

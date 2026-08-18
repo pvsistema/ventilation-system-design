@@ -34,7 +34,7 @@ export default function CadStatusBar({
 }: CadStatusBarProps) {
   return (
   <div className="h-5 flex items-center justify-between px-2 text-[11px]"
-    style={{ background: "#f0f0f0", borderTop: "1px solid #b8b8b8", color: "#444" }}>
+    style={{ background: "var(--c-s3, #f0f0f0)", borderTop: "1px solid var(--c-b3, #b8b8b8)", color: "#444" }}>
     <div className="flex items-center gap-3">
       {/* Режим правки координат должно быть невозможно не заметить: в нём
           перетаскивание меняет длины выработок и результат расчёта. */}
@@ -98,7 +98,7 @@ export default function CadStatusBar({
         </>
       ) : (
         <span className="px-1.5 py-0.5 rounded" style={{
-          background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d",
+          background: "var(--c-tint-amber2, #fef3c7)", color: "#92400e", border: "1px solid #fcd34d",
         }} title="Нажмите F9, чтобы выполнить расчёт сети">
           ● Расчёт не выполнялся — F9
         </span>
@@ -118,7 +118,7 @@ export default function CadStatusBar({
         Лог{logEntries.length > 0 ? ` (${logEntries.length})` : ""}
       </button>
       <span className="text-gray-400">|</span>
-      <span style={{ color: "#6b7280" }}>S+S — выделить подобное</span>
+      <span style={{ color: "var(--c-t3, #6b7280)" }}>S+S — выделить подобное</span>
     </div>
   </div>
   );

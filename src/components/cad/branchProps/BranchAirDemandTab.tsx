@@ -43,7 +43,7 @@ export default function BranchAirDemandTab({
   /** Предупреждение о данных, не типичных для этого типа забоя */
   const StaleNote = ({ what }: { what: string }) => (
     <div className="mx-2 mb-1 px-2 py-1 rounded text-[9px] leading-snug"
-      style={{ background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
+      style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "#92400e" }}>
       Для типа «{FACE_TYPE_LABEL[faceType]}» {what} обычно не учитывают,
       но данные заданы и участвуют в расчёте. Очистите поля, если они не нужны.
     </div>
@@ -103,7 +103,7 @@ export default function BranchAirDemandTab({
       </label>
       {(branch.pollutesAir ?? false) && (
         <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
-          style={{ background: "#eff6ff", border: "1px solid #bfdbfe", color: "#1e40af" }}>
+          style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "#1e40af" }}>
           Стрелки направления воздуха в ветвях ниже по потоку от этой ветви
           будут отображаться синим цветом.
         </div>
@@ -118,7 +118,7 @@ export default function BranchAirDemandTab({
         </div>
       ) : (<>
         <div className="px-2 py-1 text-[9px] text-gray-500 leading-snug"
-          style={{ background: "#f8fafc", borderBottom: "1px solid #ebebeb" }}>
+          style={{ background: "var(--c-s2, #f8fafc)", borderBottom: "1px solid #ebebeb" }}>
           Учитываемые факторы: люди
           {F.blast && ", газы взрывных работ"}
           {F.diesel && ", дизельное оборудование"}
@@ -133,7 +133,7 @@ export default function BranchAirDemandTab({
             value={branch.ventSectionId ?? ""}
             onChange={(e) => onUpdate({ ventSectionId: e.target.value })}
             className="w-full text-[11px] px-1"
-            style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+            style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
             <option value="">— не задан —</option>
             {ventSections.map(s => (
               <option key={s.id} value={s.id}>
@@ -262,7 +262,7 @@ export default function BranchAirDemandTab({
 
         {d.formula && (
           <div className="px-2 py-1 text-[9px] text-gray-500 leading-snug"
-            style={{ background: "#f8fafc", borderBottom: "1px solid #ebebeb" }}>
+            style={{ background: "var(--c-s2, #f8fafc)", borderBottom: "1px solid #ebebeb" }}>
             Определяющий: {FACTOR_LABEL[d.factor]} = {d.formula}
           </div>
         )}
@@ -272,20 +272,20 @@ export default function BranchAirDemandTab({
         </InlineLabel>
         <InlineLabel label="С коэффициентами">
           <div className="w-full text-[11px] text-right px-1 font-bold tabular-nums"
-            style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px", color: "#0f172a" }}>
+            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px", color: "var(--c-t1, #0f172a)" }}>
             {d.total > 0 ? `${d.total.toFixed(2)} м³/с` : "—"}
           </div>
         </InlineLabel>
         <InlineLabel label="Фактически, м³/с">
           <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
-            style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
               color: d.flowOk ? "#15803d" : "#dc2626" }}>
             {d.actualFlow.toFixed(2)}
           </div>
         </InlineLabel>
         <InlineLabel label="Скорость, м/с">
           <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
-            style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
               color: d.velocityOk ? "#15803d" : "#dc2626" }}
             title={`Допустимо: ${d.vMin}–${d.vMax} м/с`}>
             {d.actualVelocity.toFixed(2)}

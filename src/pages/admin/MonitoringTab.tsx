@@ -135,7 +135,7 @@ export default function MonitoringTab({ data, loading }: Props) {
                         className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-medium"
                         style={desktop
                           ? { background: "#eef2ff", color: "#4338ca" }
-                          : { background: "#f1f5f9", color: "#475569" }}>
+                          : { background: "var(--c-s3, #f1f5f9)", color: "#475569" }}>
                         <Icon name={desktop ? "Monitor" : "Globe"} size={11} />
                         {desktop ? "Десктоп" : "Браузер"}
                       </span>

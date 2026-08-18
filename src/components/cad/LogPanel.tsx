@@ -80,20 +80,20 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
         style={{ background: "#1e293b", borderRadius: "5px 5px 0 0", flexShrink: 0 }}
       >
         <div className="flex items-center gap-2">
-          <Icon name="ScrollText" size={12} style={{ color: "#94a3b8" }} />
+          <Icon name="ScrollText" size={12} style={{ color: "var(--c-t4, #94a3b8)" }} />
           <span className="text-[11px] font-semibold" style={{ color: "#e2e8f0" }}>Лог расчёта</span>
-          <span className="text-[10px]" style={{ color: "#64748b" }}>{entries.length} записей</span>
+          <span className="text-[10px]" style={{ color: "var(--c-t3, #64748b)" }}>{entries.length} записей</span>
           {errCount > 0 && <span className="text-[10px] px-1 rounded" style={{ background: "#7f1d1d", color: "#fca5a5" }}>{errCount} ошиб.</span>}
           {warnCount > 0 && <span className="text-[10px] px-1 rounded" style={{ background: "#78350f", color: "#fcd34d" }}>{warnCount} предупр.</span>}
         </div>
         <div className="flex items-center gap-1">
-          <button onClick={onClear} title="Очистить лог" className="text-[10px] px-1.5 py-0.5 rounded hover:bg-slate-700" style={{ color: "#94a3b8" }}>Очистить</button>
-          <button onClick={onClose} className="text-[10px] px-1.5 py-0.5 rounded hover:bg-slate-700" style={{ color: "#94a3b8" }}>✕</button>
+          <button onClick={onClear} title="Очистить лог" className="text-[10px] px-1.5 py-0.5 rounded hover:bg-slate-700" style={{ color: "var(--c-t4, #94a3b8)" }}>Очистить</button>
+          <button onClick={onClose} className="text-[10px] px-1.5 py-0.5 rounded hover:bg-slate-700" style={{ color: "var(--c-t4, #94a3b8)" }}>✕</button>
         </div>
       </div>
 
       {/* Фильтр */}
-      <div className="flex items-center gap-1 px-2 py-1" style={{ background: "#f8fafc", borderBottom: "1px solid #e5e7eb", flexShrink: 0 }}>
+      <div className="flex items-center gap-1 px-2 py-1" style={{ background: "var(--c-s2, #f8fafc)", borderBottom: "1px solid var(--c-b1, #e5e7eb)", flexShrink: 0 }}>
         {(["all", "warn", "error"] as const).map(f => (
           <button
             key={f}
@@ -104,7 +104,7 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
             {f === "all" ? "Все" : f === "warn" ? "Предупреждения" : "Ошибки"}
           </button>
         ))}
-        <span className="ml-auto text-[10px]" style={{ color: "#94a3b8" }}>{visible.length} строк</span>
+        <span className="ml-auto text-[10px]" style={{ color: "var(--c-t4, #94a3b8)" }}>{visible.length} строк</span>
       </div>
 
       {/* Список строк */}
@@ -118,7 +118,7 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
               className="flex items-start gap-2 px-2 py-0.5 hover:bg-slate-800"
               style={{ borderBottom: "1px solid #1e293b" }}
             >
-              <span className="shrink-0 text-[10px] mt-0.5" style={{ color: "#334155", width: 50 }}>{e.ts}</span>
+              <span className="shrink-0 text-[10px] mt-0.5" style={{ color: "var(--c-t2, #334155)", width: 50 }}>{e.ts}</span>
               <span className="shrink-0" style={{ color: levelColor(e.level), width: 10 }}>{levelIcon(e.level)}</span>
               <span style={{ color: e.level === "error" ? "#fca5a5" : e.level === "warn" ? "#fcd34d" : e.level === "ok" ? "#86efac" : "#94a3b8", wordBreak: "break-word" }}>
                 {e.text}

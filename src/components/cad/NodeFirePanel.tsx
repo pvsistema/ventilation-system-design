@@ -35,7 +35,7 @@ function EditInput({
       <input type={type} step={step} value={value}
         onChange={(e) => onChange(e.target.value)}
         className="flex-1 text-[11px] text-right px-1 cad-edit-input"
-        style={{ background: "#ffffff", border: "1px solid #94a3b8", borderRadius: 2, height: 18, outline: "none", fontFamily: "inherit", minWidth: 0, color: "#0f172a" }}
+        style={{ background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #94a3b8)", borderRadius: 2, height: 18, outline: "none", fontFamily: "inherit", minWidth: 0, color: "var(--c-t1, #0f172a)" }}
       />
       {suffix && <span className="text-[10px] text-gray-500 px-1 flex-shrink-0">{suffix}</span>}
     </div>
@@ -46,7 +46,7 @@ function ComputedInput({ value, empty }: { value: string; empty?: boolean }) {
   return (
     <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
       title="Расчётное значение — изменить нельзя"
-      style={{ background: "#eef2f7", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+      style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
         color: empty ? "#94a3b8" : "#0f172a", userSelect: "text", cursor: "default" }}>
       {value}
     </div>
@@ -70,7 +70,7 @@ function SelectField({ value, options, onChange }: {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}
       className="w-full text-[11px] px-1"
-      style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none", fontFamily: "inherit" }}>
+      style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", fontFamily: "inherit" }}>
       {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
     </select>
   );
@@ -245,7 +245,7 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
               }
             }}
             className="w-full text-[11px] px-1"
-            style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none", fontFamily: "inherit" }}>
+            style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", fontFamily: "inherit" }}>
             <option value="">— выбрать вручную —</option>
             {(Object.keys(CONSUMER_GROUP_NAMES) as ConsumerGroup[]).map((g) => (
               <optgroup key={g} label={CONSUMER_GROUP_NAMES[g]}>
@@ -349,12 +349,12 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
           {/* Таблица открытых потребителей */}
           {openConsumers.length > 0 && (<>
             <div className="flex items-center px-1 py-0.5 text-[10px] font-semibold select-none"
-              style={{ background: "#f0f9ff", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8", borderLeft: "3px solid #0284c7", color: "#075985" }}>
+              style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8", borderLeft: "3px solid #0284c7", color: "#075985" }}>
               Открытые краны ({openConsumers.length})
             </div>
             {/* Шапка таблицы */}
             <div className="flex text-[9px] text-gray-500 px-1 py-0.5"
-              style={{ borderBottom: "1px solid #ebebeb", background: "#f8fafc" }}>
+              style={{ borderBottom: "1px solid #ebebeb", background: "var(--c-s2, #f8fafc)" }}>
               <div style={{ width: 90 }}>Название / №</div>
               <div style={{ width: 55, textAlign: "right" }}>Расход</div>
               <div style={{ width: 55, textAlign: "right" }}>Дин. давл.</div>
@@ -371,13 +371,13 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
               return (
                 <div key={c.id} className="flex items-center text-[10px] px-1"
                   style={{ minHeight: 18, borderBottom: "1px solid #ebebeb" }}>
-                  <div className="truncate" style={{ width: 90, color: "#374151" }} title={label}>
+                  <div className="truncate" style={{ width: 90, color: "var(--c-t2, #374151)" }} title={label}>
                     {label}
                   </div>
                   <div style={{ width: 55, textAlign: "right", fontWeight: 600, color: "#1a1a1a" }}>
                     {q.toFixed(2)}
                   </div>
-                  <div style={{ width: 55, textAlign: "right", color: "#374151" }}>
+                  <div style={{ width: 55, textAlign: "right", color: "var(--c-t2, #374151)" }}>
                     {dp.toFixed(3)}
                   </div>
                   <div style={{ width: 40, textAlign: "right",
@@ -390,13 +390,13 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
             })}
             {/* Итого */}
             <div className="flex items-center text-[10px] px-1 font-semibold"
-              style={{ minHeight: 18, borderTop: "2px solid #c8d4e8", background: "#f0f4ff" }}>
+              style={{ minHeight: 18, borderTop: "2px solid #c8d4e8", background: "var(--c-tint-blue, #f0f4ff)" }}>
               <div style={{ width: 90, color: "#1a3a6b" }}>Итого:</div>
               <div style={{ width: 55, textAlign: "right", color: "#1a3a6b" }}>
                 {totalFlow.toFixed(2)}
               </div>
               <div style={{ width: 55, textAlign: "right" }}></div>
-              <div style={{ width: 40, textAlign: "right", color: "#6b7280" }}>м³/ч</div>
+              <div style={{ width: 40, textAlign: "right", color: "var(--c-t3, #6b7280)" }}>м³/ч</div>
             </div>
           </>)}
 
@@ -443,7 +443,7 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
             onChange={(e) => onUpdate({ fireDescription: e.target.value })}
             rows={4}
             className="w-full text-[11px] px-1 py-0.5 resize-none"
-            style={{ border: "1px solid #c8c8c8", outline: "none", fontFamily: "inherit", background: "white" }}
+            style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", fontFamily: "inherit", background: "white" }}
           />
         </div>
       </>)}

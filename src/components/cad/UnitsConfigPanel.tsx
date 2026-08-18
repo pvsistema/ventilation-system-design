@@ -19,7 +19,7 @@ export default function UnitsConfigPanel({ unitsConfig, onChange }: Props) {
       <div className="flex-1 overflow-y-auto">
         <table className="w-full text-[11px] border-collapse">
           <thead className="sticky top-0 z-10">
-            <tr style={{ background: "#e8eef8" }}>
+            <tr style={{ background: "var(--c-tint-blue, #e8eef8)" }}>
               <th className="text-left px-3 py-1.5 font-semibold text-gray-700 border-b border-gray-200" style={{ width: "40%" }}>
                 Физическая величина
               </th>
@@ -77,7 +77,7 @@ export default function UnitsConfigPanel({ unitsConfig, onChange }: Props) {
       </div>
 
       <div className="flex items-center justify-between px-3 py-1.5 border-t border-gray-200 flex-shrink-0"
-        style={{ background: "#f0f0f0" }}>
+        style={{ background: "var(--c-s3, #f0f0f0)" }}>
         <span className="text-[10px] text-gray-400">
           Синие строки — изменены от значения по умолчанию
         </span>

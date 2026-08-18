@@ -21,7 +21,7 @@ import {
 // схемой (обновляется подсветка), поэтому фокус слетал мгновенно и поля
 // казались «некликабельными». В SVG-режиме ререндеров меньше — баг не проявлялся.
 const inputStyle = {
-  background: "white", border: "1px solid #c8c8c8", height: 18,
+  background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18,
   outline: "none", fontFamily: "inherit",
 } as const;
 
@@ -110,7 +110,7 @@ export default function VentSectionsPanel({
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
       {/* Панель действий */}
       <div className="flex items-center gap-1 px-2 py-1.5 flex-shrink-0"
-        style={{ borderBottom: "1px solid #e0e4ee", background: "#f8fafc" }}>
+        style={{ borderBottom: "1px solid #e0e4ee", background: "var(--c-s2, #f8fafc)" }}>
         <button onClick={addSection}
           className="text-[11px] px-2 py-1 rounded border border-gray-300 bg-white hover:bg-gray-100 flex items-center gap-1">
           <Icon name="Plus" size={11} /> Участок

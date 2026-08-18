@@ -29,7 +29,7 @@ const Index = lazy(() => import("./pages/Index"));
 const PageLoading = () => (
   <div style={{
     display: "flex", alignItems: "center", justifyContent: "center",
-    height: "100vh", fontFamily: "sans-serif", color: "#64748b", fontSize: 14,
+    height: "100vh", fontFamily: "sans-serif", color: "var(--c-t3, #64748b)", fontSize: 14,
   }}>
     Загрузка…
   </div>

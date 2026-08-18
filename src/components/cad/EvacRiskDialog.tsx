@@ -66,7 +66,7 @@ export default function EvacRiskDialog({
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: "#e8edf5", borderBottom: "1px solid #c0cad8" }}>
+          style={{ background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}>
           <span className="text-[13px] font-semibold text-gray-800">
             Зона поражения: вывод людей при пожаре
           </span>
@@ -77,7 +77,7 @@ export default function EvacRiskDialog({
 
         {result.error && (
           <div className="px-4 py-2.5 text-[11px] flex items-start gap-2"
-            style={{ background: "#fff4e5", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
             <Icon name="TriangleAlert" size={14} className="mt-0.5 flex-shrink-0" />
             <div>
               {result.error}
@@ -127,7 +127,7 @@ export default function EvacRiskDialog({
         {/* Сводка */}
         {!result.error && (
           <div className="px-4 py-2 flex items-center gap-5 text-[11px] flex-wrap"
-            style={{ background: "#f6f8fc", borderBottom: "1px solid #e0e4ee" }}>
+            style={{ background: "var(--c-s3, #f6f8fc)", borderBottom: "1px solid #e0e4ee" }}>
             <span className="text-gray-600">
               Людей в смену: <b>{result.totalPeople}</b> на {result.totalWorkplaces} местах
             </span>
@@ -230,7 +230,7 @@ export default function EvacRiskDialog({
 
         {/* Подвал */}
         <div className="px-4 py-2.5 flex items-center justify-between"
-          style={{ background: "#f2f5fb", borderTop: "1px solid #d8e0ee" }}>
+          style={{ background: "var(--c-s3, #f2f5fb)", borderTop: "1px solid #d8e0ee" }}>
           <span className="text-[10px] text-gray-400">
             Время выхода — по маршруту через выработки с учётом уклонов и задымления
           </span>

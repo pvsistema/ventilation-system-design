@@ -41,7 +41,7 @@ export default function CadTitleBar({
     const isMaximized = !!w.__pvsWindowMaximized;
     return (
   <div className="h-7 flex items-center select-none"
-    style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)", borderBottom: "1px solid #b8b8b8" }}
+    style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d6d6d6))", borderBottom: "1px solid var(--c-b3, #b8b8b8)" }}
     onMouseDown={e => { if ((e.target as HTMLElement).closest('button')) return; winDrag(); }}
     onDoubleClick={winMaximize}>
 
@@ -65,7 +65,7 @@ export default function CadTitleBar({
           {projectFileName}{isDirty ? " *" : ""}
         </span>
       ) : (
-        <span className="text-xs" style={{ color: "#9ca3af" }}>
+        <span className="text-xs" style={{ color: "var(--c-t4, #9ca3af)" }}>
           Новый проект{isDirty ? " *" : ""}
         </span>
       )}

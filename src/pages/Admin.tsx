@@ -452,7 +452,7 @@ export default function Admin() {
     // прокрутка окна намеренно отключена (холст занимает весь экран). Поэтому
     // админка листается внутри себя — иначе длинные вкладки вроде мониторинга
     // не помещались на экран и нижняя часть была недоступна.
-    <div className="h-screen overflow-y-auto" style={{ background: "#f1f5f9" }}>
+    <div className="h-screen overflow-y-auto" style={{ background: "var(--c-s3, #f1f5f9)" }}>
       {/* Шапка. sticky — остаётся на виду при прокрутке длинных вкладок,
           чтобы переключение разделов и кнопка «Обновить» были всегда под рукой. */}
       <div className="h-14 flex items-center justify-between px-6 shadow-sm sticky top-0 z-20"

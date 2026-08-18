@@ -100,7 +100,7 @@ export default function FireStabilityDialog({
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: "#e8edf5", borderBottom: "1px solid #c0cad8" }}>
+          style={{ background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}>
           <span className="text-[13px] font-semibold text-gray-800">
             Устойчивость вентиляционных режимов при пожаре
           </span>
@@ -111,7 +111,7 @@ export default function FireStabilityDialog({
 
         {!solved && (
           <div className="px-4 py-2 text-[11px] flex items-center gap-2"
-            style={{ background: "#fff4e5", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
+            style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5", color: "#8a5a00" }}>
             <Icon name="TriangleAlert" size={14} />
             Сначала выполните «Расчёт сети» — иначе расходы и депрессии будут нулевыми.
           </div>
@@ -190,7 +190,7 @@ export default function FireStabilityDialog({
             return (
               <div key={cat} className="border border-gray-200 rounded overflow-hidden">
                 <div className="flex items-center justify-between px-3 py-1.5"
-                  style={{ background: "#f6f8fc" }}>
+                  style={{ background: "var(--c-s3, #f6f8fc)" }}>
                   <span className="text-[12px] font-medium text-gray-700">{CATEGORY_LABELS[cat]}</span>
                   <span className="text-[11px] text-gray-500">{rows.length} ветв.</span>
                 </div>
@@ -247,7 +247,7 @@ export default function FireStabilityDialog({
 
         {/* Итог + действия */}
         <div className="px-4 py-2.5 flex items-center justify-between"
-          style={{ background: "#f2f5fb", borderTop: "1px solid #d8e0ee" }}>
+          style={{ background: "var(--c-s3, #f2f5fb)", borderTop: "1px solid #d8e0ee" }}>
           <div className="text-[11px] text-gray-600">
             Всего в акте: <b>{total}</b> ветв.
             {result.totalUnstable > 0 && (

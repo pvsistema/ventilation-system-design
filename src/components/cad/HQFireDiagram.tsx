@@ -124,7 +124,7 @@ export default function HQFireDiagram({
   );
 
   return (
-    <svg width={width} height={height} style={{ background: "#fafafa", border: "1px solid #d0d0d0" }}>
+    <svg width={width} height={height} style={{ background: "var(--c-s2, #fafafa)", border: "1px solid var(--c-b2, #d0d0d0)" }}>
       {/* ── Зона опрокидывания струи: Q < 0 (нисходящее проветривание) ────────
           Слева от оси h расход отрицателен — воздух идёт в обратную сторону.
           Подсвечиваем область, чтобы режим D читался сразу, без разбора знаков. */}

@@ -60,7 +60,7 @@ export default function BranchBulkheadTab({
                 });
               }}
               className="w-full text-[11px] px-1"
-              style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+              style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
               <option value="">— выберите из справочника —</option>
               {(mineBulkheads ?? []).map(b => (
                 <option key={b.id} value={b.id}>{b.name}</option>
@@ -69,7 +69,7 @@ export default function BranchBulkheadTab({
           </InlineLabel>
           {!mineBulkheads?.length && (
             <div className="mx-1 my-1 px-2 py-1 text-[10px] rounded"
-              style={{ background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e" }}>
+              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #fcd34d", color: "#92400e" }}>
               Справочник перемычек пуст. Откройте Справочники → Перемычки и добавьте перемычки.
             </div>
           )}
@@ -125,7 +125,7 @@ export default function BranchBulkheadTab({
                 onUpdateBulkheadSym?.({ bkResMode: mode });
               }}
               className="w-full text-[11px] px-1"
-              style={{ background: "white", border: "1px solid #c8c8c8", height: 18, outline: "none" }}>
+              style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
               <option value="project">Проектными данными</option>
               <option value="survey">Воздушной съемкой</option>
               <option value="manual">Вручную</option>
@@ -144,7 +144,7 @@ export default function BranchBulkheadTab({
                       value={branch.bulkheadWindowArea ?? 0}
                       onChange={v => onUpdate({ bulkheadWindowArea: parseFloat(v) || 0 })}
                     />
-                    <span style={{ fontSize: 10, color: "#9ca3af", flexShrink: 0 }}>м²</span>
+                    <span style={{ fontSize: 10, color: "var(--c-t4, #9ca3af)", flexShrink: 0 }}>м²</span>
                   </div>
                 </InlineLabel>
               ) : (

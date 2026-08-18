@@ -49,7 +49,7 @@ export function TopoCanvasIndicators({
           );
         })()}
         <span className="ml-3 px-1.5 py-0.5 rounded"
-          style={{ background: "#fef3c7", color: "#92400e" }}>
+          style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "#92400e" }}>
           Плоск: {effPlane.axis.toUpperCase()}={effPlane.value} м
         </span>
       </div>

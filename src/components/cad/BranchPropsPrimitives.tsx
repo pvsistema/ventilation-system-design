@@ -210,13 +210,13 @@ export function NumberInput({
       onBlur={() => { setFocused(false); setDraft(null); }}
       className="w-full text-[11px] text-right px-1 cad-edit-input"
       style={{
-        background: "#ffffff",
-        border: "1px solid #94a3b8",
+        background: "var(--c-s1, #ffffff)",
+        border: "1px solid var(--c-b3, #94a3b8)",
         borderRadius: 2,
         height: 18,
         outline: "none",
         fontFamily: "inherit",
-        color: "#0f172a",
+        color: "var(--c-t1, #0f172a)",
       }}
     />
   );
@@ -230,7 +230,7 @@ export function ComputedInput({ value, color, className }: { value: string; colo
       style={{
         // Результат расчёта: без рамки поля ввода, приглушённый фон, моноширинные
         // цифры — сразу видно, что это вывод, а не поле для правки.
-        background: "#eef2f7",
+        background: "var(--c-s3, #eef2f7)",
         border: "1px solid #dde3ec",
         borderRadius: 2,
         height: 18,
@@ -261,13 +261,13 @@ export function SelectField({
       onChange={(e) => onChange(e.target.value)}
       className="w-full text-[11px] px-1 cad-edit-input"
       style={{
-        background: "#ffffff",
-        border: "1px solid #94a3b8",
+        background: "var(--c-s1, #ffffff)",
+        border: "1px solid var(--c-b3, #94a3b8)",
         borderRadius: 2,
         height: 18,
         outline: "none",
         fontFamily: "inherit",
-        color: "#0f172a",
+        color: "var(--c-t1, #0f172a)",
       }}>
       {options.map((o) => {
         const val = typeof o === "string" ? o : o.value;

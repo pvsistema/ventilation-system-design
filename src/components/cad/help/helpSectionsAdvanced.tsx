@@ -9,7 +9,7 @@ export const HELP_SECTIONS_ADVANCED: Section[] = [
       title: "Аварийные режимы",
       content: (
         <div className="space-y-4">
-          <div className="p-2 rounded" style={{ background: "#fef2f2", border: "1px solid #fecaca" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fecaca" }}>
             <span className="text-[12px] text-red-700">⚠ Расчёт аварийных режимов доступен только в полной версии программы</span>
           </div>
 
@@ -228,7 +228,7 @@ export const HELP_SECTIONS_ADVANCED: Section[] = [
       content: (
         <div className="space-y-4">
           <table className="w-full text-[12px] border-collapse">
-            <thead><tr style={{ background: "#f0f4ff" }}>
+            <thead><tr style={{ background: "var(--c-tint-blue, #f0f4ff)" }}>
               <th className="text-left p-2 border border-gray-200">Клавиша</th>
               <th className="text-left p-2 border border-gray-200">Действие</th>
             </tr></thead>

@@ -102,8 +102,8 @@ export default function CadModals(p: CadModalsProps) {
             style={{ minWidth: 600, fontFamily: "Segoe UI, Tahoma, sans-serif", borderRadius: 0 }}
             onClick={e => e.stopPropagation()}>
             {/* Левая панель (дерево) */}
-            <div className="border-r border-gray-300" style={{ width: 180, background: "#f5f5f5" }}>
-              <div className="px-3 py-2 border-b border-gray-300 text-[12px] font-semibold text-gray-700" style={{ background: "linear-gradient(180deg,#e8e8e8,#d8d8d8)" }}>
+            <div className="border-r border-gray-300" style={{ width: 180, background: "var(--c-s2, #f5f5f5)" }}>
+              <div className="px-3 py-2 border-b border-gray-300 text-[12px] font-semibold text-gray-700" style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
                 Настройки технологической схемы
               </div>
               <div className="py-1">
@@ -125,7 +125,7 @@ export default function CadModals(p: CadModalsProps) {
             <div className="flex flex-col" style={{ flex: 1 }}>
               {/* Заголовок */}
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300"
-                style={{ background: "linear-gradient(180deg,#e8e8e8,#d8d8d8)" }}>
+                style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
                 <span className="text-[12px] font-semibold text-gray-800">Настройки технологической схемы</span>
                 <button onClick={() => p.setScaleSettingsOpen(false)}
                   className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white text-gray-600">
@@ -147,7 +147,7 @@ export default function CadModals(p: CadModalsProps) {
                   </thead>
                   <tbody>
                     {/* Строка 1: Текстовые объекты */}
-                    <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                       <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "top" }}>
                         Размер текстовых объектов<br />
                         <span className="text-[11px] text-gray-500">(номер узла, номер ветви, номер устройства, название и т.п.)</span>
@@ -157,7 +157,7 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={10} max={500} value={p.scaleTextMin}
                             onChange={e => p.setScaleTextMin(Math.max(10, Math.min(500, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">%</span>
                         </div>
                       </td>
@@ -166,14 +166,14 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={10} max={500} value={p.scaleTextMax}
                             onChange={e => p.setScaleTextMax(Math.max(10, Math.min(500, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">%</span>
                         </div>
                       </td>
                     </tr>
 
                     {/* Строка 2: Толщина ветви */}
-                    <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                       <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
                         Толщина ветви
                       </td>
@@ -182,7 +182,7 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={10} max={500} value={p.scaleBranchMin}
                             onChange={e => p.setScaleBranchMin(Math.max(10, Math.min(500, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">%</span>
                         </div>
                       </td>
@@ -191,14 +191,14 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={10} max={500} value={p.scaleBranchMax}
                             onChange={e => p.setScaleBranchMax(Math.max(10, Math.min(500, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">%</span>
                         </div>
                       </td>
                     </tr>
 
                     {/* Строка 3: Масштаб перемычек */}
-                    <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                       <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
                         <div className="text-gray-700">Масштаб перемычек</div>
                         <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
@@ -208,14 +208,14 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={20} max={500} value={p.bulkheadScale}
                             onChange={e => p.setBulkheadScale(Math.max(20, Math.min(500, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">% от ширины ветви</span>
                         </div>
                       </td>
                     </tr>
 
                     {/* Строка 4: Масштаб вентиляторов */}
-                    <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                       <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
                         <div className="text-gray-700">Масштаб вентиляторов</div>
                         <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
@@ -225,14 +225,14 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={50} max={2000} value={p.fanScale}
                             onChange={e => p.setFanScale(Math.max(50, Math.min(2000, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">% от ширины ветви</span>
                         </div>
                       </td>
                     </tr>
 
                     {/* Строка 5: Пределы масштаба Позиций ПЛА */}
-                    <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                       <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
                         Размер позиций ПЛА
                       </td>
@@ -241,7 +241,7 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={10} max={500} value={p.scalePositionMin}
                             onChange={e => p.setScalePositionMin(Math.max(10, Math.min(500, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">%</span>
                         </div>
                       </td>
@@ -250,14 +250,14 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={10} max={500} value={p.scalePositionMax}
                             onChange={e => p.setScalePositionMax(Math.max(10, Math.min(500, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">%</span>
                         </div>
                       </td>
                     </tr>
 
                     {/* Строка 6: ГОСТ-размер маркера позиции ПЛА */}
-                    <tr style={{ borderTop: "1px solid #e5e7eb" }}>
+                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
                       <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
                         <div className="text-gray-700">Размер позиции по ГОСТ</div>
                         <span className="text-[11px] text-gray-500">(диаметр маркера позиции ПЛА на чертеже, по умолчанию 13 мм)</span>
@@ -267,7 +267,7 @@ export default function CadModals(p: CadModalsProps) {
                           <input type="number" min={2} max={100} step={0.5} value={p.positionGostMm}
                             onChange={e => p.setPositionGostMm(Math.max(2, Math.min(100, Number(e.target.value))))}
                             className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid #999", outline: "none" }} />
+                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
                           <span className="text-gray-500">мм</span>
                         </div>
                       </td>
@@ -277,7 +277,7 @@ export default function CadModals(p: CadModalsProps) {
               </div>
 
               {/* Подвал диалога */}
-              <div className="flex items-center justify-between px-4 py-2 border-t border-gray-300" style={{ background: "#f5f5f5" }}>
+              <div className="flex items-center justify-between px-4 py-2 border-t border-gray-300" style={{ background: "var(--c-s2, #f5f5f5)" }}>
                 <button
                   onClick={() => {
                     p.setScaleTextMin(80); p.setScaleTextMax(150);
@@ -317,9 +317,9 @@ export default function CadModals(p: CadModalsProps) {
       {p.resetSurveyDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
           <div className="flex flex-col shadow-2xl border border-gray-400"
-            style={{ width: 400, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+            style={{ width: 400, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
             <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-              style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
               <span className="text-[12px] font-semibold text-gray-800">
                 Вернуть схему к маркшейдерским координатам
               </span>
@@ -331,7 +331,7 @@ export default function CadModals(p: CadModalsProps) {
 
             <div className="p-4 flex flex-col gap-3">
               <div className="rounded text-[11px] px-3 py-2"
-                style={{ background: "#eff6ff", border: "1px solid #93c5fd" }}>
+                style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
                 <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
                   <Icon name="MapPin" size={12} />
                   Будет возвращено на место: {p.movedNodeCount} узл. из {p.nodeCount}
@@ -349,10 +349,10 @@ export default function CadModals(p: CadModalsProps) {
             </div>
 
             <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200"
-              style={{ background: "#f8f8f8" }}>
+              style={{ background: "var(--c-s2, #f8f8f8)" }}>
               <button onClick={() => p.setResetSurveyDialog(false)}
                 className="text-[11px] px-3 py-1 rounded"
-                style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}>
+                style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}>
                 Отмена
               </button>
               <button
@@ -375,9 +375,9 @@ export default function CadModals(p: CadModalsProps) {
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
             <div className="flex flex-col shadow-2xl border border-gray-400"
-              style={{ width: 420, maxHeight: "85vh", background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+              style={{ width: 420, maxHeight: "85vh", background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
               <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300 flex-shrink-0"
-                style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+                style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
                 <span className="text-[12px] font-semibold text-gray-800">
                   {plan.branchIds.length > 1
                     ? `Удаление выработок (${plan.branchIds.length})`
@@ -391,7 +391,7 @@ export default function CadModals(p: CadModalsProps) {
 
               <div className="p-4 flex flex-col gap-3 overflow-y-auto">
                 <div className="rounded text-[11px] px-3 py-2"
-                  style={{ background: "#fef2f2", border: "1px solid #fca5a5" }}>
+                  style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5" }}>
                   <div className="font-semibold text-red-800 mb-1">
                     Будет удалено: {plan.branchIds.length} выраб.
                   </div>
@@ -408,7 +408,7 @@ export default function CadModals(p: CadModalsProps) {
                 {/* УО на удаляемых ветвях — вентиляторы, перемычки и т.п. */}
                 {hasSymbols && (
                   <div className="rounded text-[11px] px-3 py-2"
-                    style={{ background: "#fffbeb", border: "1px solid #fcd34d" }}>
+                    style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d" }}>
                     <div className="font-semibold text-amber-800 mb-1 flex items-center gap-1">
                       <Icon name="TriangleAlert" size={12} />
                       Вместе с ними исчезнут УО ({plan.symbols.length})
@@ -428,7 +428,7 @@ export default function CadModals(p: CadModalsProps) {
                     переставал сходиться после молчаливого удаления ветви. */}
                 {hasOrphans && (
                   <div className="rounded text-[11px] px-3 py-2"
-                    style={{ background: "#eff6ff", border: "1px solid #93c5fd" }}>
+                    style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
                     <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
                       <Icon name="Unlink" size={12} />
                       Останутся без выработок ({plan.orphanNodeIds.length} узл.)
@@ -450,16 +450,16 @@ export default function CadModals(p: CadModalsProps) {
               </div>
 
               <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200 flex-shrink-0"
-                style={{ background: "#f8f8f8" }}>
+                style={{ background: "var(--c-s2, #f8f8f8)" }}>
                 <button onClick={() => p.setDeleteBranchDialog(null)}
                   className="text-[11px] px-3 py-1 rounded"
-                  style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}>
+                  style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}>
                   Отмена
                 </button>
                 {hasOrphans && (
                   <button onClick={() => p.confirmDeleteBranches(plan, false)}
                     className="text-[11px] px-3 py-1 rounded"
-                    style={{ background: "#fff", border: "1px solid #d1d5db", color: "#374151", cursor: "pointer" }}>
+                    style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}>
                     Оставить узлы
                   </button>
                 )}
@@ -483,10 +483,10 @@ export default function CadModals(p: CadModalsProps) {
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
             <div className="flex flex-col shadow-2xl border border-gray-400"
-              style={{ width: 360, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+              style={{ width: 360, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
               {/* Заголовок */}
               <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-                style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+                style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
                 <span className="text-[12px] font-semibold text-gray-800">Удаление узла</span>
                 <button onClick={() => p.setMergeNodeDialog(null)}
                   className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
@@ -498,7 +498,7 @@ export default function CadModals(p: CadModalsProps) {
                 <p className="text-[12px] text-gray-700">
                   Узел соединяет две выработки. Объединить их в одну?
                 </p>
-                <div className="rounded text-[11px] text-gray-600 px-3 py-2" style={{ background: "#f0f4ff", border: "1px solid #c8d4e8" }}>
+                <div className="rounded text-[11px] text-gray-600 px-3 py-2" style={{ background: "var(--c-tint-blue, #f0f4ff)", border: "1px solid #c8d4e8" }}>
                   <div className="font-semibold text-gray-700 mb-1">Будут объединены:</div>
                   <div>· {nameA || "Выработка 1"}</div>
                   <div>· {nameB || "Выработка 2"}</div>
@@ -507,11 +507,11 @@ export default function CadModals(p: CadModalsProps) {
               </div>
               {/* Кнопки */}
               <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200"
-                style={{ background: "#f8f8f8" }}>
+                style={{ background: "var(--c-s2, #f8f8f8)" }}>
                 <button
                   onClick={() => { p.doDeleteNode(p.mergeNodeDialog!.nodeId); p.setMergeNodeDialog(null); }}
                   className="text-[11px] px-3 py-1 rounded"
-                  style={{ background: "#fee2e2", border: "1px solid #fca5a5", color: "#991b1b", cursor: "pointer" }}>
+                  style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "#991b1b", cursor: "pointer" }}>
                   Удалить без объединения
                 </button>
                 <button
@@ -534,10 +534,10 @@ export default function CadModals(p: CadModalsProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
           onClick={() => p.setSquadDialog(null)}>
           <div className="flex flex-col shadow-2xl border border-gray-400"
-            style={{ width: 320, background: "#fff", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+            style={{ width: 320, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-              style={{ background: "linear-gradient(180deg,#e8e8e8,#d4d4d4)" }}>
+              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
               <span className="text-[12px] font-semibold text-gray-800">Число людей в отделении</span>
               <button onClick={() => p.setSquadDialog(null)} className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
                 <Icon name="X" size={12} />
@@ -595,7 +595,7 @@ export default function CadModals(p: CadModalsProps) {
             <div className="bg-white rounded shadow-xl border border-gray-300 w-[340px]"
               style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
               <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200"
-                style={{ background: "#f5f5f5", borderRadius: "8px 8px 0 0" }}>
+                style={{ background: "var(--c-s2, #f5f5f5)", borderRadius: "8px 8px 0 0" }}>
                 <Icon name="FileQuestion" size={16} className="text-yellow-600" />
                 <span className="text-[13px] font-semibold text-gray-800">Несохранённые изменения</span>
               </div>
@@ -638,7 +638,7 @@ export default function CadModals(p: CadModalsProps) {
             onClick={(e) => e.stopPropagation()}>
             {/* Шапка диалога */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
-              style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)" }}>
+              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d6d6d6))" }}>
               <span className="text-[12px] font-semibold text-gray-800">О программе</span>
               <button
                 onClick={() => p.setShowAbout(false)}
@@ -647,7 +647,7 @@ export default function CadModals(p: CadModalsProps) {
 
             {/* Контент */}
             <div className="px-6 py-6 flex flex-col items-center text-center"
-              style={{ background: "linear-gradient(160deg, #ffffff 0%, #eaf4fc 100%)" }}>
+              style={{ background: "linear-gradient(160deg, var(--c-s1, #ffffff) 0%, var(--c-tint-blue, #eaf4fc) 100%)" }}>
               <AppLogo
                 className="w-48 object-contain mb-2"
                 style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
@@ -708,7 +708,7 @@ export default function CadModals(p: CadModalsProps) {
             onClick={e => e.stopPropagation()}>
             {/* Шапка */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
-              style={{ background: "linear-gradient(180deg,#e8e8e8,#d6d6d6)" }}>
+              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d6d6d6))" }}>
               <span className="text-[12px] font-semibold text-gray-800">↔ Сравнение схем</span>
               <button onClick={() => p.setCompareShowDialog(false)}
                 className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
@@ -719,7 +719,7 @@ export default function CadModals(p: CadModalsProps) {
               <div>
                 <div className="text-[11px] text-gray-500 mb-1 font-medium">Исходный файл:</div>
                 <div className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200"
-                  style={{ background: "#f9fafb" }}>
+                  style={{ background: "var(--c-s2, #f9fafb)" }}>
                   <Icon name="FileText" size={18} style={{ color: "#2563eb" }} />
                   <span className="text-[12px] font-medium text-gray-800">{p.projectFileName}</span>
                   <span className="ml-auto text-[10px] text-gray-400">{p.nodes.length} уз. / {p.branches.length} вет.</span>

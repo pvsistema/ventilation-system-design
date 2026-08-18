@@ -57,7 +57,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
           <li>• <b>«Удалить весь став»</b> — сносит нитку целиком вместе с её
             служебными узлами. Выработки и узлы маршрута не затрагиваются</li>
         </ul>
-        <div className="p-2 rounded" style={{ background: "#f0fdf4", border: "1px solid #86efac" }}>
+        <div className="p-2 rounded" style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac" }}>
           <span className="text-[11px] text-green-800">
             Вентилятор при правке става остаётся на месте со всеми
             характеристиками — модель, угол лопаток и обороты не сбрасываются.
@@ -114,7 +114,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
           <li>• <b>Улучшить сборку стыков</b> — уменьшить число стыков
             и утечки на них</li>
         </ul>
-        <div className="p-2 rounded" style={{ background: "#fffbeb", border: "1px solid #fde68a" }}>
+        <div className="p-2 rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a" }}>
           <span className="text-[11px] text-amber-800">
             Если вентилятор работает вне паспортной зоны, программа предупреждает
             об этом: предельная длина посчитана по паспортной кривой и может
@@ -232,7 +232,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
           режим правки клавишей <KBD>F2</KBD>. В нём перетаскивание меняет
           настоящие координаты вместе с длинами ветвей.
         </p>
-        <div className="p-2 rounded" style={{ background: "#fef2f2", border: "1px solid #fca5a5" }}>
+        <div className="p-2 rounded" style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5" }}>
           <span className="text-[11px] text-red-800">
             Режим подчёркнуто заметен: красная рамка по периметру схемы
             и красная плашка «ПРАВКА КООРДИНАТ» в строке состояния.
@@ -264,7 +264,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
             положение узлов выверенным. Применяйте, когда схема сверена
             с маркшейдерским планом</li>
         </ul>
-        <div className="p-2 rounded" style={{ background: "#eff6ff", border: "1px solid #93c5fd" }}>
+        <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
           <span className="text-[11px] text-blue-800">
             Любое из этих действий отменяется через <KBD>Ctrl+Z</KBD>.
           </span>
