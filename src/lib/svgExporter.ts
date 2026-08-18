@@ -9,10 +9,10 @@ import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
 import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type TextBlock } from "@/pages/cad/cadTypes";
-import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -934,6 +934,57 @@ export function generateSvg(opts: SvgExportOptions): string {
           parts.push(`<line x1="${n(x0)}" y1="0" x2="${n(x1-head*0.5)}" y2="0" stroke="#111" stroke-width="${n(sw3)}" stroke-linecap="round"/>`);
           parts.push(`<polygon points="${n(x1-head)},${n(-head*0.55)} ${n(x1)},0 ${n(x1-head)},${n(head*0.55)}" fill="#111"/>`);
           parts.push(`</g>`);
+        }
+
+        // ── Индикаторы вентилятора ────────────────────────────────────────
+        // Раньше в экспортированный файл они не попадали вовсе: на экране
+        // подпись с Qв/Нв/Nв у вентилятора была, а в выгруженной схеме
+        // пропадала. Повторяем набор строк и оформление экранной версии
+        // (TopoCanvas), чтобы файл совпадал с тем, что видит инженер.
+        if (FAN_SYMBOL_IDS.has(sym.typeId) && hasBranchPts && brForFan?.hasFan) {
+          const icFan = (brForFan.indicators ?? {}) as Record<string, boolean>;
+          const uPresF = getUnit(unitsConfig, "pressure");
+          const uFlowF = getUnit(unitsConfig, "flow");
+          const fanLines: string[] = [];
+          if (icFan.fanNameInd && brForFan.fanName) fanLines.push(brForFan.fanName);
+          if (icFan.fanFlow) {
+            // При реверсе расход показываем со знаком «минус» — как на экране
+            const qFan = (brForFan.fanReverse && brForFan.fanType !== "ВМП")
+              ? -Math.abs(brForFan.flow ?? 0)
+              : Math.abs(brForFan.flow ?? 0);
+            fanLines.push(`Qв=${uFlowF.fromBase(qFan).toFixed(uFlowF.decimals)}${uFlowF.symbol}`);
+          }
+          if (icFan.fanPressure)
+            fanLines.push(`Нв=${uPresF.fromBase(Math.abs(brForFan.fanPressure ?? 0)).toFixed(uPresF.decimals)}${uPresF.symbol}`);
+          if (icFan.fanShaftPower && (brForFan.fanShaftPower ?? 0) > 0)
+            fanLines.push(`Nв=${((brForFan.fanShaftPower ?? 0) / 1000).toFixed(1)} кВт`);
+          if (icFan.fanEfficiency && (brForFan.fanEfficiency ?? 0) > 0)
+            fanLines.push(`ηв=${((brForFan.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
+
+          if (fanLines.length > 0) {
+            const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
+            const brLenF = Math.hypot(brDxF, brDyF);
+            const perpXF = brLenF > 0 ? -brDyF / brLenF : 0;
+            const perpYF = brLenF > 0 ?  brDxF / brLenF : 0;
+            const fsF = Math.max(6, (sym.fanIndFontSize ?? 9) * sc * ss);
+            const lhF = fsF + 3;
+            const boxWF = Math.max(...fanLines.map(l => l.length)) * fsF * 0.52 + 10;
+            const boxHF = fanLines.length * lhF + 6;
+            const bxF = px + perpXF * (16 + boxWF / 2) + (sym.fanIndOffsetX ?? 0);
+            const byF = py + perpYF * (16 + boxHF / 2) + (sym.fanIndOffsetY ?? 0);
+            const bgF = fanIndBg(sym.fanIndBgColor);
+            const fgF = msIndTextColor(bgF);
+            parts.push(`<line x1="${n(px)}" y1="${n(py)}" x2="${n(bxF)}" y2="${n(byF - boxHF/2)}" stroke="${bgF ?? "#555555"}" stroke-width="0.4" stroke-dasharray="2 3"/>`);
+            if (bgF) {
+              parts.push(`<rect x="${n(bxF - boxWF/2)}" y="${n(byF - boxHF/2)}" width="${n(boxWF)}" height="${n(boxHF)}" rx="${n(Math.min(4, boxHF/3), 1)}" fill="${bgF}" stroke="white" stroke-width="1.2"/>`);
+            }
+            fanLines.forEach((line, i) => {
+              const tyF = byF - boxHF/2 + i * lhF + 3;
+              // Белая обводка текста нужна только там, где нет плашки
+              const strokeAttrF = bgF ? "" : ` stroke="white" stroke-width="2" paint-order="stroke"`;
+              parts.push(`<text x="${n(bxF)}" y="${n(tyF)}" text-anchor="middle" dominant-baseline="auto" font-family="Segoe UI,Arial,sans-serif" font-size="${n(fsF, 1)}"${strokeAttrF} fill="${fgF}">${esc(line)}</text>`);
+            });
+          }
         }
 
         // Подпись
