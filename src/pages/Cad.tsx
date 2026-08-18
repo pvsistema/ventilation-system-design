@@ -1720,6 +1720,23 @@ export default function CadPage() {
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
   const [printPreviewUrl, setPrintPreviewUrl] = useState<string>("");
   const [printDialogOpenExport, setPrintDialogOpenExport] = useState<boolean>(false);
+
+  // Печать всегда идёт в ФИКСИРОВАННОМ масштабе объектов.
+  // Без него размеры условных обозначений, позиций ПЛА и подписей зависят от
+  // того, насколько инженер приблизил схему на экране: при одном и том же
+  // масштабе листа (1:2500) значки на распечатке получались бы каждый раз
+  // разными. В фиксированном режиме их размер задан в миллиметрах по ГОСТ и
+  // от зумирования не зависит — распечатка воспроизводима.
+  //
+  // Включаем именно на ОТКРЫТИЕ диалога, а не в openPrintDialog: диалог
+  // открывают ещё вкладка «Печать» в ленте и Ctrl+P напрямую — иначе эти
+  // пути остались бы без фиксированного масштаба.
+  useEffect(() => {
+    if (showPrintDialog && !scaleLimitsEnabled) {
+      setScaleLimitsEnabled(true);
+      addLog("info", "Печать: включён фиксированный масштаб объектов — размеры значков и позиций ПЛА по ГОСТ");
+    }
+  }, [showPrintDialog]);
   const getSvgRef = useRef<(() => string) | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
