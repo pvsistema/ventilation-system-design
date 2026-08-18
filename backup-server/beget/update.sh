@@ -21,8 +21,9 @@ fi
 
 echo "[1/4] Загружаю свежую версию..."
 git fetch --all --quiet
-git reset --hard origin/main --quiet
-echo "      готово"
+BRANCH="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || echo main)"
+git reset --hard "origin/$BRANCH" --quiet
+echo "      готово (ветка $BRANCH)"
 
 echo "[2/4] Обновляю расчётные модули..."
 if [ -f backup-server/prepare.py ]; then

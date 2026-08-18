@@ -101,6 +101,10 @@ export default function ServerTab({
   // Адрес облачной расчётной функции второго аккаунта.
   const isCloudFunction = /functions\.poehali\.dev/i.test(srvBackupUrl.trim());
 
+  // Свой хостинг: обычный домен по https (в том числе кириллический).
+  const isOwnDomain = /^https:\/\/[^/]+\.[^/]+/i.test(srvBackupUrl.trim())
+    && !isCloudFunction && !isPrivateIp;
+
   return (
   <div className="max-w-xl mx-auto">
     {/* Текущий сервер + мгновенное ручное переключение */}
@@ -190,6 +194,17 @@ export default function ServerTab({
                 </span>
                 Верный тип адреса: доступен из любой точки, настройка сети и
                 сертификаты не нужны. Нажмите «Проверить связь» и сохраните.
+              </div>
+            )}
+
+            {isOwnDomain && (
+              <div className="text-[10.5px] text-blue-800 mt-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2">
+                <span className="font-semibold flex items-center gap-1.5 mb-0.5">
+                  <Icon name="ShieldCheck" size={13} />Свой сервер по защищённому адресу
+                </span>
+                Верный тип адреса: доступен из любой точки России.
+                Если связи нет — проверьте, что на домене включён SSL,
+                а приложение перезапущено.
               </div>
             )}
 
@@ -311,22 +326,24 @@ export default function ServerTab({
           Обновление — одной командой или автоматически по расписанию.
         </div>
         <ol className="text-[11px] text-blue-900/90 leading-relaxed mt-2.5 space-y-1.5 list-decimal pl-4">
-          <li>Подключите проект к GitHub: «Скачать» → «Подключить GitHub».</li>
-          <li>В панели Beget создайте сайт и включите ему приложение
-            <span className="font-semibold"> Python 3.11</span>.</li>
-          <li>По SSH выполните:
-            <span className="font-mono block mt-1 text-[10px] bg-white/70 rounded px-2 py-1">
-              git clone ВАШ-РЕПОЗИТОРИЙ pvs-backup
+          <li>Beget → «Домены» → направьте домен на новый сайт.</li>
+          <li>Beget → «Сайты» → «Приложения» → <span className="font-semibold">Python 3.11</span>.</li>
+          <li>По SSH загрузите программу:
+            <span className="font-mono block mt-1 text-[10px] bg-white/70 rounded px-2 py-1 break-all">
+              git clone https://github.com/pvsistema/ventilation-system-design.git pvs-backup
             </span>
           </li>
-          <li>Включите бесплатный SSL (Let's Encrypt) в разделе «Домены».</li>
-          <li>Впишите сюда <span className="font-mono">https://ваш-домен/</span> →
-            «Проверить связь» → «Сохранить».</li>
+          <li>Beget → «Домены» → включите бесплатный SSL (Let's Encrypt).</li>
+          <li>Впишите адрес домена сюда → «Проверить связь» → «Сохранить».</li>
         </ol>
-        <div className="text-[10.5px] text-blue-900/70 mt-2.5 pt-2 border-t border-blue-200">
-          Полная пошаговая инструкция со всеми командами, настройкой
-          автообновления и разбором ошибок — в файле
-          <span className="font-mono"> backup-server\beget\README.md</span>.
+        <div className="text-[10.5px] text-blue-900/80 mt-2.5 bg-white/60 rounded px-2.5 py-1.5">
+          <span className="font-semibold">Данные копировать не нужно.</span> Резерв только
+          считает: схема приходит с компьютера инженера, обратно уходит результат.
+          Пользователи, схемы и справочники остаются в основной программе.
+        </div>
+        <div className="text-[10.5px] text-blue-900/70 mt-2 pt-2 border-t border-blue-200">
+          Пошаговая инструкция с готовыми командами под ваш аккаунт —
+          <span className="font-mono"> backup-server\beget\УСТАНОВКА.md</span>.
           Обновление резерва после правок:
           <span className="font-mono"> bash ~/pvs-backup/update.sh</span>
         </div>
