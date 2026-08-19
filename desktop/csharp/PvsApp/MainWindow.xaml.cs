@@ -298,6 +298,12 @@ public partial class MainWindow : Window
     window.__IS_DESKTOP__       = true;
     window.__DESKTOP_SERVER__   = '{{ServerUrl}}';
     window.__pvsWindowMaximized = {{isMaxStr}};
+    // Версия контракта прямой печати (см. src/lib/desktopPrint.ts). Только по
+    // этому флагу диалог печати понимает, что доступна печать БЕЗ системного
+    // окна: он запрашивает список принтеров Windows и печатает напрямую.
+    // На старых сборках флага нет — веб-часть откатывается на печать через
+    // окно браузера, поэтому программа не ломается.
+    window.__PVS_PRINT_API__    = 1;
 
     function sendCs(cmd, params) {
         try { window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd }, params || {}))); }
@@ -537,6 +543,12 @@ public partial class MainWindow : Window
             case "install-update":
                 _ = HandleInstallUpdate();
                 break;
+            case "list-printers":
+                HandleListPrinters(doc.RootElement);
+                break;
+            case "print-html":
+                _ = HandlePrintHtml(doc.RootElement);
+                break;
             case "win-minimize":
                 Dispatcher.Invoke(() => WindowState = WindowState.Minimized);
                 break;
@@ -672,6 +684,124 @@ public partial class MainWindow : Window
             ReplyToJs(reqId, result);
         }
         catch (Exception ex) { ReplyToJs(reqId, new { error = ex.Message }); }
+    }
+
+    // ── Печать ────────────────────────────────────────────────────────────────
+    // Веб-страница принципиально не имеет доступа к принтерам операционной
+    // системы — браузер это запрещает, поэтому в вебе печать идёт только через
+    // системное окно, где инженер ВТОРОЙ раз выбирает принтер и формат, уже
+    // заданные в диалоге предпросмотра. В десктопной оболочке ограничения нет:
+    // здесь мы отдаём странице список принтеров Windows и печатаем напрямую.
+    // Веб-половина моста — src/lib/desktopPrint.ts.
+
+    /// <summary>Список принтеров Windows для выпадающего списка в диалоге печати.</summary>
+    private void HandleListPrinters(JsonElement root)
+    {
+        string reqId = root.TryGetProperty("reqId", out var r) ? r.GetString() ?? "" : "";
+        try
+        {
+            // System.Printing (сборка ReachFramework) входит в WPF — новых
+            // пакетов в csproj не требуется.
+            using var server = new System.Printing.LocalPrintServer();
+            string def = "";
+            try { def = server.DefaultPrintQueue?.FullName ?? ""; } catch { /* принтера по умолчанию нет */ }
+
+            var list = new System.Collections.Generic.List<object>();
+            foreach (var q in server.GetPrintQueues())
+            {
+                string name = q.FullName;
+                list.Add(new { name, isDefault = string.Equals(name, def, StringComparison.OrdinalIgnoreCase) });
+                q.Dispose();
+            }
+            ReplyToJs(reqId, new { printers = list });
+        }
+        catch (Exception ex)
+        {
+            // Пустой список — диалог печати покажет обычное системное окно.
+            ReplyToJs(reqId, new { printers = Array.Empty<object>(), error = ex.Message });
+        }
+    }
+
+    /// <summary>
+    /// Печатает готовый HTML напрямую на выбранный принтер, без системного окна.
+    /// Документ рисуется в скрытом WebView2, затем уходит на принтер через
+    /// PrintAsync с явными параметрами листа.
+    /// </summary>
+    private async Task HandlePrintHtml(JsonElement root)
+    {
+        string reqId = root.TryGetProperty("reqId", out var r) ? r.GetString() ?? "" : "";
+        string html        = root.TryGetProperty("html", out var h) ? h.GetString() ?? "" : "";
+        string printerName = root.TryGetProperty("printerName", out var p) ? p.GetString() ?? "" : "";
+        int    copies      = root.TryGetProperty("copies", out var c) && c.TryGetInt32(out int ci) ? ci : 1;
+        double wMm         = root.TryGetProperty("paperWidthMm", out var pw) ? pw.GetDouble() : 210;
+        double hMm         = root.TryGetProperty("paperHeightMm", out var ph) ? ph.GetDouble() : 297;
+        bool   landscape   = root.TryGetProperty("landscape", out var ls) && ls.GetBoolean();
+
+        if (string.IsNullOrEmpty(html)) { ReplyToJs(reqId, new { ok = false, error = "пустой документ" }); return; }
+
+        CoreWebView2Controller? controller = null;
+        try
+        {
+            // Отдельный скрытый WebView2 — печатать основное окно нельзя:
+            // на принтер ушёл бы интерфейс программы, а не листы схемы.
+            string cacheDir = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "PVS", "WebView2Cache");
+            var env = await CoreWebView2Environment.CreateAsync(null, cacheDir);
+            IntPtr hwnd = new WindowInteropHelper(this).Handle;
+            controller = await env.CreateCoreWebView2ControllerAsync(hwnd);
+            controller.IsVisible = false;
+            // Размер задаём: при нулевом окне вёрстка листа считается неверно.
+            controller.Bounds = new System.Drawing.Rectangle(0, 0, 1200, 900);
+
+            var core = controller.CoreWebView2;
+
+            // Ждём, пока документ полностью отрисуется. Лист A3 при 300 dpi —
+            // это десятки мегабайт картинки, она декодируется не мгновенно;
+            // печать неготовой страницы дала бы пустой лист.
+            var loaded = new TaskCompletionSource<bool>();
+            void OnDone(object? s, CoreWebView2NavigationCompletedEventArgs e) => loaded.TrySetResult(e.IsSuccess);
+            core.NavigationCompleted += OnDone;
+            core.NavigateToString(html);
+            // Страховка по времени — программа не должна зависнуть навсегда.
+            await Task.WhenAny(loaded.Task, Task.Delay(TimeSpan.FromMinutes(2)));
+            core.NavigationCompleted -= OnDone;
+            // Даём кадр на раскладку страниц после декодирования картинок.
+            await Task.Delay(400);
+
+            var settings = env.CreatePrintSettings();
+            if (!string.IsNullOrWhiteSpace(printerName)) settings.PrinterName = printerName;
+            settings.Copies      = Math.Max(1, Math.Min(99, copies));
+            settings.Orientation = landscape
+                ? CoreWebView2PrintOrientation.Landscape
+                : CoreWebView2PrintOrientation.Portrait;
+            // WebView2 задаёт размеры листа в ДЮЙМАХ, у нас миллиметры.
+            settings.PageWidth  = wMm / 25.4;
+            settings.PageHeight = hMm / 25.4;
+            // Поля уже заложены в сам документ (@page margin:0) — иначе они
+            // применились бы дважды и схема съехала бы с листа.
+            settings.MarginTop = settings.MarginBottom = 0;
+            settings.MarginLeft = settings.MarginRight = 0;
+            // Заливки и цветные обозначения обязаны попасть на бумагу.
+            settings.ShouldPrintBackgrounds = true;
+            settings.ShouldPrintHeaderAndFooter = false;
+
+            var status = await core.PrintAsync(settings);
+            bool ok = status == CoreWebView2PrintStatus.Succeeded;
+            ReplyToJs(reqId, ok
+                ? new { ok = true, error = "" }
+                : new { ok = false, error = status.ToString() });
+        }
+        catch (Exception ex)
+        {
+            // Любая ошибка — веб-часть сама напечатает обычным способом,
+            // через системное окно. Инженер в любом случае получит распечатку.
+            ReplyToJs(reqId, new { ok = false, error = ex.Message });
+        }
+        finally
+        {
+            try { controller?.Close(); } catch { /* окно уже закрыто */ }
+        }
     }
 
     // ── Обновление ────────────────────────────────────────────────────────────
@@ -910,6 +1040,12 @@ public partial class MainWindow : Window
     window.__IS_DESKTOP__       = true;
     window.__DESKTOP_SERVER__   = '{{ServerUrl}}';
     window.__pvsWindowMaximized = {{isMaxStr}};
+    // Версия контракта прямой печати (см. src/lib/desktopPrint.ts). Только по
+    // этому флагу диалог печати понимает, что доступна печать БЕЗ системного
+    // окна: он запрашивает список принтеров Windows и печатает напрямую.
+    // На старых сборках флага нет — веб-часть откатывается на печать через
+    // окно браузера, поэтому программа не ломается.
+    window.__PVS_PRINT_API__    = 1;
 
     // ── Реестр pending-промисов для C# ответов ──
     var _pending = {};
