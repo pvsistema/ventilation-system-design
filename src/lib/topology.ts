@@ -348,7 +348,12 @@ export interface TopoBranch {
   vpLength: number;                // м — длина вентрубопровода
   vpLeakageCoeff: number;          // % утечки на 100 м (0 = без утечек)
   vpJointCount: number;            // кол-во стыков на маршруте
-  vpLocalXi: number;               // сумма ξ местных сопротивлений (повороты, фасонины)
+  vpLocalXi: number;               // сумма ξ ПРОЧИХ местных сопротивлений (переходы, тройники)
+  // Повороты става считаются по количеству: ξ каждого берётся из справочника
+  // (90° = 0,30; 45° = 0,15). Так их не забывают учесть — вручную сумму ξ
+  // почти никто не набирал, и сопротивление става выходило заниженным.
+  vpBends90: number;               // количество поворотов 90°
+  vpBends45: number;               // количество поворотов 45°
   vpManualR: number;               // Н·с²/м⁸ — ручное сопротивление (если задан вручную)
   vpRoughnessMode: "auto" | "manual"; // авто = по материалу, ручной = vpRoughness
   vpRoughness: number;             // мм — шероховатость (при ручном режиме)
@@ -727,6 +732,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     vpLeakageCoeff: 0.5,
     vpJointCount: 0,
     vpLocalXi: 0,
+    vpBends90: 0,
+    vpBends45: 0,
     vpManualR: 0,
     vpRoughnessMode: "auto",
     vpRoughness: 0.2,

@@ -68,7 +68,7 @@ import {
 import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 import { DEFAULT_MINE_HUMIDITY, DEFAULT_SURFACE_HUMIDITY, P_STD_KPA } from "@/lib/airHumidity";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
-import { calcVentPipe, type VpLeakMethod } from "@/lib/ventPipeCalc";
+import { calcVentPipe, totalLocalXi, type VpLeakMethod } from "@/lib/ventPipeCalc";
 import { buildVentPipeReport, buildVentPipeReportHtml } from "@/lib/ventPipeReport";
 import { printViaIframe } from "@/components/cad/printPreview/printDialogParts";
 export type { SchemaSymbol } from "./cad/cadTypes";
@@ -3821,7 +3821,10 @@ export default function CadPage() {
             lossPer100m: size?.lossPer100m ?? b.vpLeakageCoeff ?? 0,
             linkLength: b.vpLinkLength ?? 20,
             jointCount: b.vpJointCount ?? 0,
-            localXi: b.vpLocalXi ?? 0,
+            // Полный ξ: повороты става + прочие фасонные части. Без поворотов
+            // сопротивление занижалось, и проверка доставки воздуха в забой
+            // давала слишком оптимистичный результат.
+            localXi: totalLocalXi(b.vpBends90 ?? 0, b.vpBends45 ?? 0, b.vpLocalXi ?? 0),
             fanFlow,
           };
           const r = calcVentPipe({ ...inp, length: b.vpLength ?? 0 });

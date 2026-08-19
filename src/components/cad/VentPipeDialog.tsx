@@ -3,6 +3,10 @@ import Icon from "@/components/ui/icon";
 import { type TopoBranch } from "@/lib/topology";
 import { resistanceFromPipe, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 import { VENT_DUCT_BRANDS, getDuctBrand, getDuctSize, formatStaticResistance } from "@/lib/ventDucts";
+import { ductArea, totalLocalXi, BEND_XI_90, BEND_XI_45 } from "@/lib/ventPipeCalc";
+
+/** Плотность воздуха для местных сопротивлений, кг/м³ (как в ventPipeCalc). */
+const RHO_AIR = 1.2;
 
 // ─── Справочник диаметров вентиляционных труб ────────────────────────────────
 const VENT_PIPE_DIAMETERS = [
@@ -26,14 +30,23 @@ function calcVentPipeR(params: {
   pipeAlpha: number;    // α, ×10⁻⁴ Н·с²/м⁴
   jointCount: number;
   leakageCoeff: number; // % на 100 м
-}): { R: number; leakage: number } {
+  localXi: number;      // суммарный ξ: повороты + прочие фасонные части
+}): { R: number; rFriction: number; rLocal: number; leakage: number } {
   const D = params.diameter / 1000; // мм → м
   const L = params.length;
   // Стыки: каждый стык эквивалентен +2% к α трубопровода.
   const effAlpha = params.pipeAlpha * (1 + params.jointCount * 0.02);
-  const R = resistanceFromPipe(effAlpha, L, D);
+  const rFriction = resistanceFromPipe(effAlpha, L, D);
+
+  // Местные сопротивления (повороты, фасонные части): R = ξ·ρ/(2·S²), кМюрг.
+  // Раньше окно их НЕ учитывало: инженер вводил сумму ξ, но показанное R и
+  // сопротивление, уходившее в схему, оставались прежними — повороты на
+  // расчёт не влияли вообще. Теперь они входят в R, как и требует формула.
+  const S = ductArea(params.diameter);
+  const rLocal = S > 0 ? (Math.max(0, params.localXi) * RHO_AIR) / (2 * S * S) / 9.81 : 0;
+
   const leakageFraction = (params.leakageCoeff / 100) * (L / 100);
-  return { R, leakage: leakageFraction };
+  return { R: rFriction + rLocal, rFriction, rLocal, leakage: leakageFraction };
 }
 
 // ─── Интерфейс пропсов ───────────────────────────────────────────────────────
@@ -64,6 +77,11 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
   const [leakage, setLeakage]         = useState(first.vpLeakageCoeff ?? 0.5);
   const [joints, setJoints]           = useState(first.vpJointCount ?? 0);
   const [localXi, setLocalXi]         = useState(first.vpLocalXi ?? 0);
+  // Повороты става — считаются по количеству, ξ берётся из справочника.
+  const [bends90, setBends90]         = useState(first.vpBends90 ?? 0);
+  const [bends45, setBends45]         = useState(first.vpBends45 ?? 0);
+  // Итоговый ξ: повороты + прочие фасонные части, введённые вручную.
+  const xiTotal = totalLocalXi(bends90, bends45, localXi);
   const [manualR, setManualR]         = useState<boolean>((first.vpManualR ?? 0) > 0);
   const [manualRVal, setManualRVal]   = useState(first.vpManualR ?? 0);
   // Марка рукава из справочника — подставляет паспортные характеристики
@@ -112,6 +130,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
     pipeAlpha,
     jointCount: joints,
     leakageCoeff: leakage,
+    localXi: xiTotal,
   });
 
   const R = manualR ? manualRVal : calc.R;
@@ -131,6 +150,8 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
       vpLeakageCoeff: leakage,
       vpJointCount: joints,
       vpLocalXi: localXi,
+      vpBends90: bends90,
+      vpBends45: bends45,
       vpManualR: manualR ? manualRVal : 0,
       vpBrandId: brandId,
       vpWorkPressure: brandSize?.workPressure ?? 0,
@@ -151,7 +172,9 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
       shape: "round",
       diameter: diameter / 1000,
       manualSection: false,
-      localXi,
+      // В ветвь уходит ПОЛНЫЙ ξ (повороты + прочее), иначе расчёт сети не
+      // увидел бы сопротивление поворотов.
+      localXi: xiTotal,
     };
     onApply(patch);
     onClose();
@@ -382,12 +405,46 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
             </div>
           </div>
 
-          {/* Местные сопротивления */}
+          {/* Повороты става — задаются количеством, ξ подставляется сам */}
           <div>
-            <label className={labelCls}>Сумма ξ местных сопротивлений (повороты, фасонины)</label>
+            <label className={labelCls}>Повороты трубопровода</label>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <div className="flex items-center gap-1 mb-0.5">
+                  <Icon name="CornerUpRight" size={12} className="text-gray-500" />
+                  <span className="text-[11px] text-gray-700">Поворотов 90°</span>
+                </div>
+                <input type="number" min={0} step={1} value={bends90}
+                  onChange={e => setBends90(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                  className={inputCls} />
+                <div className="text-[10px] text-gray-500 mt-0.5">ξ = {BEND_XI_90.toFixed(2)} за поворот</div>
+              </div>
+              <div>
+                <div className="flex items-center gap-1 mb-0.5">
+                  <Icon name="CornerUpRight" size={12} className="text-gray-500" />
+                  <span className="text-[11px] text-gray-700">Поворотов 45°</span>
+                </div>
+                <input type="number" min={0} step={1} value={bends45}
+                  onChange={e => setBends45(Math.max(0, Math.floor(Number(e.target.value) || 0)))}
+                  className={inputCls} />
+                <div className="text-[10px] text-gray-500 mt-0.5">ξ = {BEND_XI_45.toFixed(2)} за поворот</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Прочие местные сопротивления */}
+          <div>
+            <label className={labelCls}>Прочие местные сопротивления, ξ (переходы, тройники)</label>
             <input type="number" min={0} step={0.1} value={localXi}
               onChange={e => setLocalXi(Number(e.target.value))}
               className={inputCls} />
+            <div className="text-[10px] text-gray-500 mt-0.5">
+              Итого ξ = <b>{xiTotal.toFixed(2)}</b>
+              {(bends90 > 0 || bends45 > 0) && (
+                <> (повороты: {(bends90 * BEND_XI_90 + bends45 * BEND_XI_45).toFixed(2)}
+                {localXi > 0 ? ` + прочие: ${localXi.toFixed(2)}` : ""})</>
+              )}
+            </div>
           </div>
 
           {/* Коэффициент α трубопровода (формула R=6.48·α·L/D⁵) */}
@@ -438,6 +495,21 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
               <div className="font-semibold text-gray-900">{pipeAlpha} ×10⁻⁴</div>
               <div className="text-gray-700 font-bold">R трубы (6.48·α·L/D⁵):</div>
               <div className="font-bold text-green-800">{R.toFixed(4)} кМюрг</div>
+              {/* Показываем вклад поворотов отдельно — чтобы было видно,
+                  насколько они утяжеляют став, и цифру можно было проверить. */}
+              {!manualR && calc.rLocal > 0 && (
+                <>
+                  <div className="text-gray-500">в т.ч. по длине:</div>
+                  <div className="font-semibold text-gray-700">{calc.rFriction.toFixed(4)} кМюрг</div>
+                  <div className="text-gray-500">в т.ч. местные (ξ={xiTotal.toFixed(2)}):</div>
+                  <div className="font-semibold text-blue-700">
+                    {calc.rLocal.toFixed(4)} кМюрг
+                    <span className="text-gray-500 font-normal">
+                      {" "}(+{calc.rFriction > 0 ? ((calc.rLocal / calc.rFriction) * 100).toFixed(1) : "0"}%)
+                    </span>
+                  </div>
+                </>
+              )}
               <div className="text-gray-500">Утечки на маршруте:</div>
               <div className="font-semibold text-orange-700">
                 {(calc.leakage * 100).toFixed(1)}% от расхода

@@ -20,7 +20,7 @@ import { getDuctBrand, getDuctSize, VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 import { getFanById, fanHAngle } from "@/lib/fanCurves";
 import {
   calcVentPipe, calcVentPipeMaxLength, buildDeliveryCurve, solveFanFlow,
-  type VpLeakMethod,
+  totalLocalXi, type VpLeakMethod,
 } from "@/lib/ventPipeCalc";
 import {
   SectionHeader, NumberInput, ComputedInput, SelectField, InlineLabel,
@@ -98,7 +98,8 @@ export default function BranchVentPipeTab({
     lossPer100m,
     linkLength: branch.vpLinkLength ?? 20,
     jointCount: branch.vpJointCount ?? 0,
-    localXi: branch.vpLocalXi ?? 0,
+    // Полный ξ: повороты става + прочие фасонные части.
+    localXi: totalLocalXi(branch.vpBends90 ?? 0, branch.vpBends45 ?? 0, branch.vpLocalXi ?? 0),
     jointLeakK: branch.vpJointLeakK ?? 0,
     jointsPerMeter,
     fanFlow,
@@ -608,7 +609,23 @@ export default function BranchVentPipeTab({
           onChange={(v) => onUpdate({ vpJointCount: v })}
         />
       </InlineLabel>
-      <InlineLabel label="Местные ξ">
+      <InlineLabel label="Поворотов 90°">
+        <NumberInput
+          value={branch.vpBends90 ?? 0}
+          placeholder="0"
+          min={0}
+          onChange={(v) => onUpdate({ vpBends90: Math.max(0, Math.floor(v || 0)) })}
+        />
+      </InlineLabel>
+      <InlineLabel label="Поворотов 45°">
+        <NumberInput
+          value={branch.vpBends45 ?? 0}
+          placeholder="0"
+          min={0}
+          onChange={(v) => onUpdate({ vpBends45: Math.max(0, Math.floor(v || 0)) })}
+        />
+      </InlineLabel>
+      <InlineLabel label="Прочие ξ">
         <NumberInput
           value={branch.vpLocalXi ?? 0}
           placeholder="0"

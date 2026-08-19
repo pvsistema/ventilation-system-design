@@ -14,7 +14,7 @@ import { calcFaceDemand } from "@/lib/airDemand";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 import { getFanById, fanHAngle } from "@/lib/fanCurves";
 import {
-  calcVentPipe, calcVentPipeMaxLength, type VpLeakMethod,
+  calcVentPipe, calcVentPipeMaxLength, totalLocalXi, type VpLeakMethod,
 } from "@/lib/ventPipeCalc";
 
 /** Строка отчёта по одному ставу */
@@ -95,7 +95,8 @@ export function buildVentPipeReport(
       lossPer100m: size?.lossPer100m ?? b.vpLeakageCoeff ?? 0,
       linkLength: b.vpLinkLength ?? 20,
       jointCount: b.vpJointCount ?? 0,
-      localXi: b.vpLocalXi ?? 0,
+      // Полный ξ: повороты + прочие фасонные части (см. totalLocalXi).
+      localXi: totalLocalXi(b.vpBends90 ?? 0, b.vpBends45 ?? 0, b.vpLocalXi ?? 0),
       jointLeakK: b.vpJointLeakK ?? 0,
       jointsPerMeter,
       fanCurve,
