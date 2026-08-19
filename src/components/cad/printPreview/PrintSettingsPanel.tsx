@@ -33,6 +33,10 @@ interface PrintSettingsPanelProps {
   setCopies: (v: number) => void;
   reverseOrder: boolean;
   setReverseOrder: (v: boolean) => void;
+  /** Принтеры Windows. Пусто в браузере — там выбор делает системное окно. */
+  printers: { name: string; isDefault: boolean }[];
+  printerName: string;
+  setPrinterName: (v: string) => void;
   scaleDisplay: number;
   setScaleDisplay: (v: number) => void;
   offsetXDisplay: number;
@@ -60,7 +64,7 @@ export default function PrintSettingsPanel({
   handlePrint, printing, printProgress, setShowExportDialog, templates, loadTemplate, saveTemplate, deleteTemplate,
   templateName, setTemplateName, format, setFormat, orientation, setOrientation,
   customW, setCustomW, customH, setCustomH, copies, setCopies,
-  reverseOrder, setReverseOrder,
+  reverseOrder, setReverseOrder, printers, printerName, setPrinterName,
   scaleDisplay, setScaleDisplay, offsetXDisplay, setOffsetXDisplay,
   offsetYDisplay, setOffsetYDisplay, setUserScale, setUserOffsetX, setUserOffsetY,
   marginTop, setMarginTop, marginBottom, setMarginBottom,
@@ -119,13 +123,29 @@ export default function PrintSettingsPanel({
       Вместо нерабочего поля — понятное пояснение, где принтер выбирается. */}
   <Section title="Основные параметры">
     <div style={{ fontSize: 12, color: "#333", marginBottom: 3 }}>Принтер:</div>
-    <div style={{
-      fontSize: 11, color: "#4b5563", background: "#f3f4f6",
-      border: "1px solid #d1d5db", borderRadius: 4, padding: "5px 7px", lineHeight: 1.45,
-    }}>
-      Принтер, поля и двустороннюю печать выбирает Windows — окно выбора
-      откроется после нажатия «Печать».
-    </div>
+    {printers.length > 0 ? (
+      <>
+        <select className={sel} style={ih} value={printerName}
+          onChange={e => setPrinterName(e.target.value)}>
+          {printers.map(p => (
+            <option key={p.name} value={p.name}>
+              {p.name}{p.isDefault ? " (по умолчанию)" : ""}
+            </option>
+          ))}
+        </select>
+        <div style={{ fontSize: 10, color: "#15803d", marginTop: 4, lineHeight: 1.4 }}>
+          Печать сразу на выбранный принтер — без окна Windows.
+        </div>
+      </>
+    ) : (
+      <div style={{
+        fontSize: 11, color: "#4b5563", background: "#f3f4f6",
+        border: "1px solid #d1d5db", borderRadius: 4, padding: "5px 7px", lineHeight: 1.45,
+      }}>
+        Принтер, поля и двустороннюю печать выбирает Windows — окно выбора
+        откроется после нажатия «Печать».
+      </div>
+    )}
   </Section>
 
   {/* Диапазон.

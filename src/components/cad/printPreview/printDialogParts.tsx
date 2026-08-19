@@ -6,6 +6,38 @@
 // Вынесено из PrintDialog.tsx БЕЗ изменений логики, стилей и размеров.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState } from "react";
+import { isDesktopPrintAvailable, printViaDesktop } from "@/lib/desktopPrint";
+
+/**
+ * Параметры листа для прямой печати из десктопной оболочки.
+ * В браузере не используются — там их задаёт системное окно.
+ */
+export interface DirectPrintOpts {
+  printerName: string;
+  copies: number;
+  paperWidthMm: number;
+  paperHeightMm: number;
+  landscape: boolean;
+}
+
+/**
+ * ЕДИНАЯ точка печати документа.
+ *
+ * В десктопной сборке (C#/WebView2 с собранным мостом печати) документ уходит
+ * на принтер напрямую — без второго системного окна: принтер, копии и формат
+ * уже выбраны в нашем диалоге предпросмотра.
+ *
+ * Везде остальное — обычная печать браузера через скрытый iframe. Тот же путь
+ * используется как запасной, если прямая печать почему-то не удалась: инженер
+ * в любом случае должен получить распечатку, а не молчаливый отказ.
+ */
+export async function printDocument(html: string, opts?: DirectPrintOpts): Promise<void> {
+  if (opts && isDesktopPrintAvailable()) {
+    const ok = await printViaDesktop({ html, ...opts });
+    if (ok) return;
+  }
+  printViaIframe(html);
+}
 
 export function printViaIframe(html: string) {
   const existing = document.getElementById("__pvs_print_frame__");

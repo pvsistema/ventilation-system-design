@@ -16,9 +16,12 @@ import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 import { generateSvg, downloadSvg } from "@/lib/svgExporter";
 // Общие части и блоки диалога вынесены в отдельные файлы (перенос 1:1)
 import {
-  printViaIframe, Section, Row, inp, sel, ih, PAPER_SIZES,
+  printDocument, Section, Row, inp, sel, ih, PAPER_SIZES,
   type PaperFormat, type Orientation,
 } from "@/components/cad/printPreview/printDialogParts";
+import {
+  isDesktopPrintAvailable, listPrinters, type DesktopPrinter,
+} from "@/lib/desktopPrint";
 import PrintSettingsPanel from "@/components/cad/printPreview/PrintSettingsPanel";
 import PrintExportDialog from "@/components/cad/printPreview/PrintExportDialog";
 
@@ -153,6 +156,22 @@ export default function PrintDialog({
   const [showPageNumbers, setShowPageNumbers] = useState(true);
   const [copies, setCopies] = useState(1);
   const [reverseOrder, setReverseOrder] = useState(false);
+  // Принтеры Windows — только в десктопной сборке с собранным мостом печати.
+  // В браузере список всегда пуст: страница не имеет доступа к принтерам ОС.
+  const [printers, setPrinters] = useState<DesktopPrinter[]>([]);
+  const [printerName, setPrinterName] = useState("");
+  useEffect(() => {
+    if (!isDesktopPrintAvailable()) return;
+    let cancelled = false;
+    void listPrinters().then((list) => {
+      if (cancelled) return;
+      setPrinters(list);
+      // Предвыбираем принтер по умолчанию — как в любом привычном диалоге печати.
+      const def = list.find((p) => p.isDefault) ?? list[0];
+      if (def) setPrinterName(def.name);
+    });
+    return () => { cancelled = true; };
+  }, []);
   const [templateName, setTemplateName] = useState("");
   const [templates, setTemplates] = useState<Record<string, object>>(() => {
     try { return JSON.parse(localStorage.getItem("printTemplates") || "{}"); } catch { return {}; }
@@ -1152,7 +1171,11 @@ body{background:white;font-family:Arial,sans-serif}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>${pageHtmls.join("")}</body></html>`;
 
-    printViaIframe(html);
+    await printDocument(html, {
+      printerName, copies,
+      paperWidthMm: paper.w, paperHeightMm: paper.h,
+      landscape: orientation === "landscape",
+    });
     } finally {
       printingRef.current = false;
       setPrinting(false);
@@ -1160,7 +1183,7 @@ body{background:white;font-family:Arial,sans-serif}
     }
   }, [paper, marginTop, marginBottom, marginRight,
       showPageNumbers, copies, reverseOrder, projectName,
-      tiles, totalPages, renderTileToCanvas]);
+      tiles, totalPages, renderTileToCanvas, printerName, orientation]);
 
   // Печать одного тайла (после tiles и renderTileToCanvas)
   const handlePrintSingleTile = useCallback(async (tileIdx: number) => {
@@ -1190,14 +1213,19 @@ body{background:white;font-family:Arial,sans-serif}
   ${showPageNumbers ? `<div class="page-num">${pageNum} / ${tiles.list.length}</div>` : ''}
 </div>
 </body></html>`;
-    printViaIframe(html);
+    await printDocument(html, {
+      printerName, copies,
+      paperWidthMm: paper.w, paperHeightMm: paper.h,
+      landscape: orientation === "landscape",
+    });
     } finally {
       printingRef.current = false;
       setPrinting(false);
       setPrintProgress(null);
     }
   }, [tiles, paper, marginBottom, marginRight, projectName,
-      showPageNumbers, renderTileToCanvas, closeCtxMenu]);
+      showPageNumbers, renderTileToCanvas, closeCtxMenu,
+      printerName, copies, orientation]);
 
   // ─── Вспомогательная функция: строим ProjOptions для SVG/PDF-vector ─────
   // SVG-холст = paper.w × paper.h мм при 96dpi (3.78px/мм).
@@ -1538,6 +1566,7 @@ body{background:white;font-family:Arial,sans-serif}
             customH={customH} setCustomH={setCustomH}
             copies={copies} setCopies={setCopies}
             reverseOrder={reverseOrder} setReverseOrder={setReverseOrder}
+            printers={printers} printerName={printerName} setPrinterName={setPrinterName}
             scaleDisplay={scaleDisplay} setScaleDisplay={setScaleDisplay}
             offsetXDisplay={offsetXDisplay} setOffsetXDisplay={setOffsetXDisplay}
             offsetYDisplay={offsetYDisplay} setOffsetYDisplay={setOffsetYDisplay}
