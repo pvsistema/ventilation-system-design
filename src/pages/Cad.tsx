@@ -41,6 +41,8 @@ import { type VentsimImportResult } from "@/lib/ventsimImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
+import OpoDataDialog from "@/components/cad/OpoDataDialog";
+import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
@@ -209,6 +211,9 @@ export default function CadPage() {
   const [mineFans, setMineFans] = useState<MineFanExport[]>([
     { catalogId: "VOD-18", name: "ВО-18/12АВР", diameter: 1.8, rpmMin: 600, rpmMax: 1500 },
   ]);
+  // Данные ОПО (паспорт объекта). Сводка по сети считается отдельно, по схеме.
+  const [showOpoDialog, setShowOpoDialog] = useState(false);
+  const [opoData, setOpoData] = useState<OpoData>(() => makeDefaultOpoData());
   const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>(() =>
     BULKHEAD_CATALOG.map(item => ({
       id: `mb_${item.id}`,
@@ -302,6 +307,12 @@ export default function CadPage() {
 
   // Авто-пересчёт длин и аэродинамики по координатам/параметрам
   const branches = useMemo(() => recalcAll(nodes, branchesRaw), [nodes, branchesRaw]);
+  // Сводка для «Данных ОПО»: длины и количество вентустройств берутся из схемы,
+  // поэтому цифры не могут разойтись с фактическим состоянием сети.
+  const opoSummary = useMemo(
+    () => computeOpoNetwork(branches, mineBulkheads),
+    [branches, mineBulkheads],
+  );
   const selectedNode = nodes.find((n) => n.id === selectedNodeId) ?? null;
   const selectedBranch = branches.find((b) => b.id === selectedBranchId) ?? null;
 
@@ -2351,6 +2362,7 @@ export default function CadPage() {
     userPumps,
     mineBulkheads,
     mineTypes,
+    opoData,
     ventSections,
     ventNorms,
     calcMode,
@@ -2733,6 +2745,8 @@ export default function CadPage() {
     setSolverMaxIter(5000);
     setSolverAlpha(0.5);
     setSurfaceTemp(20);
+    // Данные ОПО — паспорт прежнего объекта не должен перейти в новый проект.
+    setOpoData(makeDefaultOpoData());
     setUseNaturalDraft(true);
     setGeoGradient(3.0);
     // ── конец сброса ────────────────────────────────────────────────────
@@ -2857,6 +2871,9 @@ export default function CadPage() {
       ? { ...DEFAULT_VENT_NORMS, ...(data.ventNorms as Partial<VentNorms>) }
       : DEFAULT_VENT_NORMS);
     if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
+    // Данные ОПО. В файлах, сохранённых до появления этой вкладки, поля нет —
+    // normalizeOpoData вернёт значения по умолчанию, старый проект откроется.
+    setOpoData(normalizeOpoData(data.opoData));
     if (data.solverTolerance !== undefined) setSolverTolerance(data.solverTolerance as number);
     if (data.solverMaxIter !== undefined) setSolverMaxIter(data.solverMaxIter as number);
     if (data.solverAlpha !== undefined) setSolverAlpha(data.solverAlpha as number);
@@ -3027,6 +3044,8 @@ export default function CadPage() {
     setSolverMaxIter(5000);
     setSolverAlpha(0.5);
     setSurfaceTemp(20);
+    // Данные ОПО — паспорт прежнего объекта не должен перейти в новый проект.
+    setOpoData(makeDefaultOpoData());
 
     // ── Справочники — сброс к заводским значениям ──
     setMineFans([
@@ -6270,6 +6289,12 @@ export default function CadPage() {
                 <div style={{ color: "var(--c-t3, #64748b)" }}>|ΔH|: {solveResult.maxDeltaH?.toExponential(2)}</div>
               </div>
             )}
+
+            {/* Данные ОПО — паспорт объекта + сводка, посчитанная по схеме */}
+            <RibbonBigBtn icon="ShieldAlert" label="Данные" sublabel="ОПО"
+              active={showOpoDialog}
+              onClick={() => setShowOpoDialog(true)}
+              title="Данные опасного производственного объекта" />
         </RibbonGroup>
 
         {/* ── Группа: Депрессиограмма (только во вкладке Вентиляция) ── */}
@@ -13180,6 +13205,16 @@ export default function CadPage() {
       showHelpDialog={showHelpDialog}
       setShowHelpDialog={setShowHelpDialog}
     />
+
+    {showOpoDialog && (
+      <OpoDataDialog
+        data={opoData}
+        onChange={setOpoData}
+        summary={opoSummary}
+        horizons={horizons}
+        onClose={() => setShowOpoDialog(false)}
+      />
+    )}
 
     <CadModals
       nodes={nodes}
