@@ -165,15 +165,40 @@ function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.Wor
       r.firePower_MW,
       r.fireTemp_C,
       r.thermalDep_Pa,
-      r.hKr_Pa != null ? r.hKr_Pa : "—",
+      // Вместо голого прочерка — короткая пометка «не опр.». Полная причина
+      // печатается ниже, под таблицей: длинный текст в узкой числовой колонке
+      // разъехался бы по всему листу и сломал вёрстку акта.
+      r.hKr_Pa != null ? r.hKr_Pa : "не опр.",
       // Запас до опрокидывания: h_кр − h_т. Отрицательное значение печатаем со
       // знаком «−» — видно, на сколько паскалей порог уже перекрыт.
-      r.marginDep_Pa != null ? r.marginDep_Pa : "—",
-      r.p_u != null ? r.p_u : "—",
+      r.marginDep_Pa != null ? r.marginDep_Pa : "не опр.",
+      r.p_u != null ? r.p_u : "не опр.",
       r.stability,
       r.fireLoadDesc,
     ]);
   });
+
+  // ── Пояснения к незаполненным клеткам ─────────────────────────────────────
+  // Пустая клетка в акте, уходящем в надзорный орган, выглядит как пропуск в
+  // расчёте. Поясняем, что расчёт выполнен, но норматив к этой выработке
+  // неприменим, и по какой именно причине.
+  const noted = rows.filter(r => r.critNote);
+  if (noted.length > 0) {
+    aoa.push([]);
+    aoa.push(["Пояснения к графам «Критическая депрессия», «Запас до опрокидывания», «Показатель устойчивости»:"]);
+    // Группируем одинаковые причины: у большинства ветвей она общая, и
+    // повторять один и тот же текст против каждой строки незачем.
+    const byNote = new Map<string, string[]>();
+    noted.forEach(r => {
+      const key = r.critNote;
+      if (!byNote.has(key)) byNote.set(key, []);
+      byNote.get(key)!.push(String(r.branchNumber));
+    });
+    byNote.forEach((ids, note) => {
+      aoa.push([`Ветви № ${ids.join(", ")}: ${note}.`]);
+    });
+    aoa.push(["Степень устойчивости для этих выработок определена по располагаемой депрессии участка."]);
+  }
 
   if (rows.length === 0) {
     aoa.push(TABLE_HEADERS.map((_, i) => (i === 3 ? "Нет ветвей, удовлетворяющих условиям отбора" : "")));
