@@ -33,8 +33,6 @@ interface PrintSettingsPanelProps {
   setCopies: (v: number) => void;
   reverseOrder: boolean;
   setReverseOrder: (v: boolean) => void;
-  pageRange: string;
-  setPageRange: (v: string) => void;
   scaleDisplay: number;
   setScaleDisplay: (v: number) => void;
   offsetXDisplay: number;
@@ -62,7 +60,7 @@ export default function PrintSettingsPanel({
   handlePrint, printing, printProgress, setShowExportDialog, templates, loadTemplate, saveTemplate, deleteTemplate,
   templateName, setTemplateName, format, setFormat, orientation, setOrientation,
   customW, setCustomW, customH, setCustomH, copies, setCopies,
-  reverseOrder, setReverseOrder, pageRange, setPageRange,
+  reverseOrder, setReverseOrder,
   scaleDisplay, setScaleDisplay, offsetXDisplay, setOffsetXDisplay,
   offsetYDisplay, setOffsetYDisplay, setUserScale, setUserOffsetX, setUserOffsetY,
   marginTop, setMarginTop, marginBottom, setMarginBottom,
@@ -112,18 +110,29 @@ export default function PrintSettingsPanel({
     </div>
   </Section>
 
-  {/* Основные параметры */}
+  {/* Основные параметры.
+      Раньше здесь стоял выпадающий список «Принтер» с единственным пунктом
+      «Системный принтер». Он ни на что не влиял: веб-страница принципиально не
+      имеет доступа к списку принтеров операционной системы — браузер запрещает
+      это из соображений безопасности. Инженер выбирал принтер тут, а потом ещё
+      раз в системном окне, и настройки противоречили друг другу.
+      Вместо нерабочего поля — понятное пояснение, где принтер выбирается. */}
   <Section title="Основные параметры">
     <div style={{ fontSize: 12, color: "#333", marginBottom: 3 }}>Принтер:</div>
-    <select className={sel} style={ih}><option>Системный принтер</option></select>
+    <div style={{
+      fontSize: 11, color: "#4b5563", background: "#f3f4f6",
+      border: "1px solid #d1d5db", borderRadius: 4, padding: "5px 7px", lineHeight: 1.45,
+    }}>
+      Принтер, поля и двустороннюю печать выбирает Windows — окно выбора
+      откроется после нажатия «Печать».
+    </div>
   </Section>
 
-  {/* Диапазон */}
+  {/* Диапазон.
+      Поле «Страницы» убрано: оно нигде не применялось при формировании
+      документа — введённый диапазон молча игнорировался, и на печать всё равно
+      уходили все листы. Выбор страниц есть в системном окне печати. */}
   <Section title="Печатный диапазон">
-    <Row label="Страницы:">
-      <input className={inp + " w-full"} style={ih} placeholder="Пример: 1-1"
-        value={pageRange} onChange={e => setPageRange(e.target.value)} />
-    </Row>
     <Row label="Копии:">
       <input type="number" min={1} max={99} className={inp} style={{ ...ih, width: 60 }}
         value={copies} onChange={e => setCopies(Math.max(1, +e.target.value || 1))} />

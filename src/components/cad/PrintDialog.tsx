@@ -153,7 +153,6 @@ export default function PrintDialog({
   const [showPageNumbers, setShowPageNumbers] = useState(true);
   const [copies, setCopies] = useState(1);
   const [reverseOrder, setReverseOrder] = useState(false);
-  const [pageRange, setPageRange] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [templates, setTemplates] = useState<Record<string, object>>(() => {
     try { return JSON.parse(localStorage.getItem("printTemplates") || "{}"); } catch { return {}; }
@@ -1539,7 +1538,6 @@ body{background:white;font-family:Arial,sans-serif}
             customH={customH} setCustomH={setCustomH}
             copies={copies} setCopies={setCopies}
             reverseOrder={reverseOrder} setReverseOrder={setReverseOrder}
-            pageRange={pageRange} setPageRange={setPageRange}
             scaleDisplay={scaleDisplay} setScaleDisplay={setScaleDisplay}
             offsetXDisplay={offsetXDisplay} setOffsetXDisplay={setOffsetXDisplay}
             offsetYDisplay={offsetYDisplay} setOffsetYDisplay={setOffsetYDisplay}
