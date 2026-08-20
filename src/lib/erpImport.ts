@@ -627,15 +627,6 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     // Поля вентилятора берём из самого объекта (в ветви их нет).
     const ff = fanItems[0]?.f ?? {};
     const bf = bkItems[0]?.f ?? {};
-    // ВНИМАНИЕ: у перемычек единицы ДРУГИЕ, чем у выработок.
-    // Сопротивление выработки АэроСеть вычисляет по α, а α хранит в СИ —
-    // поэтому R выработки в файле тоже в СИ и требует деления на 9,81.
-    // А сопротивление вентсооружения пользователь задаёт прямо в РУДНИЧНЫХ
-    // кМюрг, и в файл оно попадает без пересчёта: в окне АэроСети у двери
-    // стоит R = 2 кМюрг, и в файле лежит 2,49 — того же порядка, а не в 9,81
-    // раза больше. Поэтому здесь берём значение КАК ЕСТЬ.
-    const bkR = +(num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
-               || num(bf["Airflow.BulkheadCalculatedResistance"], 0)).toFixed(6);
 
     // ── Напор вентилятора ─────────────────────────────────────────────────
     // В файле он записан в мм вод. ст. (кгс/м²) — тех же рудничных единицах,
@@ -724,16 +715,30 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
       fanRpm: hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0,
-      // Перемычка вентилятора — как и прочие вентсооружения, задаётся сразу
-      // в кМюрг (в файле стандартное 1000), пересчёт не нужен.
-      fanCrossingR: hasFan ? num(ff["Airflow.VentilatorBulkheadResistance"], 0) : 0,
+      // ── Установка вентилятора ─────────────────────────────────────────
+      // VentilatorBulkheadResistance = 1000 — это НЕ сопротивление на пути
+      // воздуха, а служебное значение АэроСети: «обходная утечка мимо
+      // вентилятора закрыта наглухо». Если принять его за сопротивление
+      // ветви, при Q = 93 м³/с получится 85 000 Па — в 80 раз больше напора,
+      // и вся сеть «зажимается», а расход падает вдвое. Именно это и
+      // происходило.
+      // Поэтому переносим установку «Без перемычки»: вентилятор создаёт
+      // напор, но не добавляет сопротивления. Реальное сопротивление окна
+      // ГВУ, если оно есть, задаётся отдельно площадью окна.
+      fanInstall: hasFan ? "Без перемычки" : "Внутри перемычки",
+      fanCrossingR: 0,
+      fanWindowArea: 0,
       // ── Перемычка ─────────────────────────────────────────────────────
+      // ВАЖНО: сопротивление перемычки хранится ТОЛЬКО в её условном
+      // обозначении на схеме (см. outBulkheads выше). Здесь оставляем лишь
+      // признак и справочные значения, а manual-режим НЕ включаем: иначе
+      // расчёт сложил бы сопротивление перемычки дважды — из УО и из полей
+      // ветви — и сеть получилась бы вдвое «зажатой».
       hasBulkhead,
       bulkheadName: hasBulkhead ? "Перемычка" : "",
-      // Сопротивление перемычки в файле — тоже в СИ, переводим в кМюрг.
-      bulkheadR: hasBulkhead ? bkR : 0,
-      bulkheadResMode: hasBulkhead ? "manual" : "project",
-      bulkheadManualR: hasBulkhead ? bkR : 0,
+      bulkheadR: 0,
+      bulkheadResMode: "project",
+      bulkheadManualR: 0,
       bulkheadAirPerm: hasBulkhead ? num(bf["Airflow.BlindBulkheadUserDefinedPermeability"], 0) : 0,
       bulkheadSurveyQ: hasBulkhead ? num(bf["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,
       comment: f["Rib.Comment"] ?? "",
