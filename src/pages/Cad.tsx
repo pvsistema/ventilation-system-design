@@ -2085,16 +2085,53 @@ export default function CadPage() {
   // вместе с узлами и ветвями переносим список горизонтов (при добавлении к
   // текущей схеме — только те, которых ещё нет, чтобы не плодить дубликаты).
   const handleErpImport = (result: ErpImportResult, mode: "replace" | "append") => {
+    // УО вентиляторов: ставим по РЕАЛЬНОМУ положению объекта на ветви (t из
+    // файла) — раньше все висели посередине. Значок выбирается по назначению
+    // (ГВУ/ВВУ — вентустановка, ВМП — пропеллер), это делает рендер по fanType.
+    const erpFanSymbols = (existing: typeof schemaSymbols): typeof schemaSymbols => {
+      const syms: typeof schemaSymbols = [];
+      result.fans.forEach((fn, i) => {
+        if (existing.some(s => s.typeId === "fan" && s.branchId === fn.branchId)) return;
+        if (syms.some(s => s.branchId === fn.branchId)) return;
+        syms.push({ id: `SYM_FAN_${fn.branchId}_${i}`, typeId: "fan", x: 0, y: 0, branchId: fn.branchId, t: fn.t });
+      });
+      return syms;
+    };
+    // УО перемычек: вид берём из кода объекта АэроСети, сопротивление и
+    // воздухопроницаемость — из его полей.
+    const erpBulkheadSymbols = (existing: typeof schemaSymbols): typeof schemaSymbols => {
+      const stamp = Date.now();
+      return result.bulkheads
+        .filter(bk => !existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === bk.branchId))
+        .map((bk, i) => ({
+          id: `SYM_BK_${stamp}_${i}_${bk.branchId}`,
+          typeId: bk.typeId,
+          x: 0, y: 0,
+          branchId: bk.branchId,
+          t: bk.t,
+          bkResMode: "manual" as const,
+          bkManualR: bk.rKmu,
+          bkAirPerm: bk.airPerm,
+          bkSurveyQ: bk.surveyQ,
+          bkBulkheadR: bk.rKmu * 1000,
+          bkBulkheadName: bk.name,
+        }));
+    };
+
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
-      setSchemaSymbols(ensureFanSymbols(result.branches, []));
+      const fanSyms = erpFanSymbols([]);
+      setSchemaSymbols([...fanSyms, ...erpBulkheadSymbols(fanSyms)]);
       if (result.horizons.length > 0) setHorizons(result.horizons);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
-      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
+      setSchemaSymbols(prev => {
+        const fanSyms = erpFanSymbols(prev);
+        return [...prev, ...fanSyms, ...erpBulkheadSymbols([...prev, ...fanSyms])];
+      });
       setHorizons(prev => {
         const have = new Set(prev.map(h => h.id));
         return [...prev, ...result.horizons.filter(h => !have.has(h.id))];

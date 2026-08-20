@@ -45,20 +45,65 @@
 import JSZip from "jszip";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 
+/** Перемычка на ветви: где стоит, каким УО рисовать, какое сопротивление. */
+export interface ErpBulkhead {
+  branchId: string;
+  t: number;            // положение вдоль ветви 0..1
+  typeId: string;       // id условного обозначения (см. schemaSymbols)
+  name: string;
+  rKmu: number;         // кМюрг
+  airPerm: number;      // м²/(с·√Па)
+  surveyQ: number;      // расход воздушной съёмки, м³/с
+  reversed: boolean;
+}
+
+/** Вентилятор на ветви: положение и назначение (ГВУ / ВВУ / ВМП). */
+export interface ErpFan {
+  branchId: string;
+  t: number;
+  fanType: "ГВУ" | "ВВУ" | "ВМП";
+  name: string;
+}
+
 export interface ErpImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
+  bulkheads: ErpBulkhead[];
+  fans: ErpFan[];
   warnings: string[];
   stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number };
   debug: string;
 }
 
-// Коды объектов на ветви (<ribItem itemCode>). Определены по образцу:
-// 8 — перемычка (рядом лежат поля Airflow.Bulkhead*),
-// 16 — вентилятор (рядом Airflow.FanPressure / Ventilator*).
+// Коды объектов на ветви (<ribItem itemCode>). В образце 8 — перемычка,
+// 16 — вентилятор, НО в реальных проектах коды другие (у каждого вида
+// перемычки и вентилятора свой). Поэтому коды — лишь подсказка: главный
+// признак объекта — набор полей самой ветви (Airflow.Bulkhead* /
+// Airflow.Ventilator*), он есть только там, где объект реально стоит.
+// Именно из-за жёсткой привязки к 8/16 в большом проекте не импортировались
+// ни перемычки, ни часть вентиляторов.
 const ITEM_BULKHEAD = "8";
 const ITEM_FAN = "16";
+
+/**
+ * УО перемычки по коду объекта АэроСети. Коды соответствуют видам вентсооружений
+ * из справочника воздухопроницаемости (blindBulkheadAirPermeability itemCode).
+ * Неизвестный код → глухая перемычка (самый частый вид).
+ */
+function bulkheadTypeIdByCode(code: string): string {
+  switch (code) {
+    case "8":  return "bk_base";      // глухая перемычка
+    case "9":  return "door_base";    // вентиляционная дверь
+    case "10": return "auto_base";    // дверь автоматическая
+    case "11": return "win_base";     // дверь с регулируемым окном
+    case "12": return "lat_base";     // решётчатая дверь
+    case "13": return "open_base";    // дверь открытая
+    case "14": return "sail";         // парус
+    case "15": return "barrier";      // барьер
+    default:   return "bk_base";
+  }
+}
 
 /** Число из атрибута XML. Поддерживает экспоненту («3.94E-05») и запятую. */
 function num(v: string | null | undefined, def = 0): number {
@@ -87,14 +132,69 @@ function decodeXml(buf: Uint8Array): string {
   return new TextDecoder("utf-16le").decode(buf);
 }
 
-/** Собирает <field name=… value=…> элемента в обычный словарь. */
-function readFields(el: Element): Record<string, string> {
+/**
+ * Собирает <field name=… value=…> элемента в обычный словарь.
+ *
+ * ВАЖНО: поля СОБСТВЕННЫЕ. Раньше брались все вложенные field, включая поля
+ * объектов на ветви (<ribItem> — перемычки и вентиляторы), из-за чего параметры
+ * перемычки приписывались самой выработке, а объекты дублировались.
+ * Отсекаем всё, что лежит внутри ribItem.
+ */
+function readFields(el: Element, opts?: { includeItems?: boolean }): Record<string, string> {
   const out: Record<string, string> = {};
   el.querySelectorAll("field").forEach(f => {
+    if (!opts?.includeItems) {
+      // поле принадлежит объекту на ветви, а не самой ветви
+      let p: Element | null = f.parentElement;
+      let inItem = false;
+      while (p && p !== el) {
+        if (p.tagName === "ribItem") { inItem = true; break; }
+        p = p.parentElement;
+      }
+      if (inItem) return;
+    }
     const n = f.getAttribute("name");
     if (n) out[n] = f.getAttribute("value") ?? "";
   });
   return out;
+}
+
+/**
+ * Разбирает объект на ветви (<ribItem>): его собственные поля и поля активного
+ * режима проветривания (<ventModeData type="Fans"|"Bulkheads">).
+ *
+ * Тип объекта определяем НЕ по itemCode (коды у разных видов перемычек и
+ * вентиляторов разные и в справочнике проекта могут быть любыми), а по типу
+ * блока ventModeData с непустым набором полей — это надёжный признак,
+ * одинаковый во всех версиях АэроСети.
+ */
+function readRibItem(item: Element): { kind: "fan" | "bulkhead" | "other"; f: Record<string, string>; code: string } {
+  const f: Record<string, string> = {};
+  let kind: "fan" | "bulkhead" | "other" = "other";
+  // собственные поля объекта
+  item.querySelectorAll(":scope > customFields field").forEach(x => {
+    const n = x.getAttribute("name");
+    if (n) f[n] = x.getAttribute("value") ?? "";
+  });
+  item.querySelectorAll(":scope > ventModesData > ventModeData").forEach(vm => {
+    const type = vm.getAttribute("type") ?? "";
+    const fields = vm.querySelectorAll("field");
+    if (fields.length === 0) return;
+    fields.forEach(x => {
+      const n = x.getAttribute("name");
+      if (n) f[n] = x.getAttribute("value") ?? "";
+    });
+    if (type === "Fans") kind = "fan";
+    else if (type === "Bulkheads" && kind !== "fan") kind = "bulkhead";
+  });
+  const code = item.getAttribute("itemCode") ?? "";
+  // Резерв: если блоков режима нет вовсе — опираемся на набор полей и код.
+  if (kind === "other") {
+    const keys = Object.keys(f).join(" ");
+    if (/Ventilator|FanPressure/.test(keys) || code === ITEM_FAN) kind = "fan";
+    else if (/Bulkhead/.test(keys) || code === ITEM_BULKHEAD) kind = "bulkhead";
+  }
+  return { kind, f, code };
 }
 
 /** ARGB-цвет АэроСети («#FF808000») → HEX без альфы («#808000»). */
@@ -174,9 +274,16 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   // ── Слои → горизонты ──────────────────────────────────────────────────────
   // Слой АэроСети — это группа выработок (Стволы, Слой 1). Отметку слоя файл
   // не хранит, поэтому z горизонта вычислим ниже как медиану отметок его узлов.
+  interface RawItem {
+    kind: "fan" | "bulkhead" | "other";
+    code: string;
+    f: Record<string, string>;
+    offset: number;      // segmentOffset — расстояние от начала ветви в единицах экрана
+    reversed: boolean;
+  }
   interface RawBranch {
     id: string; fromId: string; toId: string; horizonId: string;
-    f: Record<string, string>; items: string[]; thickness: number;
+    f: Record<string, string>; items: RawItem[]; thickness: number;
   }
   const rawBranches: RawBranch[] = [];
   const horizonMeta: { id: string; name: string; color: string; visible: boolean; order: number }[] = [];
@@ -199,10 +306,16 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       const fromId = rib.getAttribute("fromNode");
       const toId = rib.getAttribute("toNode");
       if (!id || !fromId || !toId) return;
-      const items: string[] = [];
+      const items: RawItem[] = [];
       rib.querySelectorAll("ribItem").forEach(it => {
-        const c = it.getAttribute("itemCode");
-        if (c) items.push(c);
+        const parsed = readRibItem(it);
+        items.push({
+          kind: parsed.kind,
+          code: parsed.code,
+          f: parsed.f,
+          offset: num(it.getAttribute("segmentOffset"), -1),
+          reversed: bool(it.getAttribute("isReversed")),
+        });
       });
       rawBranches.push({ id, fromId, toId, horizonId: lid, f: readFields(rib), items, thickness: num(rib.getAttribute("thickness"), 3) });
     });
@@ -296,7 +409,18 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
 
   // ── Сборка ветвей ─────────────────────────────────────────────────────────
   const branches: TopoBranch[] = [];
+  const outBulkheads: ErpBulkhead[] = [];
+  const outFans: ErpFan[] = [];
   let fans = 0, bulkheads = 0, skipped = 0, branchNum = 1;
+
+  // Степень узла нужна для распознавания ВМП: вентилятор местного
+  // проветривания стоит в тупиковой ветви (у забоя), ГВУ — на выходе на
+  // поверхность, ВВУ — в подземной сети.
+  const degree = new Map<string, number>();
+  for (const rb of rawBranches) {
+    degree.set(rb.fromId, (degree.get(rb.fromId) ?? 0) + 1);
+    degree.set(rb.toId, (degree.get(rb.toId) ?? 0) + 1);
+  }
 
   for (const rb of rawBranches) {
     const fromId = idMap.get(rb.fromId);
@@ -317,15 +441,67 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     const rMode = String(f["Airflow.AirResistanceCalculationType"] ?? "");
     const useManualR = rMode === "2" && rUser > 0;
 
-    const hasFan = rb.items.includes(ITEM_FAN);
-    const hasBulkhead = rb.items.includes(ITEM_BULKHEAD);
-    if (hasFan) fans++;
-    if (hasBulkhead) bulkheads++;
+    // ── Объекты на ветви ──────────────────────────────────────────────────
+    // Раньше искали строго itemCode 8/16 — в реальном проекте коды другие,
+    // поэтому перемычки терялись, а вентиляторы распознавались частично.
+    const fanItems = rb.items.filter(it => it.kind === "fan");
+    const bkItems  = rb.items.filter(it => it.kind === "bulkhead");
+    const hasFan = fanItems.length > 0;
+    const hasBulkhead = bkItems.length > 0;
+    if (hasFan) fans += fanItems.length;
+    if (hasBulkhead) bulkheads += bkItems.length;
+
+    // Поля вентилятора берём из самого объекта (в ветви их нет).
+    const ff = fanItems[0]?.f ?? {};
+    const bf = bkItems[0]?.f ?? {};
 
     // Депрессия вентилятора: в АэроСети Па, у нас тоже Па.
-    const fanPressure = num(f["Airflow.FanPressure"], 0) || num(f["Airflow.IdealVentilatorPressure"], 0);
+    const fanPressure = num(ff["Airflow.FanPressure"], 0) || num(ff["Airflow.IdealVentilatorPressure"], 0);
 
-    branches.push(makeBranch(`b_erp_${branchNum}`, fromId, toId, {
+    // ── Назначение вентилятора: ГВУ / ВВУ / ВМП ───────────────────────────
+    // Раньше всем ставился тип по умолчанию «ГВУ», из-за чего ВМП на схеме
+    // рисовались значком вентиляторной установки.
+    // Правила (по смыслу вентиляционной сети):
+    //   ВМП — ветвь тупиковая (один из узлов больше никуда не ведёт) либо
+    //         вентилятор установлен в трубопроводе (InstallationType=1);
+    //   ГВУ — ветвь связана с поверхностью (узел с выходом в атмосферу);
+    //   ВВУ — всё остальное (подземная вспомогательная установка).
+    const aRaw = rawNodes.get(rb.fromId), bRaw = rawNodes.get(rb.toId);
+    const isDeadEnd = (degree.get(rb.fromId) ?? 0) === 1 || (degree.get(rb.toId) ?? 0) === 1;
+    const touchesSurface = !!aRaw?.atm || !!bRaw?.atm;
+    const installType = String(ff["Airflow.VentilatorInstallationType"] ?? "");
+    const fanType: "ГВУ" | "ВВУ" | "ВМП" =
+      (isDeadEnd || installType === "1") ? "ВМП"
+      : touchesSurface ? "ГВУ"
+      : "ВВУ";
+
+    const branchId = `b_erp_${branchNum}`;
+
+    // Длина ветви в единицах экрана — чтобы перевести segmentOffset объекта
+    // в относительную позицию 0..1 вдоль ветви.
+    const screenLen = aRaw && bRaw ? Math.hypot(bRaw.x - aRaw.x, bRaw.y - aRaw.y) : 0;
+    const posOf = (offset: number) =>
+      screenLen > 1e-6 && offset >= 0 ? Math.min(0.95, Math.max(0.05, offset / screenLen)) : 0.5;
+
+    for (const it of fanItems) {
+      outFans.push({ branchId, t: posOf(it.offset), fanType, name: f["Rib.Name"] || "Вентилятор" });
+    }
+    for (const it of bkItems) {
+      const r = num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
+             || num(it.f["Airflow.BulkheadCalculatedResistance"], 0);
+      outBulkheads.push({
+        branchId,
+        t: posOf(it.offset),
+        typeId: bulkheadTypeIdByCode(it.code),
+        name: "Перемычка",
+        rKmu: r,
+        airPerm: num(it.f["Airflow.BlindBulkheadUserDefinedPermeability"], 0),
+        surveyQ: num(it.f["Airflow.BulkheadDepressionSurveyDischarge"], 0),
+        reversed: it.reversed,
+      });
+    }
+
+    branches.push(makeBranch(branchId, fromId, toId, {
       type: f["Rib.Name"] || rt?.name || "",
       // Сечение и периметр берём как есть — в АэроСети они уже в м² и м.
       // Форму «custom» ставим потому, что файл хранит готовые S и P, а не
@@ -348,24 +524,27 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       lineWidth: Math.max(1, Math.round(rb.thickness / 1.5)),
       // ── Вентилятор ────────────────────────────────────────────────────
       hasFan,
+      fanType,
       fanMode: "constant",
       fanPressure: hasFan ? fanPressure : 0,
       fanName: hasFan ? (f["Rib.Name"] || "Вентилятор") : "",
-      fanEfficiency: hasFan ? num(f["Airflow.IdealVentilatorEfficiency"], 0) : 0,
-      fanParallel: hasFan ? Math.max(1, Math.round(num(f["Airflow.VentilatorsInParallel"], 1))) : 1,
-      fanRpm: hasFan ? num(f["Airflow.VentilatorSpeed"], 0) : 0,
+      fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
+      fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
+      fanRpm: hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0,
+      fanCrossingR: hasFan ? num(ff["Airflow.VentilatorBulkheadResistance"], 0) : 0,
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
       bulkheadName: hasBulkhead ? "Перемычка" : "",
       // АэроСеть хранит сопротивление перемычки в кМюрг — как и наше поле.
       bulkheadR: hasBulkhead
-        ? (num(f["Airflow.BulkheadUserDefinedResistance"], 0) || num(f["Airflow.BulkheadCalculatedResistance"], 0))
+        ? (num(bf["Airflow.BulkheadUserDefinedResistance"], 0) || num(bf["Airflow.BulkheadCalculatedResistance"], 0))
         : 0,
       bulkheadResMode: hasBulkhead ? "manual" : "project",
       bulkheadManualR: hasBulkhead
-        ? (num(f["Airflow.BulkheadUserDefinedResistance"], 0) || num(f["Airflow.BulkheadCalculatedResistance"], 0))
+        ? (num(bf["Airflow.BulkheadUserDefinedResistance"], 0) || num(bf["Airflow.BulkheadCalculatedResistance"], 0))
         : 0,
-      bulkheadSurveyQ: hasBulkhead ? num(f["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,
+      bulkheadAirPerm: hasBulkhead ? num(bf["Airflow.BlindBulkheadUserDefinedPermeability"], 0) : 0,
+      bulkheadSurveyQ: hasBulkhead ? num(bf["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,
       comment: f["Rib.Comment"] ?? "",
     }));
     branchNum++;
@@ -374,12 +553,15 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   if (skipped > 0) warnings.push(`Пропущено выработок без узлов: ${skipped}`);
   if (nodes.every(n => n.z === 0)) warnings.push("У всех узлов нулевая отметка — в проекте не заданы глубины");
 
-  log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans}, перемычек ${bulkheads}`);
+  const byType = outFans.reduce<Record<string, number>>((a, x) => { a[x.fanType] = (a[x.fanType] ?? 0) + 1; return a; }, {});
+  log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans} (${Object.entries(byType).map(([k, v]) => `${k}: ${v}`).join(", ") || "—"}), перемычек ${bulkheads}`);
 
   return {
     nodes,
     branches,
     horizons,
+    bulkheads: outBulkheads,
+    fans: outFans,
     warnings,
     stats: { nodes: nodes.length, branches: branches.length, fans, bulkheads, horizons: horizons.length },
     debug: log.join("\n"),
