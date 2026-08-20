@@ -51,51 +51,9 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
             <div className="font-semibold text-green-800 mb-1">Что переносится из файла:</div>
             <div className="text-green-700">Узлы с отметками, выработки, сечения и периметры</div>
             <div className="text-green-700">Сопротивления, расходы воздуха, слои-горизонты</div>
-            <div className="text-green-700">Вентиляторы, перемычки, позиции ПЛА с выносками</div>
+            <div className="text-green-700">Вентиляторы и перемычки</div>
             <div className="text-gray-500 text-[10px] mt-1">Файл проекта АэроСети целиком — выгружать ничего не нужно</div>
           </div>
-
-          {/* ── Таблица пересчёта единиц ──────────────────────────────────
-              АэроСеть хранит часть величин в СИ, часть — в рудничных единицах.
-              Показываем правила пересчёта, чтобы значения после импорта можно
-              было сверить со свойствами объектов в самой АэроСети. */}
-          <details className="rounded-lg border overflow-hidden" style={{ borderColor: "var(--c-b2, #d1d5db)" }}>
-            <summary className="px-3 py-2 text-[11px] font-semibold cursor-pointer select-none text-gray-700"
-              style={{ background: "var(--c-s2, #fafafa)" }}>
-              Единицы измерения при переносе
-            </summary>
-            <table className="w-full text-[10px]">
-              <thead>
-                <tr className="text-gray-500" style={{ background: "var(--c-s2, #fafafa)" }}>
-                  <th className="text-left px-3 py-1 font-medium">Величина</th>
-                  <th className="text-left px-2 py-1 font-medium">В АэроСети</th>
-                  <th className="text-left px-2 py-1 font-medium">У нас</th>
-                  <th className="text-right px-3 py-1 font-medium">Пересчёт</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[
-                  ["Сопротивление выработок", "Н·с²/м⁸", "кМюрг", "÷ 9,81"],
-                  ["Коэффициент α", "Н·с²/м⁴", "×10⁻⁴", "÷ 9,81"],
-                  ["Сопротивление перемычек", "кМюрг", "кМюрг", "как есть"],
-                  ["Напор вентиляторов", "мм вод. ст.", "Па", "× 9,81"],
-                  ["Давление в узлах", "мм вод. ст.", "Па", "× 9,81"],
-                  ["Сечение, длина, расход", "м², м, м³/с", "то же", "как есть"],
-                ].map(([a, b, c, d], i) => (
-                  <tr key={a} style={{ background: i % 2 ? "var(--c-s2, #fafafa)" : "transparent" }}>
-                    <td className="px-3 py-1 text-gray-700">{a}</td>
-                    <td className="px-2 py-1 text-gray-500">{b}</td>
-                    <td className="px-2 py-1 text-gray-500">{c}</td>
-                    <td className="px-3 py-1 text-right font-medium text-gray-700">{d}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-            <div className="px-3 py-1.5 text-[9px] text-gray-500" style={{ background: "var(--c-s2, #fafafa)" }}>
-              Сопротивление выработок АэроСеть вычисляет сама и хранит в СИ, а сопротивление
-              перемычек задаёт пользователь сразу в рудничных единицах — поэтому правила разные.
-            </div>
-          </details>
 
           <div
             className="border-2 border-dashed rounded-lg flex flex-col items-center justify-center cursor-pointer transition-colors py-6"
@@ -120,14 +78,13 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
 
           {result && (
             <div className="space-y-3">
-              <div className="grid grid-cols-6 gap-1.5">
+              <div className="grid grid-cols-5 gap-1.5">
                 {[
                   { label: "Узлов", value: result.stats.nodes },
                   { label: "Ветвей", value: result.stats.branches },
                   { label: "Гориз.", value: result.stats.horizons },
                   { label: "Вент.", value: result.stats.fans },
                   { label: "Перем.", value: result.stats.bulkheads },
-                  { label: "Позиций", value: result.stats.positions },
                 ].map(s => (
                   <div key={s.label} className="rounded px-1 py-2 text-center border"
                     style={{ background: s.value > 0 ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s2, #f9f9f9)", borderColor: s.value > 0 ? "#86efac" : "var(--c-b1, #e0e0e0)" }}>
