@@ -627,9 +627,15 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     // Поля вентилятора берём из самого объекта (в ветви их нет).
     const ff = fanItems[0]?.f ?? {};
     const bf = bkItems[0]?.f ?? {};
-    // R перемычки в файле — в СИ (Н·с²/м⁸), наше поле — в кМюрг.
-    const bkR = +((num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
-               || num(bf["Airflow.BulkheadCalculatedResistance"], 0)) / PA_PER_MM_H2O).toFixed(6);
+    // ВНИМАНИЕ: у перемычек единицы ДРУГИЕ, чем у выработок.
+    // Сопротивление выработки АэроСеть вычисляет по α, а α хранит в СИ —
+    // поэтому R выработки в файле тоже в СИ и требует деления на 9,81.
+    // А сопротивление вентсооружения пользователь задаёт прямо в РУДНИЧНЫХ
+    // кМюрг, и в файл оно попадает без пересчёта: в окне АэроСети у двери
+    // стоит R = 2 кМюрг, и в файле лежит 2,49 — того же порядка, а не в 9,81
+    // раза больше. Поэтому здесь берём значение КАК ЕСТЬ.
+    const bkR = +(num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
+               || num(bf["Airflow.BulkheadCalculatedResistance"], 0)).toFixed(6);
 
     // ── Напор вентилятора ─────────────────────────────────────────────────
     // В файле он записан в мм вод. ст. (кгс/м²) — тех же рудничных единицах,
@@ -672,9 +678,10 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       outFans.push({ branchId, t: posOf(it.offset), fanType, name: f["Rib.Name"] || "Вентилятор" });
     }
     for (const it of bkItems) {
-      // Перевод СИ → кМюрг, как и у сопротивления выработок.
-      const r = +((num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
-               || num(it.f["Airflow.BulkheadCalculatedResistance"], 0)) / PA_PER_MM_H2O).toFixed(6);
+      // R вентсооружения в файле уже в кМюрг — берём как есть (см. пояснение
+      // выше: у перемычек единицы не такие, как у выработок).
+      const r = +(num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
+               || num(it.f["Airflow.BulkheadCalculatedResistance"], 0)).toFixed(6);
       outBulkheads.push({
         branchId,
         t: posOf(it.offset),
@@ -717,8 +724,9 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
       fanRpm: hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0,
-      // Сопротивление перемычки вентилятора — в файле в СИ, у нас в кМюрг.
-      fanCrossingR: hasFan ? +(num(ff["Airflow.VentilatorBulkheadResistance"], 0) / PA_PER_MM_H2O).toFixed(4) : 0,
+      // Перемычка вентилятора — как и прочие вентсооружения, задаётся сразу
+      // в кМюрг (в файле стандартное 1000), пересчёт не нужен.
+      fanCrossingR: hasFan ? num(ff["Airflow.VentilatorBulkheadResistance"], 0) : 0,
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
       bulkheadName: hasBulkhead ? "Перемычка" : "",
@@ -850,7 +858,7 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   if (noArea > 0) warnings.push(`Выработок без сечения: ${noArea} — задайте площадь, иначе сопротивление не рассчитается`);
   if (noLen > 0)  warnings.push(`Выработок с нулевой длиной: ${noLen}`);
   if (noPer > 0)  warnings.push(`Выработок без периметра: ${noPer}`);
-  log.push(`единицы: R и α ÷${PA_PER_MM_H2O} (СИ → кМюрг), напор и давления ×${PA_PER_MM_H2O} (мм вод. ст. → Па)`);
+  log.push(`единицы: R и α выработок ÷${PA_PER_MM_H2O} (СИ → кМюрг); R перемычек — как в файле (кМюрг); напор и давления ×${PA_PER_MM_H2O} → Па`);
   log.push(`ветвей без S: ${noArea}, без P: ${noPer}, без L: ${noLen}`);
 
   const byType = outFans.reduce<Record<string, number>>((a, x) => { a[x.fanType] = (a[x.fanType] ?? 0) + 1; return a; }, {});
