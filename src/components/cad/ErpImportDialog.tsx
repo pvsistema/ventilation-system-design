@@ -51,7 +51,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
             <div className="font-semibold text-green-800 mb-1">Что переносится из файла:</div>
             <div className="text-green-700">Узлы с отметками, выработки, сечения и периметры</div>
             <div className="text-green-700">Сопротивления, расходы воздуха, слои-горизонты</div>
-            <div className="text-green-700">Вентиляторы и перемычки</div>
+            <div className="text-green-700">Вентиляторы, перемычки, позиции ПЛА с выносками</div>
             <div className="text-gray-500 text-[10px] mt-1">Файл проекта АэроСети целиком — выгружать ничего не нужно</div>
           </div>
 
@@ -78,13 +78,14 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
 
           {result && (
             <div className="space-y-3">
-              <div className="grid grid-cols-5 gap-1.5">
+              <div className="grid grid-cols-6 gap-1.5">
                 {[
                   { label: "Узлов", value: result.stats.nodes },
                   { label: "Ветвей", value: result.stats.branches },
                   { label: "Гориз.", value: result.stats.horizons },
                   { label: "Вент.", value: result.stats.fans },
                   { label: "Перем.", value: result.stats.bulkheads },
+                  { label: "Позиций", value: result.stats.positions },
                 ].map(s => (
                   <div key={s.label} className="rounded px-1 py-2 text-center border"
                     style={{ background: s.value > 0 ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s2, #f9f9f9)", borderColor: s.value > 0 ? "#86efac" : "var(--c-b1, #e0e0e0)" }}>

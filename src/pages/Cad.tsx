@@ -2118,11 +2118,48 @@ export default function CadPage() {
         }));
     };
 
+    // Позиции ПЛА: номер, цвет, вид аварии, режим проветривания, привязка к
+    // выработкам и выноски (включая дублирующие) переносятся как есть.
+    const erpPositions = (existing: Position[]): Position[] => {
+      const busy = new Set(existing.map(p => p.number));
+      let free = existing.length > 0 ? Math.max(...existing.map(p => p.number)) + 1 : 1;
+      return result.positions.map(rp => {
+        // Цвет из файла оставляем как есть, если он читаемый; иначе подбираем
+        // пару из палитры программы.
+        const pal = matchPositionColor(rp.borderColor || rp.color);
+        let number = rp.number;
+        if (busy.has(number)) { number = free++; }
+        busy.add(number);
+        return makePosition({
+          number,
+          name: rp.name,
+          x: rp.x, y: rp.y, z: rp.z,
+          placed: true,
+          color: rp.color || pal.color,
+          borderColor: rp.borderColor || pal.border,
+          diameter: rp.diameter,
+          font: rp.font,
+          accidentType: (ACCIDENT_TYPES.find(a => a === rp.accidentType) ?? "Пожар") as Position["accidentType"],
+          positionType: rp.positionType,
+          ventMode: rp.ventMode || "Режим проветривания 1",
+          isMineWide: rp.isMineWide,
+          branchIds: rp.branchIds,
+          leaderBranchId: rp.leaderBranchId,
+          leaderT: rp.leaderT,
+          extraLeaders: rp.extraLeaders.map((l, i) => ({
+            id: `LD_${Date.now()}_${i}_${Math.random().toString(36).slice(2, 6)}`,
+            branchId: l.branchId, t: l.t, endX: l.endX, endY: l.endY,
+          })),
+        });
+      });
+    };
+
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
       const fanSyms = erpFanSymbols([]);
       setSchemaSymbols([...fanSyms, ...erpBulkheadSymbols(fanSyms)]);
+      setPositions(erpPositions([]));
       if (result.horizons.length > 0) setHorizons(result.horizons);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
@@ -2132,6 +2169,7 @@ export default function CadPage() {
         const fanSyms = erpFanSymbols(prev);
         return [...prev, ...fanSyms, ...erpBulkheadSymbols([...prev, ...fanSyms])];
       });
+      setPositions(prev => [...prev, ...erpPositions(prev)]);
       setHorizons(prev => {
         const have = new Set(prev.map(h => h.id));
         return [...prev, ...result.horizons.filter(h => !have.has(h.id))];

@@ -65,14 +65,42 @@ export interface ErpFan {
   name: string;
 }
 
+/** Дополнительная выноска позиции (в АэроСети — «тень» позиции). */
+export interface ErpLeader {
+  branchId: string | null;
+  t: number | null;
+  endX: number | null;
+  endY: number | null;
+}
+
+/** Позиция ПЛА из проекта АэроСеть. */
+export interface ErpPosition {
+  number: number;
+  name: string;
+  x: number; y: number; z: number;
+  color: string;
+  borderColor: string;
+  diameter: number;               // мм
+  font: string;
+  accidentType: string;           // «Пожар» / «Взрыв» / …
+  positionType: "normal" | "reverse";
+  ventMode: string;
+  isMineWide: boolean;
+  branchIds: string[];            // привязанные выработки
+  leaderBranchId: string | null;  // основная выноска: ветвь
+  leaderT: number | null;         // и положение вдоль неё
+  extraLeaders: ErpLeader[];      // дублирующие выноски
+}
+
 export interface ErpImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
   bulkheads: ErpBulkhead[];
   fans: ErpFan[];
+  positions: ErpPosition[];
   warnings: string[];
-  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number };
+  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number };
   debug: string;
 }
 
@@ -195,6 +223,19 @@ function readRibItem(item: Element): { kind: "fan" | "bulkhead" | "other"; f: Re
     else if (/Bulkhead/.test(keys) || code === ITEM_BULKHEAD) kind = "bulkhead";
   }
   return { kind, f, code };
+}
+
+/**
+ * Цвет позиции хранится ЧИСЛОМ .NET (Int32 ARGB со знаком): −65536 = красный,
+ * −256 = жёлтый. Переводим в обычный HEX.
+ */
+function intColorToHex(v: string | null | undefined): string {
+  if (v == null || v === "") return "";
+  const n = parseInt(String(v), 10);
+  if (!Number.isFinite(n)) return "";
+  const u = n < 0 ? n + 0x100000000 : n;
+  const hex = (u & 0xffffff).toString(16).padStart(6, "0");
+  return "#" + hex.toUpperCase();
 }
 
 /** ARGB-цвет АэроСети («#FF808000») → HEX без альфы («#808000»). */
@@ -323,51 +364,83 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   log.push(`слоёв: ${horizonMeta.length}, ветвей: ${rawBranches.length}`);
   if (rawBranches.length === 0) throw new Error("В файле не найдено ни одной выработки");
 
-  // ── Масштаб координат ─────────────────────────────────────────────────────
-  // Отношение «заданная длина ветви / расстояние между её узлами в плане».
-  // Берём МЕДИАНУ по горизонтальным ветвям: у наклонных часть длины приходится
-  // на перепад высот, и они исказили бы оценку. Если таких ветвей нет —
-  // оставляем 1 и предупреждаем: геометрия может не совпасть с длинами.
-  const ratios: number[] = [];
-  for (const rb of rawBranches) {
-    const a = rawNodes.get(rb.fromId), b = rawNodes.get(rb.toId);
-    if (!a || !b) continue;
-    if (Math.abs(a.z - b.z) > 0.5) continue;           // только горизонтальные
-    const d = Math.hypot(b.x - a.x, b.y - a.y);
-    const L = num(rb.f["Airflow.UserDefinedRibLength"]);
-    if (d > 1e-6 && L > 1e-6) ratios.push(L / d);
-  }
-  let scale = 1;
-  if (ratios.length > 0) {
-    ratios.sort((p, q) => p - q);
-    scale = ratios[Math.floor(ratios.length / 2)];
-    log.push(`масштаб координат: ${scale.toFixed(4)} (по ${ratios.length} горизонт. ветвям)`);
-  } else {
-    warnings.push("Не удалось определить масштаб координат — план может не совпасть с длинами выработок");
-  }
+  // ── Обратная косоугольная проекция ────────────────────────────────────────
+  // АэроСеть хранит НЕ метры, а экранные координаты своей косоугольной
+  // проекции. Параметры лежат в <settings>:
+  //   OYAngle        — угол, под которым рисуется плановая ось Y;
+  //   OYDistortion   — её сжатие;
+  //   OZDistortion   — растяжение высот (в разрезах бывает 7,5 — вертикаль
+  //                    намеренно вытянута, чтобы горизонты не сливались);
+  //   GroundRotationAngle — поворот плана.
+  // Прямое преобразование (единицы экрана, ось Y вниз):
+  //   sx =  u·(X' + Y'·cos(OY)·kY)
+  //   sy = −u·(Y'·sin(OY)·kY + Z·kZ)
+  // где (X',Y') — план после поворота, u — единиц экрана на метр.
+  //
+  // Раньше формат считался «плоским» (kZ = 1, поворота нет), и большая схема
+  // с OZDistortion = 7,5 растягивалась по высоте в 7,5 раза, а план ещё и
+  // оказывался повёрнутым. Теперь проекцию разворачиваем честно.
+  const settings = new Map<string, number>();
+  doc.querySelectorAll("settings > setting").forEach(s => {
+    const k = s.getAttribute("key");
+    if (k) settings.set(k, num(s.getAttribute("value")));
+  });
+  const oyAngle = settings.get("OYAngle") ?? Math.PI / 2;
+  const oyDist  = settings.get("OYDistortion") ?? 1;
+  const ozDist  = settings.get("OZDistortion") ?? 1;
+  const ground  = settings.get("GroundRotationAngle") ?? 0;
+  const sinOY = Math.sin(oyAngle) * oyDist;
+  const cosOY = Math.cos(oyAngle) * oyDist;
 
-  // ── Разделение экранной оси Y на «план» и «глубину» ───────────────────────
-  // КЛЮЧЕВОЙ момент формата. АэроСеть рисует схему в косоугольной проекции
-  // (ProjectionType=1, OverheadAngle=90°), поэтому экранная координата Y — не
-  // плановая координата, а СМЕСЬ плановой Y и высотной отметки Z.
-  //
-  // Проверено на образце: у всех узлов −y_экр·масштаб в точности равен отметке
-  // z (−472,44·1,0583 = −500, а отметка узла +500). Экранная ось Y направлена
-  // ВНИЗ, поэтому вклад высоты входит в неё со знаком минус. Если взять y_экр
-  // как план, перепад высот учтётся ДВАЖДЫ: ствол длиной 500 м получит
-  // геометрическую длину 707 м, и все длины, углы наклона и сопротивления
-  // «поедут».
-  //
-  // Поэтому вычитаем вклад высоты: остаток и есть плановая координата. Для
-  // вертикального разреза он равен нулю (схема плоская), для схемы с планом —
-  // даёт настоящую Y.
-  const residuals: number[] = [];
-  rawNodes.forEach(rn => residuals.push(rn.y * scale + rn.z));
-  const maxResidual = residuals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-  const planarView = maxResidual < 0.5;
-  log.push(planarView
-    ? "проекция: вертикальный разрез (плановая Y отсутствует)"
-    : `проекция: с плановой Y (макс. остаток ${maxResidual.toFixed(1)} м)`);
+  /** Экранные координаты узла/позиции → метры плана (X, Y) при данном u. */
+  const unproject = (sx: number, sy: number, z: number, u: number): { x: number; y: number } => {
+    if (Math.abs(sinOY) < 1e-9 || u < 1e-9) return { x: sx, y: 0 };
+    const yp = (-sy / u - z * ozDist) / sinOY;
+    const xp = sx / u - yp * cosOY;
+    return {
+      x: Math.cos(ground) * xp - Math.sin(ground) * yp,
+      y: Math.sin(ground) * xp + Math.cos(ground) * yp,
+    };
+  };
+
+  // Единиц экрана на метр (u) подбираем по данным: перебираем и берём то
+  // значение, при котором длины ветвей из файла лучше всего сходятся с
+  // геометрией. Так импорт не зависит от настроек экспорта конкретного ПК.
+  const lenSamples = rawBranches
+    .map(rb => ({ a: rawNodes.get(rb.fromId), b: rawNodes.get(rb.toId), L: num(rb.f["Airflow.UserDefinedRibLength"]) }))
+    .filter(s => s.a && s.b && s.L > 1);
+  const medianErr = (u: number): number => {
+    const errs: number[] = [];
+    for (const s of lenSamples) {
+      const p = unproject(s.a!.x, s.a!.y, s.a!.z, u);
+      const q = unproject(s.b!.x, s.b!.y, s.b!.z, u);
+      const d = Math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (s.b!.z - s.a!.z) ** 2);
+      errs.push(Math.abs(d - s.L) / s.L);
+    }
+    if (errs.length === 0) return Infinity;
+    errs.sort((m, n) => m - n);
+    return errs[Math.floor(errs.length / 2)];
+  };
+  let unit = 1 / 0.2646;              // по умолчанию 96 dpi (единиц экрана на метр)
+  if (lenSamples.length > 0) {
+    let best = Infinity;
+    for (let i = 1; i <= 400; i++) {          // грубый проход 0,02…8
+      const u = i * 0.02;
+      const e = medianErr(u);
+      if (e < best) { best = e; unit = u; }
+    }
+    for (let i = -20; i <= 20; i++) {         // уточнение вокруг найденного
+      const u = unit + i * 0.002;
+      if (u <= 0) continue;
+      const e = medianErr(u);
+      if (e < best) { best = e; unit = u; }
+    }
+    log.push(`проекция: OY=${(oyAngle * 180 / Math.PI).toFixed(1)}°, kZ=${ozDist}, поворот=${(ground * 180 / Math.PI).toFixed(1)}°`);
+    log.push(`масштаб: ${unit.toFixed(3)} ед/м (расхождение длин ${(best * 100).toFixed(1)}%)`);
+    if (best > 0.25) warnings.push("Геометрия схемы расходится с заданными длинами выработок — расчёт ведётся по длинам из файла");
+  } else {
+    warnings.push("В файле нет заданных длин выработок — масштаб плана принят приблизительным");
+  }
 
   // ── Сборка узлов ──────────────────────────────────────────────────────────
   const idMap = new Map<string, string>();
@@ -376,9 +449,10 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   rawNodes.forEach(rn => {
     const newId = `n_erp_${nodeNum}`;
     idMap.set(rn.id, newId);
+    const p = unproject(rn.x, rn.y, rn.z, unit);
     nodes.push(makeNode(newId, {
-      x: +(rn.x * scale).toFixed(2),
-      y: planarView ? 0 : +(-(rn.y * scale + rn.z)).toFixed(2),
+      x: +p.x.toFixed(2),
+      y: +p.y.toFixed(2),
       z: +rn.z.toFixed(2),
       name: rn.name,
       number: rn.number || String(nodeNum),
@@ -411,6 +485,9 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   const branches: TopoBranch[] = [];
   const outBulkheads: ErpBulkhead[] = [];
   const outFans: ErpFan[] = [];
+  // Соответствие «id выработки в файле → наш id ветви» и её длина на экране:
+  // нужны, чтобы привязать позиции ПЛА к выработкам и найти место выноски.
+  const ribIdMap = new Map<string, { branchId: string; screenLen: number }>();
   let fans = 0, bulkheads = 0, skipped = 0, branchNum = 1;
 
   // Степень узла нужна для распознавания ВМП: вентилятор местного
@@ -483,6 +560,8 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     const posOf = (offset: number) =>
       screenLen > 1e-6 && offset >= 0 ? Math.min(0.95, Math.max(0.05, offset / screenLen)) : 0.5;
 
+    ribIdMap.set(rb.id, { branchId, screenLen });
+
     for (const it of fanItems) {
       outFans.push({ branchId, t: posOf(it.offset), fanType, name: f["Rib.Name"] || "Вентилятор" });
     }
@@ -550,6 +629,112 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     branchNum++;
   }
 
+  // ── Позиции ПЛА ───────────────────────────────────────────────────────────
+  // Позиции лежат ОТДЕЛЬНО от вентиляционной сети — в <nodes><node itemCode>:
+  //   1001 — сама позиция (номер, цвет, вид аварии, привязанные выработки),
+  //   1006 — «тень» позиции: дублирующая выноска той же позиции на другом
+  //          участке схемы (ссылается на основную через MainPositionId),
+  //   1003/1004/1101 — легенда, текстовая заметка, таблица (не позиции).
+  // Выноска задаётся <refMark ribId segmentOffset> — как и объекты на ветви.
+  const ventModeNames = new Map<string, string>();
+  const vmEntry = zip.file(/ErpVentModes\.DataDocument$/i)[0];
+  if (vmEntry) {
+    const vmDoc = new DOMParser().parseFromString(decodeXml(await vmEntry.async("uint8array")), "application/xml");
+    vmDoc.querySelectorAll("ventMode").forEach(v => {
+      const id = v.getAttribute("id");
+      if (id) ventModeNames.set(id, v.getAttribute("name") ?? "");
+    });
+  }
+
+  const ACCIDENTS: Record<string, string> = {
+    "0": "Нет", "1": "Пожар", "2": "Взрыв", "3": "Внезапный выброс", "4": "Загазирование",
+  };
+
+  const positions: ErpPosition[] = [];
+  const shadowsByMain = new Map<string, ErpLeader[]>();
+  const posElems: Element[] = [];
+
+  const leaderOf = (n: Element): ErpLeader | null => {
+    const rm = n.querySelector("refMarks > refMark");
+    if (!rm) return null;
+    const ribId = rm.getAttribute("ribId") ?? "";
+    const link = ribIdMap.get(ribId);
+    if (link) {
+      const off = num(rm.getAttribute("segmentOffset"), -1);
+      const t = link.screenLen > 1e-6 && off >= 0
+        ? Math.min(1, Math.max(0, off / link.screenLen)) : 0.5;
+      return { branchId: link.branchId, t: +t.toFixed(4), endX: null, endY: null };
+    }
+    return null;
+  };
+
+  doc.querySelectorAll("nodes > node").forEach(n => {
+    const code = n.getAttribute("itemCode") ?? "";
+    if (code === "1001") { posElems.push(n); return; }
+    if (code === "1006") {
+      const f = readFields(n);
+      const main = f["PlanPositionShadow.MainPositionId"] ?? "";
+      const l = leaderOf(n);
+      if (main && l) {
+        if (!shadowsByMain.has(main)) shadowsByMain.set(main, []);
+        shadowsByMain.get(main)!.push(l);
+      }
+    }
+  });
+
+  let skippedPos = 0;
+  for (const n of posElems) {
+    const f = readFields(n);
+    const rawNumber = (f["PlanPosition.Name"] ?? "").trim();
+    const numParsed = parseInt(rawNumber.replace(/\D+/g, ""), 10);
+
+    // Привязанные выработки: «ribId#True;ribId#True…»
+    const branchIds: string[] = [];
+    for (const part of (f["PlanPosition.PositionRibs"] ?? "").split(";")) {
+      const rid = part.split("#")[0].trim();
+      const link = rid ? ribIdMap.get(rid) : undefined;
+      if (link) branchIds.push(link.branchId);
+    }
+
+    const main = leaderOf(n);
+    // Если явной выноски нет — цепляем к первой привязанной выработке,
+    // иначе маркер повиснет в стороне от схемы.
+    const leaderBranchId = main?.branchId ?? branchIds[0] ?? null;
+    const leaderT = main?.t ?? (branchIds[0] ? 0.5 : null);
+    if (!leaderBranchId) skippedPos++;
+
+    // Радиус в файле — в экранных единицах; диаметр маркера у нас в мм.
+    const radius = num(f["PlanPosition.Radius"], 0);
+    const diameter = radius > 0 ? +(radius * 2 * 0.2646).toFixed(1) : 13;
+
+    // Координаты маркера разворачиваем той же обратной проекцией, что и узлы,
+    // иначе позиции лягут в стороне от схемы.
+    const posZ = num(n.getAttribute("z"));
+    const posXY = unproject(num(n.getAttribute("x")), num(n.getAttribute("y")), posZ, unit);
+
+    positions.push({
+      number: Number.isFinite(numParsed) ? numParsed : positions.length + 1,
+      name: rawNumber,
+      x: +posXY.x.toFixed(2),
+      y: +posXY.y.toFixed(2),
+      z: posZ,
+      color: intColorToHex(f["PlanPosition.BackgroundColor"]),
+      borderColor: intColorToHex(f["PlanPosition.BorderColor"]),
+      diameter,
+      font: f["PlanPosition.FontFamily"] || "GOST type A",
+      accidentType: ACCIDENTS[String(f["Position.AccidentType"] ?? "")] ?? "Пожар",
+      positionType: bool(f["Position.IsReverse"]) ? "reverse" : "normal",
+      ventMode: ventModeNames.get(f["Position.VentMode"] ?? "") ?? "",
+      isMineWide: bool(f["Position.IsAppliedToAllRibs"]),
+      branchIds,
+      leaderBranchId,
+      leaderT,
+      extraLeaders: shadowsByMain.get(n.getAttribute("id") ?? "") ?? [],
+    });
+  }
+  positions.sort((a, b) => a.number - b.number);
+  log.push(`позиций ПЛА: ${positions.length}` + (skippedPos > 0 ? ` (без привязки к выработке: ${skippedPos})` : ""));
+
   if (skipped > 0) warnings.push(`Пропущено выработок без узлов: ${skipped}`);
   if (nodes.every(n => n.z === 0)) warnings.push("У всех узлов нулевая отметка — в проекте не заданы глубины");
 
@@ -562,8 +747,9 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     horizons,
     bulkheads: outBulkheads,
     fans: outFans,
+    positions,
     warnings,
-    stats: { nodes: nodes.length, branches: branches.length, fans, bulkheads, horizons: horizons.length },
+    stats: { nodes: nodes.length, branches: branches.length, fans, bulkheads, horizons: horizons.length, positions: positions.length },
     debug: log.join("\n"),
   };
 }
