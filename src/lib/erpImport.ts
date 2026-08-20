@@ -44,6 +44,7 @@
 
 import JSZip from "jszip";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
+import { PA_PER_MM_H2O } from "@/lib/aerodynamics";
 
 /** Перемычка на ветви: где стоит, каким УО рисовать, какое сопротивление. */
 export interface ErpBulkhead {
@@ -266,16 +267,36 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   if (doc.querySelector("parsererror")) throw new Error("schema.xml повреждён: ошибка разбора XML");
 
-  // ── Справочник типов выработок: имя и максимальная скорость ────────────────
-  const ribTypes = new Map<string, { name: string; vMax: number }>();
+  // ── Справочники: типы выработок, формы сечения, типы крепи ────────────────
+  // Формы сечения нужны, чтобы восстановить ПЕРИМЕТР: в проектах он часто не
+  // задан явно, а считается из площади по коэффициенту формы (P = k·√S).
+  // Без периметра сопротивление по α не считается вовсе — ветви приходили с
+  // нулевым R, как на схеме проверки.
+  const ribTypes = new Map<string, { name: string; vMax: number; sectionId: string; surfaceId: string; area: number }>();
+  const sectionRatio = new Map<string, { name: string; k: number }>();
+  const surfaceAlpha = new Map<string, { name: string; alpha: number }>();
   const rtEntry = zip.file(/RibTypeService\.DataDocument$/i)[0];
   if (rtEntry) {
     const rtDoc = new DOMParser().parseFromString(decodeXml(await rtEntry.async("uint8array")), "application/xml");
     rtDoc.querySelectorAll("ribType").forEach(t => {
       const id = t.getAttribute("id");
-      if (id) ribTypes.set(id, { name: t.getAttribute("name") ?? "", vMax: num(t.getAttribute("defaultMaxAirVelocity"), 0) });
+      if (id) ribTypes.set(id, {
+        name: t.getAttribute("name") ?? "",
+        vMax: num(t.getAttribute("defaultMaxAirVelocity"), 0),
+        sectionId: t.getAttribute("crossSectionTypeId") ?? "",
+        surfaceId: t.getAttribute("surfaceTypeId") ?? "",
+        area: num(t.getAttribute("defaultCrossSectionArea"), 0),
+      });
     });
-    log.push(`типов выработок: ${ribTypes.size}`);
+    rtDoc.querySelectorAll("crossSectionType").forEach(t => {
+      const id = t.getAttribute("id");
+      if (id) sectionRatio.set(id, { name: t.getAttribute("name") ?? "", k: num(t.getAttribute("perimeterToAreaRatio"), 0) });
+    });
+    rtDoc.querySelectorAll("surfaceType").forEach(t => {
+      const id = t.getAttribute("id");
+      if (id) surfaceAlpha.set(id, { name: t.getAttribute("name") ?? "", alpha: num(t.getAttribute("alpha"), 0) });
+    });
+    log.push(`справочники: типов выработок ${ribTypes.size}, форм сечения ${sectionRatio.size}, типов крепи ${surfaceAlpha.size}`);
   }
 
   // ── Узлы ──────────────────────────────────────────────────────────────────
@@ -505,16 +526,53 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     if (!fromId || !toId) { skipped++; continue; }
     const f = rb.f;
 
-    const area = num(f["Airflow.CrossSectionArea"], 0);
-    const perimeter = num(f["Airflow.Perimeter"], 0);
-    const length = num(f["Airflow.UserDefinedRibLength"], 0);
-    const rUser = num(f["Airflow.UserDefinedResistance"], 0);
-    const alpha = num(f["Airflow.Alpha"], 0);
     const rt = ribTypes.get(f["Airflow.RibTypeId"] ?? "");
 
-    // Способ задания сопротивления (Airflow.AirResistanceCalculationType).
-    // По образцу: 2 = задано пользователем (UserDefinedResistance). Прочие
-    // значения означают расчёт по α — тогда переносим α, а R пересчитает солвер.
+    // ── Сечение ───────────────────────────────────────────────────────────
+    // Площадь берём из ветви, иначе — из типа выработки (у 343 ветвей
+    // образца площадь есть, а периметр отсутствует).
+    const area = num(f["Airflow.CrossSectionArea"], 0) || (rt?.area ?? 0);
+    // Периметр: если не задан — восстанавливаем по ФОРМЕ сечения из
+    // справочника: P = k·√S, где k — perimeterToAreaRatio (круг 3,545;
+    // арочное 3,77). Без периметра сопротивление по α не считается и ветвь
+    // приходила с R = 0 — именно это показывала проверка схемы.
+    const sectionId = f["Airflow.CrossSectionTypeId"] || rt?.sectionId || "";
+    const kShape = sectionRatio.get(sectionId)?.k ?? 0;
+    let perimeter = num(f["Airflow.Perimeter"], 0);
+    if (perimeter <= 0 && area > 0 && kShape > 0) perimeter = +(kShape * Math.sqrt(area)).toFixed(2);
+
+    // ── Длина ─────────────────────────────────────────────────────────────
+    // UserDefinedRibLength заполнено только там, где длина задана вручную
+    // (RibLengthIsUserDefined). У остальных ветвей АэроСеть берёт длину из
+    // геометрии — считаем её сами по координатам узлов, иначе L = 0 и
+    // сопротивление снова обнуляется.
+    const lengthManual = bool(f["Airflow.RibLengthIsUserDefined"]);
+    const nA = rawNodes.get(rb.fromId), nB = rawNodes.get(rb.toId);
+    const geomLen = nA && nB
+      ? (() => {
+          const p = unproject(nA.x, nA.y, nA.z, unit);
+          const q = unproject(nB.x, nB.y, nB.z, unit);
+          return Math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (nB.z - nA.z) ** 2);
+        })()
+      : 0;
+    const length = +(num(f["Airflow.UserDefinedRibLength"], 0) || geomLen).toFixed(2);
+
+    // ── Сопротивление: перевод единиц ─────────────────────────────────────
+    // ГЛАВНОЕ отличие форматов. АэроСеть хранит R в СИ (Н·с²/м⁸), а наша
+    // программа — в рудничных кМюрг (кгс·с²/м⁸): 1 кМюрг = 9,81 Н·с²/м⁸.
+    // Проверено на образце: R = 1,971·10⁻⁴ при Q = 56,4 м³/с даёт
+    // ΔP = 0,63, и сумма депрессий контура в точности равна напору
+    // вентилятора 65,55 Па — значит числа в файле паскалевые, то есть СИ.
+    // Раньше значение переносилось «как есть» и сопротивления оказывались
+    // занижены в 9,81 раза.
+    const rUser = num(f["Airflow.UserDefinedResistance"], 0) / PA_PER_MM_H2O;
+    // Коэффициент α в АэроСети — тоже СИ (Н·с²/м⁴, напр. 0,004426), а у нас
+    // он вводится в привычных ×10⁻⁴ кгс·с²/м⁴. Переводим: /9,81 и ×10⁴.
+    const alphaSi = num(f["Airflow.Alpha"], 0) || (surfaceAlpha.get(f["Airflow.SurfaceTypeId"] || rt?.surfaceId || "")?.alpha ?? 0);
+    const alpha = alphaSi > 0 ? +(alphaSi / PA_PER_MM_H2O * 1e4).toFixed(4) : 0;
+
+    // Способ задания сопротивления (Airflow.AirResistanceCalculationType):
+    // 2 — задано пользователем, остальное — расчёт по α (его и переносим).
     const rMode = String(f["Airflow.AirResistanceCalculationType"] ?? "");
     const useManualR = rMode === "2" && rUser > 0;
 
@@ -531,6 +589,9 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     // Поля вентилятора берём из самого объекта (в ветви их нет).
     const ff = fanItems[0]?.f ?? {};
     const bf = bkItems[0]?.f ?? {};
+    // R перемычки в файле — в СИ (Н·с²/м⁸), наше поле — в кМюрг.
+    const bkR = +((num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
+                || num(bf["Airflow.BulkheadCalculatedResistance"], 0)) / PA_PER_MM_H2O).toFixed(6);
 
     // Депрессия вентилятора: в АэроСети Па, у нас тоже Па.
     const fanPressure = num(ff["Airflow.FanPressure"], 0) || num(ff["Airflow.IdealVentilatorPressure"], 0);
@@ -566,8 +627,9 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       outFans.push({ branchId, t: posOf(it.offset), fanType, name: f["Rib.Name"] || "Вентилятор" });
     }
     for (const it of bkItems) {
-      const r = num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
-             || num(it.f["Airflow.BulkheadCalculatedResistance"], 0);
+      // Перевод СИ → кМюрг (файл хранит Н·с²/м⁸, наше поле — кгс·с²/м⁸).
+      const r = +((num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
+                || num(it.f["Airflow.BulkheadCalculatedResistance"], 0)) / PA_PER_MM_H2O).toFixed(6);
       outBulkheads.push({
         branchId,
         t: posOf(it.offset),
@@ -592,11 +654,11 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       manualSection: area > 0 && perimeter > 0,
       dh: area > 0 && perimeter > 0 ? +(4 * area / perimeter).toFixed(3) : 0,
       length,
-      manualLength: bool(f["Airflow.RibLengthIsUserDefined"]) || length > 0,
+      manualLength: lengthManual,
       resistanceMode: useManualR ? "manual" : "alpha",
-      manualR: useManualR ? rUser : 0,
-      alphaCoef: alpha > 0 ? alpha * 1e4 : 0,
-      resistance: rUser,
+      manualR: useManualR ? +rUser.toFixed(6) : 0,
+      alphaCoef: alpha,
+      resistance: +rUser.toFixed(6),
       flow: num(f["Airflow.Discharge"], 0),
       vMax: num(f["Airflow.MaxAirVelocity"], 0) || rt?.vMax || 0,
       horizonId: horizonIdMap.get(rb.horizonId) ?? "",
@@ -610,18 +672,14 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
       fanRpm: hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0,
-      fanCrossingR: hasFan ? num(ff["Airflow.VentilatorBulkheadResistance"], 0) : 0,
+      fanCrossingR: hasFan ? +(num(ff["Airflow.VentilatorBulkheadResistance"], 0) / PA_PER_MM_H2O).toFixed(4) : 0,
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
       bulkheadName: hasBulkhead ? "Перемычка" : "",
-      // АэроСеть хранит сопротивление перемычки в кМюрг — как и наше поле.
-      bulkheadR: hasBulkhead
-        ? (num(bf["Airflow.BulkheadUserDefinedResistance"], 0) || num(bf["Airflow.BulkheadCalculatedResistance"], 0))
-        : 0,
+      // Сопротивление перемычки в файле — тоже в СИ, переводим в кМюрг.
+      bulkheadR: hasBulkhead ? bkR : 0,
       bulkheadResMode: hasBulkhead ? "manual" : "project",
-      bulkheadManualR: hasBulkhead
-        ? (num(bf["Airflow.BulkheadUserDefinedResistance"], 0) || num(bf["Airflow.BulkheadCalculatedResistance"], 0))
-        : 0,
+      bulkheadManualR: hasBulkhead ? bkR : 0,
       bulkheadAirPerm: hasBulkhead ? num(bf["Airflow.BlindBulkheadUserDefinedPermeability"], 0) : 0,
       bulkheadSurveyQ: hasBulkhead ? num(bf["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,
       comment: f["Rib.Comment"] ?? "",
@@ -737,6 +795,16 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
 
   if (skipped > 0) warnings.push(`Пропущено выработок без узлов: ${skipped}`);
   if (nodes.every(n => n.z === 0)) warnings.push("У всех узлов нулевая отметка — в проекте не заданы глубины");
+
+  // Контроль качества переноса: ветви без сечения или без длины считаться не
+  // будут — предупреждаем сразу, а не после расчёта.
+  const noArea = branches.filter(b => b.area <= 0).length;
+  const noLen  = branches.filter(b => b.length <= 0).length;
+  const noPer  = branches.filter(b => b.perimeter <= 0).length;
+  if (noArea > 0) warnings.push(`Выработок без сечения: ${noArea} — задайте площадь, иначе сопротивление не рассчитается`);
+  if (noLen > 0)  warnings.push(`Выработок с нулевой длиной: ${noLen}`);
+  if (noPer > 0)  warnings.push(`Выработок без периметра: ${noPer}`);
+  log.push(`сопротивление: перевод СИ → кМюрг (÷${PA_PER_MM_H2O}); ветвей без S: ${noArea}, без P: ${noPer}, без L: ${noLen}`);
 
   const byType = outFans.reduce<Record<string, number>>((a, x) => { a[x.fanType] = (a[x.fanType] ?? 0) + 1; return a; }, {});
   log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans} (${Object.entries(byType).map(([k, v]) => `${k}: ${v}`).join(", ") || "—"}), перемычек ${bulkheads}`);
