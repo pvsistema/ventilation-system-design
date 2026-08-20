@@ -17,8 +17,6 @@ import Vent2CsvImportDialog from "@/components/cad/Vent2CsvImportDialog";
 import { type CsvImportResult } from "@/lib/csvImport";
 import VentsimImportDialog from "@/components/cad/VentsimImportDialog";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
-import ErpImportDialog from "@/components/cad/ErpImportDialog";
-import { type ErpImportResult } from "@/lib/erpImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import CadContextMenu from "@/components/cad/CadContextMenu";
@@ -73,10 +71,6 @@ export interface CadImportDialogsProps {
   showVentsimImport: boolean;
   setShowVentsimImport: (v: boolean) => void;
   handleVentsimImport: (r: VentsimImportResult, mode: ImportMode) => void;
-
-  showErpImport: boolean;
-  setShowErpImport: (v: boolean) => void;
-  handleErpImport: (r: ErpImportResult, mode: ImportMode) => void;
 
   showEquipRef: boolean;
   setShowEquipRef: (v: boolean) => void;
@@ -164,14 +158,6 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
         <VentsimImportDialog
           onImport={p.handleVentsimImport}
           onClose={() => p.setShowVentsimImport(false)}
-        />
-      )}
-
-      {/* ═══ ПРОЕКТ АЭРОСЕТЬ (.erp) ══════════════════════════════════════════ */}
-      {p.showErpImport && (
-        <ErpImportDialog
-          onImport={p.handleErpImport}
-          onClose={() => p.setShowErpImport(false)}
         />
       )}
 
