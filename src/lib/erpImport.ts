@@ -30,16 +30,37 @@
 //     <settings><setting key="ProjectionType" …/>    ← параметры проекции
 //   </schema>
 //
-// ВАЖНО про координаты: x/y в файле — экранные единицы косоугольной проекции
-// АэроСети, а не метры. Отношение «длина ветви / расстояние между узлами»
-// стабильно равно ≈1,0583 (это 96/90,71 — пересчёт дюймовой сетки). Мы
-// определяем масштаб по самим данным (медиана отношений), а не константой:
-// у другого проекта настройки экспорта могут отличаться.
+// ВАЖНО про координаты: x/y в файле — экранные единицы, а не метры. X и Y —
+// уже плановые координаты рудника в масштабе; высота подмешана ТОЛЬКО в
+// экранную Y (со знаком минус и коэффициентом OZDistortion). Масштаб
+// определяем по вертикальным выработкам — у них план не меняется.
 //
 // Высотная отметка Z = Depth БЕЗ смены знака. Название поля вводит в
 // заблуждение: несмотря на «Depth», значение растёт ВВЕРХ и совпадает с нашей
-// отметкой (устье ствола на поверхности = +500, забой ниже = 0). Трактовка
-// «глубина вниз» переворачивала импортированную схему вверх ногами.
+// отметкой (устье ствола на поверхности = +500, забой ниже = 0).
+//
+// ╔═══════════════════════════════════════════════════════════════════════════╗
+// ║  ТАБЛИЦА ЕДИНИЦ ИЗМЕРЕНИЯ .erp → ПВ-Система                               ║
+// ║  Сверено по фактическим данным файла: перепады давления между узлами      ║
+// ║  (ModelAirPressure) сопоставлены с R·Q² на 187 выработках и 56 перемычках.║
+// ╠════════════════════════════════════╤═════════════╤═══════════╤════════════╣
+// ║  Величина в файле                  │ Ед. в файле │ Ед. у нас │ Множитель  ║
+// ╠════════════════════════════════════╪═════════════╪═══════════╪════════════╣
+// ║ Airflow.Alpha, surfaceType@alpha   │ Н·с²/м⁴(СИ) │ ×10⁻⁴ кгс │ /g · 10⁴   ║
+// ║ Airflow.UserDefinedResistance      │ Н·с²/м⁸(СИ) │ кМюрг     │ / g        ║
+// ║ Airflow.Bulkhead*Resistance        │ кМюрг       │ кМюрг     │ 1 (как есть)║
+// ║ Airflow.VentilatorBulkheadResist.  │ служебное   │ —         │ не перенос.║
+// ║ Airflow.FanPressure                │ мм вод. ст. │ Па        │ × g        ║
+// ║ ModelAirPressure (узлы)            │ мм вод. ст. │ Па        │ × g        ║
+// ║ Airflow.Discharge                  │ м³/с        │ м³/с      │ 1          ║
+// ║ CrossSectionArea / Perimeter       │ м² / м      │ м² / м    │ 1          ║
+// ║ UserDefinedRibLength               │ м           │ м         │ 1          ║
+// ║ BlindBulkhead…Permeability         │ м²/(с·√Па)  │ то же     │ 1          ║
+// ╚════════════════════════════════════╧═════════════╧═══════════╧════════════╝
+//  g = 9,80665. Почему у выработок и перемычек разные единицы: сопротивление
+//  выработки АэроСеть ВЫЧИСЛЯЕТ по α (а α хранит в СИ), а сопротивление
+//  вентсооружения пользователь ВВОДИТ сразу в рудничных кМюрг — оно попадает
+//  в файл без пересчёта.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import JSZip from "jszip";
@@ -299,6 +320,23 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     log.push(`справочники: типов выработок ${ribTypes.size}, форм сечения ${sectionRatio.size}, типов крепи ${surfaceAlpha.size}`);
   }
 
+  // ── Справочник воздухопроницаемости вентсооружений ────────────────────────
+  // У части перемычек сопротивление в файле нулевое: АэроСеть считает его не
+  // напрямую, а через УДЕЛЬНУЮ ВОЗДУХОПРОНИЦАЕМОСТЬ вида перемычки из этого
+  // справочника (ключ — тот же itemCode, что у объекта на ветви). Без него
+  // такие перемычки приходили «сквозными» — воздух шёл мимо них свободно.
+  const permByCode = new Map<string, number>();
+  const bpEntry = zip.file(/bulkheadPermeabilityService\.DataDocument$/i)[0];
+  if (bpEntry) {
+    const bpDoc = new DOMParser().parseFromString(decodeXml(await bpEntry.async("uint8array")), "application/xml");
+    bpDoc.querySelectorAll("blindBulkheadAirPermeability").forEach(t => {
+      const code = t.getAttribute("itemCode");
+      const v = num(t.getAttribute("airPermeability"), 0);
+      if (code && v > 0) permByCode.set(code, v);
+    });
+    log.push(`воздухопроницаемость вентсооружений: ${permByCode.size} видов`);
+  }
+
   // ── Узлы ──────────────────────────────────────────────────────────────────
   // Читаем в «сырых» единицах проекции; масштаб применим ниже, когда узнаем
   // коэффициент по длинам ветвей.
@@ -527,7 +565,7 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   // Соответствие «id выработки в файле → наш id ветви» и её длина на экране:
   // нужны, чтобы привязать позиции ПЛА к выработкам и найти место выноски.
   const ribIdMap = new Map<string, { branchId: string; screenLen: number }>();
-  let fans = 0, bulkheads = 0, skipped = 0, branchNum = 1;
+  let fans = 0, bulkheads = 0, skipped = 0, branchNum = 1, bkNoData = 0;
 
   // Степень узла нужна для распознавания ВМП: вентилятор местного
   // проветривания стоит в тупиковой ветви (у забоя), ГВУ — на выходе на
@@ -669,17 +707,24 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       outFans.push({ branchId, t: posOf(it.offset), fanType, name: f["Rib.Name"] || "Вентилятор" });
     }
     for (const it of bkItems) {
-      // R вентсооружения в файле уже в кМюрг — берём как есть (см. пояснение
-      // выше: у перемычек единицы не такие, как у выработок).
+      // R вентсооружения в файле уже в кМюрг — берём как есть (см. таблицу
+      // единиц в шапке файла: у перемычек единицы не такие, как у выработок).
       const r = +(num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
                || num(it.f["Airflow.BulkheadCalculatedResistance"], 0)).toFixed(6);
+      // Если R не задано (в образце так у 45 перемычек из 121), АэроСеть
+      // считает сопротивление через удельную воздухопроницаемость вида
+      // перемычки — берём её из справочника проекта по коду объекта.
+      // Иначе такая перемычка стала бы «сквозной» и воздух шёл бы мимо неё.
+      const permOwn = num(it.f["Airflow.BlindBulkheadUserDefinedPermeability"], 0);
+      const airPerm = permOwn > 0 ? permOwn : (permByCode.get(it.code) ?? 0);
+      if (r <= 0 && airPerm <= 0) bkNoData++;
       outBulkheads.push({
         branchId,
         t: posOf(it.offset),
         typeId: bulkheadTypeIdByCode(it.code),
         name: "Перемычка",
         rKmu: r,
-        airPerm: num(it.f["Airflow.BlindBulkheadUserDefinedPermeability"], 0),
+        airPerm,
         surveyQ: num(it.f["Airflow.BulkheadDepressionSurveyDischarge"], 0),
         reversed: it.reversed,
       });
@@ -863,8 +908,15 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   if (noArea > 0) warnings.push(`Выработок без сечения: ${noArea} — задайте площадь, иначе сопротивление не рассчитается`);
   if (noLen > 0)  warnings.push(`Выработок с нулевой длиной: ${noLen}`);
   if (noPer > 0)  warnings.push(`Выработок без периметра: ${noPer}`);
-  log.push(`единицы: R и α выработок ÷${PA_PER_MM_H2O} (СИ → кМюрг); R перемычек — как в файле (кМюрг); напор и давления ×${PA_PER_MM_H2O} → Па`);
-  log.push(`ветвей без S: ${noArea}, без P: ${noPer}, без L: ${noLen}`);
+  if (bkNoData > 0) warnings.push(`Перемычек без сопротивления и воздухопроницаемости: ${bkNoData} — считаются открытыми`);
+  log.push(`ветвей без S: ${noArea}, без P: ${noPer}, без L: ${noLen}; перемычек без данных: ${bkNoData}`);
+  log.push(
+    "── единицы измерения ──\n" +
+    `  α и R выработок  СИ → кМюрг      ÷ ${PA_PER_MM_H2O}\n` +
+    "  R перемычек      кМюрг           без пересчёта\n" +
+    `  напор вент. и давления в узлах  мм вод. ст. → Па  × ${PA_PER_MM_H2O}\n` +
+    "  сечение, периметр, длина, расход  без пересчёта"
+  );
 
   const byType = outFans.reduce<Record<string, number>>((a, x) => { a[x.fanType] = (a[x.fanType] ?? 0) + 1; return a; }, {});
   log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans} (${Object.entries(byType).map(([k, v]) => `${k}: ${v}`).join(", ") || "—"}), перемычек ${bulkheads}`);
