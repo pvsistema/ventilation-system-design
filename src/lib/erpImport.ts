@@ -387,83 +387,99 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   log.push(`слоёв: ${horizonMeta.length}, ветвей: ${rawBranches.length}`);
   if (rawBranches.length === 0) throw new Error("В файле не найдено ни одной выработки");
 
-  // ── Обратная косоугольная проекция ────────────────────────────────────────
-  // АэроСеть хранит НЕ метры, а экранные координаты своей косоугольной
-  // проекции. Параметры лежат в <settings>:
-  //   OYAngle        — угол, под которым рисуется плановая ось Y;
-  //   OYDistortion   — её сжатие;
-  //   OZDistortion   — растяжение высот (в разрезах бывает 7,5 — вертикаль
-  //                    намеренно вытянута, чтобы горизонты не сливались);
-  //   GroundRotationAngle — поворот плана.
-  // Прямое преобразование (единицы экрана, ось Y вниз):
-  //   sx =  u·(X' + Y'·cos(OY)·kY)
-  //   sy = −u·(Y'·sin(OY)·kY + Z·kZ)
-  // где (X',Y') — план после поворота, u — единиц экрана на метр.
+  // ── Обратная проекция: экранные координаты → план X-Y ─────────────────────
+  // АэроСеть хранит НЕ метры, а координаты своей проекции. Параметры лежат в
+  // <settings>:
+  //   OZDistortion        — растяжение высот на экране (в разрезах 7,5:
+  //                         вертикаль вытянута, чтобы горизонты не сливались);
+  //   OYAngle/OYDistortion — угол и сжатие оси Y при показе «в изометрии»;
+  //   GroundRotationAngle  — поворот плана при показе.
   //
-  // Раньше формат считался «плоским» (kZ = 1, поворота нет), и большая схема
-  // с OZDistortion = 7,5 растягивалась по высоте в 7,5 раза, а план ещё и
-  // оказывался повёрнутым. Теперь проекцию разворачиваем честно.
+  // ГЛАВНОЕ (и источник прежней ошибки): X и Y на экране — это УЖЕ плановые
+  // координаты рудника в масштабе, а не косоугольная смесь. Высота
+  // подмешивается ТОЛЬКО в экранную Y — со знаком минус и с коэффициентом
+  // OZDistortion:
+  //   sx = u·X
+  //   sy = −u·Y − u·Z·kZ
+  // Проверено на файле: у 45 вертикальных стволов (sx у концов совпадает, а
+  // Z меняется) отношение Δsy/(kZ·ΔZ) в точности одно и то же — 3,7795 ед/м,
+  // это 96 dpi. Если же дополнительно «разворачивать» скос по OYAngle, как
+  // делалось раньше, к плановой Y примешивается X: планы горизонтов
+  // расплываются в косые полосы, и все выработки ложатся почти на одну
+  // линию — ровно то, что видно при переключении горизонтов.
   const settings = new Map<string, number>();
   doc.querySelectorAll("settings > setting").forEach(s => {
     const k = s.getAttribute("key");
     if (k) settings.set(k, num(s.getAttribute("value")));
   });
   const oyAngle = settings.get("OYAngle") ?? Math.PI / 2;
-  const oyDist  = settings.get("OYDistortion") ?? 1;
   const ozDist  = settings.get("OZDistortion") ?? 1;
   const ground  = settings.get("GroundRotationAngle") ?? 0;
-  const sinOY = Math.sin(oyAngle) * oyDist;
-  const cosOY = Math.cos(oyAngle) * oyDist;
 
   /** Экранные координаты узла/позиции → метры плана (X, Y) при данном u. */
   const unproject = (sx: number, sy: number, z: number, u: number): { x: number; y: number } => {
-    if (Math.abs(sinOY) < 1e-9 || u < 1e-9) return { x: sx, y: 0 };
-    const yp = (-sy / u - z * ozDist) / sinOY;
-    const xp = sx / u - yp * cosOY;
-    return {
-      x: Math.cos(ground) * xp - Math.sin(ground) * yp,
-      y: Math.sin(ground) * xp + Math.cos(ground) * yp,
-    };
+    if (u < 1e-9) return { x: sx, y: -sy };
+    return { x: sx / u, y: -(sy / u) - z * ozDist };
   };
 
-  // Единиц экрана на метр (u) подбираем по данным: перебираем и берём то
-  // значение, при котором длины ветвей из файла лучше всего сходятся с
-  // геометрией. Так импорт не зависит от настроек экспорта конкретного ПК.
-  const lenSamples = rawBranches
-    .map(rb => ({ a: rawNodes.get(rb.fromId), b: rawNodes.get(rb.toId), L: num(rb.f["Airflow.UserDefinedRibLength"]) }))
-    .filter(s => s.a && s.b && s.L > 1);
-  const medianErr = (u: number): number => {
-    const errs: number[] = [];
-    for (const s of lenSamples) {
-      const p = unproject(s.a!.x, s.a!.y, s.a!.z, u);
-      const q = unproject(s.b!.x, s.b!.y, s.b!.z, u);
-      const d = Math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (s.b!.z - s.a!.z) ** 2);
-      errs.push(Math.abs(d - s.L) / s.L);
-    }
-    if (errs.length === 0) return Infinity;
-    errs.sort((m, n) => m - n);
-    return errs[Math.floor(errs.length / 2)];
-  };
-  let unit = 1 / 0.2646;              // по умолчанию 96 dpi (единиц экрана на метр)
-  if (lenSamples.length > 0) {
-    let best = Infinity;
-    for (let i = 1; i <= 400; i++) {          // грубый проход 0,02…8
-      const u = i * 0.02;
-      const e = medianErr(u);
-      if (e < best) { best = e; unit = u; }
-    }
-    for (let i = -20; i <= 20; i++) {         // уточнение вокруг найденного
-      const u = unit + i * 0.002;
-      if (u <= 0) continue;
-      const e = medianErr(u);
-      if (e < best) { best = e; unit = u; }
-    }
-    log.push(`проекция: OY=${(oyAngle * 180 / Math.PI).toFixed(1)}°, kZ=${ozDist}, поворот=${(ground * 180 / Math.PI).toFixed(1)}°`);
-    log.push(`масштаб: ${unit.toFixed(3)} ед/м (расхождение длин ${(best * 100).toFixed(1)}%)`);
-    if (best > 0.25) warnings.push("Геометрия схемы расходится с заданными длинами выработок — расчёт ведётся по длинам из файла");
-  } else {
-    warnings.push("В файле нет заданных длин выработок — масштаб плана принят приблизительным");
+  // ── Масштаб (единиц экрана на метр) ───────────────────────────────────────
+  // Определяем по ВЕРТИКАЛЬНЫМ выработкам: у них план не меняется, поэтому
+  // весь сдвиг по экрану вызван перепадом высот, и масштаб вычисляется точно:
+  //   u = −Δsy / (kZ·ΔZ).
+  // Берём медиану — она устойчива к отдельным «кривым» ветвям. Если стволов
+  // в проекте нет, отступаем к прежнему способу: подбору по длинам выработок.
+  const vertScales: number[] = [];
+  for (const rb of rawBranches) {
+    const a = rawNodes.get(rb.fromId), b = rawNodes.get(rb.toId);
+    if (!a || !b) continue;
+    const dz = b.z - a.z;
+    if (Math.abs(dz) < 10) continue;             // не вертикальная
+    if (Math.abs(b.x - a.x) > 0.5) continue;     // на экране должна быть отвесной
+    const k = -(b.y - a.y) / (ozDist * dz);
+    if (k > 0.01 && k < 100) vertScales.push(k);
   }
+  let unit = 1 / 0.2646;              // запасное значение: 96 dpi
+  if (vertScales.length >= 3) {
+    vertScales.sort((p, q) => p - q);
+    unit = vertScales[Math.floor(vertScales.length / 2)];
+    log.push(`масштаб: ${unit.toFixed(4)} ед/м (по ${vertScales.length} вертикальным выработкам)`);
+  } else {
+    // Запасной путь: подбираем масштаб так, чтобы геометрия сошлась с
+    // заданными длинами выработок.
+    const lenSamples = rawBranches
+      .map(rb => ({ a: rawNodes.get(rb.fromId), b: rawNodes.get(rb.toId), L: num(rb.f["Airflow.UserDefinedRibLength"]) }))
+      .filter(s => s.a && s.b && s.L > 1);
+    const medianErr = (u: number): number => {
+      const errs: number[] = [];
+      for (const s of lenSamples) {
+        const p = unproject(s.a!.x, s.a!.y, s.a!.z, u);
+        const q = unproject(s.b!.x, s.b!.y, s.b!.z, u);
+        const d = Math.sqrt((q.x - p.x) ** 2 + (q.y - p.y) ** 2 + (s.b!.z - s.a!.z) ** 2);
+        errs.push(Math.abs(d - s.L) / s.L);
+      }
+      if (errs.length === 0) return Infinity;
+      errs.sort((m, n) => m - n);
+      return errs[Math.floor(errs.length / 2)];
+    };
+    if (lenSamples.length > 0) {
+      let best = Infinity;
+      for (let i = 1; i <= 400; i++) {
+        const u = i * 0.02;
+        const e = medianErr(u);
+        if (e < best) { best = e; unit = u; }
+      }
+      for (let i = -20; i <= 20; i++) {
+        const u = unit + i * 0.002;
+        if (u <= 0) continue;
+        const e = medianErr(u);
+        if (e < best) { best = e; unit = u; }
+      }
+      log.push(`масштаб: ${unit.toFixed(4)} ед/м (подбор по длинам, расхождение ${(best * 100).toFixed(1)}%)`);
+    } else {
+      warnings.push("В файле нет ни вертикальных выработок, ни заданных длин — масштаб плана принят приблизительным");
+    }
+  }
+  log.push(`проекция: kZ=${ozDist}, OY=${(oyAngle * 180 / Math.PI).toFixed(1)}°, поворот=${(ground * 180 / Math.PI).toFixed(1)}°`);
 
   // ── Сборка узлов ──────────────────────────────────────────────────────────
   const idMap = new Map<string, string>();
