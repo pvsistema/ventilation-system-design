@@ -38,6 +38,7 @@ import { type ExcelImportResult } from "@/lib/excelImport";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/csvImport";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
+import { type ErpImportResult } from "@/lib/erpImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
@@ -2061,6 +2062,7 @@ export default function CadPage() {
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showVentsimImport, setShowVentsimImport] = useState(false);
   const [showVent2CsvImport, setShowVent2CsvImport] = useState(false);
+  const [showErpImport, setShowErpImport] = useState(false);
 
   const handleVentsimImport = (result: VentsimImportResult, mode: "replace" | "append") => {
     if (mode === "replace") {
@@ -2075,6 +2077,31 @@ export default function CadPage() {
     }
     setImportNonce(n => n + 1);
     setShowVentsimImport(false);
+    setActiveRibbon("home");
+  };
+
+  // ── Импорт проекта АэроСеть (.erp) ──────────────────────────────────────
+  // Отличие от прочих импортов: файл несёт ещё и СЛОИ-ГОРИЗОНТЫ, поэтому
+  // вместе с узлами и ветвями переносим список горизонтов (при добавлении к
+  // текущей схеме — только те, которых ещё нет, чтобы не плодить дубликаты).
+  const handleErpImport = (result: ErpImportResult, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      setNodes(result.nodes);
+      setBranches(result.branches);
+      setSchemaSymbols(ensureFanSymbols(result.branches, []));
+      if (result.horizons.length > 0) setHorizons(result.horizons);
+      setSelectedNodeId(null); setSelectedBranchId(null);
+    } else {
+      setNodes(prev => [...prev, ...result.nodes]);
+      setBranches(prev => [...prev, ...result.branches]);
+      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
+      setHorizons(prev => {
+        const have = new Set(prev.map(h => h.id));
+        return [...prev, ...result.horizons.filter(h => !have.has(h.id))];
+      });
+    }
+    setImportNonce(n => n + 1);
+    setShowErpImport(false);
     setActiveRibbon("home");
   };
 
@@ -4551,6 +4578,7 @@ export default function CadPage() {
                   <>
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Добавить схему из файла</div>
                     {[
+                      { icon: "FolderOpen" as const,  label: "Проект АэроСеть",                 ext: ".erp",           action: "erp" },
                       { icon: "FileText" as const,    label: "CSV из АэроСети",                 ext: "рекомендуется",  action: "csv-aero" },
                       { icon: "FileSpreadsheet" as const, label: "CSV из Вентиляция 2.0",      ext: "Вентиляция 2.0", action: "csv-vent2" },
                       { icon: "FileText" as const,    label: "CSV из Ventsim",                  ext: "Ventsim 5/6",    action: "csv-ventsim" },
@@ -4562,7 +4590,10 @@ export default function CadPage() {
                       <button key={item.label}
                         className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 group"
                         onClick={() => {
-                          if (item.action === "csv-aero") {
+                          if (item.action === "erp") {
+                            setShowErpImport(true);
+                            setActiveRibbon("home");
+                          } else if (item.action === "csv-aero") {
                             setShowCsvImport(true);
                             setActiveRibbon("home");
                           } else if (item.action === "csv-vent2") {
@@ -13102,6 +13133,9 @@ export default function CadPage() {
       showVentsimImport={showVentsimImport}
       setShowVentsimImport={setShowVentsimImport}
       handleVentsimImport={handleVentsimImport}
+      showErpImport={showErpImport}
+      setShowErpImport={setShowErpImport}
+      handleErpImport={handleErpImport}
       showEquipRef={showEquipRef}
       setShowEquipRef={setShowEquipRef}
       equipRefTab={equipRefTab}
