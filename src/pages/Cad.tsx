@@ -878,10 +878,36 @@ export default function CadPage() {
     let nextNumSplit = 1;
     while (usedNumsSplit.has(nextNumSplit)) nextNumSplit++;
     const num = String(nextNumSplit);
-    // Если активен горизонт — Z и привязка из горизонта; иначе — из точки.
-    // Сохраняем horizonId родительской ветви, если узел создаётся «на лету».
-    const finalZ = activeHorizon ? activeHorizon.z : z;
-    const horizonId = activeHorizon ? activeHorizon.id : old.horizonId;
+    // ── Высотная отметка нового узла ────────────────────────────────────────
+    // Узел ставится НА СУЩЕСТВУЮЩУЮ ветвь, поэтому его отметка обязана лежать
+    // на этой ветви: интерполируем z между её концами по положению точки реза.
+    // Доля t — проекция точки клика на отрезок A→B в плане (XY).
+    //
+    // ИСПРАВЛЕНО. Раньше при отсутствии активного горизонта подставлялся z из
+    // клика, а холст в 2D-режиме передаёт туда zLevel — по умолчанию 0. В итоге
+    // на схеме с горизонтами (например, ствол с отметками 0 и −500) новый узел
+    // прыгал на отметку 0, ломая геометрию: угол наклона и длина сегментов
+    // пересчитывались по ложной высоте, а вместе с ними тепловая депрессия.
+    const dxAB = (toN.x ?? 0) - (fromN.x ?? 0);
+    const dyAB = (toN.y ?? 0) - (fromN.y ?? 0);
+    const lenSq = dxAB * dxAB + dyAB * dyAB;
+    const tRaw = lenSq > 1e-9
+      ? (((x - (fromN.x ?? 0)) * dxAB + (y - (fromN.y ?? 0)) * dyAB) / lenSq)
+      : 0.5;
+    const t = Math.min(1, Math.max(0, tRaw));
+    const zOnBranch = (fromN.z ?? 0) + ((toN.z ?? 0) - (fromN.z ?? 0)) * t;
+
+    // Горизонт задаёт отметку только если ветвь действительно на нём лежит
+    // (оба конца на этой высоте) — иначе горизонт относится к другому уровню,
+    // и навязывать его отметку узлу наклонной выработки нельзя.
+    const onHorizon = activeHorizon != null
+      && Math.abs((fromN.z ?? 0) - activeHorizon.z) < 0.5
+      && Math.abs((toN.z ?? 0) - activeHorizon.z) < 0.5;
+    const finalZ = onHorizon ? activeHorizon!.z : zOnBranch;
+    void z;
+    // Привязку к горизонту оба сегмента наследуют от родительской ветви через
+    // `...b` ниже — переназначать её по активному горизонту нельзя: разрезая
+    // ветвь чужого горизонта, мы бы молча перевесили её на текущий.
     const newNode = makeNode(newNodeId, {
       x, y, z: finalZ,
       name: "",
