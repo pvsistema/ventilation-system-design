@@ -817,7 +817,9 @@ export function generateSvg(opts: SvgExportOptions): string {
         parts.push(`<g transform="translate(${n(px)},${n(py)}) rotate(${n(angDeg)})">`);
 
         if (isSail) {
-          parts.push(`<path d="M0,${n(-ph*0.46)} Q${n(ph*0.72)},0 0,${n(ph*0.46)}" fill="none" stroke="#1a1a1a" stroke-width="${n(Math.max(1.8,pw2*0.4))}" stroke-linecap="round"/>`);
+          parts.push(`<line x1="0" y1="${n(-ph*0.5)}" x2="0" y2="${n(-ph*0.28)}" stroke="#1a1a1a" stroke-width="${n(Math.max(1.8,pw2*0.4))}" stroke-linecap="round"/>`);
+          parts.push(`<line x1="0" y1="${n(ph*0.28)}" x2="0" y2="${n(ph*0.5)}" stroke="#1a1a1a" stroke-width="${n(Math.max(1.8,pw2*0.4))}" stroke-linecap="round"/>`);
+          parts.push(`<path d="M0,${n(-ph*0.38)} Q${n(ph*0.6)},0 0,${n(ph*0.38)}" fill="none" stroke="#1a1a1a" stroke-width="${n(Math.max(1.8,pw2*0.4))}" stroke-linecap="round"/>`);
         } else if (isBarrier) {
           parts.push(`<rect x="${n(-pw2)}" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="#555" stroke="#222" stroke-width="1.3"/>`);
           parts.push(`<rect x="0" y="${n(-ph/2)}" width="${n(pw2)}" height="${n(ph)}" fill="#c00" stroke="#800" stroke-width="1.3"/>`);

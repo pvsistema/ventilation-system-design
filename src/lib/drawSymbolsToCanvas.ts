@@ -496,9 +496,12 @@ function drawBulkheadOnCanvas(
 
   if (isSail) {
     ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = Math.max(1.8, pw * 0.4); ctx.lineCap = "round";
+    // Стойка паруса: только края, середина (где проходит ветвь) вырезана
+    ctx.beginPath(); ctx.moveTo(0, -ph*0.5); ctx.lineTo(0, -ph*0.28); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,  ph*0.28); ctx.lineTo(0,  ph*0.5); ctx.stroke();
     ctx.beginPath();
-    ctx.moveTo(0, -ph*0.46);
-    ctx.quadraticCurveTo(ph*0.72, 0, 0, ph*0.46);
+    ctx.moveTo(0, -ph*0.38);
+    ctx.quadraticCurveTo(ph*0.6, 0, 0, ph*0.38);
     ctx.stroke();
   } else if (isBarrier) {
     ctx.fillStyle = "#555"; ctx.strokeStyle = "#222"; ctx.lineWidth = 1.3;
