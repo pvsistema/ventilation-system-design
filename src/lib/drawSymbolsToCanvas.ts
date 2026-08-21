@@ -495,11 +495,10 @@ function drawBulkheadOnCanvas(
   ctx.rotate(brAngle);
 
   if (isSail) {
-    ctx.strokeStyle = stroke; ctx.lineWidth = Math.max(1.8, pw * 0.4); ctx.lineCap = "round";
-    ctx.beginPath(); ctx.moveTo(0, -ph/2); ctx.lineTo(0, ph/2); ctx.stroke();
+    ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = Math.max(1.8, pw * 0.4); ctx.lineCap = "round";
     ctx.beginPath();
-    ctx.moveTo(0, -ph*0.38);
-    ctx.quadraticCurveTo(ph*0.6, 0, 0, ph*0.38);
+    ctx.moveTo(0, -ph*0.46);
+    ctx.quadraticCurveTo(ph*0.72, 0, 0, ph*0.46);
     ctx.stroke();
   } else if (isBarrier) {
     ctx.fillStyle = "#555"; ctx.strokeStyle = "#222"; ctx.lineWidth = 1.3;

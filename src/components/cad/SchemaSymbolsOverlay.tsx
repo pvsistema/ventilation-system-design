@@ -244,10 +244,8 @@ export default function SchemaSymbolsOverlay({
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
               {isSail ? (
                 <>
-                  <line x1={0} y1={-ph/2} x2={0} y2={ph/2}
-                    stroke={stroke} strokeWidth={Math.max(1.8, pw * 0.4)} strokeLinecap="round" />
-                  <path d={`M0,${-ph*0.38} Q${ph*0.6},0 0,${ph*0.38}`}
-                    fill="none" stroke={stroke} strokeWidth={Math.max(1.8, pw * 0.4)} strokeLinecap="round" />
+                  <path d={`M0,${-ph*0.46} Q${ph*0.72},0 0,${ph*0.46}`}
+                    fill="none" stroke="#1a1a1a" strokeWidth={Math.max(1.8, pw * 0.4)} strokeLinecap="round" />
                 </>
               ) : isBarrier ? (
                 <>

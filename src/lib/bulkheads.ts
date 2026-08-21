@@ -150,7 +150,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     rMin: 52, rMax: 52,
     failurePressure: 0.005,
     note: "A=0,09 м²/(с·√Па), временная",
-    color: "#ff6f00",
+    color: "#1a1a1a",
   },
 
   // === ПЕРЕМЫЧКИ ВОДОПОДПОРНЫЕ ===
@@ -302,7 +302,7 @@ export const BULKHEAD_TYPE_LABELS: Record<BulkheadType, string> = {
 export const BULKHEAD_TYPE_COLORS: Record<BulkheadType, string> = {
   solid: "#2e7d32",
   door: "#1565c0",
-  sail: "#ff6f00",
+  sail: "#1a1a1a",
   water: "#6a1b9a",
   regulator: "#e65100",
   custom: "#546e7a",
