@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { parseVentsimCsv, type VentsimImportResult } from "@/lib/ventsimImport";
+import { parseVentsimCsv, DEFAULT_MERGE_TOL, type VentsimImportResult } from "@/lib/ventsimImport";
 import Icon from "@/components/ui/icon";
 
 interface Props {
@@ -14,7 +14,17 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  const [mergeTol, setMergeTol] = useState(String(DEFAULT_MERGE_TOL));
   const inputRef = useRef<HTMLInputElement>(null);
+  // Текст файла держим в памяти, чтобы пересчитать разбор при смене допуска
+  // без повторного выбора файла.
+  const textRef = useRef<string | null>(null);
+
+  const runParse = (text: string, tol: string) => {
+    const t = parseFloat(tol.replace(",", "."));
+    const res = parseVentsimCsv(text, isFinite(t) && t >= 0 ? t : DEFAULT_MERGE_TOL);
+    setResult(res);
+  };
 
   const handleFile = async (f: File) => {
     setError(null); setResult(null); setLoading(true); setFileName(f.name);
@@ -24,13 +34,18 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
         const buf = await f.arrayBuffer();
         text = new TextDecoder("windows-1251").decode(buf);
       }
-      const res = parseVentsimCsv(text);
-      setResult(res);
+      textRef.current = text;
+      runParse(text, mergeTol);
     } catch (e) {
       setError(String(e));
     } finally {
       setLoading(false);
     }
+  };
+
+  const applyTol = (v: string) => {
+    setMergeTol(v);
+    if (textRef.current) runParse(textRef.current, v);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -75,6 +90,41 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
             </div>
             <input ref={inputRef} type="file" accept=".csv,.txt" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+          </div>
+
+          {/* Дистанция объединения узлов */}
+          <div className="border rounded px-3 py-2.5" style={{ background: "var(--c-s2, #f9f9f9)" }}>
+            <div className="flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-semibold text-gray-700">Дистанция объединения узлов</div>
+                <div className="text-[10px] text-gray-500 mt-0.5">
+                  Концы выработок ближе этого расстояния считаются одним узлом
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <input
+                  type="number" min={0} step={0.1} value={mergeTol}
+                  onChange={e => applyTol(e.target.value)}
+                  className="w-20 px-2 py-1 text-xs text-right border rounded"
+                  style={{ borderColor: "var(--c-b2, #d1d5db)" }}
+                />
+                <span className="text-[11px] text-gray-500">м</span>
+              </div>
+            </div>
+            <div className="flex gap-1.5 mt-2">
+              {["0.01", "0.1", "0.5", "1"].map(v => (
+                <button
+                  key={v} onClick={() => applyTol(v)}
+                  className="px-2 py-0.5 text-[10px] rounded border transition-colors"
+                  style={{
+                    background: mergeTol === v ? "var(--c-tint-green2, #dcfce7)" : "white",
+                    borderColor: mergeTol === v ? "#86efac" : "var(--c-b1, #e0e0e0)",
+                    color: mergeTol === v ? "var(--c-green, #15803d)" : "var(--c-t3, #6b7280)",
+                    fontWeight: mergeTol === v ? 600 : 400,
+                  }}
+                >{v} м</button>
+              ))}
+            </div>
           </div>
 
           {/* Ошибка */}

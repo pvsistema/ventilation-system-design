@@ -223,7 +223,7 @@ function parseEuSection(t: string[], from: number): { area: number; perimeter: n
  * Разбор Ventsim-экспорта из русской локали.
  * Номеров узлов в файле нет — сеть сшивается по координатам концов выработок.
  */
-function parseVentsimEuropean(rawLines: string[]): VentsimImportResult {
+function parseVentsimEuropean(rawLines: string[], mergeTol: number): VentsimImportResult {
   const warnings: string[] = [];
   const debug: string[] = [];
   debug.push(`Формат: Ventsim (русская локаль), строк: ${rawLines.length}`);
@@ -262,24 +262,47 @@ function parseVentsimEuropean(rawLines: string[]): VentsimImportResult {
   }
 
   // ── Сшивка узлов по координатам ───────────────────────────────────────────
-  // Ventsim пишет координаты концов с полной точностью, поэтому достаточно
-  // округления до сантиметра, чтобы совпали концы соседних выработок.
+  // Концы выработок объединяются в один узел, если расстояние между ними
+  // не больше заданного допуска (как «дистанция объединения узлов» в АэроСети).
+  // Ventsim обычно пишет стыки точно, но у моделей, собранных из разных
+  // источников, концы могут расходиться на считанные сантиметры.
   const ts = Date.now();
   const nodeMap = new Map<string, TopoNode>();
-  const keyOf = (x: number, y: number, z: number) =>
-    `${Math.round(x * 100)}|${Math.round(y * 100)}|${Math.round(z * 100)}`;
+  const cell = Math.max(mergeTol, 0.001);
+  // Пространственная сетка: в ячейке со стороной = допуску достаточно
+  // проверить только соседние ячейки, поэтому сшивка идёт быстро.
+  const grid = new Map<string, string[]>();
+  const cellKey = (x: number, y: number, z: number) =>
+    `${Math.floor(x / cell)}|${Math.floor(y / cell)}|${Math.floor(z / cell)}`;
+  const coords = new Map<string, { x: number; y: number; z: number }>();
 
   // Начало координат — в левый нижний угол модели, иначе схема уезжает
   // на миллионы метров от рабочей области (координаты государственные).
   const minX = Math.min(...list.flatMap(b => [b.xFrom, b.xTo]));
   const minY = Math.min(...list.flatMap(b => [b.yFrom, b.yTo]));
   debug.push(`Смещение начала координат: X-${minX.toFixed(0)}, Y-${minY.toFixed(0)}`);
+  debug.push(`Допуск объединения узлов: ${mergeTol} м`);
 
   let nodeNo = 0;
+  let merged = 0;
   const nodeIdAt = (x: number, y: number, z: number): string => {
-    const k = keyOf(x, y, z);
-    const found = nodeMap.get(k);
-    if (found) return found.id;
+    const gx = Math.floor(x / cell), gy = Math.floor(y / cell), gz = Math.floor(z / cell);
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        for (let dz = -1; dz <= 1; dz++) {
+          const bucket = grid.get(`${gx + dx}|${gy + dy}|${gz + dz}`);
+          if (!bucket) continue;
+          for (const id of bucket) {
+            const c = coords.get(id)!;
+            const dist = Math.sqrt((c.x - x) ** 2 + (c.y - y) ** 2 + (c.z - z) ** 2);
+            if (dist <= mergeTol) {
+              if (dist > 0) merged++;
+              return id;
+            }
+          }
+        }
+      }
+    }
     nodeNo++;
     const node = makeNode(`NV${ts}_${nodeNo}`, {
       x: Math.round((x - minX) * 10) / 10,
@@ -288,7 +311,11 @@ function parseVentsimEuropean(rawLines: string[]): VentsimImportResult {
       number: String(nodeNo),
       name: String(nodeNo),
     });
-    nodeMap.set(k, node);
+    nodeMap.set(node.id, node);
+    coords.set(node.id, { x, y, z });
+    const k = cellKey(x, y, z);
+    const arr = grid.get(k);
+    if (arr) arr.push(node.id); else grid.set(k, [node.id]);
     return node.id;
   };
 
@@ -321,7 +348,10 @@ function parseVentsimEuropean(rawLines: string[]): VentsimImportResult {
     }));
   }
 
-  debug.push(`Узлов: ${nodeMap.size}, ветвей: ${branches.length}`);
+  debug.push(`Узлов: ${nodeMap.size}, ветвей: ${branches.length}, состыковано концов с расхождением: ${merged}`);
+  if (merged > 0) {
+    warnings.push(`Совмещено ${merged} концов выработок, расходившихся в пределах ${mergeTol} м.`);
+  }
   warnings.push(
     `Файл выгружен из Ventsim в русской локали: номеров узлов в нём нет, сеть собрана по координатам выработок (${nodeMap.size} узлов, ${branches.length} ветвей).`
   );
@@ -419,7 +449,10 @@ function detectFormat(rows: string[][]): ColMap {
 
 // ── Главная функция ───────────────────────────────────────────────────────────
 
-export function parseVentsimCsv(content: string): VentsimImportResult {
+/** Допуск объединения узлов по умолчанию, м (как в АэроСети) */
+export const DEFAULT_MERGE_TOL = 0.1;
+
+export function parseVentsimCsv(content: string, mergeTol = DEFAULT_MERGE_TOL): VentsimImportResult {
   const warnings: string[] = [];
   const debug: string[] = [];
 
@@ -435,7 +468,7 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
 
   // ── Ventsim из русской локали: запятая и разделяет поля, и стоит в дробях ──
   if (isEuropeanNumeric(rawLines)) {
-    return parseVentsimEuropean(rawLines);
+    return parseVentsimEuropean(rawLines, mergeTol);
   }
 
   const sep = detectSep(rawLines);
