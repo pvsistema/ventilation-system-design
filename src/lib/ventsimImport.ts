@@ -12,6 +12,20 @@
 //   Следующие строки — данные ветвей:
 //   From,To,Xfrom,Yfrom,Zfrom,Xto,Yto,Zto,Length,FrictionFactor,Area,Perimeter,...
 //   Признак строки данных: первые два числа разные (From≠To) и нет большого кол-ва нулей подряд
+//
+// Вариант C — числовой формат в ЕВРОПЕЙСКОЙ локали (Ventsim на русской Windows):
+//   Запятая служит ОДНОВРЕМЕННО разделителем полей и десятичным знаком, из-за
+//   чего одно число "2313320,649" разрывается на два токена: "2313320" и "649".
+//   Позиции колонок при этом "плывут": целое число занимает 1 токен, дробное — 2.
+//   Номеров узлов в таком файле нет вовсе — первые три токена это порядковый
+//   номер ветви (id,id,id), поэтому связность восстанавливается ТОЛЬКО
+//   по координатам концов выработок.
+//
+//   Раскладка чисел строки (после склейки токенов):
+//     [0..2] номер ветви  [3] признак
+//     [4] Xfrom [5] Xto [6] Yfrom [7] Yto [8] Zfrom [9] Zto [10] Length
+//   Разбор однозначно восстанавливается перебором: верна та склейка, при которой
+//   расстояние между концами совпадает с записанной длиной выработки.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
@@ -64,6 +78,263 @@ function autoLayout(nodeIds: string[]): Map<string, { x: number; y: number }> {
     });
   });
   return layout;
+}
+
+// ── Ventsim в европейской локали (запятая = и разделитель, и дробный знак) ────
+
+/** Геометрия ветви, восстановленная из "рваной" строки */
+interface EuGeom {
+  xFrom: number; yFrom: number; zFrom: number;
+  xTo: number; yTo: number; zTo: number;
+  length: number;
+  /** индекс токена сразу после длины — отсюда идут физические параметры */
+  next: number;
+}
+
+const isDigits = (s: string) => s.length > 0 && /^\d+$/.test(s);
+
+/**
+ * Восстанавливает 7 чисел (X1,X2,Y1,Y2,Z1,Z2,L) из токенов, разорванных запятой.
+ * Каждое число занимает 1 токен (целое) или 2 (целая + дробная часть).
+ * Правильный вариант определяется проверкой: длина выработки должна совпасть
+ * с расстоянием между её концами.
+ */
+function parseEuGeometry(t: string[], start = 4): EuGeom | null {
+  let best: { err: number; g: EuGeom } | null = null;
+
+  // 2^7 = 128 комбинаций — перебор дешёвый
+  for (let mask = 0; mask < 128; mask++) {
+    const vals: number[] = [];
+    let p = start;
+    let ok = true;
+    for (let k = 0; k < 7; k++) {
+      const wide = (mask >> k) & 1; // 1 = число из двух токенов
+      if (p >= t.length) { ok = false; break; }
+      if (wide) {
+        if (p + 1 >= t.length || !isDigits(t[p]) || !isDigits(t[p + 1])) { ok = false; break; }
+        vals.push(parseFloat(`${t[p]}.${t[p + 1]}`));
+        p += 2;
+      } else {
+        const v = parseFloat(t[p]);
+        if (!isFinite(v)) { ok = false; break; }
+        vals.push(v);
+        p += 1;
+      }
+    }
+    if (!ok || vals.length < 7) continue;
+
+    const [x1, x2, y1, y2, z1, z2, len] = vals;
+    if (!(len > 0) || len > 20000) continue;
+
+    const dx = x2 - x1, dy = y2 - y1, dz = z2 - z1;
+    const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const err = Math.abs(dist - len);
+
+    const g: EuGeom = {
+      xFrom: x1, yFrom: y1, zFrom: z1,
+      xTo: x2, yTo: y2, zTo: z2,
+      length: len, next: p,
+    };
+    // Точное совпадение — сразу принимаем
+    if (err < Math.max(0.05, len * 0.002)) return g;
+    if (!best || err < best.err) best = { err, g };
+  }
+
+  // Ventsim иногда округляет длину (35 при факт. 35,94) — принимаем близкий вариант
+  if (best && best.err < Math.max(1.5, best.g.length * 0.08)) return best.g;
+  return null;
+}
+
+/**
+ * Признак европейского формата: запятая — единственный разделитель, точек в
+ * файле нет, а первые токены строки повторяются (id,id,id) вместо From/To.
+ */
+function isEuropeanNumeric(rawLines: string[]): boolean {
+  if (rawLines.length < 3) return false;
+  const body = rawLines.slice(0, 40).join("\n");
+  if (body.includes(".") || body.includes(";") || body.includes("\t")) return false;
+
+  let hit = 0, tried = 0;
+  for (let i = 1; i < Math.min(rawLines.length, 25); i++) {
+    const t = rawLines[i].split(",");
+    if (t.length < 20) continue;
+    tried++;
+    if (parseEuGeometry(t)) hit++;
+  }
+  return tried > 0 && hit >= Math.max(2, Math.floor(tried * 0.6));
+}
+
+/**
+ * Ищет сечение выработки (площадь и периметр) среди токенов после длины.
+ * Ventsim записывает пару «площадь, периметр» ДВАЖДЫ — для начала и конца
+ * выработки. Этот повтор и служит опознавательным признаком: работаем прямо
+ * на токенах, поэтому короткая дробная часть ("17,2") не мешает разбору.
+ */
+function parseEuSection(t: string[], from: number): { area: number; perimeter: number } | null {
+  const lim = Math.min(t.length, from + 16);
+  // Число = 1 токен (целое) либо 2 (целая + дробная часть)
+  const readAt = (i: number): { v: number; next: number } | null => {
+    if (i >= t.length) return null;
+    const a = t[i];
+    if (!isDigits(a)) {
+      const v = parseFloat(a);
+      return isFinite(v) ? { v, next: i + 1 } : null;
+    }
+    if (i + 1 < t.length && isDigits(t[i + 1])) {
+      return { v: parseFloat(`${a}.${t[i + 1]}`), next: i + 2 };
+    }
+    return { v: parseFloat(a), next: i + 1 };
+  };
+
+  for (let i = from; i < lim; i++) {
+    // Пробуем оба варианта ширины для каждого из четырёх чисел блока
+    for (let mask = 0; mask < 16; mask++) {
+      const vals: number[] = [];
+      let p = i, ok = true;
+      for (let k = 0; k < 4; k++) {
+        const wide = (mask >> k) & 1;
+        if (p >= t.length) { ok = false; break; }
+        if (wide) {
+          if (p + 1 >= t.length || !isDigits(t[p]) || !isDigits(t[p + 1])) { ok = false; break; }
+          vals.push(parseFloat(`${t[p]}.${t[p + 1]}`));
+          p += 2;
+        } else {
+          const r = readAt(p);
+          if (!r || !isDigits(t[p])) { ok = false; break; }
+          vals.push(parseFloat(t[p]));
+          p += 1;
+        }
+      }
+      if (!ok || vals.length < 4) continue;
+
+      const [s, per, s2, per2] = vals;
+      if (Math.abs(s - s2) > 1e-6 || Math.abs(per - per2) > 1e-6) continue;
+      if (!(s > 0.5 && s < 200 && per > 1 && per < 200)) continue;
+      const dEq = (4 * s) / per;
+      // Площадь всегда меньше квадрата периметра; эквивалентный диаметр
+      // реальной горной выработки лежит в пределах 0,5…12 м
+      if (dEq > 0.5 && dEq < 12) return { area: s, perimeter: per };
+    }
+  }
+  return null;
+}
+
+/**
+ * Разбор Ventsim-экспорта из русской локали.
+ * Номеров узлов в файле нет — сеть сшивается по координатам концов выработок.
+ */
+function parseVentsimEuropean(rawLines: string[]): VentsimImportResult {
+  const warnings: string[] = [];
+  const debug: string[] = [];
+  debug.push(`Формат: Ventsim (русская локаль), строк: ${rawLines.length}`);
+
+  interface EuBranch extends EuGeom { id: string; area: number; perimeter: number }
+  const list: EuBranch[] = [];
+  let skipped = 0;
+
+  for (let i = 1; i < rawLines.length; i++) {
+    const t = rawLines[i].split(",");
+    if (t.length < 20) { skipped++; continue; }
+
+    const g = parseEuGeometry(t);
+    if (!g) { skipped++; continue; }
+
+    // После длины идёт признак типа, затем пара «площадь, периметр» сечения
+    // (Ventsim пишет её дважды — для начала и конца выработки).
+    // Проверка: эквивалентный диаметр 4S/P должен быть в пределах 0,5–12 м,
+    // иначе пара распознана неверно и сечение не переносим.
+    const sec = parseEuSection(t, g.next);
+    const area = sec?.area ?? 0;
+    const perimeter = sec?.perimeter ?? 0;
+
+    list.push({ ...g, id: t[0] || String(i), area, perimeter });
+  }
+
+  debug.push(`Ветвей распознано: ${list.length}, пропущено строк: ${skipped}`);
+
+  if (list.length === 0) {
+    return {
+      nodes: [], branches: [],
+      warnings: ["Не удалось разобрать файл Ventsim. Проверьте, что выгружен полный экспорт модели."],
+      stats: { nodes: 0, branches: 0, fans: 0 },
+      debug: debug.join("\n"),
+    };
+  }
+
+  // ── Сшивка узлов по координатам ───────────────────────────────────────────
+  // Ventsim пишет координаты концов с полной точностью, поэтому достаточно
+  // округления до сантиметра, чтобы совпали концы соседних выработок.
+  const ts = Date.now();
+  const nodeMap = new Map<string, TopoNode>();
+  const keyOf = (x: number, y: number, z: number) =>
+    `${Math.round(x * 100)}|${Math.round(y * 100)}|${Math.round(z * 100)}`;
+
+  // Начало координат — в левый нижний угол модели, иначе схема уезжает
+  // на миллионы метров от рабочей области (координаты государственные).
+  const minX = Math.min(...list.flatMap(b => [b.xFrom, b.xTo]));
+  const minY = Math.min(...list.flatMap(b => [b.yFrom, b.yTo]));
+  debug.push(`Смещение начала координат: X-${minX.toFixed(0)}, Y-${minY.toFixed(0)}`);
+
+  let nodeNo = 0;
+  const nodeIdAt = (x: number, y: number, z: number): string => {
+    const k = keyOf(x, y, z);
+    const found = nodeMap.get(k);
+    if (found) return found.id;
+    nodeNo++;
+    const node = makeNode(`NV${ts}_${nodeNo}`, {
+      x: Math.round((x - minX) * 10) / 10,
+      y: Math.round((y - minY) * 10) / 10,
+      z: Math.round(z * 10) / 10,
+      number: String(nodeNo),
+      name: String(nodeNo),
+    });
+    nodeMap.set(k, node);
+    return node.id;
+  };
+
+  const branches: TopoBranch[] = [];
+  let bi = 0;
+  for (const b of list) {
+    const fromId = nodeIdAt(b.xFrom, b.yFrom, b.zFrom);
+    const toId   = nodeIdAt(b.xTo,   b.yTo,   b.zTo);
+    if (fromId === toId) continue; // выработка нулевой длины
+
+    const dz = Math.abs(b.zTo - b.zFrom);
+    const angle = b.length > 0
+      ? Math.round(Math.asin(Math.min(1, dz / Math.max(b.length, 0.01))) * 180 / Math.PI * 10) / 10
+      : 0;
+
+    branches.push(makeBranch(`BV${ts}_${bi++}`, fromId, toId, {
+      type: "Выработка",
+      length: Math.round(b.length * 10) / 10,
+      manualLength: true,
+      angle,
+      manualAngle: false,
+      area: b.area,
+      perimeter: b.perimeter,
+      dh: b.area > 0 && b.perimeter > 0
+        ? Math.round((4 * b.area / b.perimeter) * 1000) / 1000
+        : 0,
+      manualSection: b.area > 0,
+      resistanceMode: "alpha",
+      alphaCoef: 12,
+    }));
+  }
+
+  debug.push(`Узлов: ${nodeMap.size}, ветвей: ${branches.length}`);
+  warnings.push(
+    `Файл выгружен из Ventsim в русской локали: номеров узлов в нём нет, сеть собрана по координатам выработок (${nodeMap.size} узлов, ${branches.length} ветвей).`
+  );
+  warnings.push("Расход и сопротивление Ventsim не переносятся — выполните «Расчёт сети» в ПВ-Системе.");
+  if (skipped > 0) warnings.push(`Пропущено строк, не похожих на выработку: ${skipped}.`);
+
+  return {
+    nodes: [...nodeMap.values()],
+    branches,
+    warnings,
+    stats: { nodes: nodeMap.size, branches: branches.length, fans: 0 },
+    debug: debug.join("\n"),
+  };
 }
 
 // ── Определение формата ───────────────────────────────────────────────────────
@@ -160,6 +431,11 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
 
   if (rawLines.length === 0) {
     return { nodes: [], branches: [], warnings: ["Файл пустой."], stats: { nodes: 0, branches: 0, fans: 0 }, debug: "" };
+  }
+
+  // ── Ventsim из русской локали: запятая и разделяет поля, и стоит в дробях ──
+  if (isEuropeanNumeric(rawLines)) {
+    return parseVentsimEuropean(rawLines);
   }
 
   const sep = detectSep(rawLines);
@@ -343,7 +619,6 @@ export function parseVentsimCsv(content: string): VentsimImportResult {
     if (hasFan) fanCount++;
 
     branches.push(makeBranch(`BV${ts}_${bi++}`, fromNode.id, toNode.id, {
-      name: rb.name || rb.id,
       type: "Выработка",
       length: length > 0 ? length : 0,
       manualLength: rb.length > 0,
