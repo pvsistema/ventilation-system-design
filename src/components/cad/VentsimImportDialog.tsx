@@ -138,19 +138,53 @@ export default function VentsimImportDialog({ onImport, onClose }: Props) {
           {result && (
             <div className="space-y-3">
               {/* Счётчики */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-4 gap-2">
                 {[
-                  { label: "Узлов",   value: result.stats.nodes,    hi: result.stats.nodes > 0 },
-                  { label: "Ветвей",  value: result.stats.branches, hi: result.stats.branches > 0 },
-                  { label: "Вент-ров",value: result.stats.fans,     hi: result.stats.fans > 0 },
+                  { label: "Узлов",   value: result.stats.nodes,    hi: result.stats.nodes > 0,    bad: false },
+                  { label: "Ветвей",  value: result.stats.branches, hi: result.stats.branches > 0, bad: false },
+                  { label: "Вент-ров",value: result.stats.fans,     hi: result.stats.fans > 0,     bad: false },
+                  {
+                    label: (result.stats.parts ?? 1) > 1 ? "Частей" : "Сеть цельная",
+                    value: result.stats.parts ?? 1,
+                    hi: (result.stats.parts ?? 1) === 1,
+                    bad: (result.stats.parts ?? 1) > 1,
+                  },
                 ].map(s => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
-                    style={{ background: s.hi ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#86efac" : "var(--c-b1, #e0e0e0)" }}>
-                    <div className="text-xl font-bold" style={{ color: s.hi ? "var(--c-green, #15803d)" : "var(--c-t3, #6b7280)" }}>{s.value}</div>
+                    style={{
+                      background: s.bad ? "#fef2f2" : s.hi ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s2, #f9f9f9)",
+                      borderColor: s.bad ? "#fca5a5" : s.hi ? "#86efac" : "var(--c-b1, #e0e0e0)",
+                    }}>
+                    <div className="text-xl font-bold" style={{ color: s.bad ? "var(--c-red, #b91c1c)" : s.hi ? "var(--c-green, #15803d)" : "var(--c-t3, #6b7280)" }}>{s.value}</div>
                     <div className="text-[10px] text-gray-500">{s.label}</div>
                   </div>
                 ))}
               </div>
+
+              {/* Сеть распалась на части — подсказка увеличить допуск */}
+              {(result.stats.parts ?? 1) > 1 && (
+                <div className="rounded border px-3 py-2.5" style={{ background: "#fef2f2", borderColor: "#fca5a5" }}>
+                  <div className="flex items-start gap-2">
+                    <Icon name="Unlink" size={14} className="mt-0.5 shrink-0" style={{ color: "var(--c-red, #b91c1c)" }} />
+                    <div className="min-w-0">
+                      <div className="text-xs font-semibold" style={{ color: "var(--c-red, #b91c1c)" }}>
+                        Схема разорвана на {result.stats.parts} несвязанных частей
+                      </div>
+                      <div className="text-[11px] text-red-700 mt-0.5">
+                        Концы выработок не сошлись по координатам. Увеличьте дистанцию объединения узлов —
+                        сейчас {mergeTol} м.
+                      </div>
+                      <button
+                        onClick={() => applyTol(String(Math.max(0.1, (parseFloat(mergeTol.replace(",", ".")) || 0) * 5 || 0.5)))}
+                        className="mt-1.5 px-2.5 py-1 text-[11px] font-semibold rounded text-white"
+                        style={{ background: "var(--c-red, #b91c1c)" }}
+                      >
+                        Увеличить допуск и пересчитать
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Предупреждения */}
               {result.warnings.length > 0 && (

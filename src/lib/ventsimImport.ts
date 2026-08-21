@@ -34,8 +34,53 @@ export interface VentsimImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   warnings: string[];
-  stats: { nodes: number; branches: number; fans: number };
+  stats: {
+    nodes: number; branches: number; fans: number;
+    /** число несвязанных частей сети (1 — схема цельная) */
+    parts?: number;
+    /** размер (в ветвях) самой крупной части */
+    biggestPart?: number;
+  };
   debug: string;
+}
+
+/**
+ * Считает, на сколько несвязанных частей распадается схема.
+ * Разрыв обычно означает, что концы выработок не сошлись по координатам
+ * и их не удалось объединить в общий узел.
+ */
+export function countNetworkParts(
+  nodes: TopoNode[], branches: TopoBranch[],
+): { parts: number; biggest: number } {
+  if (branches.length === 0) return { parts: 0, biggest: 0 };
+
+  const adj = new Map<string, string[]>();
+  const link = (a: string, b: string) => {
+    const arr = adj.get(a);
+    if (arr) arr.push(b); else adj.set(a, [b]);
+  };
+  for (const b of branches) { link(b.fromId, b.toId); link(b.toId, b.fromId); }
+
+  const seen = new Set<string>();
+  let parts = 0, biggest = 0;
+  for (const start of adj.keys()) {
+    if (seen.has(start)) continue;
+    parts++;
+    let size = 0;
+    const stack = [start];
+    seen.add(start);
+    while (stack.length) {
+      const cur = stack.pop()!;
+      size++;
+      for (const nb of adj.get(cur) ?? []) {
+        if (!seen.has(nb)) { seen.add(nb); stack.push(nb); }
+      }
+    }
+    if (size > biggest) biggest = size;
+  }
+  // Узлы вовсе без выработок тоже считаем отдельными частями
+  const isolated = nodes.filter(n => !adj.has(n.id)).length;
+  return { parts: parts + isolated, biggest };
 }
 
 // ── Утилиты ──────────────────────────────────────────────────────────────────
@@ -358,11 +403,21 @@ function parseVentsimEuropean(rawLines: string[], mergeTol: number): VentsimImpo
   warnings.push("Расход и сопротивление Ventsim не переносятся — выполните «Расчёт сети» в ПВ-Системе.");
   if (skipped > 0) warnings.push(`Пропущено строк, не похожих на выработку: ${skipped}.`);
 
+  const allNodes = [...nodeMap.values()];
+  const { parts, biggest } = countNetworkParts(allNodes, branches);
+  debug.push(`Несвязанных частей: ${parts}, крупнейшая: ${biggest} узлов`);
+  if (parts > 1) {
+    warnings.push(
+      `Схема распалась на ${parts} несвязанных частей — концы выработок не сошлись по координатам. ` +
+      `Увеличьте «дистанцию объединения узлов» (сейчас ${mergeTol} м) и загрузите файл снова.`
+    );
+  }
+
   return {
-    nodes: [...nodeMap.values()],
+    nodes: allNodes,
     branches,
     warnings,
-    stats: { nodes: nodeMap.size, branches: branches.length, fans: 0 },
+    stats: { nodes: nodeMap.size, branches: branches.length, fans: 0, parts, biggestPart: biggest },
     debug: debug.join("\n"),
   };
 }
@@ -675,11 +730,24 @@ export function parseVentsimCsv(content: string, mergeTol = DEFAULT_MERGE_TOL): 
 
   debug.push(`Ветвей создано: ${branches.length}, с вентилятором: ${fanCount}`);
 
+  const allNodes2 = [...nodeMap.values()];
+  const conn = countNetworkParts(allNodes2, branches);
+  debug.push(`Несвязанных частей: ${conn.parts}, крупнейшая: ${conn.biggest} узлов`);
+  if (conn.parts > 1) {
+    warnings.push(
+      `Схема распалась на ${conn.parts} несвязанных частей — проверьте, что в файле выгружены все выработки ` +
+      `и колонки «откуда/куда» указаны верно.`
+    );
+  }
+
   return {
-    nodes: [...nodeMap.values()],
+    nodes: allNodes2,
     branches,
     warnings,
-    stats: { nodes: nodeMap.size, branches: branches.length, fans: fanCount },
+    stats: {
+      nodes: nodeMap.size, branches: branches.length, fans: fanCount,
+      parts: conn.parts, biggestPart: conn.biggest,
+    },
     debug: debug.join("\n"),
   };
 }
