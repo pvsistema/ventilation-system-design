@@ -78,11 +78,12 @@ export default function Vent2Cdf3ImportDialog({ onImport, onClose }: Props) {
 
           {result && (
             <div className="space-y-3">
-              <div className="grid grid-cols-5 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 {[
                   { label: "Узлов",     value: result.stats.nodes,      hi: result.stats.nodes > 0,      bad: false },
                   { label: "Выработок", value: result.stats.branches,   hi: result.stats.branches > 0,   bad: false },
                   { label: "Горизонтов", value: result.stats.layers,    hi: result.stats.layers > 0,     bad: false },
+                  { label: "Перемычек", value: result.stats.bulkheads, hi: result.stats.bulkheads > 0,  bad: false },
                   { label: "На поверхность", value: result.stats.atmosphere, hi: result.stats.atmosphere > 0, bad: result.stats.atmosphere === 0 },
                   {
                     label: result.stats.parts > 1 ? "Частей" : "Сеть цельная",

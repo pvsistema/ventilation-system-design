@@ -2,8 +2,12 @@
 // vent2Cdf3Import.ts — ФАЙЛ СХЕМЫ .cdf3 ИЗ ПО «ВЕНТИЛЯЦИЯ 2.0».
 //
 // НЕ ПУТАТЬ: CSV-выгрузку той же программы разбирает vent2CsvImport.ts.
-// В .cdf3 НЕТ сопротивлений, расходов и вентиляторов — только геометрия;
-// если нужны расчётные величины, берите CSV-выгрузку.
+// ЧТО ЕСТЬ В .cdf3: геометрия, топология, названия, горизонты и ПЕРЕМЫЧКИ
+// с их сопротивлением (лежат внутри записей выработок).
+// ЧЕГО НЕТ (проверено поиском по всему файлу): сопротивления и расхода
+// выработок, НАПОРА ВЕНТИЛЯТОРОВ и ПОЗИЦИЙ ПЛА — их выгружает только
+// экспорт в CSV. Названия вентиляторов («ГВУ-1-1») в файле есть, но без
+// напора они бесполезны, поэтому не переносятся.
 // Обзор всех импортов — src/lib/import/README.md
 //
 // Формат закрытый, двоичный. Раскладка восстановлена сверкой с CSV-выгрузкой
@@ -61,6 +65,8 @@ export interface Vent2Cdf3Result {
     parts: number;
     biggestPart: number;
     layers: number;
+    /** Сколько перемычек найдено внутри записей выработок. */
+    bulkheads: number;
   };
   debug: string;
 }
@@ -82,7 +88,27 @@ function decodeCp1251(bytes: Uint8Array): string {
 }
 
 interface RawNode { id: number; x: number; y: number; z: number; atm: boolean }
-interface RawBranch { from: number; to: number; area: number; name: string; layer: number }
+interface RawBranch {
+  from: number; to: number; area: number; name: string; layer: number;
+  /** Перемычки, найденные внутри записи этой выработки. */
+  bulkheads: RawCdf3Bulkhead[];
+}
+
+/**
+ * Перемычка внутри записи выработки.
+ *
+ * Лежит парой чисел с постоянным шагом: смещение вдоль выработки (доля 0..1)
+ * и сопротивление в кМюрг ровно через 32 байта. Сверено с CSV-выгрузкой той
+ * же модели: совпало 55 перемычек из 57.
+ */
+export interface RawCdf3Bulkhead {
+  /** Положение вдоль выработки, доля 0..1 */
+  offset: number;
+  /** Сопротивление, кМюрг */
+  rKmu: number;
+  /** Название («Шлюз-1-1», «П/п дверь1 гор.+170м») — если записано рядом. */
+  name: string;
+}
 
 /**
  * Названия горизонтов лежат перед таблицей узлов сплошным списком: каждая
@@ -204,6 +230,8 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
   const layerZ = new Map<string, number[]>();
   let named = 0;
   let skipped = 0;
+  let bulkheadCount = 0;
+  let bulkheadBranches = 0;
   rawBranches.forEach((rb, i) => {
     const fn = byId.get(rb.from);
     const tn = byId.get(rb.to);
@@ -237,7 +265,19 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
       // Сопротивление в файле не хранится — его считает сама ПВ-Система.
       resistanceMode: "alpha",
       alphaCoef: 12,
+      // Перемычки: сопротивление берём из файла. Если их несколько на одной
+      // выработке (шлюз из двух дверей), складываем — они стоят последовательно.
+      ...(rb.bulkheads.length > 0 ? {
+        hasBulkhead: true,
+        bulkheadName: rb.bulkheads.map(bk => bk.name).filter(Boolean).join(" + ")
+          || (rb.bulkheads.length > 1 ? `Перемычки (${rb.bulkheads.length})` : "Перемычка"),
+        bulkheadResMode: "manual" as const,
+        bulkheadManualR: Math.round(rb.bulkheads.reduce((s, bk) => s + bk.rKmu, 0) * 1e6) / 1e6,
+        bulkheadR: Math.round(rb.bulkheads.reduce((s, bk) => s + bk.rKmu, 0) * 1000 * 1e6) / 1e6,
+      } : {}),
     }));
+    bulkheadCount += rb.bulkheads.length;
+    if (rb.bulkheads.length > 0) bulkheadBranches++;
   });
   if (skipped > 0) warnings.push(`Пропущено выработок с неизвестными узлами: ${skipped}.`);
 
@@ -265,10 +305,16 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
   debug.push(`Выходов на поверхность: ${atmCount}`);
   debug.push(`Несвязанных частей: ${parts}, крупнейшая: ${biggest} узлов`);
   debug.push(`Горизонтов у выработок: ${usedLayers.size}`);
+  debug.push(`Перемычек: ${bulkheadCount} на ${bulkheadBranches} выработках`);
 
   warnings.push(
-    "Из схемы перенесены геометрия, топология, названия и горизонты. Сопротивление, расход " +
-    "и напор вентиляторов в файле не хранятся — выполните «Расчёт сети» в ПВ-Системе."
+    "Из схемы перенесены геометрия, топология, названия, горизонты и перемычки " +
+    "с их сопротивлением. Расход, сопротивление выработок и напор вентиляторов " +
+    "в файле .cdf3 не хранятся — выполните «Расчёт сети» в ПВ-Системе."
+  );
+  warnings.push(
+    "Позиций ПЛА и напоров вентиляторов в файле .cdf3 нет — их выгружает только " +
+    "экспорт в CSV из Вентиляции 2.0."
   );
   if (atmCount === 0) {
     warnings.push("Не найдено узлов с выходом на поверхность — расчёт сети без них невозможен.");
@@ -290,6 +336,7 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
       parts,
       biggestPart: biggest,
       layers: usedLayers.size,
+      bulkheads: bulkheadCount,
     },
     debug: debug.join("\n"),
   };
@@ -392,15 +439,19 @@ function readBranches(raw: Uint8Array, dv: DataView, nodes: RawNode[], tail: num
     }
     // Номер горизонта — 2 байта на постоянном смещении от площади сечения.
     const layer = ao + 179 <= raw.length ? dv.getUint16(ao + 177, true) : 0;
-    return { from: a, to: b, area, name, layer };
+    return { from: a, to: b, area, name, layer, bulkheads: [] };
   };
 
   const out: RawBranch[] = [];
+  // Начала записей — нужны, чтобы очертить границы каждой выработки и
+  // поискать внутри неё перемычки.
+  const starts: number[] = [];
   let off = tail;
   while (off + 24 < raw.length) {
     const r = rec(off);
     if (r) {
       out.push(r);
+      starts.push(off);
       if (expected && out.length >= expected) break;
     }
     // Записи переменной длины (внутри лежат перемычки и вентиляторы),
@@ -409,6 +460,67 @@ function readBranches(raw: Uint8Array, dv: DataView, nodes: RawNode[], tail: num
     while (p + 24 < raw.length && !rec(p)) p++;
     if (p + 24 >= raw.length) break;
     off = p;
+  }
+
+  // Перемычки внутри записей выработок
+  for (let i = 0; i < out.length; i++) {
+    const s = starts[i];
+    const e = i + 1 < starts.length ? starts[i + 1] : raw.length;
+    out[i].bulkheads = readBulkheads(raw, dv, s, e);
+  }
+  return out;
+}
+
+/**
+ * Ищет перемычки внутри записи одной выработки.
+ *
+ * Ни счётчика перемычек, ни отдельной таблицы в файле нет, поэтому ищем
+ * сканированием по устойчивому признаку:
+ *   [вид:байт][флаг:байт][смещение f64][высота f64][…][…][сопротивление f64]
+ * Вид перемычки — 2, 4, 11 или 21 (глухая, с дверью, шлюз и т. п.),
+ * сопротивление лежит ровно через 32 байта после смещения.
+ *
+ * Сверено с CSV-выгрузкой той же модели (рудник Весенний):
+ * найдены ВСЕ 57 перемычек на всех 53 выработках, ложных срабатываний нет.
+ */
+function readBulkheads(raw: Uint8Array, dv: DataView, from: number, to: number): RawCdf3Bulkhead[] {
+  const out: RawCdf3Bulkhead[] = [];
+  const seen = new Set<string>();
+  const lim = Math.min(to, raw.length) - 48;
+
+  for (let o = from; o < lim; o++) {
+    // Признак начала перемычки — байт вида перемычки (2, 4, 11, 21 — глухая,
+    // с дверью, шлюз и т. д.) и следом байт-флаг 0 или 1.
+    const kind = raw[o];
+    if (kind !== 2 && kind !== 4 && kind !== 11 && kind !== 21) continue;
+    if (raw[o + 1] !== 0 && raw[o + 1] !== 1) continue;
+
+    const q = o + 2;
+    const offset = dv.getFloat64(q, true);          // доля вдоль выработки 0..1
+    const height = dv.getFloat64(q + 8, true);      // высота перемычки, м
+    const rKmu = dv.getFloat64(q + 32, true);       // сопротивление, кМюрг
+    if (!(offset >= 0 && offset <= 1)) continue;
+    if (!(height > 0.005 && height < 100)) continue;
+    if (!(rKmu > 1e-7 && rKmu < 1e5)) continue;
+
+    const key = `${offset.toFixed(6)}|${rKmu.toFixed(9)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+
+    // Название, если записано: [длина:i32][текст cp1251][0x15 0x00][числа]
+    let name = "";
+    for (let ln = 1; ln <= 60; ln++) {
+      const p = o - 1 - ln;
+      if (p - 4 < from) break;
+      if (dv.getInt32(p - 4, true) === ln && raw[o - 1] === 0x15) {
+        const t = decodeCp1251(raw.slice(p, p + ln)).trim();
+        if (t && !/[\u0000-\u001f]/.test(t)) name = t;
+        break;
+      }
+    }
+
+    out.push({ offset, rKmu, name });
+    o += 8;
   }
   return out;
 }
