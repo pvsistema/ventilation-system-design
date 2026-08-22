@@ -18,6 +18,8 @@ export interface RawFan {
   name: string;        // название вентилятора
   pressure: number;    // давление (напор), Па
   flow: number;        // расход, м³/с
+  /** Вид установки из файла: main → ГВУ, simple/local → ВМП */
+  fanType?: "ГВУ" | "ВВУ" | "ВМП";
 }
 
 export interface RawBulkhead {
@@ -70,6 +72,13 @@ export interface CsvImportResult {
   /** Маппинг: оригинальный ID выработки из АэроСети → сгенерированный ID ветви */
   branchOriginalIdMap: Record<string, string>;
   warnings: string[];
+  /**
+   * true — сопротивление выработок в файле УЖЕ включает перемычки
+   * («Суммарное сопротивление» в терминах АэроСети). Тогда сопротивление
+   * перемычек нельзя добавлять к ветви второй раз: перемычки создаются
+   * только как символы на схеме, без вклада в расчёт.
+   */
+  resistanceIncludesBulkheads: boolean;
   stats: { nodes: number; branches: number; nodesWithZ: number; fans: number; bulkheads: number; positions: number; horizons: number };
   debug: string;
 }
@@ -200,7 +209,7 @@ function parseNumSci(s: string | undefined): number {
   return isNaN(n) ? 0 : n;
 }
 
-function parseExcavationsFile(lines: string[], sep: string): RawBranch[] {
+function parseExcavationsFile(lines: string[], sep: string, headerOut?: { resHeader: string }): RawBranch[] {
   const result: RawBranch[] = [];
   let headerFound = false;
   const colIdx = { id:0, from:1, to:2, name:3, len:4, type:5, area:6, perim:7, flow:8, res:9, layer:10 };
@@ -236,6 +245,8 @@ function parseExcavationsFile(lines: string[], sep: string): RawBranch[] {
         if (flowC >= 0) colIdx.flow = flowC;
         if (resC >= 0) colIdx.res = resC;
         if (layerC >= 0) colIdx.layer = layerC;
+        // Запоминаем подпись колонки R — по ней определяются единицы измерения
+        if (headerOut && resC >= 0) headerOut.resHeader = cols[resC] ?? "";
         headerFound = true;
       }
       continue;
@@ -260,6 +271,32 @@ function parseExcavationsFile(lines: string[], sep: string): RawBranch[] {
 
 // ── Парсинг файла вентиляторов ────────────────────────────────────────────────
 
+/**
+ * Приводит тип источника тяги из файла к названию вентилятора.
+ * Вентиляция 2.0 пишет служебные слова: main — главная вентиляторная
+ * установка, simple/local — вспомогательный (местный) вентилятор.
+ * Число (например «0.2») — это ошибочно считанное смещение, не имя.
+ */
+export function fanNameFromType(raw: string): string {
+  const t = (raw ?? "").trim();
+  if (!t) return "Вентилятор";
+  // Чистое число — это не название (столбец смещения)
+  if (/^-?[\d.,]+%?$/.test(t)) return "Вентилятор";
+  const l = t.toLowerCase();
+  if (/^main$|главн|гву/.test(l)) return "ГВУ";
+  if (/^simple$|^local$|местн|вспомогат|впу/.test(l)) return "Вентилятор";
+  return t;
+}
+
+/** Вид установки по типу источника тяги из файла. */
+export function fanTypeFromRaw(raw: string): "ГВУ" | "ВВУ" | "ВМП" | undefined {
+  const l = (raw ?? "").trim().toLowerCase();
+  if (!l || /^-?[\d.,]+%?$/.test(l)) return undefined;
+  if (/^main$|главн|гву/.test(l)) return "ГВУ";
+  if (/^simple$|^local$|местн|вмп/.test(l)) return "ВМП";
+  return undefined;
+}
+
 function parseFansFile(lines: string[], sep: string): RawFan[] {
   const result: RawFan[] = [];
   const colIdx = { branchId: 0, name: 1, pressure: 2, flow: 3 };
@@ -273,7 +310,13 @@ function parseFansFile(lines: string[], sep: string): RawFan[] {
       if (!headerFound) {
         const ci = (pat: RegExp) => cols.findIndex(c => pat.test(c.toLowerCase()));
         const brC  = ci(/выработ|branch|ид.*выраб|id.*excav/);
-        const nmC  = ci(/назван|имя|name|вентилят/);
+        // Название/тип источника тяги. Столбец «Смещение источника тяги, %»
+        // исключаем явно: иначе именем вентилятора становилось число 0.2
+        const nmC  = cols.findIndex(c => {
+          const t = c.toLowerCase();
+          if (/смещен|offset|%/.test(t)) return false;
+          return /назван|имя|name|вентилят|тип.*тяг|тип.*источник/.test(t);
+        });
         const prC  = ci(/напор|давлен|pressure|депрессия/);
         const flC  = ci(/расход|flow|подача/);
         if (brC >= 0) colIdx.branchId = brC;
@@ -287,11 +330,13 @@ function parseFansFile(lines: string[], sep: string): RawFan[] {
 
     const branchId = cleanId(cols[colIdx.branchId] ?? "");
     if (!branchId) continue;
+    const rawType = cols[colIdx.name] ?? "";
     result.push({
       branchId,
-      name: cols[colIdx.name] ?? "",
+      name: fanNameFromType(rawType),
       pressure: parseNumSci(cols[colIdx.pressure]),
       flow: parseNumSci(cols[colIdx.flow]),
+      fanType: fanTypeFromRaw(rawType),
     });
   }
   return result;
@@ -645,8 +690,22 @@ function buildResult(
   }
   if (positions.length > 0) debug.push(`Позиций после маппинга: ${positions.length}`);
 
+  // Включает ли R выработки вклад её перемычек (сравниваем по исходным ID).
+  const rIncludesBk = detectResistanceIncludesBulkheads(
+    rawBranches.map(rb => ({ id: rb.id, resistance: rb.resistance })),
+    rawBulkheads,
+  );
+  if (rIncludesBk) {
+    debug.push("Сопротивление выработок уже включает перемычки (суммарное) — вклад перемычек повторно не добавляется");
+    warnings.push(
+      "Сопротивление выработок в файле указано суммарное — вместе с перемычками. " +
+      "Перемычки нанесены на схему как обозначения, но их сопротивление не прибавляется повторно."
+    );
+  }
+
   return {
     nodes: resultNodes, branches, fans, bulkheads, positions, horizons, branchOriginalIdMap, warnings,
+    resistanceIncludesBulkheads: rIncludesBk,
     stats: { nodes: resultNodes.length, branches: branches.length, nodesWithZ, fans: fans.length, bulkheads: bulkheads.length, positions: positions.length, horizons: horizons.length },
     debug: debug.join("\n"),
   };
@@ -674,6 +733,52 @@ export interface CsvImportOptions {
  * Логика: в АэроСети R типичной выработки 0.01–100 кмю.
  * В SI: 0.00001–0.1 Нс²/м⁸. Граница медианы 0.5 разделяет эти диапазоны надёжно.
  */
+/**
+ * Единицы R по подписи колонки — самый надёжный признак, ведь программа
+ * сама пишет их в шапке: «Сопротивление выработки, кМюрг».
+ * Возвращает null, если в заголовке единиц нет (тогда решаем по числам).
+ *
+ * Важно: в Вентиляции 2.0 сопротивления в кМюрг очень мелкие (медиана ~5e-5),
+ * поэтому определять единицы по величине чисел нельзя — см. detectResistanceUnit.
+ */
+export function resistanceUnitFromHeader(header: string): "kmu" | "si" | null {
+  const h = header.toLowerCase();
+  if (!/сопротивл|resist/.test(h)) return null;
+  // кМюрг / кмю / kmu / мюрг — единицы АэроСети и Вентиляции 2.0
+  if (/кмюрг|к\.?мюрг|кмю\b|kmu|мюрг|murg/.test(h)) return "kmu";
+  // Н·с²/м⁸ в разных написаниях — СИ
+  if (/н\s*[·*.]?\s*с.?\s*\/\s*м|n\s*[·*.]?\s*s.?\s*\/\s*m|нс2|ns2/.test(h)) return "si";
+  return null;
+}
+
+/**
+ * Определяет, включает ли сопротивление выработки сопротивление её перемычек.
+ *
+ * Вентиляция 2.0 выгружает «суммарное сопротивление»: у выработки с перемычкой
+ * R целиком состоит из вклада перемычек, а собственное трение — тысячные доли.
+ * Признак: R выработки почти равно сумме R её перемычек (в пределах 10%).
+ * Если так у большинства ветвей с перемычками — это суммарное сопротивление.
+ */
+export function detectResistanceIncludesBulkheads(
+  branches: { id: string; resistance: number }[],
+  bulkheads: { branchId: string; rKmu: number }[],
+): boolean {
+  if (bulkheads.length === 0) return false;
+  const sumByBranch = new Map<string, number>();
+  for (const bk of bulkheads) {
+    sumByBranch.set(bk.branchId, (sumByBranch.get(bk.branchId) ?? 0) + bk.rKmu);
+  }
+  let matched = 0, total = 0;
+  for (const b of branches) {
+    const bkSum = sumByBranch.get(b.id);
+    if (!bkSum || bkSum <= 0 || b.resistance <= 0) continue;
+    total++;
+    // R ветви ≈ сумма перемычек → перемычки уже внутри
+    if (Math.abs(b.resistance - bkSum) / Math.max(b.resistance, bkSum) < 0.1) matched++;
+  }
+  return total > 0 && matched / total > 0.5;
+}
+
 export function detectResistanceUnit(resistances: number[]): "kmu" | "si" {
   const nonZero = resistances.filter(r => r > 0);
   if (nonZero.length === 0) return "kmu"; // нет данных — предполагаем кмю
@@ -691,6 +796,8 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
   const allRawFans: RawFan[] = [];
   const allRawBulkheads: RawBulkhead[] = [];
   const allRawPositions: RawPosition[] = [];
+  // Подпись колонки сопротивления — по ней надёжно определяются единицы
+  const resHeaderOut = { resHeader: "" };
 
   for (const file of files) {
     const lines = normalizeLines(file.content);
@@ -706,12 +813,12 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
       debug.push(`  Узлов: ${nodes.length}`);
       allRawNodes.push(...nodes);
     } else if (fileType === "excavations") {
-      const branches = parseExcavationsFile(lines, sep);
+      const branches = parseExcavationsFile(lines, sep, resHeaderOut);
       debug.push(`  Выработок: ${branches.length}`);
       allRawBranches.push(...branches);
     } else if (fileType === "unknown") {
       const nodes = parseNodesFile(lines, sep);
-      const branches = parseExcavationsFile(lines, sep);
+      const branches = parseExcavationsFile(lines, sep, resHeaderOut);
       if (nodes.length > branches.length) {
         debug.push(`  Авто→узлы: ${nodes.length}`);
         allRawNodes.push(...nodes);
@@ -741,6 +848,7 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
       nodes: [], branches: [], fans: allRawFans,
       bulkheads: allRawBulkheads, positions: allRawPositions, horizons: [],
       branchOriginalIdMap: {},
+      resistanceIncludesBulkheads: false,
       warnings: ["Файлы не содержат данных. Убедитесь что выбраны *-nodes.csv и *-excavations.csv из АэроСети."],
       stats: { nodes: 0, branches: 0, nodesWithZ: 0, fans: allRawFans.length, bulkheads: allRawBulkheads.length, positions: allRawPositions.length, horizons: 0 },
       debug: debug.join("\n"),
@@ -751,9 +859,20 @@ export function parseCsvMulti(files: CsvFileInput[], opts: CsvImportOptions = {}
   let rUnit: "kmu" | "si";
   const requestedUnit = opts.resistanceUnit ?? "auto";
   if (requestedUnit === "auto") {
-    const allR = allRawBranches.map(b => b.resistance).filter(r => r > 0);
-    rUnit = detectResistanceUnit(allR);
-    debug.push(`Автодетект единиц R: медиана=${allR.length > 0 ? [...allR].sort((a,b)=>a-b)[Math.floor(allR.length/2)].toFixed(4) : "н/д"} → ${rUnit === "kmu" ? "кмю (÷1000)" : "СИ (без перевода)"}`);
+    // 1) Сначала верим подписи колонки: программа сама пишет единицы в шапке.
+    //    Это важнее величины чисел — в Вентиляции 2.0 сопротивления в кМюрг
+    //    очень мелкие (медиана ~5e-5) и по ним файл ошибочно принимался за СИ,
+    //    из-за чего все сопротивления занижались в 9.81 раза.
+    const byHeader = resistanceUnitFromHeader(resHeaderOut.resHeader);
+    if (byHeader) {
+      rUnit = byHeader;
+      debug.push(`Единицы R по заголовку "${resHeaderOut.resHeader}" → ${rUnit === "kmu" ? "кМюрг" : "СИ"}`);
+    } else {
+      // 2) Заголовок молчит — решаем по величине значений.
+      const allR = allRawBranches.map(b => b.resistance).filter(r => r > 0);
+      rUnit = detectResistanceUnit(allR);
+      debug.push(`Автодетект единиц R: медиана=${allR.length > 0 ? [...allR].sort((a,b)=>a-b)[Math.floor(allR.length/2)].toFixed(6) : "н/д"} → ${rUnit === "kmu" ? "кМюрг" : "СИ"}`);
+    }
   } else {
     rUnit = requestedUnit;
   }
@@ -793,6 +912,7 @@ export interface Vent2ColMap {
   // Источники тяги (вентиляторы)
   fan_branchId: number; // Ид выработки вентилятора
   fan_offset: number;   // Смещение
+  fan_type: number;     // Тип источника тяги (main / simple)
   fan_pressure: number; // Напор
   // Позиции ПЛА
   pos_id: number;       // Ид позиции
@@ -810,9 +930,12 @@ export interface Vent2ColMap {
 export const VENT2_DEFAULT_COLS: Vent2ColMap = {
   node_id: 1, node_x: 2, node_y: 3, node_z: 4, node_atm: 5,
   id: 1, from: 2, to: 3, name: 4, length: 5, type: 6,
-  area: 7, perimeter: 8, flow: 9, resistance: 10, sumR: 10, layer: 11,
+  // В выгрузке Вентиляции 2.0 столбец 10 — «Сопротивление выработки, кМюрг»,
+  // и оно уже суммарное (включает перемычки). Поэтому по умолчанию читаем его
+  // как суммарное, а отдельный столбец собственного R не задан.
+  area: 7, perimeter: 8, flow: 9, resistance: 0, sumR: 10, layer: 11,
   bk_branchId: 1, bk_offset: 2, bk_type: 3, bk_resistance: 4,
-  fan_branchId: 1, fan_offset: 2, fan_pressure: 4,
+  fan_branchId: 1, fan_offset: 2, fan_type: 3, fan_pressure: 4,
   // Порядок по умолчанию совпадает с positions.csv нашего экспорта:
   // Ид; X; Y; Z; Номер; Название; Тип; Вид аварии; Цвет границы; Список выработок
   pos_id: 1, pos_x: 2, pos_y: 3, pos_z: 4, pos_number: 5,
@@ -835,7 +958,9 @@ export interface Vent2ParseOptions {
 
 function col(row: string[], idx: number): string {
   if (idx <= 0) return "";
-  return (row[idx - 1] ?? "").trim();
+  // Значения в CSV часто взяты в кавычки («"main"», «"Да"») — снимаем их,
+  // иначе сравнения с текстом и названия приходят вместе с кавычками.
+  return (row[idx - 1] ?? "").trim().replace(/^"|"$/g, "").trim();
 }
 
 export function parseVent2Csv(
@@ -889,6 +1014,16 @@ export function parseVent2Csv(
     if (isNaN(parseFloat(first.replace(",", ".")))) brStart = 1;
   }
 
+  // Какой столбец сопротивления использовать.
+  // Как в АэроСети: либо «Сопротивление выработки» (собственное, без перемычек),
+  // либо «Суммарное сопротивление» (уже с перемычками). Если задано суммарное —
+  // сопротивление перемычек нельзя прибавлять к ветви второй раз.
+  const useSumR = cols.sumR > 0 && cols.resistance <= 0;
+  const rColIdx = useSumR ? cols.sumR : cols.resistance;
+  debug.push(useSumR
+    ? `Сопротивление: столбец ${rColIdx} — суммарное (перемычки уже учтены)`
+    : `Сопротивление: столбец ${rColIdx} — собственное сопротивление выработки`);
+
   // Собираем ID вершин из ветвей (для автораскладки если нет файла вершин)
   const nodeIdsFromBranches = new Set<string>();
   const rawBranches: Array<{
@@ -913,7 +1048,9 @@ export function parseVent2Csv(
       area:       parseNum(col(row, cols.area)),
       perimeter:  parseNum(col(row, cols.perimeter)),
       flow:       parseNum(col(row, cols.flow)),
-      resistance: cols.resistance > 0 ? parseNum(col(row, cols.resistance)) : 0,
+      // Сопротивление берём из того столбца, который указан пользователем:
+      // «Сопротивление выработки» (без перемычек) либо «Суммарное» (с ними).
+      resistance: rColIdx > 0 ? parseNum(col(row, rColIdx)) : 0,
       layer:      cols.layer     > 0 ? col(row, cols.layer)      : "",
     });
   }
@@ -1029,11 +1166,14 @@ export function parseVent2Csv(
       const origId = col(row, cols.fan_branchId);
       const brId = branchOriginalIdMap[origId];
       if (!brId) continue;
+      // Тип источника тяги (main/simple) — столбец рядом со смещением
+      const fanRawType = cols.fan_type > 0 ? col(row, cols.fan_type) : "";
       fans.push({
         branchId: brId,
-        name: "Вентилятор",
+        name: fanNameFromType(fanRawType),
         pressure: cols.fan_pressure > 0 ? parseNum(col(row, cols.fan_pressure)) : 0,
         flow: 0,
+        fanType: fanTypeFromRaw(fanRawType),
       });
     }
     debug.push(`Вентиляторов: ${fans.length}`);
@@ -1094,6 +1234,12 @@ export function parseVent2Csv(
     positions,
     horizons,
     branchOriginalIdMap,
+    // Либо пользователь прямо указал столбец «Суммарное сопротивление»,
+    // либо это видно по числам: R выработки ≈ сумма R её перемычек.
+    resistanceIncludesBulkheads: useSumR || detectResistanceIncludesBulkheads(
+      rawBranches.map(rb => ({ id: branchOriginalIdMap[rb.id] ?? rb.id, resistance: rb.resistance })),
+      bulkheads,
+    ),
     warnings,
     stats: {
       nodes: nodeMap.size,

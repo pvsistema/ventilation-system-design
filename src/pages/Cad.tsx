@@ -2089,9 +2089,15 @@ export default function CadPage() {
         // в режиме постоянного напора (иначе H "продавливает" сеть до нефизичного Q).
         const matched = findFanByName(fan.name);
         return { ...b, hasFan: true, fanMode: "constant" as const, fanName: fan.name,
+                 fanType: fan.fanType ?? b.fanType,
                  fanPressure: fan.pressure, fanCurveId: matched?.id ?? b.fanCurveId ?? "" };
       });
     };
+
+    // Если сопротивление выработок в файле уже суммарное (включает перемычки),
+    // то вклад перемычек обнуляем: иначе он попадёт в расчёт дважды — один раз
+    // внутри R ветви, второй раз как отдельная перемычка.
+    const bkAlreadyInR = result.resistanceIncludesBulkheads === true;
 
     // ── Применяем перемычки к ветвям (hasBulkhead + bulkheadR) ──
     const applyBulkheads = (branches: typeof result.branches) => {
@@ -2099,12 +2105,13 @@ export default function CadPage() {
       return branches.map(b => {
         const bk = result.bulkheads.find(bk => bk.branchId === b.id);
         if (!bk) return b;
+        const rKmu = bkAlreadyInR ? 0 : bk.rKmu;
         return {
           ...b,
           hasBulkhead: true,
           bulkheadName: bk.typeName,
-          bulkheadR: bk.rKmu * 1000,       // кМюрг → Мюрг (базовая единица)
-          bulkheadManualR: bk.rKmu,
+          bulkheadR: rKmu * 1000,       // кМюрг → Мюрг (базовая единица)
+          bulkheadManualR: rKmu,
           bulkheadResMode: "manual" as const,
           bulkheadAirPerm: bk.airPerm,
         };
@@ -2162,9 +2169,11 @@ export default function CadPage() {
           branchId: bk.branchId,
           t: 0.5,
           bkResMode: "manual" as const,
-          bkManualR: bk.rKmu,
+          // При суммарном R сопротивление перемычки уже сидит внутри ветви,
+          // поэтому символ ставим «прозрачным» — только как обозначение.
+          bkManualR: bkAlreadyInR ? 0 : bk.rKmu,
           bkAirPerm: bk.airPerm,
-          bkBulkheadR: bk.rKmu * 1000,
+          bkBulkheadR: (bkAlreadyInR ? 0 : bk.rKmu) * 1000,
           bkBulkheadName: bk.typeName,
         });
       }

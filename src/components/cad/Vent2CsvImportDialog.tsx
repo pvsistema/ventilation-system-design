@@ -291,9 +291,9 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
                 <ColInput label="Периметр, м"       value={cols.perimeter}  onChange={setCol("perimeter")} />
                 <ColInput label="Расход, м³/с"      value={cols.flow}       onChange={setCol("flow")} />
                 <ColInput label="Сопротивление"     value={cols.resistance} onChange={setCol("resistance")}
-                  hint="Сопротивление выработки (без перемычек)" />
+                  hint="Собственное сопротивление выработки, БЕЗ перемычек. Сопротивление перемычек будет добавлено отдельно" />
                 <ColInput label="Суммарное сопр."   value={cols.sumR}       onChange={setCol("sumR")}
-                  hint="Суммарное сопротивление (если нет отдельного)" />
+                  hint="Сопротивление уже ВМЕСТЕ с перемычками. Используется, только если поле «Сопротивление» пустое — тогда перемычки не добавляются второй раз" />
                 <ColInput label="Слой"              value={cols.layer}      onChange={setCol("layer")} />
               </div>
             </div>
@@ -326,6 +326,8 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
                 <div className="grid grid-cols-2 gap-x-4 px-3 py-2">
                   <ColInput label="Ид выработки *"   value={cols.fan_branchId}  onChange={setCol("fan_branchId")}  required />
                   <ColInput label="Смещение"          value={cols.fan_offset}    onChange={setCol("fan_offset")} />
+                  <ColInput label="Тип источника"     value={cols.fan_type}      onChange={setCol("fan_type")}
+                    hint="main — ГВУ, simple — вентилятор местного проветривания" />
                   <ColInput label="Напор, Па"         value={cols.fan_pressure}  onChange={setCol("fan_pressure")} />
                 </div>
               </div>
