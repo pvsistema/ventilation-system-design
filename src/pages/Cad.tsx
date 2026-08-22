@@ -38,6 +38,7 @@ import { type ExcelImportResult } from "@/lib/excelImport";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/csvImport";
 import { type VentsimImportResult } from "@/lib/ventsimImport";
+import { type Cdf3ImportResult } from "@/lib/cdf3Import";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
@@ -2061,6 +2062,24 @@ export default function CadPage() {
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showVentsimImport, setShowVentsimImport] = useState(false);
   const [showVent2CsvImport, setShowVent2CsvImport] = useState(false);
+  const [showCdf3Import, setShowCdf3Import] = useState(false);
+
+  // Импорт схемы .cdf3 (файл Вентиляции 2.0 напрямую, без выгрузки в CSV)
+  const handleCdf3Import = (result: Cdf3ImportResult, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      setNodes(result.nodes);
+      setBranches(result.branches);
+      setSchemaSymbols(ensureFanSymbols(result.branches, []));
+      setSelectedNodeId(null); setSelectedBranchId(null);
+    } else {
+      setNodes(prev => [...prev, ...result.nodes]);
+      setBranches(prev => [...prev, ...result.branches]);
+      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
+    }
+    setImportNonce(n => n + 1);
+    setShowCdf3Import(false);
+    setActiveRibbon("home");
+  };
 
   const handleVentsimImport = (result: VentsimImportResult, mode: "replace" | "append") => {
     if (mode === "replace") {
@@ -4562,6 +4581,7 @@ export default function CadPage() {
                     {[
                       { icon: "FileText" as const,    label: "CSV из АэроСети",                 ext: "рекомендуется",  action: "csv-aero" },
                       { icon: "FileSpreadsheet" as const, label: "CSV из Вентиляция 2.0",      ext: "Вентиляция 2.0", action: "csv-vent2" },
+                      { icon: "Boxes" as const,       label: "Схема Вентиляция 2.0",            ext: ".cdf3 — файл схемы", action: "cdf3" },
                       { icon: "FileText" as const,    label: "CSV из Ventsim",                  ext: "Ventsim 5/6",    action: "csv-ventsim" },
                       { icon: "FileJson" as const,    label: "Добавить схему из файла",        ext: ".vproj / .json", action: "json" },
                       { icon: "Code" as const,        label: "Добавить схему из XML",           ext: ".xml",           action: "xml"  },
@@ -4580,6 +4600,9 @@ export default function CadPage() {
                           } else if (item.action === "csv-ventsim") {
                             setShowVentsimImport(true);
                             setActiveRibbon("home");
+                          } else if (item.action === "cdf3") {
+                            setShowCdf3Import(true);
+                            setActiveRibbon("home");
                           } else if (item.action === "dxf") {
                             setShowDxfImport(true);
                             setActiveRibbon("home");
@@ -4592,8 +4615,8 @@ export default function CadPage() {
                         }}>
                         <div className="w-8 h-8 flex items-center justify-center rounded border group-hover:border-green-400"
                           style={{
-                            background: item.action === "csv-aero" ? "var(--c-tint-green2, #dcfce7)" : item.action === "csv-vent2" ? "var(--c-tint-blue2, #dbeafe)" : item.action === "csv-ventsim" ? "var(--c-tint-amber, #fef9c3)" : item.action === "combined" ? "var(--c-tint-purple, #ede9fe)" : item.action === "dxf" ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s1, #fff)",
-                            borderColor: item.action === "csv-aero" ? "#86efac" : item.action === "csv-vent2" ? "#93c5fd" : item.action === "csv-ventsim" ? "#fde047" : item.action === "combined" ? "#a78bfa" : item.action === "dxf" ? "#93c5fd" : "var(--c-b2, #d1d5db)",
+                            background: item.action === "csv-aero" ? "var(--c-tint-green2, #dcfce7)" : item.action === "cdf3" ? "var(--c-tint-green2, #dcfce7)" : item.action === "csv-vent2" ? "var(--c-tint-blue2, #dbeafe)" : item.action === "csv-ventsim" ? "var(--c-tint-amber, #fef9c3)" : item.action === "combined" ? "var(--c-tint-purple, #ede9fe)" : item.action === "dxf" ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s1, #fff)",
+                            borderColor: item.action === "csv-aero" ? "#86efac" : item.action === "cdf3" ? "#86efac" : item.action === "csv-vent2" ? "#93c5fd" : item.action === "csv-ventsim" ? "#fde047" : item.action === "combined" ? "#a78bfa" : item.action === "dxf" ? "#93c5fd" : "var(--c-b2, #d1d5db)",
                           }}>
                           <Icon name={item.icon} size={18} />
                         </div>
@@ -13111,6 +13134,9 @@ export default function CadPage() {
       showVentsimImport={showVentsimImport}
       setShowVentsimImport={setShowVentsimImport}
       handleVentsimImport={handleVentsimImport}
+      showCdf3Import={showCdf3Import}
+      setShowCdf3Import={setShowCdf3Import}
+      handleCdf3Import={handleCdf3Import}
       showEquipRef={showEquipRef}
       setShowEquipRef={setShowEquipRef}
       equipRefTab={equipRefTab}
