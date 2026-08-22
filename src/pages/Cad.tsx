@@ -37,6 +37,7 @@ import { type Position, type AccidentType, makePosition, matchPositionColor, ACC
 import { type ExcelImportResult } from "@/lib/excelImport";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/import/importCommon";
+import { guessBulkheadTypeId } from "@/lib/import/csvFieldUtils";
 import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
 import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
@@ -2094,15 +2095,38 @@ export default function CadPage() {
 
   // Импорт схемы .cdf3 (файл Вентиляции 2.0 напрямую, без выгрузки в CSV)
   const handleVent2Cdf3Import = (result: Vent2Cdf3Result, mode: "replace" | "append") => {
+    // Условные обозначения перемычек. РАНЬШЕ импорт .cdf3 переносил только
+    // сопротивление перемычки внутрь ветви: в расчёте оно участвовало, а
+    // значка на плане не появлялось. Теперь на каждую перемычку из файла
+    // ставим УО — вид подбираем по её названию.
+    const cdf3BulkheadSymbols = () => {
+      const stamp = Date.now();
+      return (result.bulkheads ?? []).map((bk, i) => ({
+        id: `SYM_BK_C3_${stamp}_${i}`,
+        typeId: guessBulkheadTypeId(bk.typeName),
+        x: 0, y: 0,
+        branchId: bk.branchId,
+        // Положение вдоль выработки берём из файла — перемычка встаёт туда,
+        // где она стоит в Вентиляции 2.0, а не всегда в середину.
+        t: bk.offset > 0 && bk.offset < 1 ? bk.offset : 0.5,
+        bkResMode: "manual" as const,
+        // Сопротивление уже записано в саму ветвь (bulkheadManualR), поэтому
+        // символ ставим «прозрачным» — иначе оно посчиталось бы дважды.
+        bkManualR: 0,
+        bkBulkheadR: 0,
+        bkBulkheadName: bk.typeName,
+      }));
+    };
+
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
-      setSchemaSymbols(ensureFanSymbols(result.branches, []));
+      setSchemaSymbols([...ensureFanSymbols(result.branches, []), ...cdf3BulkheadSymbols()]);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
-      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
+      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev), ...cdf3BulkheadSymbols()]);
     }
     // Горизонты из схемы добавляем к существующим, не трогая «Общий вид».
     if (result.horizons.length > 0) {
@@ -2175,37 +2199,9 @@ export default function CadPage() {
       });
     };
 
-    // ── Определяем typeId перемычки по названию из CSV ──
-    const guessBulkheadTypeId = (typeName: string): string => {
-      const t = typeName.toLowerCase().trim();
-      // Определяем конструкцию
-      const isDoor     = /двер|door/.test(t);
-      const isAuto     = /авто|auto/.test(t);
-      const isOpen     = /откр|open/.test(t);
-      const isWindow   = /окн|window|win/.test(t);
-      const isLattice  = /решёт|решет|lattic|lat/.test(t);
-      const isProem    = /проём|проем|proem/.test(t);
-      const isBarrier  = /барьер|barrier/.test(t);
-      const isFireDoor = /противопож|пожар|fire/.test(t);
-      // Определяем материал
-      const isConcrete = /бетон|concrete|conc/.test(t);
-      const isWood     = /дерев|деревян|wood/.test(t);
-      const isBrick    = /кирпич|brick/.test(t);
-      const isMetal    = /металл|metal/.test(t);
-      const mat = isConcrete ? "conc" : isWood ? "wood" : isBrick ? "brick" : isMetal ? "metal" : "base";
-      if (isFireDoor) return "fire_door_pp";
-      if (isBarrier)  return "barrier";
-      if (isAuto)     return `auto_${mat}`;
-      if (isOpen)     return `open_${mat}`;
-      if (isWindow)   return `win_${mat}`;
-      if (isLattice)  return `lat_${mat}`;
-      // «Проём» — то же УО, что и регулируемое окно (proem_* скрыт как дубль)
-      if (isProem)    return `win_${mat}`;
-      if (isDoor)     return `door_${mat}`;
-      return `bk_${mat}`;
-    };
-
     // ── Создаём SchemaSymbol для перемычек ──
+    // Вид УО подбирает общая guessBulkheadTypeId — та же, что и при импорте
+    // схемы .cdf3, чтобы одинаковые названия давали одинаковые обозначения.
     const makeBulkheadSymbols = (branches: typeof result.branches, existing: typeof schemaSymbols) => {
       const syms: typeof schemaSymbols = [];
       let notFound = 0;

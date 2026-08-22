@@ -59,6 +59,45 @@ export function fanTypeFromRaw(raw: string): "ГВУ" | "ВВУ" | "ВМП" | un
   return undefined;
 }
 
+// ── Перемычки ────────────────────────────────────────────────────────────────
+
+/**
+ * Подбирает вид условного обозначения (УО) перемычки по её названию из файла.
+ *
+ * Названия приходят вольным текстом («Шлюз-1-1», «П/п дверь гор.+170»,
+ * «Бетонная глухая»), поэтому конструкцию и материал угадываем по ключевым
+ * словам. Используется и при импорте CSV, и при импорте схемы .cdf3 —
+ * поэтому лежит в общем модуле, а не внутри страницы.
+ */
+export function guessBulkheadTypeId(typeName: string): string {
+  const t = (typeName ?? "").toLowerCase().trim();
+  // Определяем конструкцию
+  const isDoor     = /двер|door/.test(t);
+  const isAuto     = /авто|auto/.test(t);
+  const isOpen     = /откр|open/.test(t);
+  const isWindow   = /окн|window|win/.test(t);
+  const isLattice  = /решёт|решет|lattic|lat/.test(t);
+  const isProem    = /проём|проем|proem/.test(t);
+  const isBarrier  = /барьер|barrier/.test(t);
+  const isFireDoor = /противопож|пожар|п\/п|fire/.test(t);
+  // Определяем материал
+  const isConcrete = /бетон|concrete|conc/.test(t);
+  const isWood     = /дерев|деревян|wood/.test(t);
+  const isBrick    = /кирпич|brick/.test(t);
+  const isMetal    = /металл|metal/.test(t);
+  const mat = isConcrete ? "conc" : isWood ? "wood" : isBrick ? "brick" : isMetal ? "metal" : "base";
+  if (isFireDoor) return "fire_door_pp";
+  if (isBarrier)  return "barrier";
+  if (isAuto)     return `auto_${mat}`;
+  if (isOpen)     return `open_${mat}`;
+  if (isWindow)   return `win_${mat}`;
+  if (isLattice)  return `lat_${mat}`;
+  // «Проём» — то же УО, что и регулируемое окно (proem_* скрыт как дубль)
+  if (isProem)    return `win_${mat}`;
+  if (isDoor)     return `door_${mat}`;
+  return `bk_${mat}`;
+}
+
 // ── Цвета ────────────────────────────────────────────────────────────────────
 
 /**

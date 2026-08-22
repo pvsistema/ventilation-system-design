@@ -51,11 +51,31 @@ const LAYER_COLORS = [
   "#ea580c", "#4f46e5", "#059669", "#be123c", "#7c3aed", "#0d9488",
 ];
 
+/** Перемычка, уже привязанная к ветви схемы (для постановки УО). */
+export interface Cdf3BulkheadOnBranch {
+  /** ID ветви, созданной импортом. */
+  branchId: string;
+  /** Название из файла («Шлюз-1-1») — по нему подбирается вид значка. */
+  typeName: string;
+  /** Сопротивление, кМюрг. */
+  rKmu: number;
+  /** Положение вдоль выработки, доля 0..1 — куда поставить значок. */
+  offset: number;
+}
+
 export interface Vent2Cdf3Result {
   nodes: TopoNode[];
   branches: TopoBranch[];
   /** Горизонты, встреченные в схеме, — с отметкой и цветом. */
   horizons: Horizon[];
+  /**
+   * Перемычки, привязанные к созданным ветвям.
+   *
+   * Нужны, чтобы поставить на схему условные обозначения (УО). РАНЬШЕ наружу
+   * отдавался только флаг «на ветви есть перемычка» и её сопротивление:
+   * сопротивление в расчёт попадало, а значка на плане не появлялось.
+   */
+  bulkheads: Cdf3BulkheadOnBranch[];
   warnings: string[];
   stats: {
     nodes: number;
@@ -232,6 +252,7 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
   let skipped = 0;
   let bulkheadCount = 0;
   let bulkheadBranches = 0;
+  const bulkheadsOnBranches: Cdf3BulkheadOnBranch[] = [];
   rawBranches.forEach((rb, i) => {
     const fn = byId.get(rb.from);
     const tn = byId.get(rb.to);
@@ -277,7 +298,19 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
       } : {}),
     }));
     bulkheadCount += rb.bulkheads.length;
-    if (rb.bulkheads.length > 0) bulkheadBranches++;
+    if (rb.bulkheads.length > 0) {
+      bulkheadBranches++;
+      // Отдаём наружу каждую перемычку отдельно — на одной выработке их может
+      // быть несколько (шлюз из двух дверей), и значок нужен для каждой.
+      for (const bk of rb.bulkheads) {
+        bulkheadsOnBranches.push({
+          branchId: `BC${ts}_${i}`,
+          typeName: bk.name || "Перемычка",
+          rKmu: bk.rKmu,
+          offset: bk.offset,
+        });
+      }
+    }
   });
   if (skipped > 0) warnings.push(`Пропущено выработок с неизвестными узлами: ${skipped}.`);
 
@@ -309,8 +342,9 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
 
   warnings.push(
     "Из схемы перенесены геометрия, топология, названия, горизонты и перемычки " +
-    "с их сопротивлением. Расход, сопротивление выработок и напор вентиляторов " +
-    "в файле .cdf3 не хранятся — выполните «Расчёт сети» в ПВ-Системе."
+    "(с обозначениями на плане и сопротивлением). Расход, сопротивление " +
+    "выработок и напор вентиляторов в файле .cdf3 не хранятся — выполните " +
+    "«Расчёт сети» в ПВ-Системе."
   );
   warnings.push(
     "Позиций ПЛА и напоров вентиляторов в файле .cdf3 нет — их выгружает только " +
@@ -327,6 +361,7 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
     nodes: allNodes,
     branches,
     horizons,
+    bulkheads: bulkheadsOnBranches,
     warnings,
     stats: {
       nodes: allNodes.length,
