@@ -219,6 +219,7 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 <div className="text-[11px] text-amber-700 space-y-1">
                   <div className="flex items-center gap-1.5"><Icon name="AlertCircle" size={11} />Более 20 узлов в схеме</div>
                   <div className="flex items-center gap-1.5"><Icon name="AlertCircle" size={11} />Сохранение и открытие файлов (.vproj)</div>
+                  <div className="flex items-center gap-1.5"><Icon name="AlertCircle" size={11} />Импорт схем: АэроСеть, Вентиляция 2.0, Ventsim, DXF</div>
                   <div className="flex items-center gap-1.5"><Icon name="AlertCircle" size={11} />Расчёты пожара и аварийного режима</div>
                   <div className="flex items-center gap-1.5"><Icon name="AlertCircle" size={11} />Функция печати и экспорта</div>
                   <div className="flex items-center gap-1.5"><Icon name="AlertCircle" size={11} />Водяной знак ДЕМО на схеме</div>

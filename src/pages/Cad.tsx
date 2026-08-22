@@ -105,6 +105,27 @@ import { planBranchDeletion, type DeleteBranchPlan } from "./cad/deleteBranchPla
 // (АэроСеть / Вентиляция-CAD): ribbon-меню + вертикальные вкладки + свойства
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Импорт из сторонних программ, закрытый в демо-режиме.
+ *
+ * Это основная ценность программы — перенос готовой схемы рудника из АэроСети,
+ * Вентиляции 2.0 и Ventsim. Плюс через импорт в демо можно было загрузить
+ * схему на сотни выработок в обход ограничения «не более 20 узлов».
+ *
+ * Открытыми остаются СВОИ форматы (.vproj/.json, .xml, .txt) — ими человек
+ * переносит собственные наработки между рабочими местами.
+ */
+const DEMO_LOCKED_IMPORTS = new Set([
+  "csv-aero",     // CSV из АэроСети
+  "csv-vent2",    // CSV из Вентиляции 2.0
+  "cdf3",         // схема .cdf3 (Вентиляция 2.0)
+  "csv-ventsim",  // CSV из Ventsim
+  "vsm",          // модель .vsm (Ventsim)
+  "dxf",          // чертёж DXF
+  "combined",     // DXF + Excel вместе
+  "excel",        // Excel-таблица параметров
+]);
+
 export default function CadPage() {
   const license = useLicenseContext();
   // Демо-ограничения действуют не только при status="demo", но и когда
@@ -4535,7 +4556,7 @@ export default function CadPage() {
       {isDemo && (
         <div className="flex items-center justify-between px-3 py-1 text-[11px] font-medium select-none"
           style={{ background: "var(--c-tint-amber2, #fef3c7)", borderBottom: "1px solid #fcd34d", color: "var(--c-amber-ink, #92400e)" }}>
-          <span>⚠ Демо-режим: ограничено 20 узлов, нет сохранения, печати и расчётов аварий</span>
+          <span>⚠ Демо-режим: ограничено 20 узлов, нет импорта схем, сохранения, печати и расчётов аварий</span>
           <button onClick={() => setShowLicenseDialog(true)}
             className="ml-3 px-2 py-0.5 rounded text-[10px] font-semibold text-white flex-shrink-0"
             style={{ background: "var(--c-amber-bg, #d97706)" }}>
@@ -4655,6 +4676,14 @@ export default function CadPage() {
                       <button key={item.label}
                         className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 group"
                         onClick={() => {
+                          // Импорт из сторонних программ — только в полной версии.
+                          // В демо ведём на окно лицензии: иначе через импорт
+                          // можно было обойти и лимит в 20 узлов.
+                          if (isDemo && DEMO_LOCKED_IMPORTS.has(item.action)) {
+                            setShowLicenseDialog(true);
+                            setActiveRibbon("home");
+                            return;
+                          }
                           if (item.action === "csv-aero") {
                             setShowCsvImport(true);
                             setActiveRibbon("home");
@@ -4688,8 +4717,14 @@ export default function CadPage() {
                           <Icon name={item.icon} size={18} />
                         </div>
                         <div>
-                          <div className="text-[12px] font-medium" style={{ color: item.action === "csv-aero" ? "var(--c-green, #15803d)" : item.action === "csv-vent2" ? "var(--c-blue-ink, #1e40af)" : item.action === "csv-ventsim" ? "#854d0e" : item.action === "combined" ? "#5b21b6" : "var(--c-t1, #1f2937)" }}>
+                          <div className="text-[12px] font-medium flex items-center gap-1" style={{ color: item.action === "csv-aero" ? "var(--c-green, #15803d)" : item.action === "csv-vent2" ? "var(--c-blue-ink, #1e40af)" : item.action === "csv-ventsim" ? "#854d0e" : item.action === "combined" ? "#5b21b6" : "var(--c-t1, #1f2937)" }}>
                             {item.label}
+                            {isDemo && DEMO_LOCKED_IMPORTS.has(item.action) && (
+                              <span className="px-1 rounded text-[9px] font-semibold flex-shrink-0"
+                                style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #92400e)", border: "1px solid #fcd34d" }}>
+                                🔒 Полная версия
+                              </span>
+                            )}
                           </div>
                           <div className="text-[10px] text-gray-400">
                             {item.action === "csv-aero" ? "✓ X,Y,Z координаты + все параметры в одном файле"
