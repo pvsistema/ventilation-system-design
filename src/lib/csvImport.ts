@@ -170,6 +170,13 @@ interface RawBranch {
   id: string; fromId: string; toId: string; name: string;
   length: number; typeName: string; area: number; perimeter: number;
   flow: number; resistance: number; layer: string;
+  /**
+   * ID позиции ПЛА из столбца «Идентификатор позиции» файла выработок.
+   * Вентиляция 2.0 хранит привязку именно ЗДЕСЬ, а не в файле позиций:
+   * у позиции своего списка выработок нет. Раньше столбец не читался, и
+   * позиции приходили без единой привязанной выработки.
+   */
+  positionId: string;
 }
 
 // UUID или число — валидный ID строки данных
@@ -212,7 +219,7 @@ function parseNumSci(s: string | undefined): number {
 function parseExcavationsFile(lines: string[], sep: string, headerOut?: { resHeader: string }): RawBranch[] {
   const result: RawBranch[] = [];
   let headerFound = false;
-  const colIdx = { id:0, from:1, to:2, name:3, len:4, type:5, area:6, perim:7, flow:8, res:9, layer:10 };
+  const colIdx = { id:0, from:1, to:2, name:3, len:4, type:5, area:6, perim:7, flow:8, res:9, layer:10, position:-1 };
 
   for (const line of lines) {
     const cols = splitRow(line, sep).map(c => c.replace(/"/g, "").trim());
@@ -234,6 +241,9 @@ function parseExcavationsFile(lines: string[], sep: string, headerOut?: { resHea
         const flowC  = ci(/расход|flow/);
         const resC   = ci(/сопротивл|resist/);
         const layerC = ci(/слой|layer/);
+        // Привязка выработки к позиции ПЛА — «Идентификатор позиции».
+        const posC   = ci(/идентификатор позиц|^ид позиц|position id|позиц/);
+        if (posC >= 0) colIdx.position = posC;
         if (idC >= 0) colIdx.id = idC;
         if (fromC >= 0) colIdx.from = fromC;
         if (toC >= 0) colIdx.to = toC;
@@ -264,6 +274,7 @@ function parseExcavationsFile(lines: string[], sep: string, headerOut?: { resHea
       flow:       parseNumSci(cols[colIdx.flow]),
       resistance: parseNumSci(cols[colIdx.res]),
       layer:      cols[colIdx.layer] || "Выработки",
+      positionId: colIdx.position >= 0 ? cleanId(cols[colIdx.position] ?? "") : "",
     });
   }
   return result;
@@ -678,10 +689,61 @@ function buildResult(
     ...bk,
     branchId: lookupBranchId(bk.branchId),
   }));
-  const positions: RawPosition[] = rawPositions.map(p => ({
-    ...p,
-    branchIds: p.branchIds.map(bid => lookupBranchId(bid)),
-  }));
+  // ── Привязка позиций ПЛА к выработкам ──────────────────────────────────────
+  // Вентиляция 2.0 хранит связь в файле ВЫРАБОТОК (столбец «Идентификатор
+  // позиции»), а не в файле позиций — там списка выработок нет вовсе.
+  // Собираем обратный указатель: позиция → её выработки.
+  const byPosition = new Map<string, string[]>();
+  for (const rb of rawBranches) {
+    const pid = (rb.positionId ?? "").trim();
+    if (!pid || pid === "0") continue;
+    const newId = branchOriginalIdMap[rb.id];
+    if (!newId) continue;               // выработка отсеяна (нулевые координаты)
+    const arr = byPosition.get(pid);
+    if (arr) arr.push(newId); else byPosition.set(pid, [newId]);
+  }
+
+  // Координаты выработок — чтобы поставить позицию рядом с её выработками.
+  const branchCenter = new Map<string, { x: number; y: number; z: number }>();
+  const nodeById = new Map(resultNodes.map(n => [n.id, n]));
+  for (const b of branches) {
+    const a = nodeById.get(b.fromId), c = nodeById.get(b.toId);
+    if (!a || !c) continue;
+    branchCenter.set(b.id, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2, z: (a.z + c.z) / 2 });
+  }
+
+  let posLinked = 0, posPlaced = 0;
+  const positions: RawPosition[] = rawPositions.map(p => {
+    // Список выработок: из файла позиций (если он там есть) либо собранный
+    // из файла выработок.
+    const own = p.branchIds.map(bid => lookupBranchId(bid)).filter(Boolean);
+    const linked = own.length > 0 ? own : (byPosition.get(p.id) ?? []);
+    if (linked.length > 0) posLinked++;
+
+    // Координаты. Вентиляция 2.0 выгружает позиции с X=Y=Z=0 — привязка к
+    // месту хранится только через выработки. Раньше такие позиции ложились
+    // в начало координат и оказывались далеко в стороне от схемы; теперь
+    // ставим позицию в середину её выработок.
+    let { x, y, z } = p;
+    if (x === 0 && y === 0 && linked.length > 0) {
+      const pts = linked.map(id => branchCenter.get(id)).filter(Boolean) as { x: number; y: number; z: number }[];
+      if (pts.length > 0) {
+        x = Math.round((pts.reduce((s, q) => s + q.x, 0) / pts.length) * 10) / 10;
+        y = Math.round((pts.reduce((s, q) => s + q.y, 0) / pts.length) * 10) / 10;
+        if (z === 0) z = Math.round((pts.reduce((s, q) => s + q.z, 0) / pts.length) * 10) / 10;
+        posPlaced++;
+      }
+    }
+    return { ...p, branchIds: linked, x, y, z };
+  });
+
+  if (positions.length > 0) {
+    debug.push(`Позиций ПЛА: ${positions.length}, с привязанными выработками: ${posLinked}, размещено по выработкам: ${posPlaced}`);
+    const noLink = positions.length - posLinked;
+    if (noLink > 0) {
+      warnings.push(`Позиций без привязанных выработок: ${noLink} — расставьте их на схеме вручную.`);
+    }
+  }
 
   if (bulkheads.length > 0) {
     const mapped = bulkheads.filter(bk => bk.branchId.startsWith("B"));

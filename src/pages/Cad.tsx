@@ -2260,7 +2260,10 @@ export default function CadPage() {
           x: rp.x,
           y: rp.y,
           z: rp.z,
-          placed: rp.x !== 0 || rp.y !== 0,
+          // Позиция считается расставленной, если у неё есть координаты ЛИБО
+          // привязанные выработки: импорт из Вентиляции 2.0 приходит с
+          // нулевыми координатами и вычисляет место по выработкам позиции.
+          placed: rp.x !== 0 || rp.y !== 0 || (rp.branchIds?.length ?? 0) > 0,
           branchIds: rp.branchIds,
           color: pal.color,
           borderColor: pal.border,
