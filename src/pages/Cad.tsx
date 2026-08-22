@@ -2110,10 +2110,12 @@ export default function CadPage() {
         // где она стоит в Вентиляции 2.0, а не всегда в середину.
         t: bk.offset > 0 && bk.offset < 1 ? bk.offset : 0.5,
         bkResMode: "manual" as const,
-        // Сопротивление уже записано в саму ветвь (bulkheadManualR), поэтому
-        // символ ставим «прозрачным» — иначе оно посчиталось бы дважды.
-        bkManualR: 0,
-        bkBulkheadR: 0,
+        // Сопротивление кладём В САМ ЗНАЧОК. Расчёт сети суммирует R перемычек
+        // по значкам, а поле ветви (bulkheadManualR) берёт в счёт ТОЛЬКО когда
+        // значков на ветви нет. Раньше здесь стоял ноль — из-за этого
+        // сопротивление перемычки и показывалось нулевым, и выпадало из расчёта.
+        bkManualR: bk.rKmu,
+        bkBulkheadR: bk.rKmu * 1000,
         bkBulkheadName: bk.typeName,
       }));
     };
@@ -2181,18 +2183,41 @@ export default function CadPage() {
     const bkAlreadyInR = result.resistanceIncludesBulkheads === true;
 
     // ── Применяем перемычки к ветвям (hasBulkhead + bulkheadR) ──
+    //
+    // Когда R выработки в файле СУММАРНОЕ (уже включает перемычки), вклад
+    // перемычки нужно из него вычесть — иначе он попадёт в расчёт дважды:
+    // один раз внутри R ветви, второй раз как отдельная перемычка.
+    //
+    // РАНЬШЕ вместо вычитания сопротивление перемычки просто обнулялось. Сумма
+    // получалась верной, но в свойствах перемычки стоял ноль: реальное
+    // значение из файла пропадало, и пользователь не мог его ни увидеть, ни
+    // проверить. Теперь настоящее R сохраняется у перемычки, а из ветви
+    // вычитается ровно столько же.
     const applyBulkheads = (branches: typeof result.branches) => {
       if (!result.bulkheads || result.bulkheads.length === 0) return branches;
+      // На одной выработке может быть несколько перемычек (шлюз) — суммируем.
+      const sumByBranch = new Map<string, number>();
+      for (const bk of result.bulkheads) {
+        sumByBranch.set(bk.branchId, (sumByBranch.get(bk.branchId) ?? 0) + bk.rKmu);
+      }
       return branches.map(b => {
         const bk = result.bulkheads.find(bk => bk.branchId === b.id);
         if (!bk) return b;
-        const rKmu = bkAlreadyInR ? 0 : bk.rKmu;
+        const own = { ...b } as typeof b;
+        if (bkAlreadyInR) {
+          // Вычитаем перемычки из R выработки; ниже нуля не опускаемся —
+          // остаётся собственное трение выработки.
+          const sumBk = sumByBranch.get(b.id) ?? 0;
+          const rest = Math.max(0, (b.resistance ?? 0) - sumBk);
+          own.resistance = rest;
+          own.manualR = rest;
+        }
         return {
-          ...b,
+          ...own,
           hasBulkhead: true,
           bulkheadName: bk.typeName,
-          bulkheadR: rKmu * 1000,       // кМюрг → Мюрг (базовая единица)
-          bulkheadManualR: rKmu,
+          bulkheadR: bk.rKmu * 1000,    // кМюрг → Мюрг (базовая единица)
+          bulkheadManualR: bk.rKmu,
           bulkheadResMode: "manual" as const,
           bulkheadAirPerm: bk.airPerm,
         };
@@ -2222,11 +2247,12 @@ export default function CadPage() {
           branchId: bk.branchId,
           t: 0.5,
           bkResMode: "manual" as const,
-          // При суммарном R сопротивление перемычки уже сидит внутри ветви,
-          // поэтому символ ставим «прозрачным» — только как обозначение.
-          bkManualR: bkAlreadyInR ? 0 : bk.rKmu,
+          // Настоящее R из файла — и в расчёт, и на показ. При суммарном R
+          // столько же вычтено из сопротивления самой выработки (applyBulkheads),
+          // поэтому дважды оно не посчитается.
+          bkManualR: bk.rKmu,
           bkAirPerm: bk.airPerm,
-          bkBulkheadR: (bkAlreadyInR ? 0 : bk.rKmu) * 1000,
+          bkBulkheadR: bk.rKmu * 1000,
           bkBulkheadName: bk.typeName,
         });
       }
