@@ -2,11 +2,11 @@
 import { useState, useRef } from "react";
 import {
   parseVent2Csv,
-  type CsvImportResult,
   type Vent2ColMap,
   type Vent2ParseOptions,
   VENT2_DEFAULT_COLS,
-} from "@/lib/csvImport";
+} from "@/lib/import/vent2CsvImport";
+import { type CsvImportResult } from "@/lib/import/importCommon";
 import Icon from "@/components/ui/icon";
 
 interface Props {

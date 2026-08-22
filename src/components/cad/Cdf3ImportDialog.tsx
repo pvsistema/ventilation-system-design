@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { parseCdf3, type Cdf3ImportResult } from "@/lib/cdf3Import";
+import { parseCdf3, type Cdf3ImportResult } from "@/lib/import/vent2Cdf3Import";
 import Icon from "@/components/ui/icon";
 
 interface Props {

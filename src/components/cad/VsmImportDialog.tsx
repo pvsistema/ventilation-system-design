@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { parseVsm, type VsmImportResult } from "@/lib/vsmImport";
+import { parseVsm, type VsmImportResult } from "@/lib/import/ventsimVsmImport";
 import Icon from "@/components/ui/icon";
 
 interface Props {

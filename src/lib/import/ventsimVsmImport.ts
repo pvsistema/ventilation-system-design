@@ -1,5 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Импорт файла модели .vsm из Ventsim Design 5/6.
+// ventsimVsmImport.ts — ФАЙЛ МОДЕЛИ .vsm ИЗ VENTSIM DESIGN 5/6.
+//
+// НЕ ПУТАТЬ: CSV-выгрузку Ventsim разбирает ventsimCsvImport.ts. Здесь данных
+// больше: .vsm хранит сопротивления и расходы, которых в CSV нет.
+// Обзор всех импортов — src/lib/import/README.md
 //
 // Формат оказался дружелюбным: это обычный gzip, внутри — текст с секциями,
 // разделёнными переводом строки. Данные разложены по табуляции.
@@ -26,7 +30,7 @@
 
 import { gunzipSync } from "fflate";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
-import { countNetworkParts } from "@/lib/ventsimImport";
+import { countNetworkParts } from "@/lib/import/ventsimCsvImport";
 
 /** Цвета горизонтов — по кругу, чтобы соседние слои отличались. */
 const LAYER_COLORS = [

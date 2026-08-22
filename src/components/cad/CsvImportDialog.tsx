@@ -1,6 +1,7 @@
 // Диалог импорта CSV из АэроСети — поддерживает несколько файлов сразу
 import { useState, useRef } from "react";
-import { parseCsvMulti, detectFileType, type CsvImportResult, type CsvFileInput } from "@/lib/csvImport";
+import { parseCsvMulti, detectFileType, type CsvFileInput } from "@/lib/import/aerosetCsvImport";
+import { type CsvImportResult } from "@/lib/import/importCommon";
 import Icon from "@/components/ui/icon";
 
 interface Props {

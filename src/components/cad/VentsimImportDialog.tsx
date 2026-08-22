@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { parseVentsimCsv, DEFAULT_MERGE_TOL, type VentsimImportResult } from "@/lib/ventsimImport";
+import { parseVentsimCsv, DEFAULT_MERGE_TOL, type VentsimImportResult } from "@/lib/import/ventsimCsvImport";
 import Icon from "@/components/ui/icon";
 
 interface Props {
