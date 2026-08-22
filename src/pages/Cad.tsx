@@ -6552,6 +6552,13 @@ export default function CadPage() {
                 // иначе он был бы пустым и путал бы пользователя.
                 ...(selectedBranch?.hasVentPipe ? [{ id: "ventpipe" as SideTab, label: "Вентстав" }] : []),
 
+                // Вентилятор. РАНЬШЕ вкладку открывал только клик по значку УО
+                // на схеме: у выработки с напором из импорта значка могло не
+                // быть, и напор оставался нередактируемым — виден в «Доп.
+                // депрессии», а поменять негде. Теперь вкладка есть у любой
+                // выработки с вентилятором, независимо от способа появления.
+                ...(selectedBranch?.hasFan ? [{ id: "fan" as SideTab, label: "Вентилятор" }] : []),
+
                 ...(selectedBranch?.hasFire ? [{ id: "accidents" as SideTab, label: "🔥 Пожар" }] : []),
                 ...(selectedBranch?.hasExplosion ? [{ id: "blast" as SideTab, label: "💥 Взрыв" }] : []),
               ] as { id: SideTab; label: string }[])

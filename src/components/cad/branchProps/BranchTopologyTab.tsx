@@ -574,8 +574,15 @@ export default function BranchTopologyTab({
 
     <ParamRow id="v_adddep" label="Доп. депрессия, Па" visible={visible.has("v_adddep")} onToggle={toggle}>
       {/* Депрессии показываем до сотых: на слабонапорных ветвях разница
-          в десятых долях паскаля существенна для анализа устойчивости. */}
-      <ComputedInput value={branch.hasFan ? numFmt(branch.fanPressure, 2) : "0.00"} />
+          в десятых долях паскаля существенна для анализа устойчивости.
+          РАНЬШЕ поле было только для чтения: напор, пришедший из импорта,
+          был виден, но поменять его было негде — вкладку «Вентилятор»
+          открывал лишь клик по значку УО, которого у импортированной
+          выработки нет. Теперь напор правится прямо здесь. */}
+      {branch.hasFan
+        ? <EditInput type="number" step="10" value={branch.fanPressure}
+            onChange={(v) => onUpdate({ fanPressure: parseFloat(v) || 0 })} />
+        : <ComputedInput value="0.00" />}
     </ParamRow>
 
     <ParamRow id="v_flow" label="Расход Q, м³/с" visible={visible.has("v_flow")} onToggle={toggle}>
