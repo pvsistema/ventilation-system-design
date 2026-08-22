@@ -34,7 +34,7 @@
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
 
-export interface VentsimImportResult {
+export interface VentsimCsvResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   warnings: string[];
@@ -272,7 +272,7 @@ function parseEuSection(t: string[], from: number): { area: number; perimeter: n
  * Разбор Ventsim-экспорта из русской локали.
  * Номеров узлов в файле нет — сеть сшивается по координатам концов выработок.
  */
-function parseVentsimEuropean(rawLines: string[], mergeTol: number): VentsimImportResult {
+function parseVentsimEuropean(rawLines: string[], mergeTol: number): VentsimCsvResult {
   const warnings: string[] = [];
   const debug: string[] = [];
   debug.push(`Формат: Ventsim (русская локаль), строк: ${rawLines.length}`);
@@ -511,7 +511,7 @@ function detectFormat(rows: string[][]): ColMap {
 /** Допуск объединения узлов по умолчанию, м (как в АэроСети) */
 export const DEFAULT_MERGE_TOL = 0.1;
 
-export function parseVentsimCsv(content: string, mergeTol = DEFAULT_MERGE_TOL): VentsimImportResult {
+export function parseVentsimCsv(content: string, mergeTol = DEFAULT_MERGE_TOL): VentsimCsvResult {
   const warnings: string[] = [];
   const debug: string[] = [];
 

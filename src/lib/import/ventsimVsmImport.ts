@@ -38,7 +38,7 @@ const LAYER_COLORS = [
   "#ea580c", "#4f46e5", "#059669", "#be123c", "#7c3aed", "#0d9488",
 ];
 
-export interface VsmImportResult {
+export interface VentsimVsmResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
@@ -58,7 +58,7 @@ export interface VsmImportResult {
 }
 
 /** Распаковка .vsm (gzip). */
-export function unpackVsm(buf: ArrayBuffer): string {
+export function unpackVentsimVsm(buf: ArrayBuffer): string {
   const all = new Uint8Array(buf);
   if (all.length < 4) throw new Error("Файл слишком короткий — это не модель Ventsim.");
   if (all[0] !== 0x1f || all[1] !== 0x8b) {
@@ -101,11 +101,11 @@ function readLayers(lines: string[]): Map<string, string> {
   return out;
 }
 
-export function parseVsm(buf: ArrayBuffer): VsmImportResult {
+export function parseVentsimVsm(buf: ArrayBuffer): VentsimVsmResult {
   const warnings: string[] = [];
   const debug: string[] = [];
 
-  const text = unpackVsm(buf);
+  const text = unpackVentsimVsm(buf);
   const lines = text.split(/\r?\n/);
   debug.push(`Распаковано: ${text.length} символов, строк ${lines.length}`);
 

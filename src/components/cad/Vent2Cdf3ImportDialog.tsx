@@ -1,14 +1,14 @@
 import { useState, useRef } from "react";
-import { parseVsm, type VsmImportResult } from "@/lib/import/ventsimVsmImport";
+import { parseVent2Cdf3, type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
 import Icon from "@/components/ui/icon";
 
 interface Props {
-  onImport: (result: VsmImportResult, mode: "replace" | "append") => void;
+  onImport: (result: Vent2Cdf3Result, mode: "replace" | "append") => void;
   onClose: () => void;
 }
 
-export default function VsmImportDialog({ onImport, onClose }: Props) {
-  const [result, setResult] = useState<VsmImportResult | null>(null);
+export default function Vent2Cdf3ImportDialog({ onImport, onClose }: Props) {
+  const [result, setResult] = useState<Vent2Cdf3Result | null>(null);
   const [mode, setMode] = useState<"replace" | "append">("replace");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -20,7 +20,7 @@ export default function VsmImportDialog({ onImport, onClose }: Props) {
     setError(null); setResult(null); setLoading(true); setFileName(f.name);
     try {
       const buf = await f.arrayBuffer();
-      setResult(parseVsm(buf));
+      setResult(parseVent2Cdf3(buf));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -41,17 +41,17 @@ export default function VsmImportDialog({ onImport, onClose }: Props) {
       <div className="bg-white rounded-xl shadow-2xl w-[480px] max-h-[90vh] overflow-y-auto flex flex-col" style={{ border: "1.5px solid var(--c-b2, #d1d5db)" }}>
 
         <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-gray-200">
-          <div className="text-[15px] font-bold text-gray-900">Импорт модели Ventsim</div>
+          <div className="text-[15px] font-bold text-gray-900">Импорт схемы из Вентиляции 2.0</div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 rounded p-1"><Icon name="X" size={18} /></button>
         </div>
 
         <div className="px-5 py-4 space-y-4 flex-1">
 
           <div className="rounded-lg px-3 py-2.5 text-[11px] space-y-0.5" style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac" }}>
-            <div className="font-semibold text-green-800 mb-1">Файл модели .vsm — напрямую, без выгрузки в CSV</div>
-            <div className="text-green-700">Переносятся: выработки, координаты, сечения, названия и слои</div>
-            <div className="text-green-700 font-medium mt-0.5">
-              Сопротивления и расходы тоже — в CSV-выгрузке Ventsim их нет
+            <div className="font-semibold text-green-800 mb-1">Файл схемы .cdf3 — напрямую, без выгрузки в CSV</div>
+            <div className="text-green-700">Переносятся: узлы с координатами, выработки, сечения, названия и выходы на поверхность</div>
+            <div className="text-gray-500 text-[10px] mt-1">
+              Сопротивление и расход в файле не хранятся — их рассчитает ПВ-Система
             </div>
           </div>
 
@@ -64,9 +64,9 @@ export default function VsmImportDialog({ onImport, onClose }: Props) {
           >
             <Icon name={fileName ? "CheckCircle" : "FolderOpen"} size={28} style={{ color: fileName ? "var(--c-green-lt, #22c55e)" : "var(--c-t4, #9ca3af)" }} />
             <div className="mt-2 text-sm font-medium px-4 text-center" style={{ color: fileName ? "var(--c-green, #15803d)" : "var(--c-t3, #6b7280)" }}>
-              {loading ? "Читаю модель…" : fileName ? `${fileName} — нажмите для замены` : "Перетащите файл .vsm или нажмите для выбора"}
+              {loading ? "Читаю схему…" : fileName ? `${fileName} — нажмите для замены` : "Перетащите файл .cdf3 или нажмите для выбора"}
             </div>
-            <input ref={inputRef} type="file" accept=".vsm" className="hidden"
+            <input ref={inputRef} type="file" accept=".cdf3" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           </div>
 
@@ -80,10 +80,10 @@ export default function VsmImportDialog({ onImport, onClose }: Props) {
             <div className="space-y-3">
               <div className="grid grid-cols-5 gap-2">
                 {[
-                  { label: "Узлов",      value: result.stats.nodes,          hi: result.stats.nodes > 0,          bad: false },
-                  { label: "Выработок",  value: result.stats.branches,       hi: result.stats.branches > 0,       bad: false },
-                  { label: "Слоёв",      value: result.stats.layers,         hi: result.stats.layers > 0,         bad: false },
-                  { label: "С сопротивл.", value: result.stats.withResistance, hi: result.stats.withResistance > 0, bad: false },
+                  { label: "Узлов",     value: result.stats.nodes,      hi: result.stats.nodes > 0,      bad: false },
+                  { label: "Выработок", value: result.stats.branches,   hi: result.stats.branches > 0,   bad: false },
+                  { label: "Горизонтов", value: result.stats.layers,    hi: result.stats.layers > 0,     bad: false },
+                  { label: "На поверхность", value: result.stats.atmosphere, hi: result.stats.atmosphere > 0, bad: result.stats.atmosphere === 0 },
                   {
                     label: result.stats.parts > 1 ? "Частей" : "Сеть цельная",
                     value: result.stats.parts,
@@ -121,7 +121,7 @@ export default function VsmImportDialog({ onImport, onClose }: Props) {
                 <div className="text-[11px] font-semibold text-gray-700">Способ добавления:</div>
                 {(["replace", "append"] as const).map(m => (
                   <label key={m} className="flex items-center gap-2 cursor-pointer">
-                    <input type="radio" name="vsmmode" value={m} checked={mode === m} onChange={() => setMode(m)} className="w-3 h-3" />
+                    <input type="radio" name="cdf3mode" value={m} checked={mode === m} onChange={() => setMode(m)} className="w-3 h-3" />
                     <div className="text-xs text-gray-800">{m === "replace" ? "Заменить текущую схему" : "Добавить к текущей"}</div>
                   </label>
                 ))}

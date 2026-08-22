@@ -15,12 +15,12 @@ import { type CombinedImportResult } from "@/lib/combinedImport";
 import CsvImportDialog from "@/components/cad/CsvImportDialog";
 import Vent2CsvImportDialog from "@/components/cad/Vent2CsvImportDialog";
 import { type CsvImportResult } from "@/lib/import/importCommon";
-import VentsimImportDialog from "@/components/cad/VentsimImportDialog";
-import { type VentsimImportResult } from "@/lib/import/ventsimCsvImport";
-import Cdf3ImportDialog from "@/components/cad/Cdf3ImportDialog";
-import { type Cdf3ImportResult } from "@/lib/import/vent2Cdf3Import";
-import VsmImportDialog from "@/components/cad/VsmImportDialog";
-import { type VsmImportResult } from "@/lib/import/ventsimVsmImport";
+import VentsimCsvImportDialog from "@/components/cad/VentsimCsvImportDialog";
+import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
+import Vent2Cdf3ImportDialog from "@/components/cad/Vent2Cdf3ImportDialog";
+import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
+import VentsimVsmImportDialog from "@/components/cad/VentsimVsmImportDialog";
+import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import CadContextMenu from "@/components/cad/CadContextMenu";
@@ -72,17 +72,17 @@ export interface CadImportDialogsProps {
   setShowVent2CsvImport: (v: boolean) => void;
   handleVent2CsvImport: (r: CsvImportResult, mode: ImportMode) => void;
 
-  showVentsimImport: boolean;
-  setShowVentsimImport: (v: boolean) => void;
-  handleVentsimImport: (r: VentsimImportResult, mode: ImportMode) => void;
+  showVentsimCsvImport: boolean;
+  setShowVentsimCsvImport: (v: boolean) => void;
+  handleVentsimCsvImport: (r: VentsimCsvResult, mode: ImportMode) => void;
 
-  showCdf3Import: boolean;
-  setShowCdf3Import: (v: boolean) => void;
-  handleCdf3Import: (r: Cdf3ImportResult, mode: ImportMode) => void;
+  showVent2Cdf3Import: boolean;
+  setShowVent2Cdf3Import: (v: boolean) => void;
+  handleVent2Cdf3Import: (r: Vent2Cdf3Result, mode: ImportMode) => void;
 
-  showVsmImport: boolean;
-  setShowVsmImport: (v: boolean) => void;
-  handleVsmImport: (r: VsmImportResult, mode: ImportMode) => void;
+  showVentsimVsmImport: boolean;
+  setShowVentsimVsmImport: (v: boolean) => void;
+  handleVentsimVsmImport: (r: VentsimVsmResult, mode: ImportMode) => void;
 
   showEquipRef: boolean;
   setShowEquipRef: (v: boolean) => void;
@@ -166,26 +166,26 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
       )}
 
       {/* ═══ CSV ИМПОРТ (Ventsim) ════════════════════════════════════════════ */}
-      {p.showVentsimImport && (
-        <VentsimImportDialog
-          onImport={p.handleVentsimImport}
-          onClose={() => p.setShowVentsimImport(false)}
+      {p.showVentsimCsvImport && (
+        <VentsimCsvImportDialog
+          onImport={p.handleVentsimCsvImport}
+          onClose={() => p.setShowVentsimCsvImport(false)}
         />
       )}
 
       {/* ═══ СХЕМА .cdf3 (Вентиляция 2.0) ═══════════════════════════════════ */}
-      {p.showCdf3Import && (
-        <Cdf3ImportDialog
-          onImport={p.handleCdf3Import}
-          onClose={() => p.setShowCdf3Import(false)}
+      {p.showVent2Cdf3Import && (
+        <Vent2Cdf3ImportDialog
+          onImport={p.handleVent2Cdf3Import}
+          onClose={() => p.setShowVent2Cdf3Import(false)}
         />
       )}
 
       {/* ═══ МОДЕЛЬ .vsm (Ventsim) ══════════════════════════════════════════ */}
-      {p.showVsmImport && (
-        <VsmImportDialog
-          onImport={p.handleVsmImport}
-          onClose={() => p.setShowVsmImport(false)}
+      {p.showVentsimVsmImport && (
+        <VentsimVsmImportDialog
+          onImport={p.handleVentsimVsmImport}
+          onClose={() => p.setShowVentsimVsmImport(false)}
         />
       )}
 

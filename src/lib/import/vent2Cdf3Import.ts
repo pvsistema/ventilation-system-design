@@ -47,7 +47,7 @@ const LAYER_COLORS = [
   "#ea580c", "#4f46e5", "#059669", "#be123c", "#7c3aed", "#0d9488",
 ];
 
-export interface Cdf3ImportResult {
+export interface Vent2Cdf3Result {
   nodes: TopoNode[];
   branches: TopoBranch[];
   /** Горизонты, встреченные в схеме, — с отметкой и цветом. */
@@ -138,7 +138,7 @@ function layerBase(list: string[], used: number[]): number {
 }
 
 /** Распаковка контейнера .cdf3 */
-export function unpackCdf3(buf: ArrayBuffer): Uint8Array {
+export function unpackVent2Cdf3(buf: ArrayBuffer): Uint8Array {
   const all = new Uint8Array(buf);
   if (all.length < 32) throw new Error("Файл слишком короткий — это не схема .cdf3.");
   const guid = hex(all.slice(0, 16));
@@ -153,11 +153,11 @@ export function unpackCdf3(buf: ArrayBuffer): Uint8Array {
   return unzlibSync(all.slice(24));
 }
 
-export function parseCdf3(buf: ArrayBuffer): Cdf3ImportResult {
+export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
   const warnings: string[] = [];
   const debug: string[] = [];
 
-  const raw = unpackCdf3(buf);
+  const raw = unpackVent2Cdf3(buf);
   const dv = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   debug.push(`Распаковано: ${raw.length} байт`);
 

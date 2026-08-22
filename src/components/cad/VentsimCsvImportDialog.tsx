@@ -1,14 +1,14 @@
 import { useState, useRef } from "react";
-import { parseVentsimCsv, DEFAULT_MERGE_TOL, type VentsimImportResult } from "@/lib/import/ventsimCsvImport";
+import { parseVentsimCsv, DEFAULT_MERGE_TOL, type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
 import Icon from "@/components/ui/icon";
 
 interface Props {
-  onImport: (result: VentsimImportResult, mode: "replace" | "append") => void;
+  onImport: (result: VentsimCsvResult, mode: "replace" | "append") => void;
   onClose: () => void;
 }
 
-export default function VentsimImportDialog({ onImport, onClose }: Props) {
-  const [result, setResult] = useState<VentsimImportResult | null>(null);
+export default function VentsimCsvImportDialog({ onImport, onClose }: Props) {
+  const [result, setResult] = useState<VentsimCsvResult | null>(null);
   const [mode, setMode] = useState<"replace" | "append">("replace");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);

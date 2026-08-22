@@ -37,9 +37,9 @@ import { type Position, type AccidentType, makePosition, matchPositionColor, ACC
 import { type ExcelImportResult } from "@/lib/excelImport";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/import/importCommon";
-import { type VentsimImportResult } from "@/lib/import/ventsimCsvImport";
-import { type Cdf3ImportResult } from "@/lib/import/vent2Cdf3Import";
-import { type VsmImportResult } from "@/lib/import/ventsimVsmImport";
+import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
+import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
+import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
@@ -2061,13 +2061,13 @@ export default function CadPage() {
   const [showCsvExport, setShowCsvExport] = useState(false);
   const [showCombinedImport, setShowCombinedImport] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
-  const [showVentsimImport, setShowVentsimImport] = useState(false);
+  const [showVentsimCsvImport, setShowVentsimCsvImport] = useState(false);
   const [showVent2CsvImport, setShowVent2CsvImport] = useState(false);
-  const [showCdf3Import, setShowCdf3Import] = useState(false);
-  const [showVsmImport, setShowVsmImport] = useState(false);
+  const [showVent2Cdf3Import, setShowVent2Cdf3Import] = useState(false);
+  const [showVentsimVsmImport, setShowVentsimVsmImport] = useState(false);
 
   // Импорт модели .vsm (файл Ventsim напрямую, без выгрузки в CSV)
-  const handleVsmImport = (result: VsmImportResult, mode: "replace" | "append") => {
+  const handleVentsimVsmImport = (result: VentsimVsmResult, mode: "replace" | "append") => {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
@@ -2088,12 +2088,12 @@ export default function CadPage() {
       });
     }
     setImportNonce(n => n + 1);
-    setShowVsmImport(false);
+    setShowVentsimVsmImport(false);
     setActiveRibbon("home");
   };
 
   // Импорт схемы .cdf3 (файл Вентиляции 2.0 напрямую, без выгрузки в CSV)
-  const handleCdf3Import = (result: Cdf3ImportResult, mode: "replace" | "append") => {
+  const handleVent2Cdf3Import = (result: Vent2Cdf3Result, mode: "replace" | "append") => {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
@@ -2115,11 +2115,11 @@ export default function CadPage() {
       });
     }
     setImportNonce(n => n + 1);
-    setShowCdf3Import(false);
+    setShowVent2Cdf3Import(false);
     setActiveRibbon("home");
   };
 
-  const handleVentsimImport = (result: VentsimImportResult, mode: "replace" | "append") => {
+  const handleVentsimCsvImport = (result: VentsimCsvResult, mode: "replace" | "append") => {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
@@ -2131,7 +2131,7 @@ export default function CadPage() {
       setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
     }
     setImportNonce(n => n + 1);
-    setShowVentsimImport(false);
+    setShowVentsimCsvImport(false);
     setActiveRibbon("home");
   };
 
@@ -4640,13 +4640,13 @@ export default function CadPage() {
                             setShowVent2CsvImport(true);
                             setActiveRibbon("home");
                           } else if (item.action === "csv-ventsim") {
-                            setShowVentsimImport(true);
+                            setShowVentsimCsvImport(true);
                             setActiveRibbon("home");
                           } else if (item.action === "cdf3") {
-                            setShowCdf3Import(true);
+                            setShowVent2Cdf3Import(true);
                             setActiveRibbon("home");
                           } else if (item.action === "vsm") {
-                            setShowVsmImport(true);
+                            setShowVentsimVsmImport(true);
                             setActiveRibbon("home");
                           } else if (item.action === "dxf") {
                             setShowDxfImport(true);
@@ -13183,15 +13183,15 @@ export default function CadPage() {
       showVent2CsvImport={showVent2CsvImport}
       setShowVent2CsvImport={setShowVent2CsvImport}
       handleVent2CsvImport={handleVent2CsvImport}
-      showVentsimImport={showVentsimImport}
-      setShowVentsimImport={setShowVentsimImport}
-      handleVentsimImport={handleVentsimImport}
-      showCdf3Import={showCdf3Import}
-      setShowCdf3Import={setShowCdf3Import}
-      handleCdf3Import={handleCdf3Import}
-      showVsmImport={showVsmImport}
-      setShowVsmImport={setShowVsmImport}
-      handleVsmImport={handleVsmImport}
+      showVentsimCsvImport={showVentsimCsvImport}
+      setShowVentsimCsvImport={setShowVentsimCsvImport}
+      handleVentsimCsvImport={handleVentsimCsvImport}
+      showVent2Cdf3Import={showVent2Cdf3Import}
+      setShowVent2Cdf3Import={setShowVent2Cdf3Import}
+      handleVent2Cdf3Import={handleVent2Cdf3Import}
+      showVentsimVsmImport={showVentsimVsmImport}
+      setShowVentsimVsmImport={setShowVentsimVsmImport}
+      handleVentsimVsmImport={handleVentsimVsmImport}
       showEquipRef={showEquipRef}
       setShowEquipRef={setShowEquipRef}
       equipRefTab={equipRefTab}

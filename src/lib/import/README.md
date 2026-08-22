@@ -9,9 +9,9 @@
 |---|---|---|---|
 | CSV из АэроСети | 5 файлов CSV, столбцы по заголовкам | `aerosetCsvImport.ts` | `CsvImportDialog.tsx` |
 | CSV из Вентиляция 2.0 | 5 файлов CSV, столбцы задаёт пользователь | `vent2CsvImport.ts` | `Vent2CsvImportDialog.tsx` |
-| Схема Вентиляция 2.0 | `.cdf3` — двоичный файл схемы | `vent2Cdf3Import.ts` | `Cdf3ImportDialog.tsx` |
-| Модель Ventsim | `.vsm` — файл модели (gzip + текст) | `ventsimVsmImport.ts` | `VsmImportDialog.tsx` |
-| CSV из Ventsim | Branch Report / Export to CSV | `ventsimCsvImport.ts` | `VentsimImportDialog.tsx` |
+| Схема Вентиляция 2.0 | `.cdf3` — двоичный файл схемы | `vent2Cdf3Import.ts` | `Vent2Cdf3ImportDialog.tsx` |
+| Модель Ventsim | `.vsm` — файл модели (gzip + текст) | `ventsimVsmImport.ts` | `VentsimVsmImportDialog.tsx` |
+| CSV из Ventsim | Branch Report / Export to CSV | `ventsimCsvImport.ts` | `VentsimCsvImportDialog.tsx` |
 | Схема из DXF | `.dxf` — чертёж | `../dxfImport.ts` | `DxfImportDialog.tsx` |
 | Excel (Вентиляция 2.0) | `.xlsx` | `../excelImport.ts` | `ExcelImportDialog.tsx` |
 | DXF + Excel вместе | пара файлов | `../combinedImport.ts` | `CombinedImportDialog.tsx` |
@@ -26,6 +26,19 @@
 
 Всё, что относится к конкретной программе, живёт в файле этой программы —
 в общие модули такое класть нельзя, иначе форматы снова перепутаются.
+
+## Правило именования
+
+`<программа><Формат>` — сначала ПРОГРАММА, потом формат файла:
+
+- `vent2…` — ПО «Вентиляция 2.0» (`vent2CsvImport`, `vent2Cdf3Import`);
+- `ventsim…` — Ventsim Design (`ventsimCsvImport`, `ventsimVsmImport`);
+- `aeroset…` — АэроСеть.
+
+Имя формата само по себе (`cdf3`, `vsm`) как название файла НЕ используется:
+`.cdf3` — это формат Вентиляции 2.0, а `.vsm` — Ventsim, и без префикса
+программы их легко приписать не тому производителю. По этому же правилу
+названы диалоги и типы результата: `Vent2Cdf3Result`, `VentsimVsmResult`.
 
 ## Две пары, которые легко спутать
 
