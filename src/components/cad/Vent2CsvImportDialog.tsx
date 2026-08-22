@@ -295,6 +295,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
                 <ColInput label="Суммарное сопр."   value={cols.sumR}       onChange={setCol("sumR")}
                   hint="Сопротивление уже ВМЕСТЕ с перемычками. Используется, только если поле «Сопротивление» пустое — тогда перемычки не добавляются второй раз" />
                 <ColInput label="Слой"              value={cols.layer}      onChange={setCol("layer")} />
+                <ColInput label="Ид позиции ПЛА"    value={cols.br_position} onChange={setCol("br_position")} />
               </div>
             </div>
 

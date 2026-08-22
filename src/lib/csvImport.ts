@@ -970,6 +970,12 @@ export interface Vent2ColMap {
   resistance: number;// Сопротивление выработки
   sumR: number;      // Суммарное сопротивление (0 = не задано)
   layer: number;     // Слой
+  /**
+   * «Идентификатор позиции» в файле ВЫРАБОТОК. Именно здесь Вентиляция 2.0
+   * хранит привязку выработки к позиции ПЛА — в файле позиций своего списка
+   * выработок нет. 0 = столбца нет.
+   */
+  br_position: number;
   // Перемычки
   bk_branchId: number;  // Ид выработки перемычки
   bk_offset: number;    // Смещение
@@ -1000,12 +1006,16 @@ export const VENT2_DEFAULT_COLS: Vent2ColMap = {
   // и оно уже суммарное (включает перемычки). Поэтому по умолчанию читаем его
   // как суммарное, а отдельный столбец собственного R не задан.
   area: 7, perimeter: 8, flow: 9, resistance: 0, sumR: 10, layer: 11,
+  // Столбец 12 — «Идентификатор позиции»: связь выработки с позицией ПЛА.
+  br_position: 12,
   bk_branchId: 1, bk_offset: 2, bk_type: 3, bk_resistance: 4,
   fan_branchId: 1, fan_offset: 2, fan_type: 3, fan_pressure: 4,
-  // Порядок по умолчанию совпадает с positions.csv нашего экспорта:
-  // Ид; X; Y; Z; Номер; Название; Тип; Вид аварии; Цвет границы; Список выработок
+  // Порядок по умолчанию — как в выгрузке Вентиляции 2.0:
+  // Ид; X; Y; Z; Номер; Название; Тип позиции; Цвет границы.
+  // Вида аварии и списка выработок в её файле НЕТ: привязка берётся из
+  // столбца «Идентификатор позиции» файла выработок (br_position).
   pos_id: 1, pos_x: 2, pos_y: 3, pos_z: 4, pos_number: 5,
-  pos_name: 6, pos_type: 7, pos_accident: 8, pos_color: 9, pos_branches: 10,
+  pos_name: 6, pos_type: 7, pos_accident: 0, pos_color: 8, pos_branches: 0,
 };
 
 export interface Vent2ParseOptions {
@@ -1095,7 +1105,7 @@ export function parseVent2Csv(
   const rawBranches: Array<{
     id: string; from: string; to: string; name: string; length: number;
     type: string; area: number; perimeter: number; flow: number;
-    resistance: number; layer: string;
+    resistance: number; layer: string; positionId: string;
   }> = [];
 
   for (let i = brStart; i < brLines.length; i++) {
@@ -1118,6 +1128,7 @@ export function parseVent2Csv(
       // «Сопротивление выработки» (без перемычек) либо «Суммарное» (с ними).
       resistance: rColIdx > 0 ? parseNum(col(row, rColIdx)) : 0,
       layer:      cols.layer     > 0 ? col(row, cols.layer)      : "",
+      positionId: cols.br_position > 0 ? cleanId(col(row, cols.br_position)) : "",
     });
   }
   debug.push(`Выработок: ${rawBranches.length}, вершин в ветвях: ${nodeIdsFromBranches.size}`);
@@ -1284,8 +1295,53 @@ export function parseVent2Csv(
         borderColor: cols.pos_color > 0 ? parseCsvColor(col(row, cols.pos_color)) : "",
       });
     }
+
+    // ── Привязка и размещение позиций ────────────────────────────────────
+    // Вентиляция 2.0 хранит связь позиции с выработками в файле ВЫРАБОТОК
+    // (столбец «Идентификатор позиции»), а сами позиции выгружает с
+    // координатами 0,0,0. РАНЬШЕ этот столбец не читался: позиции приходили
+    // без выработок и ложились в начало координат — далеко от схемы.
+    const byPosition = new Map<string, string[]>();
+    for (const rb of rawBranches) {
+      const pid = (rb.positionId ?? "").trim();
+      if (!pid || pid === "0") continue;
+      const newId = branchOriginalIdMap[rb.id];
+      if (!newId) continue;
+      const arr = byPosition.get(pid);
+      if (arr) arr.push(newId); else byPosition.set(pid, [newId]);
+    }
+
+    // Середина каждой выработки — чтобы поставить позицию на её место.
+    // nodeMap хранит узлы по ИСХОДНОМУ id из файла, а ветвь ссылается уже на
+    // сгенерированный — поэтому ищем по нему.
+    const nodeById = new Map([...nodeMap.values()].map(n => [n.id, n]));
+    const branchCenter = new Map<string, { x: number; y: number; z: number }>();
+    for (const b of branches) {
+      const a = nodeById.get(b.fromId), c = nodeById.get(b.toId);
+      if (!a || !c) continue;
+      branchCenter.set(b.id, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2, z: (a.z + c.z) / 2 });
+    }
+
+    let placedCnt = 0;
+    for (const p of positions) {
+      if (p.branchIds.length === 0) p.branchIds = byPosition.get(p.id) ?? [];
+      if ((p.x !== 0 || p.y !== 0) || p.branchIds.length === 0) continue;
+      const pts = p.branchIds
+        .map(id => branchCenter.get(id))
+        .filter(Boolean) as { x: number; y: number; z: number }[];
+      if (pts.length === 0) continue;
+      p.x = Math.round((pts.reduce((s, q) => s + q.x, 0) / pts.length) * 10) / 10;
+      p.y = Math.round((pts.reduce((s, q) => s + q.y, 0) / pts.length) * 10) / 10;
+      if (p.z === 0) p.z = Math.round((pts.reduce((s, q) => s + q.z, 0) / pts.length) * 10) / 10;
+      placedCnt++;
+    }
+
     const linked = positions.filter(p => p.branchIds.length > 0).length;
-    debug.push(`Позиций: ${positions.length} (с привязкой к выработкам: ${linked})`);
+    debug.push(`Позиций: ${positions.length} (с привязкой к выработкам: ${linked}, размещено по выработкам: ${placedCnt})`);
+    const noLink = positions.length - linked;
+    if (noLink > 0) {
+      warnings.push(`Позиций без привязанных выработок: ${noLink} — расставьте их на схеме вручную.`);
+    }
   }
 
   // Горизонты (слои схемы) — восстанавливаем из столбца «Слой» и сразу
