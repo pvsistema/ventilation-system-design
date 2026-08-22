@@ -2076,6 +2076,16 @@ export default function CadPage() {
       setBranches(prev => [...prev, ...result.branches]);
       setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
     }
+    // Горизонты из схемы добавляем к существующим, не трогая «Общий вид».
+    if (result.horizons.length > 0) {
+      setHorizons(prev => {
+        const keep = mode === "replace"
+          ? prev.filter(h => h.id === OVERVIEW_HORIZON_ID)
+          : prev;
+        const have = new Set(keep.map(h => h.name));
+        return [...keep, ...result.horizons.filter(h => !have.has(h.name))];
+      });
+    }
     setImportNonce(n => n + 1);
     setShowCdf3Import(false);
     setActiveRibbon("home");

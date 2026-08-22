@@ -34,11 +34,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { unzlibSync } from "fflate";
-import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
+import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
+
+/** Цвета для горизонтов схемы — по кругу, чтобы соседние отличались. */
+const LAYER_COLORS = [
+  "#2563eb", "#dc2626", "#16a34a", "#ca8a04", "#9333ea", "#0891b2",
+  "#ea580c", "#4f46e5", "#059669", "#be123c", "#7c3aed", "#0d9488",
+];
 
 export interface Cdf3ImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
+  /** Горизонты, встреченные в схеме, — с отметкой и цветом. */
+  horizons: Horizon[];
   warnings: string[];
   stats: {
     nodes: number;
@@ -47,6 +55,7 @@ export interface Cdf3ImportResult {
     atmosphere: number;
     parts: number;
     biggestPart: number;
+    layers: number;
   };
   debug: string;
 }
@@ -68,7 +77,60 @@ function decodeCp1251(bytes: Uint8Array): string {
 }
 
 interface RawNode { id: number; x: number; y: number; z: number; atm: boolean }
-interface RawBranch { from: number; to: number; area: number; name: string }
+interface RawBranch { from: number; to: number; area: number; name: string; layer: number }
+
+/**
+ * Названия горизонтов лежат перед таблицей узлов сплошным списком: каждая
+ * строка — 4 байта длины и текст в cp1251, между ними служебные байты.
+ * Номер горизонта из записи выработки — это порядковый номер в этом списке,
+ * считая от первого горизонта (сверено: сошлось для всех выработок рудника).
+ */
+function readLayers(raw: Uint8Array, dv: DataView, upTo: number): string[] {
+  const list: string[] = [];
+  let p = Math.max(0, upTo - 24000);
+  let guard = 0;
+  while (p < upTo && list.length < 500 && guard++ < 200000) {
+    const ln = p + 4 <= raw.length ? dv.getInt32(p, true) : 0;
+    if (ln >= 1 && ln <= 120 && p + 4 + ln <= raw.length) {
+      const t = decodeCp1251(raw.slice(p + 4, p + 4 + ln));
+      // Настоящее название — без управляющих символов внутри.
+      if (t.trim() && !/[\u0000-\u001f]/.test(t)) {
+        list.push(t.trim());
+        p += 4 + ln;
+        continue;
+      }
+    }
+    p++;
+  }
+  return list;
+}
+
+/**
+ * Начало списка горизонтов: перед ним лежат подписи, названия шрифтов и прочее
+ * оформление, поэтому положение подбирается. Верное то, при котором номера
+ * горизонтов из выработок попадают на осмысленные названия.
+ */
+function layerBase(list: string[], used: number[]): number {
+  if (list.length === 0 || used.length === 0) return 0;
+  const maxNum = Math.max(...used);
+  // Служебные строки: названия шрифтов, подписи схемы, одиночные символы.
+  const junk = (s: string) =>
+    s.length < 3 ||
+    /^(arial|tahoma|calibri|times|verdana|segoe)/i.test(s) ||
+    /проекц|схема получена|alpha=/i.test(s);
+
+  let best = 0;
+  let bestScore = -1;
+  for (let b = 0; b + maxNum < list.length; b++) {
+    // Годится только начало сплошного блока настоящих названий.
+    if (junk(list[b])) continue;
+    let score = 0;
+    for (const n of used) if (!junk(list[b + n])) score++;
+    if (score > bestScore) { bestScore = score; best = b; }
+    if (score === used.length) break;
+  }
+  return best;
+}
 
 /** Распаковка контейнера .cdf3 */
 export function unpackCdf3(buf: ArrayBuffer): Uint8Array {
@@ -103,7 +165,7 @@ export function parseCdf3(buf: ArrayBuffer): Cdf3ImportResult {
   if (!found) {
     throw new Error("Не удалось прочитать схему: расположение данных в файле не распознано.");
   }
-  const { nodes: rawNodes, branches: rawBranches } = found;
+  const { nodes: rawNodes, branches: rawBranches, layers } = found;
 
   // ── Переводим во внутренние объекты ───────────────────────────────────────
   const ts = Date.now();
@@ -130,7 +192,11 @@ export function parseCdf3(buf: ArrayBuffer): Cdf3ImportResult {
   }
   debug.push(`Смещение начала координат: X-${minX.toFixed(0)}, Y-${minY.toFixed(0)}`);
 
+  const layerStart = layerBase(layers, [...new Set(rawBranches.map(b => b.layer))]);
+
   const branches: TopoBranch[] = [];
+  const usedLayers = new Set<string>();
+  const layerZ = new Map<string, number[]>();
   let named = 0;
   let skipped = 0;
   rawBranches.forEach((rb, i) => {
@@ -144,8 +210,15 @@ export function parseCdf3(buf: ArrayBuffer): Cdf3ImportResult {
     const dz = Math.abs(ct.z - cf.z);
     const angle = len > 0 ? Math.round((Math.asin(Math.min(1, dz / len)) * 180) / Math.PI * 10) / 10 : 0;
     if (rb.name.trim()) named++;
+    const lay = layers[layerStart + rb.layer] ?? "";
+    if (lay) {
+      usedLayers.add(lay);
+      const zs = layerZ.get(lay);
+      if (zs) zs.push(cf.z, ct.z); else layerZ.set(lay, [cf.z, ct.z]);
+    }
     branches.push(makeBranch(`BC${ts}_${i}`, fn.id, tn.id, {
       type: rb.name.trim() || "Выработка",
+      layer: lay || "Без горизонта",
       length: Math.round(len * 10) / 10,
       manualLength: true,
       angle,
@@ -166,12 +239,30 @@ export function parseCdf3(buf: ArrayBuffer): Cdf3ImportResult {
   const allNodes = [...byId.values()];
   const { parts, biggest } = countParts(allNodes, branches);
 
+  // Горизонт получает отметку по средней высоте своих выработок — так слои
+  // выстраиваются в списке сверху вниз, как на плане шахты.
+  const horizons: Horizon[] = [...usedLayers]
+    .map(name => {
+      const zs = layerZ.get(name) ?? [0];
+      const z = Math.round((zs.reduce((s, v) => s + v, 0) / zs.length) * 10) / 10;
+      return { name, z };
+    })
+    .sort((a, b) => b.z - a.z)
+    .map((h, i) => ({
+      id: `HZ${ts}_${i}`,
+      name: h.name,
+      z: h.z,
+      color: LAYER_COLORS[i % LAYER_COLORS.length],
+      visible: true,
+    }));
+
   debug.push(`Узлов: ${allNodes.length}, выработок: ${branches.length}, с названием: ${named}`);
   debug.push(`Выходов на поверхность: ${atmCount}`);
   debug.push(`Несвязанных частей: ${parts}, крупнейшая: ${biggest} узлов`);
+  debug.push(`Горизонтов у выработок: ${usedLayers.size}`);
 
   warnings.push(
-    "Из схемы перенесены геометрия, топология и названия. Сопротивление, расход " +
+    "Из схемы перенесены геометрия, топология, названия и горизонты. Сопротивление, расход " +
     "и напор вентиляторов в файле не хранятся — выполните «Расчёт сети» в ПВ-Системе."
   );
   if (atmCount === 0) {
@@ -184,6 +275,7 @@ export function parseCdf3(buf: ArrayBuffer): Cdf3ImportResult {
   return {
     nodes: allNodes,
     branches,
+    horizons,
     warnings,
     stats: {
       nodes: allNodes.length,
@@ -192,6 +284,7 @@ export function parseCdf3(buf: ArrayBuffer): Cdf3ImportResult {
       atmosphere: atmCount,
       parts,
       biggestPart: biggest,
+      layers: usedLayers.size,
     },
     debug: debug.join("\n"),
   };
@@ -218,7 +311,9 @@ function findTables(raw: Uint8Array, dv: DataView, debug: string[]) {
       const br = readBranches(raw, dv, nodes, S + cnt * step);
       if (br.length >= Math.max(5, cnt * 0.2)) {
         debug.push(`Таблица узлов: смещение ${S}, записей ${cnt}, шаг ${step} байт`);
-        return { nodes, branches: br };
+        const layers = readLayers(raw, dv, S);
+        debug.push(`Список горизонтов: ${layers.length} строк`);
+        return { nodes, branches: br, layers };
       }
     }
   }
@@ -282,10 +377,17 @@ function readBranches(raw: Uint8Array, dv: DataView, nodes: RawNode[], tail: num
     if (ao + 365 < raw.length) {
       const ln = dv.getInt32(ao + 361, true);
       if (ln >= 0 && ln <= 200 && ao + 365 + ln <= raw.length) {
-        name = decodeCp1251(raw.slice(ao + 365, ao + 365 + ln));
+        // В названии встречаются переносы строк — заменяем на пробел,
+        // иначе подпись выработки разъезжается на схеме.
+        name = decodeCp1251(raw.slice(ao + 365, ao + 365 + ln))
+          .replace(/[\r\n]+/g, " ")
+          .replace(/\s{2,}/g, " ")
+          .trim();
       }
     }
-    return { from: a, to: b, area, name };
+    // Номер горизонта — 2 байта на постоянном смещении от площади сечения.
+    const layer = ao + 179 <= raw.length ? dv.getUint16(ao + 177, true) : 0;
+    return { from: a, to: b, area, name, layer };
   };
 
   const out: RawBranch[] = [];
