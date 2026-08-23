@@ -40,6 +40,7 @@ import { type CsvImportResult } from "@/lib/import/importCommon";
 import { guessBulkheadTypeId } from "@/lib/import/csvFieldUtils";
 import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
 import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
+import { type ErpImportResult } from "@/lib/erpImport";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
@@ -116,6 +117,7 @@ import { planBranchDeletion, type DeleteBranchPlan } from "./cad/deleteBranchPla
  * переносит собственные наработки между рабочими местами.
  */
 const DEMO_LOCKED_IMPORTS = new Set([
+  "erp",          // проект .erp (АэроСеть)
   "csv-aero",     // CSV из АэроСети
   "csv-vent2",    // CSV из Вентиляции 2.0
   "cdf3",         // схема .cdf3 (Вентиляция 2.0)
@@ -2087,6 +2089,10 @@ export default function CadPage() {
   const [showVent2CsvImport, setShowVent2CsvImport] = useState(false);
   const [showVent2Cdf3Import, setShowVent2Cdf3Import] = useState(false);
   const [showVentsimVsmImport, setShowVentsimVsmImport] = useState(false);
+  // Импорт проекта АэроСети (.erp). Держим ОТДЕЛЬНО от импорта «CSV из
+  // АэроСети»: это разные источники — здесь читается сам файл программы
+  // (ZIP + schema.xml), а там текстовая выгрузка. Путать их нельзя.
+  const [showErpImport, setShowErpImport] = useState(false);
 
   // Импорт модели .vsm (файл Ventsim напрямую, без выгрузки в CSV)
   const handleVentsimVsmImport = (result: VentsimVsmResult, mode: "replace" | "append") => {
@@ -2163,6 +2169,41 @@ export default function CadPage() {
     }
     setImportNonce(n => n + 1);
     setShowVent2Cdf3Import(false);
+    setActiveRibbon("home");
+  };
+
+  /**
+   * Импорт проекта АэроСети (.erp) — файла программы напрямую.
+   *
+   * НЕ ПУТАТЬ с «CSV из АэроСети» (handleCsvImport): тот читает текстовую
+   * выгрузку и требует отдельных файлов на узлы/выработки, а этот берёт
+   * исходный проект целиком — со слоями, вентиляторами и перемычками.
+   */
+  const handleErpImport = (result: ErpImportResult, mode: "replace" | "append") => {
+    if (mode === "replace") {
+      setNodes(result.nodes);
+      setBranches(result.branches);
+      setSchemaSymbols(ensureFanSymbols(result.branches, []));
+      setSelectedNodeId(null); setSelectedBranchId(null);
+    } else {
+      setNodes(prev => [...prev, ...result.nodes]);
+      setBranches(prev => [...prev, ...result.branches]);
+      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
+    }
+    // Слои АэроСети становятся горизонтами, «Общий вид» при этом сохраняем.
+    if (result.horizons.length > 0) {
+      setHorizons(prev => {
+        const keep = mode === "replace"
+          ? prev.filter(h => h.id === OVERVIEW_HORIZON_ID)
+          : prev;
+        const have = new Set(keep.map(h => h.name));
+        return [...keep, ...result.horizons.filter(h => !have.has(h.name))];
+      });
+    }
+    result.warnings.forEach(w => addLog("warn", `Импорт АэроСеть: ${w}`));
+    addLog("info", `Импорт АэроСеть (.erp): узлов ${result.stats.nodes}, выработок ${result.stats.branches}, вентиляторов ${result.stats.fans}, перемычек ${result.stats.bulkheads}`);
+    setImportNonce(n => n + 1);
+    setShowErpImport(false);
     setActiveRibbon("home");
   };
 
@@ -4663,6 +4704,7 @@ export default function CadPage() {
                   <>
                     <div className="text-[13px] font-semibold mb-3 pb-1 border-b border-gray-300">Добавить схему из файла</div>
                     {[
+                      { icon: "Boxes" as const,       label: "Модель АэроСеть",                 ext: ".erp — файл проекта", action: "erp" },
                       { icon: "FileText" as const,    label: "CSV из АэроСети",                 ext: "рекомендуется",  action: "csv-aero" },
                       { icon: "FileSpreadsheet" as const, label: "CSV из Вентиляция 2.0",      ext: "Вентиляция 2.0", action: "csv-vent2" },
                       { icon: "Boxes" as const,       label: "Схема Вентиляция 2.0",            ext: ".cdf3 — файл схемы", action: "cdf3" },
@@ -4684,7 +4726,10 @@ export default function CadPage() {
                             setActiveRibbon("home");
                             return;
                           }
-                          if (item.action === "csv-aero") {
+                          if (item.action === "erp") {
+                            setShowErpImport(true);
+                            setActiveRibbon("home");
+                          } else if (item.action === "csv-aero") {
                             setShowCsvImport(true);
                             setActiveRibbon("home");
                           } else if (item.action === "csv-vent2") {
@@ -4711,13 +4756,13 @@ export default function CadPage() {
                         }}>
                         <div className="w-8 h-8 flex items-center justify-center rounded border group-hover:border-green-400"
                           style={{
-                            background: item.action === "csv-aero" ? "var(--c-tint-green2, #dcfce7)" : item.action === "cdf3" ? "var(--c-tint-green2, #dcfce7)" : item.action === "vsm" ? "var(--c-tint-amber, #fef9c3)" : item.action === "csv-vent2" ? "var(--c-tint-blue2, #dbeafe)" : item.action === "csv-ventsim" ? "var(--c-tint-amber, #fef9c3)" : item.action === "combined" ? "var(--c-tint-purple, #ede9fe)" : item.action === "dxf" ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s1, #fff)",
-                            borderColor: item.action === "csv-aero" ? "#86efac" : item.action === "cdf3" ? "#86efac" : item.action === "vsm" ? "#fde047" : item.action === "csv-vent2" ? "#93c5fd" : item.action === "csv-ventsim" ? "#fde047" : item.action === "combined" ? "#a78bfa" : item.action === "dxf" ? "#93c5fd" : "var(--c-b2, #d1d5db)",
+                            background: item.action === "erp" ? "var(--c-tint-green2, #dcfce7)" : item.action === "csv-aero" ? "var(--c-tint-green2, #dcfce7)" : item.action === "cdf3" ? "var(--c-tint-green2, #dcfce7)" : item.action === "vsm" ? "var(--c-tint-amber, #fef9c3)" : item.action === "csv-vent2" ? "var(--c-tint-blue2, #dbeafe)" : item.action === "csv-ventsim" ? "var(--c-tint-amber, #fef9c3)" : item.action === "combined" ? "var(--c-tint-purple, #ede9fe)" : item.action === "dxf" ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s1, #fff)",
+                            borderColor: item.action === "erp" ? "#86efac" : item.action === "csv-aero" ? "#86efac" : item.action === "cdf3" ? "#86efac" : item.action === "vsm" ? "#fde047" : item.action === "csv-vent2" ? "#93c5fd" : item.action === "csv-ventsim" ? "#fde047" : item.action === "combined" ? "#a78bfa" : item.action === "dxf" ? "#93c5fd" : "var(--c-b2, #d1d5db)",
                           }}>
                           <Icon name={item.icon} size={18} />
                         </div>
                         <div>
-                          <div className="text-[12px] font-medium flex items-center gap-1" style={{ color: item.action === "csv-aero" ? "var(--c-green, #15803d)" : item.action === "csv-vent2" ? "var(--c-blue-ink, #1e40af)" : item.action === "csv-ventsim" ? "#854d0e" : item.action === "combined" ? "#5b21b6" : "var(--c-t1, #1f2937)" }}>
+                          <div className="text-[12px] font-medium flex items-center gap-1" style={{ color: item.action === "erp" ? "var(--c-green, #15803d)" : item.action === "csv-aero" ? "var(--c-green, #15803d)" : item.action === "csv-vent2" ? "var(--c-blue-ink, #1e40af)" : item.action === "csv-ventsim" ? "#854d0e" : item.action === "combined" ? "#5b21b6" : "var(--c-t1, #1f2937)" }}>
                             {item.label}
                             {isDemo && DEMO_LOCKED_IMPORTS.has(item.action) && (
                               <span className="px-1 rounded text-[9px] font-semibold flex-shrink-0"
@@ -4727,7 +4772,8 @@ export default function CadPage() {
                             )}
                           </div>
                           <div className="text-[10px] text-gray-400">
-                            {item.action === "csv-aero" ? "✓ X,Y,Z координаты + все параметры в одном файле"
+                            {item.action === "erp" ? "✓ Схема целиком: слои, вентиляторы, перемычки"
+                            : item.action === "csv-aero" ? "✓ X,Y,Z координаты + все параметры в одном файле"
                             : item.action === "csv-vent2" ? "✓ Файл → Экспорт в CSV, настраиваемые столбцы"
                             : item.action === "csv-ventsim" ? "✓ Branch Report → Export to CSV"
                             : item.action === "combined" ? "✓ DXF координаты + Excel параметры и глубины"
@@ -13243,6 +13289,9 @@ export default function CadPage() {
       showVentsimCsvImport={showVentsimCsvImport}
       setShowVentsimCsvImport={setShowVentsimCsvImport}
       handleVentsimCsvImport={handleVentsimCsvImport}
+      showErpImport={showErpImport}
+      setShowErpImport={setShowErpImport}
+      handleErpImport={handleErpImport}
       showVent2Cdf3Import={showVent2Cdf3Import}
       setShowVent2Cdf3Import={setShowVent2Cdf3Import}
       handleVent2Cdf3Import={handleVent2Cdf3Import}

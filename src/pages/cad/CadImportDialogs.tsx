@@ -18,6 +18,8 @@ import { type CsvImportResult } from "@/lib/import/importCommon";
 import VentsimCsvImportDialog from "@/components/cad/VentsimCsvImportDialog";
 import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
 import Vent2Cdf3ImportDialog from "@/components/cad/Vent2Cdf3ImportDialog";
+import ErpImportDialog from "@/components/cad/ErpImportDialog";
+import { type ErpImportResult } from "@/lib/erpImport";
 import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
 import VentsimVsmImportDialog from "@/components/cad/VentsimVsmImportDialog";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
@@ -83,6 +85,12 @@ export interface CadImportDialogsProps {
   showVentsimVsmImport: boolean;
   setShowVentsimVsmImport: (v: boolean) => void;
   handleVentsimVsmImport: (r: VentsimVsmResult, mode: ImportMode) => void;
+
+  // Проект .erp — файл самой АэроСети. Отдельно от «CSV из АэроСети» выше:
+  // разные источники данных, общего кода у них нет.
+  showErpImport: boolean;
+  setShowErpImport: (v: boolean) => void;
+  handleErpImport: (r: ErpImportResult, mode: ImportMode) => void;
 
   showEquipRef: boolean;
   setShowEquipRef: (v: boolean) => void;
@@ -186,6 +194,14 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
         <VentsimVsmImportDialog
           onImport={p.handleVentsimVsmImport}
           onClose={() => p.setShowVentsimVsmImport(false)}
+        />
+      )}
+
+      {/* ═══ ПРОЕКТ .erp (АэроСеть) ═════════════════════════════════════════ */}
+      {p.showErpImport && (
+        <ErpImportDialog
+          onImport={p.handleErpImport}
+          onClose={() => p.setShowErpImport(false)}
         />
       )}
 

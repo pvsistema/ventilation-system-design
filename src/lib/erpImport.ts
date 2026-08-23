@@ -25,19 +25,33 @@
 //     </layers>
 //     <ribEndNodes>
 //       <ribEndNode id x y name number>              ← узел (x,y — план)
-//         <field name="RibEndNode.Depth" …/>         ← глубина, м (вниз > 0)
+//         <field name="RibEndNode.Depth" …/>         ← отметка, м (абсолютная)
 //     </ribEndNodes>
 //     <settings><setting key="ProjectionType" …/>    ← параметры проекции
+//     <options>
+//       <option name="GeolocationScale">0.3528…</option>   ← единиц на метр
+//       <option name="OYAngle">2.478…</option>             ← параметры
+//       <option name="OYDistortion">1</option>                косоугольной
+//       <option name="OZDistortion">5</option>                проекции
 //   </schema>
 //
-// ВАЖНО про координаты: x/y в файле — экранные единицы косоугольной проекции
-// АэроСети, а не метры. Отношение «длина ветви / расстояние между узлами»
-// стабильно равно ≈1,0583 (это 96/90,71 — пересчёт дюймовой сетки). Мы
-// определяем масштаб по самим данным (медиана отношений), а не константой:
-// у другого проекта настройки экспорта могут отличаться.
+// ВАЖНО про координаты — главная тонкость формата. x/y в файле НЕ являются
+// планом: это готовая КАРТИНКА в косоугольной проекции, где высота уже
+// «вмешана» в экранный Y. Прямое использование x/y даёт схему, растянутую по
+// вертикали в разы (OZDistortion=5 — пятикратно), с неверными длинами и углами.
 //
-// Высотная отметка Z = −Depth: в АэроСети глубина растёт ВНИЗ (500 = 500 м
-// под поверхностью), у нас z — абсолютная отметка (вниз отрицательная).
+// АэроСеть рисует так (X,Y,Z — метры, ex/ey — единицы файла, s = 1/scale):
+//   ex = s·( X + cos(OYAngle)·OYDistortion·Y )
+//   ey = s·( −sin(OYAngle)·OYDistortion·Y − OZDistortion·Z )
+// Обращаем и получаем настоящие метры:
+//   Y = −( ey/s + OZDistortion·Z ) / ( sin(OYAngle)·OYDistortion )
+//   X =    ex/s − cos(OYAngle)·OYDistortion·Y
+// Проверено на реальном проекте («Якутское») сверкой с CSV-выгрузкой той же
+// модели: расхождение по 246 общим узлам — 0,0 м (медиана), максимум 1,6 м.
+//
+// Высотная отметка: поле RibEndNode.Depth — это АБСОЛЮТНАЯ отметка в метрах
+// (в образце 1090…1207 при глубинах ствола ~100 м), а не глубина вниз от
+// поверхности. Берём её как z без смены знака.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import JSZip from "jszip";
@@ -52,11 +66,21 @@ export interface ErpImportResult {
   debug: string;
 }
 
-// Коды объектов на ветви (<ribItem itemCode>). Определены по образцу:
-// 8 — перемычка (рядом лежат поля Airflow.Bulkhead*),
-// 16 — вентилятор (рядом Airflow.FanPressure / Ventilator*).
-const ITEM_BULKHEAD = "8";
-const ITEM_FAN = "16";
+// Коды объектов на ветви (<ribItem itemCode>). Одного кода мало: АэроСеть
+// нумерует объекты по КАРТИНКЕ (глухая перемычка, ляда, вентдверь, кроссинг —
+// разные коды), и в разных проектах набор отличается. Поэтому опознаём по
+// сопутствующим полям, а списки ниже — лишь быстрый путь для известных кодов.
+// Собрано по реальным проектам: 8, 15, 92, 99, 101, 110 — перемычки/двери,
+// 68, 89 — изолирующие перемычки (Seal*), 16, 18 — вентиляторы (ВМП и ГВУ).
+const ITEM_BULKHEAD = new Set(["8", "15", "68", "89", "92", "99", "101", "110"]);
+const ITEM_FAN = new Set(["16", "18"]);
+
+// Признаки в полях самого объекта — надёжнее кода, работают на любом проекте.
+const FAN_FIELDS = ["Airflow.FanPressure", "Airflow.IdealVentilatorPressure", "Airflow.VentilatorType"];
+const BULKHEAD_FIELDS = [
+  "Airflow.BulkheadUserDefinedResistance", "Airflow.BulkheadCalculatedResistance",
+  "Airflow.VentWindowArea", "SealType", "SealQ",
+];
 
 /** Число из атрибута XML. Поддерживает экспоненту («3.94E-05») и запятую. */
 function num(v: string | null | undefined, def = 0): number {
@@ -125,6 +149,10 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
 
   // ── Справочник типов выработок: имя и максимальная скорость ────────────────
   const ribTypes = new Map<string, { name: string; vMax: number }>();
+  // Формы сечения: хранят отношение периметра к корню из площади (P = k·√S).
+  // Нужны потому, что периметр записан лишь у части выработок, а без него
+  // нельзя посчитать сопротивление по коэффициенту α.
+  const crossTypes = new Map<string, { name: string; k: number }>();
   const rtEntry = zip.file(/RibTypeService\.DataDocument$/i)[0];
   if (rtEntry) {
     const rtDoc = new DOMParser().parseFromString(decodeXml(await rtEntry.async("uint8array")), "application/xml");
@@ -132,7 +160,11 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       const id = t.getAttribute("id");
       if (id) ribTypes.set(id, { name: t.getAttribute("name") ?? "", vMax: num(t.getAttribute("defaultMaxAirVelocity"), 0) });
     });
-    log.push(`типов выработок: ${ribTypes.size}`);
+    rtDoc.querySelectorAll("crossSectionType").forEach(t => {
+      const id = t.getAttribute("id");
+      if (id) crossTypes.set(id, { name: t.getAttribute("name") ?? "", k: num(t.getAttribute("perimeterToAreaRatio"), 0) });
+    });
+    log.push(`типов выработок: ${ribTypes.size}, форм сечения: ${crossTypes.size}`);
   }
 
   // ── Узлы ──────────────────────────────────────────────────────────────────
@@ -148,8 +180,9 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       id,
       x: num(n.getAttribute("x")),
       y: num(n.getAttribute("y")),
-      // Depth — глубина вниз от поверхности; наша z — отметка (вниз минус).
-      z: -num(f["RibEndNode.Depth"]),
+      // RibEndNode.Depth, вопреки названию, хранит АБСОЛЮТНУЮ отметку в метрах
+      // (в образце 1090…1207 м при глубине ствола ~100 м) — это ровно наша z.
+      z: num(f["RibEndNode.Depth"]),
       name: n.getAttribute("name") ?? "",
       number: n.getAttribute("number") ?? "",
       atm: bool(f["HasAtmosphereConnection"]),
@@ -163,9 +196,10 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   // ── Слои → горизонты ──────────────────────────────────────────────────────
   // Слой АэроСети — это группа выработок (Стволы, Слой 1). Отметку слоя файл
   // не хранит, поэтому z горизонта вычислим ниже как медиану отметок его узлов.
+  interface RawItem { code: string; description: string; f: Record<string, string> }
   interface RawBranch {
     id: string; fromId: string; toId: string; horizonId: string;
-    f: Record<string, string>; items: string[]; thickness: number;
+    f: Record<string, string>; items: RawItem[]; thickness: number;
   }
   const rawBranches: RawBranch[] = [];
   const horizonMeta: { id: string; name: string; color: string; visible: boolean; order: number }[] = [];
@@ -188,10 +222,13 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       const fromId = rib.getAttribute("fromNode");
       const toId = rib.getAttribute("toNode");
       if (!id || !fromId || !toId) return;
-      const items: string[] = [];
+      const items: RawItem[] = [];
       rib.querySelectorAll("ribItem").forEach(it => {
-        const c = it.getAttribute("itemCode");
-        if (c) items.push(c);
+        items.push({
+          code: it.getAttribute("itemCode") ?? "",
+          description: it.getAttribute("description") ?? "",
+          f: readFields(it),
+        });
       });
       rawBranches.push({ id, fromId, toId, horizonId: lid, f: readFields(rib), items, thickness: num(rib.getAttribute("thickness"), 3) });
     });
@@ -199,49 +236,43 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   log.push(`слоёв: ${horizonMeta.length}, ветвей: ${rawBranches.length}`);
   if (rawBranches.length === 0) throw new Error("В файле не найдено ни одной выработки");
 
-  // ── Масштаб координат ─────────────────────────────────────────────────────
-  // Отношение «заданная длина ветви / расстояние между её узлами в плане».
-  // Берём МЕДИАНУ по горизонтальным ветвям: у наклонных часть длины приходится
-  // на перепад высот, и они исказили бы оценку. Если таких ветвей нет —
-  // оставляем 1 и предупреждаем: геометрия может не совпасть с длинами.
-  const ratios: number[] = [];
-  for (const rb of rawBranches) {
-    const a = rawNodes.get(rb.fromId), b = rawNodes.get(rb.toId);
-    if (!a || !b) continue;
-    if (Math.abs(a.z - b.z) > 0.5) continue;           // только горизонтальные
-    const d = Math.hypot(b.x - a.x, b.y - a.y);
-    const L = num(rb.f["Airflow.UserDefinedRibLength"]);
-    if (d > 1e-6 && L > 1e-6) ratios.push(L / d);
-  }
-  let scale = 1;
-  if (ratios.length > 0) {
-    ratios.sort((p, q) => p - q);
-    scale = ratios[Math.floor(ratios.length / 2)];
-    log.push(`масштаб координат: ${scale.toFixed(4)} (по ${ratios.length} горизонт. ветвям)`);
-  } else {
-    warnings.push("Не удалось определить масштаб координат — план может не совпасть с длинами выработок");
-  }
+  // ── Обратное преобразование координат из проекции в метры ─────────────────
+  // КЛЮЧЕВОЙ момент формата. x/y в файле — это НЕ план, а готовая картинка в
+  // косоугольной проекции: высота уже подмешана в экранный Y и умножена на
+  // OZDistortion (в образце — впятеро). Взять x/y напрямую нельзя — схема
+  // получится растянутой по вертикали, с неверными длинами и углами наклона.
+  //
+  // Параметры проекции лежат в <options> самой схемы, поэтому ничего не
+  // угадываем — читаем и обращаем формулу отрисовки (вывод см. в шапке файла).
+  const opt = (name: string, def: number): number => {
+    const el = Array.from(doc.querySelectorAll("options > option"))
+      .find(o => o.getAttribute("name") === name);
+    return el ? num(el.textContent, def) : def;
+  };
+  // GeolocationScale — «метров в единице»: единиц на метр = 1/scale.
+  const geoScale = opt("GeolocationScale", 0);
+  const s = geoScale > 1e-9 ? 1 / geoScale : 1;
+  const oyAngle = opt("OYAngle", Math.PI / 2);
+  const oyDist = opt("OYDistortion", 1);
+  const ozDist = opt("OZDistortion", 1);
+  const sinOY = Math.sin(oyAngle) * oyDist;
 
-  // ── Разделение экранной оси Y на «план» и «глубину» ───────────────────────
-  // КЛЮЧЕВОЙ момент формата. АэроСеть рисует схему в косоугольной проекции
-  // (ProjectionType=1, OverheadAngle=90°), поэтому экранная координата Y — не
-  // плановая координата, а СМЕСЬ плановой Y и высотной отметки Z.
-  //
-  // Проверено на образце: у всех узлов y_экр·масштаб в точности равен z из
-  // Depth (−472,44·1,0583 = −500 при глубине 500). Если взять y_экр как план,
-  // перепад высот учтётся ДВАЖДЫ: ствол длиной 500 м получит геометрическую
-  // длину 707 м, и все длины, углы наклона и сопротивления «поедут».
-  //
-  // Поэтому вычитаем вклад высоты: остаток и есть плановая координата. Для
-  // вертикального разреза он равен нулю (схема плоская), для схемы с планом —
-  // даёт настоящую Y. Знак минус — экранная ось Y направлена вниз, наша вверх.
-  const residuals: number[] = [];
-  rawNodes.forEach(rn => residuals.push(rn.y * scale - rn.z));
-  const maxResidual = residuals.reduce((m, v) => Math.max(m, Math.abs(v)), 0);
-  const planarView = maxResidual < 0.5;
-  log.push(planarView
-    ? "проекция: вертикальный разрез (плановая Y отсутствует)"
-    : `проекция: с плановой Y (макс. остаток ${maxResidual.toFixed(1)} м)`);
+  if (geoScale <= 1e-9) {
+    warnings.push("В файле нет масштаба (GeolocationScale) — координаты взяты как есть, длины выработок при этом верны");
+  }
+  log.push(`проекция: scale=${geoScale.toFixed(6)}, OYAngle=${oyAngle.toFixed(4)}, OYDist=${oyDist}, OZDist=${ozDist}`);
+
+  /**
+   * Экранные координаты + отметка → плановые X/Y в метрах.
+   * Если ось Y вырождена (sin(OYAngle)·OYDistortion ≈ 0), схема нарисована
+   * вертикальным разрезом: плановой Y в ней просто нет, ставим 0.
+   */
+  const toPlan = (ex: number, ey: number, z: number): { x: number; y: number } => {
+    if (Math.abs(sinOY) < 1e-9) return { x: ex / s, y: 0 };
+    const Y = -(ey / s + ozDist * z) / sinOY;
+    const X = ex / s - Math.cos(oyAngle) * oyDist * Y;
+    return { x: X, y: Y };
+  };
 
   // ── Сборка узлов ──────────────────────────────────────────────────────────
   const idMap = new Map<string, string>();
@@ -250,9 +281,10 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   rawNodes.forEach(rn => {
     const newId = `n_erp_${nodeNum}`;
     idMap.set(rn.id, newId);
+    const p = toPlan(rn.x, rn.y, rn.z);
     nodes.push(makeNode(newId, {
-      x: +(rn.x * scale).toFixed(2),
-      y: planarView ? 0 : +(-(rn.y * scale - rn.z)).toFixed(2),
+      x: +p.x.toFixed(2),
+      y: +p.y.toFixed(2),
       z: +rn.z.toFixed(2),
       name: rn.name,
       number: rn.number || String(nodeNum),
@@ -292,8 +324,20 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     const f = rb.f;
 
     const area = num(f["Airflow.CrossSectionArea"], 0);
-    const perimeter = num(f["Airflow.Perimeter"], 0);
-    const length = num(f["Airflow.UserDefinedRibLength"], 0);
+    // Периметр записан не у всех выработок. Если его нет — восстанавливаем по
+    // форме сечения (P = k·√S): без периметра не считается сопротивление по α.
+    const ct = crossTypes.get(f["Airflow.CrossSectionTypeId"] ?? "");
+    const perimeter = num(f["Airflow.Perimeter"], 0)
+      || (ct && ct.k > 0 && area > 0 ? +(ct.k * Math.sqrt(area)).toFixed(3) : 0);
+
+    // Длину АэроСеть хранит только когда её задали вручную; в остальных случаях
+    // она берётся из чертежа. Считаем её сами по координатам — с учётом
+    // перепада отметок, иначе наклонные выработки и стволы окажутся короче.
+    const na = rawNodes.get(rb.fromId)!, nb = rawNodes.get(rb.toId)!;
+    const pa = toPlan(na.x, na.y, na.z), pb = toPlan(nb.x, nb.y, nb.z);
+    const geomLength = Math.hypot(pb.x - pa.x, pb.y - pa.y, nb.z - na.z);
+    const userLength = num(f["Airflow.UserDefinedRibLength"], 0);
+    const length = +(userLength > 0 ? userLength : geomLength).toFixed(2);
     const rUser = num(f["Airflow.UserDefinedResistance"], 0);
     const alpha = num(f["Airflow.Alpha"], 0);
     const rt = ribTypes.get(f["Airflow.RibTypeId"] ?? "");
@@ -304,13 +348,30 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     const rMode = String(f["Airflow.AirResistanceCalculationType"] ?? "");
     const useManualR = rMode === "2" && rUser > 0;
 
-    const hasFan = rb.items.includes(ITEM_FAN);
-    const hasBulkhead = rb.items.includes(ITEM_BULKHEAD);
+    // Объект на ветви опознаём по его собственным полям (надёжно на любом
+    // проекте), а код itemCode — как запасной признак для известных картинок.
+    const fanItem = rb.items.find(it =>
+      ITEM_FAN.has(it.code) || FAN_FIELDS.some(k => it.f[k] != null && it.f[k] !== ""));
+    const bulkItem = rb.items.find(it =>
+      ITEM_BULKHEAD.has(it.code) || BULKHEAD_FIELDS.some(k => it.f[k] != null && it.f[k] !== ""));
+    const hasFan = !!fanItem;
+    const hasBulkhead = !!bulkItem && !hasFan;   // ВМП стоит «в» перемычке — это вентилятор
     if (hasFan) fans++;
     if (hasBulkhead) bulkheads++;
 
-    // Депрессия вентилятора: в АэроСети Па, у нас тоже Па.
-    const fanPressure = num(f["Airflow.FanPressure"], 0) || num(f["Airflow.IdealVentilatorPressure"], 0);
+    // Депрессия вентилятора: в АэроСети Па, у нас тоже Па. Значения лежат в
+    // полях самого объекта, а не ветви (на ветви они есть не всегда).
+    const ff = fanItem?.f ?? {};
+    const bf = bulkItem?.f ?? {};
+    const fanPressure = num(ff["Airflow.FanPressure"], 0)
+      || num(ff["Airflow.IdealVentilatorPressure"], 0)
+      || num(f["Airflow.FanPressure"], 0)
+      || num(f["Airflow.IdealVentilatorPressure"], 0);
+    // Сопротивление перемычки: заданное пользователем, иначе расчётное.
+    const bulkR = num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
+      || num(bf["Airflow.BulkheadCalculatedResistance"], 0)
+      || num(f["Airflow.BulkheadUserDefinedResistance"], 0)
+      || num(f["Airflow.BulkheadCalculatedResistance"], 0);
 
     branches.push(makeBranch(`b_erp_${branchNum}`, fromId, toId, {
       type: f["Rib.Name"] || rt?.name || "",
@@ -324,7 +385,7 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       manualSection: area > 0 && perimeter > 0,
       dh: area > 0 && perimeter > 0 ? +(4 * area / perimeter).toFixed(3) : 0,
       length,
-      manualLength: bool(f["Airflow.RibLengthIsUserDefined"]) || length > 0,
+      manualLength: true,   // длина уже известна (задана в файле или по чертежу)
       resistanceMode: useManualR ? "manual" : "alpha",
       manualR: useManualR ? rUser : 0,
       alphaCoef: alpha > 0 ? alpha * 1e4 : 0,
@@ -337,22 +398,18 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       hasFan,
       fanMode: "constant",
       fanPressure: hasFan ? fanPressure : 0,
-      fanName: hasFan ? (f["Rib.Name"] || "Вентилятор") : "",
-      fanEfficiency: hasFan ? num(f["Airflow.IdealVentilatorEfficiency"], 0) : 0,
-      fanParallel: hasFan ? Math.max(1, Math.round(num(f["Airflow.VentilatorsInParallel"], 1))) : 1,
-      fanRpm: hasFan ? num(f["Airflow.VentilatorSpeed"], 0) : 0,
+      fanName: hasFan ? (fanItem?.description || f["Rib.Name"] || "Вентилятор") : "",
+      fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
+      fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
+      fanRpm: hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0,
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
-      bulkheadName: hasBulkhead ? "Перемычка" : "",
+      bulkheadName: hasBulkhead ? (bulkItem?.description || "Перемычка") : "",
       // АэроСеть хранит сопротивление перемычки в кМюрг — как и наше поле.
-      bulkheadR: hasBulkhead
-        ? (num(f["Airflow.BulkheadUserDefinedResistance"], 0) || num(f["Airflow.BulkheadCalculatedResistance"], 0))
-        : 0,
+      bulkheadR: hasBulkhead ? bulkR : 0,
       bulkheadResMode: hasBulkhead ? "manual" : "project",
-      bulkheadManualR: hasBulkhead
-        ? (num(f["Airflow.BulkheadUserDefinedResistance"], 0) || num(f["Airflow.BulkheadCalculatedResistance"], 0))
-        : 0,
-      bulkheadSurveyQ: hasBulkhead ? num(f["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,
+      bulkheadManualR: hasBulkhead ? bulkR : 0,
+      bulkheadSurveyQ: hasBulkhead ? num(bf["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,
       comment: f["Rib.Comment"] ?? "",
     }));
     branchNum++;
