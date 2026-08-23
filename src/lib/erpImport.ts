@@ -89,6 +89,20 @@ import JSZip from "jszip";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 
 /**
+ * Единицы сопротивления выработок в файле .erp.
+ *
+ * Штатно АэроСеть пишет R в кМюрг (кгс·с²/м⁸) — те же единицы, что и у нас,
+ * поэтому переносить можно как есть. Но пользователь может переключить
+ * программу в СИ (Н·с²/м⁸), и тогда те же числа больше в 9,81 раза — без
+ * пересчёта сопротивления всей схемы окажутся завышены.
+ *
+ * В самом файле единица НЕ подписана, поэтому «auto» определяет её по
+ * величине значений (см. detectErpResistanceUnit), а пользователь может
+ * задать вручную, если автоопределение ошиблось.
+ */
+export type ErpResistanceUnit = "auto" | "kmu" | "si";
+
+/**
  * Позиция ПЛА, вычитанная из .erp.
  *
  * Намеренно СВОЙ тип, а не RawPosition из CSV-импорта: у CSV-выгрузки нет
@@ -130,6 +144,8 @@ export interface ErpImportResult {
   branches: TopoBranch[];
   horizons: Horizon[];
   positions: ErpPosition[];
+  /** Единицы R, в которых прочитан файл (после автоопределения или выбора). */
+  resistanceUnit: "kmu" | "si";
   warnings: string[];
   stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number };
   debug: string;
@@ -203,6 +219,42 @@ function readFields(el: Element): Record<string, string> {
 }
 
 /**
+ * Множитель перевода сопротивления из СИ (Н·с²/м⁸) в кМюрг (кгс·с²/м⁸).
+ * Наши поля R хранятся в кМюрг — см. depression() в aerodynamics.ts.
+ */
+const SI_TO_KMU = 1 / 9.81;
+
+/**
+ * Определение единиц сопротивления в .erp по самим данным.
+ *
+ * Сравниваем записанное R с сопротивлением, посчитанным по ГЕОМЕТРИИ той же
+ * выработки (R = α·P·L/S³ — формула в тех же рудничных единицах, что и α в
+ * файле). Если в файле СИ, отношение будет около 9,81; если кМюрг — около 1.
+ * Порог 3,13 = √9,81 — геометрическая середина между этими случаями.
+ *
+ * Такой способ надёжнее сравнения абсолютных величин: сопротивления реальных
+ * выработок отличаются в тысячи раз (0,0007…10 в одном и том же проекте),
+ * поэтому пороги «больше/меньше числа» на них не работают.
+ *
+ * Если сверить не с чем (нет α, сечения или длины) — считаем кМюрг: это
+ * штатная настройка АэроСети.
+ */
+export function detectErpResistanceUnit(
+  samples: { r: number; alpha: number; area: number; perimeter: number; length: number }[],
+): "kmu" | "si" {
+  const ratios: number[] = [];
+  for (const s of samples) {
+    if (s.r <= 0 || s.alpha <= 0 || s.area <= 0.5 || s.perimeter <= 0 || s.length <= 0) continue;
+    const geom = (s.alpha * s.perimeter * s.length) / Math.pow(s.area, 3);
+    if (geom > 0) ratios.push(s.r / geom);
+  }
+  if (ratios.length < 3) return "kmu";
+  ratios.sort((a, b) => a - b);
+  const median = ratios[Math.floor(ratios.length / 2)];
+  return median > Math.sqrt(9.81) ? "si" : "kmu";
+}
+
+/**
  * Вид аварии позиции ПЛА (Position.AccidentType) → наше название.
  *
  * Значения подобраны по образцам: у позиций с кодом 1 в описании стоят
@@ -239,9 +291,13 @@ function argbToHex(c: string | null): string {
   return "#3B82F6";
 }
 
-export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
+export async function parseErp(
+  buffer: ArrayBuffer,
+  opts: { resistanceUnit?: ErpResistanceUnit } = {},
+): Promise<ErpImportResult> {
   const warnings: string[] = [];
   const log: string[] = [];
+  const requestedUnit: ErpResistanceUnit = opts.resistanceUnit ?? "auto";
 
   let zip: JSZip;
   try {
@@ -426,6 +482,34 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   const horizonIdMap = new Map(horizonMeta.map(h => [h.id, `h_erp_${h.id.slice(0, 8)}`]));
 
   // ── Сборка ветвей ─────────────────────────────────────────────────────────
+  // Единицы сопротивления: либо заданы пользователем, либо определяются по
+  // данным. Считаем ДО сборки ветвей — коэффициент нужен каждой из них.
+  const rUnit: "kmu" | "si" = requestedUnit === "auto"
+    ? detectErpResistanceUnit(rawBranches.map(rb => {
+        // Длина: заданная вручную, иначе по координатам — иначе выборка для
+        // автоопределения выходит слишком куцей (в реальных проектах длина
+        // чаще берётся из чертежа, чем вводится руками).
+        const a = rawNodes.get(rb.fromId), b = rawNodes.get(rb.toId);
+        let length = num(rb.f["Airflow.UserDefinedRibLength"], 0);
+        if (length <= 0 && a && b) {
+          const pa = toPlan(a.x, a.y, a.z), pb = toPlan(b.x, b.y, b.z);
+          length = Math.hypot(pb.x - pa.x, pb.y - pa.y, b.z - a.z);
+        }
+        return {
+          r: num(rb.f["Airflow.UserDefinedResistance"], 0),
+          alpha: num(rb.f["Airflow.Alpha"], 0),
+          area: num(rb.f["Airflow.CrossSectionArea"], 0),
+          perimeter: num(rb.f["Airflow.Perimeter"], 0),
+          length,
+        };
+      }))
+    : requestedUnit;
+  // Наши поля R — в кМюрг. Значения из СИ делим на 9,81, кМюрг берём как есть.
+  const rFactor = rUnit === "si" ? SI_TO_KMU : 1;
+  log.push(requestedUnit === "auto"
+    ? `Единицы R: автоопределение → ${rUnit === "si" ? "СИ (Н·с²/м⁸), делим на 9,81" : "кМюрг, без пересчёта"}`
+    : `Единицы R: задано вручную → ${rUnit === "si" ? "СИ (Н·с²/м⁸), делим на 9,81" : "кМюрг, без пересчёта"}`);
+
   const branches: TopoBranch[] = [];
   /** GUID выработки в файле → её id на нашей схеме (нужно позициям ПЛА). */
   const branchIdMap = new Map<string, string>();
@@ -452,7 +536,8 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     const geomLength = Math.hypot(pb.x - pa.x, pb.y - pa.y, nb.z - na.z);
     const userLength = num(f["Airflow.UserDefinedRibLength"], 0);
     const length = +(userLength > 0 ? userLength : geomLength).toFixed(2);
-    const rUser = num(f["Airflow.UserDefinedResistance"], 0);
+    // Сопротивление приводим к нашим единицам (кМюрг) — см. rFactor выше.
+    const rUser = +(num(f["Airflow.UserDefinedResistance"], 0) * rFactor).toFixed(6);
     const alpha = num(f["Airflow.Alpha"], 0);
     const rt = ribTypes.get(f["Airflow.RibTypeId"] ?? "");
 
@@ -485,10 +570,11 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
       || num(f["Airflow.IdealVentilatorPressure"], 0);
     const fanPressure = +(fanPressureKgs * PA_PER_KGS_M2).toFixed(2);
     // Сопротивление перемычки: заданное пользователем, иначе расчётное.
-    const bulkR = num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
+    // Единица та же, что и у выработок, — приводим тем же коэффициентом.
+    const bulkR = +((num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
       || num(bf["Airflow.BulkheadCalculatedResistance"], 0)
       || num(f["Airflow.BulkheadUserDefinedResistance"], 0)
-      || num(f["Airflow.BulkheadCalculatedResistance"], 0);
+      || num(f["Airflow.BulkheadCalculatedResistance"], 0)) * rFactor).toFixed(6);
 
     // Запоминаем соответствие «GUID выработки в файле → наш id»: по нему
     // позиции ПЛА ниже находят свои выработки и точку привязки выноски.
@@ -612,6 +698,7 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     branches,
     horizons,
     positions,
+    resistanceUnit: rUnit,
     warnings,
     stats: {
       nodes: nodes.length, branches: branches.length, fans, bulkheads,

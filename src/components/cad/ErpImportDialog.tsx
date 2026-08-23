@@ -1,5 +1,5 @@
 import { useState, useRef } from "react";
-import { parseErp, type ErpImportResult } from "@/lib/erpImport";
+import { parseErp, type ErpImportResult, type ErpResistanceUnit } from "@/lib/erpImport";
 import Icon from "@/components/ui/icon";
 
 interface Props {
@@ -14,18 +14,31 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [showDebug, setShowDebug] = useState(false);
   const [fileName, setFileName] = useState<string | null>(null);
+  // Единицы сопротивления в файле. Обычно АэроСеть пишет кМюрг, но проект
+  // могли перевести в СИ — тогда числа больше в 9,81 раза. По умолчанию
+  // определяем сами, пользователь может переопределить.
+  const [rUnit, setRUnit] = useState<ErpResistanceUnit>("auto");
   const inputRef = useRef<HTMLInputElement>(null);
+  // Файл держим в памяти, чтобы перечитать его при смене единиц без
+  // повторного выбора на диске.
+  const bufRef = useRef<ArrayBuffer | null>(null);
 
-  const handleFile = async (f: File) => {
-    setError(null); setResult(null); setLoading(true); setFileName(f.name);
+  const runParse = async (buf: ArrayBuffer, unit: ErpResistanceUnit) => {
+    setError(null); setResult(null); setLoading(true);
     try {
-      const buf = await f.arrayBuffer();
-      setResult(await parseErp(buf));
+      setResult(await parseErp(buf, { resistanceUnit: unit }));
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleFile = async (f: File) => {
+    setFileName(f.name);
+    const buf = await f.arrayBuffer();
+    bufRef.current = buf;
+    await runParse(buf, rUnit);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -52,6 +65,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
             <div className="text-green-700">Узлы с отметками, выработки, сечения и периметры</div>
             <div className="text-green-700">Сопротивления, расходы воздуха, слои-горизонты</div>
             <div className="text-green-700">Вентиляторы и перемычки</div>
+            <div className="text-green-700">Позиции ПЛА: номера, цвета, выноски и выработки</div>
             <div className="text-gray-500 text-[10px] mt-1">Файл проекта АэроСети целиком — выгружать ничего не нужно</div>
           </div>
 
@@ -68,6 +82,31 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
             </div>
             <input ref={inputRef} type="file" accept=".erp" className="hidden"
               onChange={e => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
+          </div>
+
+          {/* Единицы сопротивления выработок */}
+          <div className="text-[11px] text-gray-700">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="font-medium">Единицы R в файле:</span>
+              {(["auto", "kmu", "si"] as const).map(u => (
+                <label key={u} className="flex items-center gap-1 cursor-pointer">
+                  <input type="radio" name="erp-runit" value={u} checked={rUnit === u}
+                    onChange={() => {
+                      setRUnit(u);
+                      if (bufRef.current) runParse(bufRef.current, u);
+                    }} />
+                  {u === "auto" ? "Авто (рекомендуется)" : u === "kmu" ? "кМюрг" : "Н·с²/м⁸ (СИ)"}
+                </label>
+              ))}
+            </div>
+            {result && (
+              <div className="mt-1 px-2 py-0.5 rounded text-[10px] inline-block"
+                style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue-ink, #1e40af)" }}>
+                {result.resistanceUnit === "si"
+                  ? "СИ — сопротивления пересчитаны в кМюрг (÷9,81)"
+                  : "кМюрг — сопротивления перенесены без пересчёта"}
+              </div>
+            )}
           </div>
 
           {error && (
