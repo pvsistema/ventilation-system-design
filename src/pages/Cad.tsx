@@ -41,6 +41,7 @@ import { guessBulkheadTypeId } from "@/lib/import/csvFieldUtils";
 import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
 import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
 import { type ErpImportResult } from "@/lib/erpImport";
+import { exportErp } from "@/lib/erpExport";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
@@ -2713,6 +2714,25 @@ export default function CadPage() {
   const DEFAULT_PROJECT_NAME = "Проект1.vproj";
   const suggestedFileName = () => projectFileName || DEFAULT_PROJECT_NAME;
 
+  /**
+   * Выгрузка схемы в родной формат АэроСети (.erp), чтобы проект можно было
+   * сразу открыть в той программе. Обратная операция к импорту .erp.
+   */
+  const handleErpExport = async () => {
+    if (isDemo) { setShowLicenseDialog(true); return; }
+    if (branches.length === 0) {
+      addLog("warn", "Экспорт в АэроСеть: схема пуста — нечего выгружать");
+      return;
+    }
+    try {
+      const name = suggestedFileName().replace(/\.vproj$/, "");
+      await exportErp({ nodes, branches, horizons, positions, projectName: name, fileName: name });
+      addLog("info", `Экспорт в АэроСеть (.erp): узлов ${nodes.length}, выработок ${branches.length}, позиций ПЛА ${positions.length}`);
+    } catch (e) {
+      addLog("error", `Экспорт в АэроСеть не удался: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const handleSave = async () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
     // Новый проект ещё не привязан к файлу — сразу спрашиваем, куда сохранить.
@@ -4942,6 +4962,16 @@ export default function CadPage() {
                       <div>
                         <div className="text-[12px] font-medium text-gray-700">Экспорт в PDF</div>
                         <div className="text-[10px] text-gray-400">Графический план — слой печати, высокое качество</div>
+                      </div>
+                    </button>
+                    <button onClick={() => { setActiveRibbon("home"); handleErpExport(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-green-50 border border-gray-200 group mb-1">
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-tint-green2, #dcfce7)" }}>
+                        <Icon name="Boxes" size={16} className="text-green-700" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-gray-700">Экспорт в АэроСеть (.erp)</div>
+                        <div className="text-[10px] text-gray-400">Схема, вентиляторы, перемычки и позиции ПЛА</div>
                       </div>
                     </button>
                     <button onClick={() => { setActiveRibbon("home"); setShowCsvExport(true); }}
