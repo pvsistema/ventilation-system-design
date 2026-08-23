@@ -85,6 +85,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
                   { label: "Гориз.", value: result.stats.horizons },
                   { label: "Вент.", value: result.stats.fans },
                   { label: "Перем.", value: result.stats.bulkheads },
+                  { label: "Позиций", value: result.stats.positions },
                 ].map(s => (
                   <div key={s.label} className="rounded px-1 py-2 text-center border"
                     style={{ background: s.value > 0 ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s2, #f9f9f9)", borderColor: s.value > 0 ? "#86efac" : "var(--c-b1, #e0e0e0)" }}>

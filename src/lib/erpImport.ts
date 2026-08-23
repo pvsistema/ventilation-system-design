@@ -1,6 +1,21 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Импорт проектов АэроСеть (.erp)
 //
+// ┌───────────────────────────────────────────────────────────────────────────┐
+// │ НЕ ПУТАТЬ С ДРУГИМИ ИМПОРТАМИ. В программе их несколько, и у каждого     │
+// │ свой источник данных, свои единицы и свой файл-обработчик:               │
+// │   • ЭТОТ файл  — .erp, родной ПРОЕКТ АэроСети (ZIP+XML). Полная схема.   │
+// │   • aerosetCsvImport.ts — ТАБЛИЧНАЯ выгрузка АэроСети в CSV. Другой      │
+// │     набор полей, другие единицы сопротивления, позиции ПЛА приходят      │
+// │     отдельным файлом *-positions.csv.                                    │
+// │   • vent2CsvImport.ts / vent2Cdf3Import.ts — Вентиляция 2.0.             │
+// │   • ventsimCsvImport.ts / ventsimVsmImport.ts — Ventsim.                 │
+// │   • dxfImport.ts, excelImport.ts, combinedImport.ts — чертежи и таблицы. │
+// │ Общий код между ними НЕ заводить: одинаковые на вид поля («напор»,       │
+// │ «сопротивление») в разных программах хранятся в РАЗНЫХ единицах, и       │
+// │ переиспользование как раз и приводит к ошибкам в 9,8 раза.               │
+// └───────────────────────────────────────────────────────────────────────────┘
+//
 // Формат разобран по реальному файлу. .erp — это ZIP-контейнер (сигнатура PK),
 // внутри которого лежат XML-документы в кодировке UTF-16 LE с BOM:
 //
@@ -52,19 +67,87 @@
 // Высотная отметка: поле RibEndNode.Depth — это АБСОЛЮТНАЯ отметка в метрах
 // (в образце 1090…1207 при глубинах ствола ~100 м), а не глубина вниз от
 // поверхности. Берём её как z без смены знака.
+//
+// ЕДИНИЦЫ ДАВЛЕНИЯ — вторая тонкость формата. АэроСеть хранит напор
+// вентилятора в РУДНИЧНЫХ единицах (кгс/м² = мм вод. ст.), а не в паскалях,
+// хотя в самом файле это нигде не подписано. Признаки, по которым определено:
+//   • AirControl.VentilatorMaxPressure = 10.1972 — это ровно 100 Па / 9,80665;
+//   • сопротивления ветвей лежат как 0,010197 = 0,1/9,80665;
+//   • паспорта вентиляторов (VentilatorTemplateService) записаны в паскалях —
+//     напор ВЦ-25 в них 200…490 Па, тогда как рабочая точка той же машины
+//     в схеме = 108,4. После ×9,80665 получаем 1063 Па — правдоподобный
+//     напор ГВУ, тогда как 108 Па для ВЦ-25 физически заниженно.
+// Поэтому напор переводим в паскали умножением на 9,80665 — без этого он
+// занижался ровно в 9,8 раза.
+//
+// А вот СОПРОТИВЛЕНИЕ пересчитывать НЕ надо: наше поле R тоже хранится в
+// кМюрг (кгс·с²/м⁸) и умножается на 9,81 уже внутри расчёта (см.
+// depression() в aerodynamics.ts). Единицы совпадают — переносим как есть.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import JSZip from "jszip";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 
+/**
+ * Позиция ПЛА, вычитанная из .erp.
+ *
+ * Намеренно СВОЙ тип, а не RawPosition из CSV-импорта: у CSV-выгрузки нет
+ * ни привязки выноски к выработке, ни диаметра маркера, а поля называются
+ * иначе. Общего кода у двух импортов нет — см. предупреждение о смешении
+ * источников в шапке файла.
+ */
+export interface ErpPosition {
+  /** Исходный GUID позиции в АэроСети — им же связаны выработки позиции. */
+  id: string;
+  number: number;
+  name: string;
+  /** Вид аварии в наших терминах («Пожар», «Взрыв», …). */
+  accidentType: string;
+  /** Реверсивная / безреверсивная позиция. */
+  positionType: "normal" | "reverse";
+  x: number;
+  y: number;
+  z: number;
+  /** Цвет фона маркера, HEX. */
+  color: string;
+  /** Цвет границы маркера, HEX. */
+  borderColor: string;
+  /** Диаметр маркера, мм. */
+  diameter: number;
+  /** Шрифт подписи («GOST type A»). */
+  font: string;
+  /** Наши id выработок, на которые распространяется позиция. */
+  branchIds: string[];
+  /** Выноска: наш id выработки, к которой она привязана (или пусто). */
+  leaderBranchId: string;
+  /** Положение выноски вдоль выработки, 0…1. */
+  leaderT: number;
+  comment: string;
+}
+
 export interface ErpImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
+  positions: ErpPosition[];
   warnings: string[];
-  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number };
+  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number };
   debug: string;
 }
+
+/**
+ * Перевод давления из рудничных единиц АэроСети (кгс/м² = мм вод. ст.) в
+ * паскали. Ровно этот множитель и «терялся»: напор вентилятора приходил
+ * заниженным в 9,8 раза.
+ */
+const PA_PER_KGS_M2 = 9.80665;
+
+/**
+ * Код узла-маркера «Позиция ПЛА» в схеме АэроСети (<nodes><node itemCode>).
+ * Позиции лежат ОТДЕЛЬНО от узлов сети (<ribEndNode>) — это самостоятельные
+ * объекты плана ликвидации аварий, а не точки схемы проветривания.
+ */
+const NODE_PLAN_POSITION = "1001";
 
 // Коды объектов на ветви (<ribItem itemCode>). Одного кода мало: АэроСеть
 // нумерует объекты по КАРТИНКЕ (глухая перемычка, ляда, вентдверь, кроссинг —
@@ -117,6 +200,35 @@ function readFields(el: Element): Record<string, string> {
     if (n) out[n] = f.getAttribute("value") ?? "";
   });
   return out;
+}
+
+/**
+ * Вид аварии позиции ПЛА (Position.AccidentType) → наше название.
+ *
+ * Значения подобраны по образцам: у позиций с кодом 1 в описании стоят
+ * пожары («Пожар ГВУ на устье ствола»), код 2 — затопление, код 0 —
+ * прочие происшествия (обрушение, отключение энергии, травма). Отдельного
+ * типа «затопление» у нас нет, поэтому такие позиции получают «Нет», а
+ * текст события сохраняется в названии и комментарии позиции.
+ */
+function accidentTypeName(code: string | undefined): string {
+  switch (String(code ?? "").trim()) {
+    case "1": return "Пожар";
+    case "2": return "Нет";
+    default:  return "Нет";
+  }
+}
+
+/**
+ * Цвет .NET (знаковое целое ARGB, «-65536») → HEX («#FF0000»).
+ * Именно так АэроСеть пишет цвета маркеров позиций — в отличие от слоёв,
+ * где цвет записан строкой «#FF808000».
+ */
+function winColorToHex(v: string | undefined): string {
+  const n = parseInt(String(v ?? "").trim(), 10);
+  if (!Number.isFinite(n)) return "";
+  const rgb = (n >>> 0) & 0xffffff;
+  return "#" + rgb.toString(16).padStart(6, "0").toUpperCase();
 }
 
 /** ARGB-цвет АэроСети («#FF808000») → HEX без альфы («#808000»). */
@@ -315,6 +427,8 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
 
   // ── Сборка ветвей ─────────────────────────────────────────────────────────
   const branches: TopoBranch[] = [];
+  /** GUID выработки в файле → её id на нашей схеме (нужно позициям ПЛА). */
+  const branchIdMap = new Map<string, string>();
   let fans = 0, bulkheads = 0, skipped = 0, branchNum = 1;
 
   for (const rb of rawBranches) {
@@ -359,20 +473,26 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
     if (hasFan) fans++;
     if (hasBulkhead) bulkheads++;
 
-    // Депрессия вентилятора: в АэроСети Па, у нас тоже Па. Значения лежат в
+    // Депрессия вентилятора. АэроСеть пишет её в кгс/м² (мм вод. ст.), а наше
+    // поле fanPressure — в паскалях, поэтому переводим (обоснование в шапке
+    // файла). Без этого напор занижался ровно в 9,8 раза. Значения лежат в
     // полях самого объекта, а не ветви (на ветви они есть не всегда).
     const ff = fanItem?.f ?? {};
     const bf = bulkItem?.f ?? {};
-    const fanPressure = num(ff["Airflow.FanPressure"], 0)
+    const fanPressureKgs = num(ff["Airflow.FanPressure"], 0)
       || num(ff["Airflow.IdealVentilatorPressure"], 0)
       || num(f["Airflow.FanPressure"], 0)
       || num(f["Airflow.IdealVentilatorPressure"], 0);
+    const fanPressure = +(fanPressureKgs * PA_PER_KGS_M2).toFixed(2);
     // Сопротивление перемычки: заданное пользователем, иначе расчётное.
     const bulkR = num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
       || num(bf["Airflow.BulkheadCalculatedResistance"], 0)
       || num(f["Airflow.BulkheadUserDefinedResistance"], 0)
       || num(f["Airflow.BulkheadCalculatedResistance"], 0);
 
+    // Запоминаем соответствие «GUID выработки в файле → наш id»: по нему
+    // позиции ПЛА ниже находят свои выработки и точку привязки выноски.
+    branchIdMap.set(rb.id, `b_erp_${branchNum}`);
     branches.push(makeBranch(`b_erp_${branchNum}`, fromId, toId, {
       type: f["Rib.Name"] || rt?.name || "",
       // Сечение и периметр берём как есть — в АэроСети они уже в м² и м.
@@ -418,14 +538,85 @@ export async function parseErp(buffer: ArrayBuffer): Promise<ErpImportResult> {
   if (skipped > 0) warnings.push(`Пропущено выработок без узлов: ${skipped}`);
   if (nodes.every(n => n.z === 0)) warnings.push("У всех узлов нулевая отметка — в проекте не заданы глубины");
 
-  log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans}, перемычек ${bulkheads}`);
+  // ── Позиции ПЛА ───────────────────────────────────────────────────────────
+  // Позиции хранятся ОТДЕЛЬНО от сети: это <node itemCode="1001"> внутри
+  // <nodes>, тогда как узлы схемы — <ribEndNode>. Путать их нельзя: у позиции
+  // нет ни расхода, ни связей, это маркер плана ликвидации аварий.
+  //
+  // Координаты позиции записаны в той же косоугольной проекции, что и узлы,
+  // поэтому прогоняем их через то же обратное преобразование toPlan. Сверено
+  // с выгрузкой «ян-positions.csv» той же модели: по всем 12 позициям
+  // расхождение 0,00 м, отметки совпадают точно.
+  const positions: ErpPosition[] = [];
+  let posLinked = 0;
+  doc.querySelectorAll("nodes > node").forEach(n => {
+    if (n.getAttribute("itemCode") !== NODE_PLAN_POSITION) return;
+    const f = readFields(n);
+    const ez = num(n.getAttribute("z"));
+    const p = toPlan(num(n.getAttribute("x")), num(n.getAttribute("y")), ez);
+
+    // Выработки позиции: список «GUID#True;GUID#True…» в одном поле.
+    const ribIds = (f["PlanPosition.PositionRibs"] ?? "")
+      .split(";")
+      .map(s => s.split("#")[0].trim())
+      .filter(Boolean);
+    const branchIds = ribIds.map(g => branchIdMap.get(g)).filter((v): v is string => !!v);
+    if (branchIds.length > 0) posLinked++;
+
+    // Выноска: <refMark> с привязкой к выработке и смещением ОТ ЕЁ НАЧАЛА
+    // в единицах файла. Переводим смещение в долю длины (0…1), как у нас.
+    const rm = n.querySelector("refMarks > refMark");
+    const leaderGuid = rm?.getAttribute("ribId") ?? "";
+    const leaderBranchId = branchIdMap.get(leaderGuid) ?? "";
+    let leaderT = 0.5;
+    if (leaderBranchId) {
+      const br = branches.find(b => b.id === leaderBranchId);
+      const offset = num(rm?.getAttribute("segmentOffset"), 0) / s;
+      if (br && br.length > 0) leaderT = Math.min(1, Math.max(0, offset / br.length));
+    }
+
+    positions.push({
+      id: n.getAttribute("id") ?? "",
+      number: Math.round(num(f["PlanPosition.Name"], positions.length + 1)),
+      // В поле Name у АэроСети лежит НОМЕР позиции, а текстовое описание —
+      // в Description. Поэтому название берём из описания, иначе оно пустое.
+      name: f["PlanPosition.Description"] ?? "",
+      accidentType: accidentTypeName(f["Position.AccidentType"]),
+      // Реверсивность закодирована ЧИСЛОМ ГРАНИЦ маркера: у реверсивной
+      // позиции граница двойная (BorderCount=2). Отдельного признака в
+      // формате нет — проверено на всех позициях эталонной выгрузки.
+      positionType: String(f["PlanPosition.BorderCount"] ?? "1").trim() === "2" ? "reverse" : "normal",
+      x: +p.x.toFixed(2),
+      y: +p.y.toFixed(2),
+      z: +ez.toFixed(2),
+      color: winColorToHex(f["PlanPosition.BackgroundColor"]),
+      borderColor: winColorToHex(f["PlanPosition.BorderColor"]),
+      // Radius задан в пикселях экрана (96 dpi): диаметр в мм = 2·R·25,4/96.
+      // В образцах 24,567 → ровно 13 мм, 5,669 → 3 мм.
+      diameter: +(num(f["PlanPosition.Radius"], 0) * 2 * 25.4 / 96).toFixed(1) || 13,
+      font: f["PlanPosition.FontFamily"] || "GOST type A",
+      branchIds,
+      leaderBranchId,
+      leaderT: +leaderT.toFixed(3),
+      comment: f["PlanPosition.Description"] ?? "",
+    });
+  });
+  if (positions.length > 0) {
+    log.push(`позиций ПЛА: ${positions.length}, с привязанными выработками: ${posLinked}`);
+  }
+
+  log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans}, перемычек ${bulkheads}, позиций ${positions.length}`);
 
   return {
     nodes,
     branches,
     horizons,
+    positions,
     warnings,
-    stats: { nodes: nodes.length, branches: branches.length, fans, bulkheads, horizons: horizons.length },
+    stats: {
+      nodes: nodes.length, branches: branches.length, fans, bulkheads,
+      horizons: horizons.length, positions: positions.length,
+    },
     debug: log.join("\n"),
   };
 }

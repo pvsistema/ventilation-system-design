@@ -2200,8 +2200,39 @@ export default function CadPage() {
         return [...keep, ...result.horizons.filter(h => !have.has(h.name))];
       });
     }
+    // ── Позиции ПЛА ────────────────────────────────────────────────────────
+    // Приходят отдельным списком: в .erp это самостоятельные объекты плана
+    // ликвидации аварий, а не узлы схемы. Цвета, диаметр и привязку выноски
+    // берём прямо из файла — подбирать палитру, как для CSV, не требуется.
+    const erpPositions: Position[] = (result.positions ?? []).map(rp => {
+      const acc = ACCIDENT_TYPES.find(a => a.toLowerCase() === rp.accidentType.toLowerCase());
+      return makePosition({
+        id: `POS_ERP_${rp.id}`,
+        number: rp.number,
+        name: rp.name,
+        x: rp.x, y: rp.y, z: rp.z,
+        placed: true,
+        branchIds: rp.branchIds,
+        color: rp.color || "#e53e3e",
+        borderColor: rp.borderColor || "#c53030",
+        diameter: rp.diameter,
+        font: rp.font,
+        positionType: rp.positionType,
+        leaderBranchId: rp.leaderBranchId || null,
+        leaderT: rp.leaderBranchId ? rp.leaderT : null,
+        comment: rp.comment,
+        ...(acc ? { accidentType: acc as AccidentType } : {}),
+      });
+    });
+    if (erpPositions.length > 0) {
+      if (mode === "replace") setPositions(erpPositions);
+      else setPositions(prev => [...prev, ...erpPositions]);
+    } else if (mode === "replace") {
+      setPositions([]);
+    }
+
     result.warnings.forEach(w => addLog("warn", `Импорт АэроСеть: ${w}`));
-    addLog("info", `Импорт АэроСеть (.erp): узлов ${result.stats.nodes}, выработок ${result.stats.branches}, вентиляторов ${result.stats.fans}, перемычек ${result.stats.bulkheads}`);
+    addLog("info", `Импорт АэроСеть (.erp): узлов ${result.stats.nodes}, выработок ${result.stats.branches}, вентиляторов ${result.stats.fans}, перемычек ${result.stats.bulkheads}, позиций ПЛА ${result.stats.positions}`);
     setImportNonce(n => n + 1);
     setShowErpImport(false);
     setActiveRibbon("home");
@@ -4772,7 +4803,7 @@ export default function CadPage() {
                             )}
                           </div>
                           <div className="text-[10px] text-gray-400">
-                            {item.action === "erp" ? "✓ Схема целиком: слои, вентиляторы, перемычки"
+                            {item.action === "erp" ? "✓ Схема целиком: слои, вентиляторы, перемычки, позиции ПЛА"
                             : item.action === "csv-aero" ? "✓ X,Y,Z координаты + все параметры в одном файле"
                             : item.action === "csv-vent2" ? "✓ Файл → Экспорт в CSV, настраиваемые столбцы"
                             : item.action === "csv-ventsim" ? "✓ Branch Report → Export to CSV"
