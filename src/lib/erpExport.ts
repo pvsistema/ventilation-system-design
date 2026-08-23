@@ -76,6 +76,31 @@ function b(v: boolean | undefined): string {
   return v ? "True" : "False";
 }
 
+/**
+ * Дата, с которой объект существует в модели. АэроСеть ведёт схему во
+ * времени («вехи»), и у каждого объекта дата ввода обязательна. Ставим
+ * заведомо раннюю — тогда объект виден в любой веху проекта.
+ */
+const START_DATE = "2000-01-01";
+
+/**
+ * Обязательные атрибуты размещения объекта на выработке (<ribItem>).
+ *
+ * Без них АэроСеть отказывается открывать файл с ошибкой вида
+ * «Не найден обязательный атрибут (узел = ribItem, атрибут = segmentIndex)»:
+ * её читатель требует эти атрибуты, даже если объект один и стоит посередине.
+ *   • segmentIndex  — номер звена ломаной выработки; у нас выработка всегда
+ *     прямая, поэтому единственное звено с номером 0;
+ *   • segmentOffset — смещение от начала звена В ЕДИНИЦАХ СХЕМЫ (не в метрах),
+ *     поэтому метры домножаем на масштаб;
+ *   • scale         — размер значка (в образцах 0,125…0,5);
+ *   • startDate     — дата ввода объекта.
+ */
+function itemAttrs(offsetMeters: number, scale: number): string {
+  const offset = Math.max(0, offsetMeters) / GEO_SCALE;
+  return ` segmentIndex="0" segmentOffset="${n(offset, 6)}" scale="${n(scale, 3)}" startDate="${START_DATE}"`;
+}
+
 /** HEX-цвет («#e53e3e») → знаковое целое ARGB, как хранит АэроСеть. */
 function hexToWinColor(hex: string): number {
   const m = /^#?([0-9a-f]{6})$/i.exec(String(hex ?? "").trim());
@@ -185,10 +210,14 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
     const manualR = br.resistanceMode === "manual" && br.manualR > 0;
     const items: string[] = [];
 
+    // Объект на выработке ставим в её середину. АэроСеть ТРЕБУЕТ у <ribItem>
+    // атрибуты размещения и отказывается открывать файл без них — см. itemAttrs.
+    const midOffset = Math.max(0, (br.length ?? 0) / 2);
+
     if (br.hasFan) {
       // Напор переводим в кгс/м² — единицы АэроСети (см. шапку файла).
       items.push(
-        `<ribItem id="${guidFrom("fan:" + br.id)}" itemCode="18" description="${esc(br.fanName || "Вентилятор")}">`
+        `<ribItem id="${guidFrom("fan:" + br.id)}" itemCode="18" description="${esc(br.fanName || "Вентилятор")}"${itemAttrs(midOffset, 0.25)}>`
         + `<customFields><fields>`
         + `<field name="Airflow.FanPressure" value="${n((br.fanPressure ?? 0) / PA_PER_KGS_M2)}" />`
         + `<field name="Airflow.IdealVentilatorEfficiency" value="${n(br.fanEfficiency ?? 0, 3)}" />`
@@ -200,7 +229,7 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
     }
     if (br.hasBulkhead) {
       items.push(
-        `<ribItem id="${guidFrom("bulk:" + br.id)}" itemCode="8" description="${esc(br.bulkheadName || "Перемычка")}">`
+        `<ribItem id="${guidFrom("bulk:" + br.id)}" itemCode="8" description="${esc(br.bulkheadName || "Перемычка")}"${itemAttrs(midOffset, 0.125)}>`
         + `<customFields><fields>`
         + `<field name="Airflow.BulkheadUserDefinedResistance" value="${n(br.bulkheadManualR ?? 0)}" />`
         + `<field name="Airflow.BulkheadDepressionSurveyDischarge" value="${n(br.bulkheadSurveyQ ?? 0, 3)}" />`
@@ -208,7 +237,7 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       );
     }
 
-    return `<rib id="${guidFrom("rib:" + br.id)}" thickness="7.55905511811024" fromNode="${from}" toNode="${to}">`
+    return `<rib id="${guidFrom("rib:" + br.id)}" thickness="7.55905511811024" startDate="${START_DATE}" fromNode="${from}" toNode="${to}">`
       + `<customFields><fields>`
       // Название выработки у нас хранится в поле type («Ствол ЮВС») — именно
       // оттуда его читает и импорт .erp, поэтому пишем обратно туда же.
