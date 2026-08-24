@@ -611,8 +611,9 @@ export async function parseErp(
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
       bulkheadName: hasBulkhead ? (bulkItem?.description || "Перемычка") : "",
-      // АэроСеть хранит сопротивление перемычки в кМюрг — как и наше поле.
-      bulkheadR: hasBulkhead ? bulkR : 0,
+      // АэроСеть хранит сопротивление перемычки в кМюрг, а поле bulkheadR —
+      // в базовых Мюрг (как при импорте CSV/.cdf3), поэтому умножаем на 1000.
+      bulkheadR: hasBulkhead ? bulkR * 1000 : 0,
       bulkheadResMode: hasBulkhead ? "manual" : "project",
       bulkheadManualR: hasBulkhead ? bulkR : 0,
       bulkheadSurveyQ: hasBulkhead ? num(bf["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,

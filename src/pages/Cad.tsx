@@ -2181,15 +2181,42 @@ export default function CadPage() {
    * исходный проект целиком — со слоями, вентиляторами и перемычками.
    */
   const handleErpImport = (result: ErpImportResult, mode: "replace" | "append") => {
+    // Условные обозначения перемычек. РАНЬШЕ импорт .erp переносил перемычку
+    // только в свойства выработки: в списке она была, а значка на плане не
+    // появлялось. Теперь на каждую выработку с перемычкой ставим УО — вид
+    // подбираем по её названию, как при импорте .cdf3 и CSV.
+    const erpBulkheadSymbols = (existing: SchemaSymbol[]) => {
+      const stamp = Date.now();
+      const syms: SchemaSymbol[] = [];
+      result.branches.forEach((b, i) => {
+        if (!b.hasBulkhead) return;
+        if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id)) return;
+        syms.push({
+          id: `SYM_BK_ERP_${stamp}_${i}`,
+          typeId: guessBulkheadTypeId(b.bulkheadName || "Перемычка"),
+          x: 0, y: 0,
+          branchId: b.id,
+          t: 0.5,
+          bkResMode: "manual" as const,
+          // Сопротивление кладём в сам значок: расчёт сети суммирует R перемычек
+          // по значкам, а поле ветви учитывает только когда значков нет.
+          bkManualR: b.bulkheadManualR ?? 0,
+          bkBulkheadR: b.bulkheadR ?? 0,
+          bkBulkheadName: b.bulkheadName || "Перемычка",
+        });
+      });
+      return syms;
+    };
+
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
-      setSchemaSymbols(ensureFanSymbols(result.branches, []));
+      setSchemaSymbols([...ensureFanSymbols(result.branches, []), ...erpBulkheadSymbols([])]);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
-      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
+      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev), ...erpBulkheadSymbols(prev)]);
     }
     // Слои АэроСети становятся горизонтами, «Общий вид» при этом сохраняем.
     if (result.horizons.length > 0) {
