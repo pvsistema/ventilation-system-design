@@ -91,3 +91,31 @@ export function hitBranch(sx: number, sy: number,
   branches: TopoBranch[]): string | null {
   return hitBranchR(sx, sy, projNodesMap, branches, 8);
 }
+
+/**
+ * Ширина ветви, от которой масштабируются УО, стоящие на ней.
+ *
+ * Обычно это собственная ширина ветви. НО нить вентрубопровода рисуется
+ * намеренно узкой — 20% от ширины выработки, вдоль которой она проложена.
+ * Значок вентилятора на такой нити выходил крошечным на экране; пользователь
+ * увеличивал его вручную, и при печати — где ветви рисуются в реальном
+ * масштабе листа — значок становился несоразмерно большим.
+ *
+ * Поэтому для нити става берём ширину ХОЗЯЙСКОЙ выработки (vpHostBranchId):
+ * УО на ставе получается такого же размера, как на обычной выработке, и
+ * одинаково выглядит на экране и в печати.
+ */
+export function symbolHostWidth(
+  br: TopoBranch | null | undefined,
+  branchById: Map<string, TopoBranch>,
+  fallback: number,
+): number {
+  const own = (br?.lineWidth && br.lineWidth > 0) ? br.lineWidth : fallback;
+  if (!br?.isVentPipeBranch) return own;
+  const host = br.vpHostBranchId ? branchById.get(br.vpHostBranchId) : null;
+  const hostW = (host?.lineWidth && host.lineWidth > 0) ? host.lineWidth : 0;
+  if (hostW > 0) return hostW;
+  // Став построен старой версией программы — связи с выработкой нет.
+  // Восстанавливаем ширину выработки обратным ходом: нить = 20% от неё.
+  return own > 0 ? own / 0.2 : fallback;
+}

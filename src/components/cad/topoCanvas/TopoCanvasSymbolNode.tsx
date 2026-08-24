@@ -5,6 +5,7 @@ import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
+import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Отрисовка ОДНОГО условного обозначения в canvas-оверлее.
@@ -137,7 +138,7 @@ export function renderSymbolNode(
     const autoSZ = Math.max(8, fireBw * view.scale * 4);
     SZ = Math.max(8, autoSZ * sc);
   } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || HEATER_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
-    const msBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
+    const msBw = symbolHostWidth(symBr, branchById, branchWidth);
     // Реальная толщина ветви в пикселях на экране (тот же objSF, что и
     // при отрисовке ветвей в canvasRenderer). Благодаря этому перемычка
     // масштабируется СИНХРОННО с шириной ветви при любом масштабе XY.
@@ -150,7 +151,9 @@ export function renderSymbolNode(
     // Вентилятор, насос, запорный вентиль и редукционный клапан
     // масштабируются от ширины ветви (как перемычка) — синхронно
     // с масштабом схемы, не «плавают» при зуме.
-    const fanBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
+    // На нити вентрубопровода берём ширину хозяйской выработки: сама нить
+    // рисуется узкой (20%), и значок на ней выходил крошечным.
+    const fanBw = symbolHostWidth(symBr, branchById, branchWidth);
     const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
     SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
   } else {

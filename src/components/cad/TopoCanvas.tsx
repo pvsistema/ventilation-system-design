@@ -35,7 +35,7 @@ import { type Props, type ViewState } from "@/components/cad/topoCanvas/topoCanv
 // Утилиты попадания hitNode*/hitBranch* живут в topoCanvasUtils, но внутри
 // компонента используются его собственные обёртки (учитывают толщину линии и
 // масштаб), поэтому здесь импортируются только общие константы и fmtR.
-import { EMPTY_SET, EMPTY_ARRAY, fmtR } from "@/components/cad/topoCanvas/topoCanvasUtils";
+import { EMPTY_SET, EMPTY_ARRAY, fmtR, symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
 import { ViewCube, ScaleBar, PivotMarker } from "@/components/cad/topoCanvas/TopoCanvasHud";
 import { TopoCanvasIndicators, TopoCanvasHints } from "@/components/cad/topoCanvas/TopoCanvasStatus";
 import { usePrintLayers } from "@/components/cad/topoCanvas/TopoCanvasPrintLayers";
@@ -2668,7 +2668,7 @@ export default function TopoCanvas(props: Props) {
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
           } else if ((BULKHEAD_SYMBOL_IDS.has(sym.typeId) || HEATER_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station" || sym.typeId === "emergency_exit") && sym.branchId && hasBranchPts) {
-            const bkBw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
+            const bkBw = symbolHostWidth(symBrSvg, branchById, branchWidth);
             // Размер перемычки = реальная ширина ветви на экране × bulkheadScale%.
             // _objSF — тот же коэффициент толщины ветви, что и при отрисовке ветвей,
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
@@ -2678,7 +2678,9 @@ export default function TopoCanvas(props: Props) {
             // Вентилятор, насос, запорный вентиль и редукционный клапан
             // масштабируются от ширины ветви (как перемычка), поэтому синхронны
             // с масштабом схемы и не «плавают» при зуме.
-            const fanBw = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
+            // На нити вентрубопровода берём ширину хозяйской выработки: сама
+            // нить рисуется узкой (20%), и значок на ней выходил крошечным.
+            const fanBw = symbolHostWidth(symBrSvg, branchById, branchWidth);
             const realBwFan = Math.max(fanBw * _branchObjSF, 1.0);
             SZ = Math.max(8, realBwFan * (fanScale / 100) * sc);
           } else {

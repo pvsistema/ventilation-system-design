@@ -202,6 +202,8 @@ export function buildVentPipeLine(
       lineWidth: Math.max(0.6, (c.b.lineWidth && c.b.lineWidth > 0 ? c.b.lineWidth : branchWidth) * 0.2),
       lineBorder: 0.1,
       isVentPipeBranch: true,
+      // Хозяйская выработка — от её ширины масштабируются УО на нити.
+      vpHostBranchId: c.b.id,
       ...vpPatch,
       ...pipeGeom,
       ...manualOverride,
@@ -223,7 +225,8 @@ export function buildVentPipeLine(
     const segLen = a && b ? Math.round(calcBranchLength(a, b)) : 0;
     workBranches.push(makeBranch(bid, nodeSeq[0], startDup, {
       horizonId: (firstN as TopoNode & { horizonId?: string }).horizonId, type: "Вентрубопровод (вход)", length: segLen, manualLength: false,
-      lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
+      lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true,
+      vpHostBranchId: chain[0]?.b.id, ...vpPatch, ...pipeGeom,
     }));
   }
   if (endDup && endDup !== nodeSeq[nodeSeq.length - 1]) {
@@ -233,7 +236,8 @@ export function buildVentPipeLine(
     const segLen = a && b ? Math.round(calcBranchLength(a, b)) : 0;
     workBranches.push(makeBranch(bid, endDup, nodeSeq[nodeSeq.length - 1], {
       horizonId: (lastN as TopoNode & { horizonId?: string }).horizonId, type: "Вентрубопровод (выход)", length: segLen, manualLength: false,
-      lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true, ...vpPatch, ...pipeGeom,
+      lineWidth: Math.max(0.6, branchWidth * 0.2), lineBorder: 0.1, isVentPipeBranch: true,
+      vpHostBranchId: chain[chain.length - 1]?.b.id, ...vpPatch, ...pipeGeom,
     }));
   }
 
