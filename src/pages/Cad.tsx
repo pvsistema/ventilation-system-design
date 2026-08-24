@@ -42,6 +42,7 @@ import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
 import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
 import { type ErpImportResult } from "@/lib/erpImport";
 import { exportErp } from "@/lib/erpExport";
+import { exportVent2Cdf3 } from "@/lib/vent2Cdf3Export";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
@@ -2760,6 +2761,27 @@ export default function CadPage() {
     }
   };
 
+  /**
+   * Выгрузка схемы в файл ПО «Вентиляция 2.0» (.cdf3). Обратная операция к
+   * импорту .cdf3. Формат хранит только геометрию, топологию, сечения,
+   * горизонты и перемычки — предупреждения об этом пишем в журнал.
+   */
+  const handleCdf3Export = () => {
+    if (isDemo) { setShowLicenseDialog(true); return; }
+    if (branches.length === 0) {
+      addLog("warn", "Экспорт в Вентиляцию 2.0: схема пуста — нечего выгружать");
+      return;
+    }
+    try {
+      const name = suggestedFileName().replace(/\.vproj$/, "");
+      const st = exportVent2Cdf3({ nodes, branches, horizons, projectName: name, fileName: name });
+      addLog("info", `Экспорт в Вентиляцию 2.0 (.cdf3): узлов ${st.nodes}, выработок ${st.branches}, перемычек ${st.bulkheads}, горизонтов ${st.horizons}`);
+      for (const wmsg of st.warnings) addLog("warn", wmsg);
+    } catch (e) {
+      addLog("error", `Экспорт в Вентиляцию 2.0 не удался: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
   const handleSave = async () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
     // Новый проект ещё не привязан к файлу — сразу спрашиваем, куда сохранить.
@@ -4999,6 +5021,16 @@ export default function CadPage() {
                       <div>
                         <div className="text-[12px] font-medium text-gray-700">Экспорт в АэроСеть (.erp)</div>
                         <div className="text-[10px] text-gray-400">Схема, вентиляторы, перемычки и позиции ПЛА</div>
+                      </div>
+                    </button>
+                    <button onClick={() => { setActiveRibbon("home"); handleCdf3Export(); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 border border-gray-200 group mb-1">
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-tint-blue, #eaf4fc)" }}>
+                        <Icon name="Network" size={16} className="text-blue-700" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-gray-700">Экспорт в Вентиляцию 2.0 (.cdf3)</div>
+                        <div className="text-[10px] text-gray-400">Схема, сечения, горизонты и перемычки</div>
                       </div>
                     </button>
                     <button onClick={() => { setActiveRibbon("home"); setShowCsvExport(true); }}
