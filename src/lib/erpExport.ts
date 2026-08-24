@@ -161,13 +161,28 @@ export interface ErpExportOptions {
   positions?: Position[];
   /** Название проекта (попадёт в имя слоя по умолчанию). */
   projectName?: string;
+  /** Переносить вентиляторы на выработках. По умолчанию да. */
+  withFans?: boolean;
+  /** Переносить перемычки. По умолчанию да. */
+  withBulkheads?: boolean;
+  /** Переносить позиции ПЛА. По умолчанию да. */
+  withPositions?: boolean;
+  /**
+   * Переносить результаты расчёта — расходы воздуха и заданные вручную
+   * сопротивления. Если снять, АэроСеть посчитает сеть заново по α и сечению.
+   */
+  withResults?: boolean;
 }
 
 /**
  * Собирает .erp и возвращает его как Blob — готовый к сохранению файл.
  */
 export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
-  const { nodes, branches, positions = [], projectName = "ПВ-Система" } = opts;
+  const {
+    nodes, branches, projectName = "ПВ-Система",
+    withFans = true, withBulkheads = true, withPositions = true, withResults = true,
+  } = opts;
+  const positions = withPositions ? (opts.positions ?? []) : [];
 
   const s = 1 / GEO_SCALE;                    // единиц на метр
   const sinOY = Math.sin(OY_ANGLE) * OY_DIST;
@@ -207,14 +222,16 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
     const to = nodeGuid.get(br.toId);
     if (!from || !to) return "";
 
-    const manualR = br.resistanceMode === "manual" && br.manualR > 0;
+    // Без результатов расчёта сопротивление не навязываем: АэроСеть посчитает
+    // его сама по α и сечению — так же, как при снятой галочке в импорте.
+    const manualR = withResults && br.resistanceMode === "manual" && br.manualR > 0;
     const items: string[] = [];
 
     // Объект на выработке ставим в её середину. АэроСеть ТРЕБУЕТ у <ribItem>
     // атрибуты размещения и отказывается открывать файл без них — см. itemAttrs.
     const midOffset = Math.max(0, (br.length ?? 0) / 2);
 
-    if (br.hasFan) {
+    if (withFans && br.hasFan) {
       // Напор переводим в кгс/м² — единицы АэроСети (см. шапку файла).
       items.push(
         `<ribItem id="${guidFrom("fan:" + br.id)}" itemCode="18" description="${esc(br.fanName || "Вентилятор")}"${itemAttrs(midOffset, 0.25)}>`
@@ -227,7 +244,7 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
         + `</fields></customFields></ribItem>`,
       );
     }
-    if (br.hasBulkhead) {
+    if (withBulkheads && br.hasBulkhead) {
       items.push(
         `<ribItem id="${guidFrom("bulk:" + br.id)}" itemCode="8" description="${esc(br.bulkheadName || "Перемычка")}"${itemAttrs(midOffset, 0.125)}>`
         + `<customFields><fields>`
@@ -251,7 +268,7 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       + `<field name="Airflow.Alpha" value="${n((br.alphaCoef ?? 0) * 1e-4)}" />`
       + `<field name="Airflow.UserDefinedResistance" value="${n(manualR ? br.manualR : 0)}" />`
       + `<field name="Airflow.AirResistanceCalculationType" value="${manualR ? 2 : 0}" />`
-      + `<field name="Airflow.Discharge" value="${n(br.flow ?? 0, 4)}" />`
+      + `<field name="Airflow.Discharge" value="${n(withResults ? (br.flow ?? 0) : 0, 4)}" />`
       + `<field name="Airflow.MaxAirVelocity" value="${n(br.vMax ?? 0, 2)}" />`
       + `<field name="Airflow.MaxAirVelocityIsUserDefined" value="True" />`
       + `</fields></customFields>`

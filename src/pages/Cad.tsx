@@ -80,6 +80,7 @@ import { printViaIframe } from "@/components/cad/printPreview/printDialogParts";
 export type { SchemaSymbol } from "./cad/cadTypes";
 import CadImportDialogs from "./cad/CadImportDialogs";
 import CsvExportDialog from "@/components/cad/CsvExportDialog";
+import SchemeExportDialog, { type SchemeExportFormat, type SchemeExportOptions } from "@/components/cad/SchemeExportDialog";
 import CadToolDialogs from "./cad/CadToolDialogs";
 import CadModals from "./cad/CadModals";
 import {
@@ -2085,6 +2086,8 @@ export default function CadPage() {
   const [showExcelImport, setShowExcelImport] = useState(false);
   const [showExcelExport, setShowExcelExport] = useState(false);
   const [showCsvExport, setShowCsvExport] = useState(false);
+  /** Открытое окно параметров выгрузки схемы (.erp или .cdf3), null — закрыто. */
+  const [schemeExportFormat, setSchemeExportFormat] = useState<SchemeExportFormat | null>(null);
   const [showCombinedImport, setShowCombinedImport] = useState(false);
   const [showCsvImport, setShowCsvImport] = useState(false);
   const [showVentsimCsvImport, setShowVentsimCsvImport] = useState(false);
@@ -2743,42 +2746,49 @@ export default function CadPage() {
   const suggestedFileName = () => projectFileName || DEFAULT_PROJECT_NAME;
 
   /**
-   * Выгрузка схемы в родной формат АэроСети (.erp), чтобы проект можно было
-   * сразу открыть в той программе. Обратная операция к импорту .erp.
+   * Открывает окно параметров выгрузки схемы в чужой формат (.erp или .cdf3).
+   * Сама запись файла — в handleSchemeExport, после подтверждения набора.
    */
-  const handleErpExport = async () => {
+  const openSchemeExport = (fmt: SchemeExportFormat) => {
     if (isDemo) { setShowLicenseDialog(true); return; }
     if (branches.length === 0) {
-      addLog("warn", "Экспорт в АэроСеть: схема пуста — нечего выгружать");
+      addLog("warn", "Экспорт схемы: схема пуста — нечего выгружать");
       return;
     }
-    try {
-      const name = suggestedFileName().replace(/\.vproj$/, "");
-      await exportErp({ nodes, branches, horizons, positions, projectName: name, fileName: name });
-      addLog("info", `Экспорт в АэроСеть (.erp): узлов ${nodes.length}, выработок ${branches.length}, позиций ПЛА ${positions.length}`);
-    } catch (e) {
-      addLog("error", `Экспорт в АэроСеть не удался: ${e instanceof Error ? e.message : String(e)}`);
-    }
+    setSchemeExportFormat(fmt);
   };
 
   /**
-   * Выгрузка схемы в файл ПО «Вентиляция 2.0» (.cdf3). Обратная операция к
-   * импорту .cdf3. Формат хранит только геометрию, топологию, сечения,
-   * горизонты и перемычки — предупреждения об этом пишем в журнал.
+   * Выгрузка схемы в родной формат АэроСети (.erp) или в файл «Вентиляции 2.0»
+   * (.cdf3) с отмеченным пользователем набором объектов. Обратная операция к
+   * импорту этих же форматов.
    */
-  const handleCdf3Export = () => {
-    if (isDemo) { setShowLicenseDialog(true); return; }
-    if (branches.length === 0) {
-      addLog("warn", "Экспорт в Вентиляцию 2.0: схема пуста — нечего выгружать");
-      return;
-    }
+  const handleSchemeExport = async (fmt: SchemeExportFormat, o: SchemeExportOptions) => {
+    setSchemeExportFormat(null);
+    const name = suggestedFileName().replace(/\.vproj$/, "");
     try {
-      const name = suggestedFileName().replace(/\.vproj$/, "");
-      const st = exportVent2Cdf3({ nodes, branches, horizons, projectName: name, fileName: name });
-      addLog("info", `Экспорт в Вентиляцию 2.0 (.cdf3): узлов ${st.nodes}, выработок ${st.branches}, перемычек ${st.bulkheads}, горизонтов ${st.horizons}`);
-      for (const wmsg of st.warnings) addLog("warn", wmsg);
+      if (fmt === "erp") {
+        await exportErp({
+          nodes, branches, horizons, positions,
+          projectName: name, fileName: name,
+          withFans: o.fans, withBulkheads: o.bulkheads,
+          withPositions: o.positions, withResults: o.results,
+        });
+        const fans = o.fans ? branches.filter(b => b.hasFan).length : 0;
+        const bulks = o.bulkheads ? branches.filter(b => b.hasBulkhead).length : 0;
+        addLog("info", `Экспорт в АэроСеть (.erp): узлов ${nodes.length}, выработок ${branches.length}, вентиляторов ${fans}, перемычек ${bulks}, позиций ПЛА ${o.positions ? positions.length : 0}`);
+      } else {
+        const st = exportVent2Cdf3({
+          nodes, branches, horizons,
+          projectName: name, fileName: name,
+          withBulkheads: o.bulkheads, withHorizons: o.horizons,
+        });
+        addLog("info", `Экспорт в Вентиляцию 2.0 (.cdf3): узлов ${st.nodes}, выработок ${st.branches}, перемычек ${st.bulkheads}, горизонтов ${st.horizons}`);
+        for (const wmsg of st.warnings) addLog("warn", wmsg);
+      }
     } catch (e) {
-      addLog("error", `Экспорт в Вентиляцию 2.0 не удался: ${e instanceof Error ? e.message : String(e)}`);
+      const where = fmt === "erp" ? "АэроСеть" : "Вентиляцию 2.0";
+      addLog("error", `Экспорт в ${where} не удался: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
 
@@ -5013,24 +5023,24 @@ export default function CadPage() {
                         <div className="text-[10px] text-gray-400">Графический план — слой печати, высокое качество</div>
                       </div>
                     </button>
-                    <button onClick={() => { setActiveRibbon("home"); handleErpExport(); }}
+                    <button onClick={() => { setActiveRibbon("home"); openSchemeExport("erp"); }}
                       className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-green-50 border border-gray-200 group mb-1">
                       <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-tint-green2, #dcfce7)" }}>
                         <Icon name="Boxes" size={16} className="text-green-700" />
                       </div>
                       <div>
                         <div className="text-[12px] font-medium text-gray-700">Экспорт в АэроСеть (.erp)</div>
-                        <div className="text-[10px] text-gray-400">Схема, вентиляторы, перемычки и позиции ПЛА</div>
+                        <div className="text-[10px] text-gray-400">Схема, вентиляторы, перемычки и позиции ПЛА — с выбором</div>
                       </div>
                     </button>
-                    <button onClick={() => { setActiveRibbon("home"); handleCdf3Export(); }}
+                    <button onClick={() => { setActiveRibbon("home"); openSchemeExport("cdf3"); }}
                       className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 border border-gray-200 group mb-1">
                       <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-tint-blue, #eaf4fc)" }}>
                         <Icon name="Network" size={16} className="text-blue-700" />
                       </div>
                       <div>
                         <div className="text-[12px] font-medium text-gray-700">Экспорт в Вентиляцию 2.0 (.cdf3)</div>
-                        <div className="text-[10px] text-gray-400">Схема, сечения, горизонты и перемычки</div>
+                        <div className="text-[10px] text-gray-400">Схема, сечения, горизонты и перемычки — с выбором</div>
                       </div>
                     </button>
                     <button onClick={() => { setActiveRibbon("home"); setShowCsvExport(true); }}
@@ -13448,6 +13458,18 @@ export default function CadPage() {
         onClose={() => setHqDialogData(null)}
         data={hqDialogData}
         branchName={hqDialogData.branchName}
+      />
+    )}
+
+    {schemeExportFormat && (
+      <SchemeExportDialog
+        format={schemeExportFormat}
+        nodes={nodes}
+        branches={branches}
+        horizons={horizons}
+        positions={positions}
+        onExport={o => handleSchemeExport(schemeExportFormat, o)}
+        onClose={() => setSchemeExportFormat(null)}
       />
     )}
 

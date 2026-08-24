@@ -105,6 +105,7 @@ function encodeCp1251(text: string): Uint8Array {
  */
 function cleanName(s: string, limit = 120): string {
   return String(s ?? "")
+    // eslint-disable-next-line no-control-regex -- служебные байты формата
     .replace(/[\u0000-\u001f]+/g, " ")
     .replace(/\s{2,}/g, " ")
     .trim()
@@ -153,6 +154,10 @@ export interface Cdf3ExportOptions {
   horizons: Horizon[];
   /** Название проекта — попадает в заголовок файла. */
   projectName?: string;
+  /** Переносить перемычки. По умолчанию да. */
+  withBulkheads?: boolean;
+  /** Переносить названия горизонтов. По умолчанию да. */
+  withHorizons?: boolean;
 }
 
 export interface Cdf3ExportStats {
@@ -177,7 +182,10 @@ export interface Cdf3ExportResult {
  * Собирает файл схемы .cdf3 и возвращает его вместе со сводкой.
  */
 export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
-  const { nodes, branches, horizons, projectName = "ПВ-Система" } = opts;
+  const {
+    nodes, branches, horizons, projectName = "ПВ-Система",
+    withBulkheads = true, withHorizons = true,
+  } = opts;
   const warnings: string[] = [];
 
   if (nodes.length === 0 || branches.length === 0) {
@@ -199,9 +207,11 @@ export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
   // Номер горизонта в записи выработки — это положение названия в списке.
   // Названия короче трёх символов читатель схемы принимает за служебные
   // строки и пропускает, поэтому дополняем их до нужной длины.
+  // Если горизонты не переносим, список остаётся пустым — все выработки
+  // получают номер 0 и в «Вентиляции 2.0» лягут в один слой.
   const layerNames: string[] = [];
   const layerIndex = new Map<string, number>();
-  for (const h of horizons) {
+  for (const h of withHorizons ? horizons : []) {
     const nm = cleanName(h.name, 60) || "Горизонт";
     const safe = nm.length >= 3 ? nm : `Гор. ${nm}`;
     if (layerIndex.has(safe)) continue;
@@ -209,7 +219,7 @@ export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
     layerNames.push(safe);
   }
   // Горизонты, которые есть у выработок, но отсутствуют в списке слоёв.
-  for (const br of branches) {
+  for (const br of withHorizons ? branches : []) {
     const nm = cleanName(br.layer ?? "", 60);
     if (!nm || nm === "Без горизонта") continue;
     const safe = nm.length >= 3 ? nm : `Гор. ${nm}`;
@@ -309,7 +319,7 @@ export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
     // Раскладка блока (см. readBulkheads в импорте):
     //   [длина названия:i32][текст cp1251][0x15][вид][флаг]
     //   [смещение f64][высота f64][16 байт][сопротивление f64]
-    if (br.hasBulkhead) {
+    if (withBulkheads && br.hasBulkhead) {
       const rKmu = br.bulkheadResMode === "manual"
         ? Number(br.bulkheadManualR) || 0
         : (Number(br.bulkheadR) || 0) / 1000;   // хранится в Мюрг, пишем кМюрг
@@ -367,6 +377,10 @@ export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
     warnings.push(`Отметки узлов (${minZ.toFixed(0)}…${maxZ.toFixed(0)} м) выходят за диапазон формата -2000…+5000 м.`);
   }
   if (noSection > 0) warnings.push(`Выработок без сечения: ${noSection} — записаны с типовым 9 м².`);
+  if (!withBulkheads && branches.some(br => br.hasBulkhead)) {
+    warnings.push("Перемычки исключены из выгрузки по выбору пользователя.");
+  }
+  if (!withHorizons) warnings.push("Горизонты исключены из выгрузки — вся схема ляжет в один слой.");
   if (atmosphere === 0) warnings.push("Нет узлов с выходом на поверхность — расчёт в «Вентиляции 2.0» будет невозможен.");
 
   return {
