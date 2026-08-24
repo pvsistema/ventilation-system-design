@@ -21,6 +21,8 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
   // Переносить ли перемычки. Иногда нужна «чистая» схема выработок без
   // вентиляционных сооружений — тогда галочку снимают.
   const [withBulkheads, setWithBulkheads] = useState(true);
+  const [withFans, setWithFans] = useState(true);
+  const [withPositions, setWithPositions] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   // Файл держим в памяти, чтобы перечитать его при смене единиц без
   // повторного выбора на диске.
@@ -52,16 +54,27 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
 
   const ready = !!result && result.stats.branches > 0;
 
-  // Если перемычки переносить не нужно — снимаем их с выработок ещё до
-  // передачи в схему: тогда ни значков, ни сопротивления в расчёте не будет.
+  // Снятые галочки убирают объекты ещё до передачи в схему: тогда не будет ни
+  // значков на плане, ни их вклада в расчёт сети.
   const applyOptions = (r: ErpImportResult): ErpImportResult => {
-    if (withBulkheads) return r;
+    if (withBulkheads && withFans && withPositions) return r;
     return {
       ...r,
-      branches: r.branches.map(b => b.hasBulkhead
-        ? { ...b, hasBulkhead: false, bulkheadName: "", bulkheadR: 0, bulkheadManualR: 0, bulkheadResMode: "project" as const, bulkheadSurveyQ: 0 }
-        : b),
-      stats: { ...r.stats, bulkheads: 0 },
+      branches: r.branches.map(b => {
+        let nb = b;
+        if (!withBulkheads && b.hasBulkhead)
+          nb = { ...nb, hasBulkhead: false, bulkheadName: "", bulkheadR: 0, bulkheadManualR: 0, bulkheadResMode: "project" as const, bulkheadSurveyQ: 0 };
+        if (!withFans && b.hasFan)
+          nb = { ...nb, hasFan: false, fanName: "", fanPressure: 0, fanEfficiency: 0, fanParallel: 1, fanRpm: 0 };
+        return nb;
+      }),
+      positions: withPositions ? r.positions : [],
+      stats: {
+        ...r.stats,
+        bulkheads: withBulkheads ? r.stats.bulkheads : 0,
+        fans: withFans ? r.stats.fans : 0,
+        positions: withPositions ? r.stats.positions : 0,
+      },
     };
   };
 
@@ -165,14 +178,21 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
               </button>
               {showDebug && <pre className="text-[10px] bg-gray-900 text-green-400 rounded p-2 overflow-auto max-h-32 whitespace-pre-wrap">{result.debug}</pre>}
 
-              <div className="border rounded px-3 py-2" style={{ background: "var(--c-s2, #f9f9f9)" }}>
-                <label className="flex items-start gap-2 cursor-pointer">
-                  <input type="checkbox" checked={withBulkheads} onChange={e => setWithBulkheads(e.target.checked)} className="w-3 h-3 mt-0.5" />
-                  <div>
-                    <div className="text-xs text-gray-800">Переносить перемычки{result.stats.bulkheads > 0 ? ` (${result.stats.bulkheads})` : ""}</div>
-                    <div className="text-[10px] text-gray-500">Снимите, чтобы получить схему выработок без вентиляционных сооружений</div>
-                  </div>
-                </label>
+              <div className="border rounded px-3 py-2 space-y-1.5" style={{ background: "var(--c-s2, #f9f9f9)" }}>
+                <div className="text-[11px] font-semibold text-gray-700">Что переносить:</div>
+                {[
+                  { on: withBulkheads, set: setWithBulkheads, label: "Перемычки", count: result.stats.bulkheads, hint: "Вентиляционные сооружения и их сопротивление" },
+                  { on: withFans, set: setWithFans, label: "Вентиляторы", count: result.stats.fans, hint: "Напор и параметры вентиляторов на выработках" },
+                  { on: withPositions, set: setWithPositions, label: "Позиции ПЛА", count: result.stats.positions, hint: "Номера, цвета и выноски плана ликвидации аварий" },
+                ].map(o => (
+                  <label key={o.label} className="flex items-start gap-2 cursor-pointer">
+                    <input type="checkbox" checked={o.on} onChange={e => o.set(e.target.checked)} className="w-3 h-3 mt-0.5" />
+                    <div>
+                      <div className="text-xs text-gray-800">{o.label}{o.count > 0 ? ` (${o.count})` : ""}</div>
+                      <div className="text-[10px] text-gray-500">{o.hint}</div>
+                    </div>
+                  </label>
+                ))}
               </div>
 
               <div className="border rounded px-3 py-2 space-y-1.5" style={{ background: "var(--c-s2, #f9f9f9)" }}>
