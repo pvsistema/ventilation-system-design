@@ -649,7 +649,7 @@ export function renderSymbolNode(
         // экране (branchPxLabel), а не к размеру самого УО. Благодаря
         // этому подписи перемычки и ветви на одной выработке совпадают
         // по размеру и одинаково масштабируются при зуме/масштабе XY.
-        const bkBwLbl = (thinLines ? 1 : (br.lineWidth && br.lineWidth > 0 ? br.lineWidth : branchWidth)) * _branchObjSF;
+        const bkBwLbl = (thinLines ? 1 : symbolHostWidth(br, branchById, branchWidth)) * _branchObjSF;
         // Индикатор уменьшается вместе со схемой (как ветви): домножаем
         // масштаб текста на _indZoomSF при отдалении.
         const bkTextSc = Math.max(0.3, bkBwLbl * 0.28) * _indZoomSF;
@@ -738,7 +738,9 @@ export function renderSymbolNode(
 
         // Размер подписи — как у подписей ветвей (по толщине ветви),
         // чтобы всё на схеме читалось одинаково.
-        const fBwLbl = (thinLines ? 1 : (brFan.lineWidth && brFan.lineWidth > 0 ? brFan.lineWidth : branchWidth)) * _branchObjSF;
+        // На нити става берём ширину хозяйской выработки — как и сам значок,
+        // иначе подпись выходит мельче, чем у вентилятора на выработке.
+        const fBwLbl = (thinLines ? 1 : symbolHostWidth(brFan, branchById, branchWidth)) * _branchObjSF;
         const fTextSc = Math.max(0.3, fBwLbl * 0.28) * _indZoomSF;
         const fSizeF = Math.max(3, 8.5 * fTextSc * ((sym.fanIndFontSize ?? 9) / 9));
         const lineHF = fSizeF + 3 * _indZoomSF;
@@ -829,7 +831,7 @@ export function renderSymbolNode(
         // Масштабируем индикатор замерной станции ТАК ЖЕ, как подписи
         // ВЕТВЕЙ (canvasRenderer): размер шрифта привязан к толщине
         // ветви на экране (branchPxLabel), а не к размеру самого УО.
-        const msBwLbl = (thinLines ? 1 : (brMs?.lineWidth && brMs.lineWidth > 0 ? brMs.lineWidth : branchWidth)) * _branchObjSF;
+        const msBwLbl = (thinLines ? 1 : symbolHostWidth(brMs, branchById, branchWidth)) * _branchObjSF;
         // Индикатор уменьшается вместе со схемой (как ветви): домножаем
         // масштаб текста на _indZoomSF при отдалении.
         const msTextSc = Math.max(0.3, msBwLbl * 0.28) * _indZoomSF;

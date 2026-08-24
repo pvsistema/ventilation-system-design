@@ -3290,7 +3290,7 @@ export default function TopoCanvas(props: Props) {
                 // Масштабируем индикатор замерной станции ТАК ЖЕ, как подписи
                 // ВЕТВЕЙ (по толщине ветви branchPxLabel), а не по размеру УО —
                 // чтобы подписи станции и ветви совпадали по размеру.
-                const msBwLbl = (thinLines ? 1 : (brMs?.lineWidth && brMs.lineWidth > 0 ? brMs.lineWidth : branchWidth)) * _branchObjSF;
+                const msBwLbl = (thinLines ? 1 : symbolHostWidth(brMs, branchById, branchWidth)) * _branchObjSF;
                 // Индикатор уменьшается вместе со схемой (как ветви): домножаем
                 // масштаб текста на _indZoomSF при отдалении.
                 const msTextSc = Math.max(0.3, msBwLbl * 0.28) * _indZoomSF;
@@ -3396,7 +3396,7 @@ export default function TopoCanvas(props: Props) {
 
                 // Размер подписи — как у подписей ветвей (по толщине ветви),
                 // чтобы всё на схеме читалось одинаково.
-                const fBwLbl = (thinLines ? 1 : (brFan.lineWidth && brFan.lineWidth > 0 ? brFan.lineWidth : branchWidth)) * _branchObjSF;
+                const fBwLbl = (thinLines ? 1 : symbolHostWidth(brFan, branchById, branchWidth)) * _branchObjSF;
                 const fTextSc = Math.max(0.3, fBwLbl * 0.28) * _indZoomSF;
                 // Размер шрифта можно задать в параметрах вентилятора
                 // (поле «Размер»), по умолчанию 9 — как у замерных станций.
@@ -3511,7 +3511,7 @@ export default function TopoCanvas(props: Props) {
                 // Масштабируем индикатор перемычки ТАК ЖЕ, как подписи ВЕТВЕЙ
                 // (по толщине ветви branchPxLabel), а не по размеру УО — чтобы
                 // подписи перемычки и ветви совпадали по размеру.
-                const bkBwLbl = (thinLines ? 1 : (br.lineWidth && br.lineWidth > 0 ? br.lineWidth : branchWidth)) * _branchObjSF;
+                const bkBwLbl = (thinLines ? 1 : symbolHostWidth(br, branchById, branchWidth)) * _branchObjSF;
                 // Индикатор уменьшается вместе со схемой (как ветви): домножаем
                 // масштаб текста на _indZoomSF при отдалении.
                 const bkTextSc = Math.max(0.3, bkBwLbl * 0.28) * _indZoomSF;
