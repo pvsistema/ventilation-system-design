@@ -22,8 +22,12 @@ export interface PollutionBranchLite {
   pollutesAir?: boolean;
 }
 
-/** Порог загрязнения по умолчанию: струя считается грязной от 12 %. */
-export const DEFAULT_POLLUTION_THRESHOLD = 0.12;
+/** Порог загрязнения по умолчанию: струя считается грязной от 20 %. */
+export const DEFAULT_POLLUTION_THRESHOLD = 0.2;
+
+/** Границы, в которых разрешено задавать порог в настройках. */
+export const POLLUTION_THRESHOLD_MIN = 0.01;
+export const POLLUTION_THRESHOLD_MAX = 0.99;
 
 /** Расходы ниже этого значения (м³/с) считаем нулевыми — шум расчёта. */
 const FLOW_EPS = 1e-6;

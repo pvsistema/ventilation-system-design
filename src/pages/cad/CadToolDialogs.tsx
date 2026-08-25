@@ -126,6 +126,9 @@ export interface CadToolDialogsProps {
   // Настройки программы
   showSettingsDialog: boolean;
   setShowSettingsDialog: (v: boolean) => void;
+  /** Порог загрязнения струи (0..1) и его изменение. */
+  pollutionThreshold?: number;
+  setPollutionThreshold?: (v: number) => void;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   license: any;
   isDemo: boolean;
@@ -323,7 +326,11 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
 
       {/* ── Настройки программы ─────────────────────────────────────────── */}
       {p.showSettingsDialog && (
-        <SettingsDialog onClose={() => p.setShowSettingsDialog(false)} />
+        <SettingsDialog
+          onClose={() => p.setShowSettingsDialog(false)}
+          pollutionThreshold={p.pollutionThreshold}
+          onPollutionThreshold={p.setPollutionThreshold}
+        />
       )}
 
       {/* ── Групповое редактирование ветвей ────────────────────────────── */}

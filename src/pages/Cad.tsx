@@ -1449,7 +1449,6 @@ export default function CadPage() {
   const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
   // Доля загрязнения, с которой струя считается грязной (12 % по умолчанию).
   const [pollutionThreshold, setPollutionThreshold] = useState<number>(DEFAULT_POLLUTION_THRESHOLD);
-  void setPollutionThreshold;
   // Доля загрязнённого воздуха в каждой выработке — считается один раз на всю
   // схему по смешению струй в узлах, панель свойств берёт готовое значение.
   const pollutionFractions = useMemo(
@@ -2692,6 +2691,7 @@ export default function CadPage() {
     posColorOuter,
     showPositions,
     showFlowArrows,
+    pollutionThreshold,
     flowDisplay,
     animSpeed,
     zScale,
@@ -2733,7 +2733,7 @@ export default function CadPage() {
   }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, mineBulkheads, mineTypes,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
-      showFlowArrows, flowDisplay, zScale, xyScale, projectFileName]);
+      showFlowArrows, pollutionThreshold, flowDisplay, zScale, xyScale, projectFileName]);
 
   // Предупреждение при закрытии/обновлении вкладки
   // В десктопном режиме (WebView2) beforeunload отключён — закрытие обрабатывается через C#
@@ -3256,6 +3256,8 @@ export default function CadPage() {
     if (data.colorMode) setColorMode(data.colorMode as "none" | "flowQ" | "velocityV" | "section" | "ventsection" | "horizon");
     else if (data.colorByHorizon) setColorMode("horizon");
     else setColorMode(prevColorMode);
+    if (data.pollutionThreshold !== undefined) setPollutionThreshold(data.pollutionThreshold as number);
+    else setPollutionThreshold(DEFAULT_POLLUTION_THRESHOLD);
     if (data.posColorInner !== undefined) setPosColorInner(data.posColorInner as boolean);
     else setPosColorInner(false);
     if (data.posColorOuter !== undefined) setPosColorOuter(data.posColorOuter as boolean);
@@ -13263,6 +13265,8 @@ export default function CadPage() {
       setShowLicenseDialog={setShowLicenseDialog}
       showSettingsDialog={showSettingsDialog}
       setShowSettingsDialog={setShowSettingsDialog}
+      pollutionThreshold={pollutionThreshold}
+      setPollutionThreshold={setPollutionThreshold}
       license={license}
       isDemo={isDemo}
       showMultiBranchProps={showMultiBranchProps}

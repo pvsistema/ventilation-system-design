@@ -1,9 +1,15 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { applyTheme, getStoredTheme, resolveTheme, watchSystemTheme, type ThemeMode } from "@/lib/theme";
+import {
+  DEFAULT_POLLUTION_THRESHOLD, POLLUTION_THRESHOLD_MIN, POLLUTION_THRESHOLD_MAX,
+} from "@/lib/airPollution";
 
 interface Props {
   onClose: () => void;
+  /** Доля загрязнения (0..1), с которой струя считается загрязнённой. */
+  pollutionThreshold?: number;
+  onPollutionThreshold?: (v: number) => void;
 }
 
 const THEMES: { id: ThemeMode; label: string; hint: string; icon: string }[] = [
@@ -47,8 +53,22 @@ function ThemePreview({ dark }: { dark: boolean }) {
   );
 }
 
-export default function SettingsDialog({ onClose }: Props) {
+export default function SettingsDialog({
+  onClose, pollutionThreshold = DEFAULT_POLLUTION_THRESHOLD, onPollutionThreshold,
+}: Props) {
   const [mode, setMode] = useState<ThemeMode>(getStoredTheme);
+
+  // Порог редактируем как проценты — так его задаёт инженер.
+  const [pctText, setPctText] = useState(() => String(Math.round(pollutionThreshold * 100)));
+  useEffect(() => { setPctText(String(Math.round(pollutionThreshold * 100))); }, [pollutionThreshold]);
+
+  const applyPct = (raw: string) => {
+    setPctText(raw);
+    const v = parseFloat(raw.replace(",", "."));
+    if (!Number.isFinite(v)) return;
+    const clamped = Math.min(POLLUTION_THRESHOLD_MAX, Math.max(POLLUTION_THRESHOLD_MIN, v / 100));
+    onPollutionThreshold?.(clamped);
+  };
 
   // Пока выбран режим «как в системе» — реагируем на смену темы Windows
   useEffect(() => watchSystemTheme(mode, () => applyTheme(mode)), [mode]);
@@ -121,6 +141,65 @@ export default function SettingsDialog({ onClose }: Props) {
               На печать и в экспортируемые документы схема всегда выводится на белом фоне —
               тема оформления на них не влияет.
             </div>
+          </div>
+
+          {/* ── Порог загрязнения струи ───────────────────────────────────── */}
+          <div className="text-[12px] font-semibold text-gray-800 mt-5 mb-1">
+            Загрязнение воздуха
+          </div>
+          <div className="text-[11px] text-gray-500 mb-3 leading-snug">
+            Доля загрязнённого воздуха в выработке считается по смешению струй:
+            свежий воздух разбавляет загрязнённый пропорционально расходам.
+            Струя считается загрязнённой, когда доля достигает порога.
+          </div>
+
+          <div className="flex items-center gap-3 mb-2">
+            <input
+              type="range"
+              min={1}
+              max={99}
+              step={1}
+              value={Math.round(pollutionThreshold * 100)}
+              onChange={(e) => applyPct(e.target.value)}
+              className="flex-1"
+              style={{ accentColor: "var(--c-blue, #2563eb)" }}
+            />
+            <div className="flex items-center gap-1">
+              <input
+                type="number"
+                min={1}
+                max={99}
+                value={pctText}
+                onChange={(e) => applyPct(e.target.value)}
+                onBlur={() => setPctText(String(Math.round(pollutionThreshold * 100)))}
+                className="text-[12px] text-right border border-gray-300 rounded px-1.5 py-0.5 tabular-nums"
+                style={{ width: 54 }}
+              />
+              <span className="text-[12px] text-gray-600">%</span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-4 text-[10px] leading-snug mb-2">
+            <span className="flex items-center gap-1.5" style={{ color: "var(--c-red, #dc2626)" }}>
+              <span style={{ width: 16, height: 2, background: "#dc2626", display: "inline-block" }} />
+              Свежая струя — ниже {Math.round(pollutionThreshold * 100)} %
+            </span>
+            <span className="flex items-center gap-1.5" style={{ color: "var(--c-blue, #2563eb)" }}>
+              <span style={{ width: 16, height: 2, background: "#2563eb", display: "inline-block" }} />
+              Загрязнённая — от {Math.round(pollutionThreshold * 100)} %
+            </span>
+          </div>
+
+          <div className="text-[10px] text-gray-500 leading-snug">
+            Порог сохраняется в файле проекта. По умолчанию —{" "}
+            {Math.round(DEFAULT_POLLUTION_THRESHOLD * 100)} %.
+            {Math.abs(pollutionThreshold - DEFAULT_POLLUTION_THRESHOLD) > 1e-9 && (
+              <button
+                onClick={() => onPollutionThreshold?.(DEFAULT_POLLUTION_THRESHOLD)}
+                className="ml-1.5 text-blue-600 hover:underline">
+                Вернуть {Math.round(DEFAULT_POLLUTION_THRESHOLD * 100)} %
+              </button>
+            )}
           </div>
         </div>
 
