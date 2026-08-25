@@ -759,6 +759,36 @@ export default function TopoCanvas(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [proj, zLevel, is3D, effPlane.axis, effPlane.value, xyScale, zScale]);
 
+  // Точка реза НА ОСИ ветви по клику (sx, sy).
+  //
+  // Долю t вдоль ветви считаем в ЭКРАННЫХ координатах — там, где пользователь
+  // видит линию и куда целится курсором (так же, как при установке УО).
+  // Сами координаты интерполируем в МИРОВЫХ — узел гарантированно ложится на
+  // отрезок A→B, выработка не изламывается и не меняет длину.
+  //
+  // Через screenToWorld это делать нельзя: он кладёт клик на рабочую плоскость,
+  // и в изометрии/3D точка уезжает далеко от схемы, если ветвь на этой
+  // плоскости не лежит (наклонная выработка, ствол, другой горизонт).
+  const splitPointOnBranch = useCallback((branchId: string, sx: number, sy: number): { x: number; y: number; z: number } | null => {
+    const br = branches.find(b => b.id === branchId);
+    const from = br ? projNodesMap.get(br.fromId) : null;
+    const to   = br ? projNodesMap.get(br.toId)   : null;
+    const fromN = from?.node, toN = to?.node;
+    if (!from || !to || !fromN || !toN) return null;
+    const C = to.sx - from.sx, D = to.sy - from.sy;
+    const lenSq = C * C + D * D;
+    // Край отрезка отсекаем: узел вплотную к существующему даст сегмент нулевой
+    // длины, а солвер на такой ветви делит на ноль.
+    const t = lenSq > 0
+      ? Math.max(0.05, Math.min(0.95, ((sx - from.sx) * C + (sy - from.sy) * D) / lenSq))
+      : 0.5;
+    return {
+      x: fromN.x + (toN.x - fromN.x) * t,
+      y: fromN.y + (toN.y - fromN.y) * t,
+      z: fromN.z + (toN.z - fromN.z) * t,
+    };
+  }, [branches, projNodesMap]);
+
   // ─── Hit-тесты ─────────────────────────────────────────────────────────
   // objSF считается так же, как в canvasRenderer: scale / (xyScale * 0.4),
   // зажат между 0.25 и 8. Это даёт реальный пиксельный размер объектов.
@@ -1045,7 +1075,11 @@ export default function TopoCanvas(props: Props) {
       }
       if (hitB && onSplitBranchAt) {
         // Кликнули по ветви — разделяем её новым узлом в точке клика.
-        const w = screenToWorld(sx, sy);
+        // Точку берём НА ОСИ ветви: долю t считаем по экрану (как при установке
+        // УО), а координаты интерполируем в мире. Через screenToWorld нельзя —
+        // он кладёт клик на рабочую плоскость, и в изометрии/3D точка уезжает
+        // от схемы, если ветвь на этой плоскости не лежит.
+        const w = splitPointOnBranch(hitB, sx, sy);
         if (!w) return;
         onSplitBranchAt(hitB, Math.round(w.x), Math.round(w.y), Math.round(w.z));
         return;
@@ -1076,7 +1110,8 @@ export default function TopoCanvas(props: Props) {
       }
       if (hitB && onSplitBranchAt && branchFrom) {
         // Кликнули по чужой ветви, имея активную цепочку → сплит и продолжение.
-        const w = screenToWorld(sx, sy);
+        // Точка реза — на оси ветви (см. пояснение в инструменте «Узел»).
+        const w = splitPointOnBranch(hitB, sx, sy);
         if (!w) return;
         const newNodeId = onSplitBranchAt(hitB, Math.round(w.x), Math.round(w.y), Math.round(w.z));
         if (typeof newNodeId === "string" && newNodeId && newNodeId !== branchFrom) {
