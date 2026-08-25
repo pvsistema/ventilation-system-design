@@ -83,6 +83,7 @@ import CsvExportDialog from "@/components/cad/CsvExportDialog";
 import SchemeExportDialog, { type SchemeExportFormat, type SchemeExportOptions } from "@/components/cad/SchemeExportDialog";
 import CadToolDialogs from "./cad/CadToolDialogs";
 import CadModals from "./cad/CadModals";
+import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn, RibbonSmallBtn,
   PentagonIcon, RectIcon, MiniSquareIcon,
@@ -1804,6 +1805,15 @@ export default function CadPage() {
     setActiveSymbolTypeId(typeId);
     setTool("symbol");
   };
+
+  // Стабильные обёртки для сетки УО в ленте. Сама handlePickSymbol создаётся
+  // заново на каждой перерисовке страницы — если передать её напрямую, сетка из
+  // 150 значков будет пересобираться постоянно, и вынос в memo не даст ничего.
+  const handlePickSymbolRef = useRef(handlePickSymbol);
+  handlePickSymbolRef.current = handlePickSymbol;
+  const pickSymbolStable = useCallback((id: string) => handlePickSymbolRef.current(id), []);
+  const setUoTooltipStable = useCallback(
+    (t: { name: string; x: number; y: number } | null) => setUoTooltip(t), []);
 
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
@@ -6142,51 +6152,16 @@ export default function CadPage() {
                     </svg>
                   </button>
 
-                  {/* ── Встроенная превью-сетка УО прямо в ленте ── */}
-                  <div
-                    style={{
-                      display: "grid",
-                      gridAutoFlow: "column",
-                      gridTemplateRows: "repeat(3, 18px)",
-                      gridAutoColumns: "18px",
-                      gap: 1,
-                      alignContent: "center",
-                      overflowX: "auto",
-                      overflowY: "hidden",
-                      maxWidth: 330,
-                    }}
-                    onMouseLeave={() => setUoTooltip(null)}>
-                    {LEGEND_TYPES.filter(lt => !HIDDEN_LEGEND_IDS.has(lt.id)).map(lt => {
-                      const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
-                      return (
-                        <button key={lt.id}
-                          onClick={() => handlePickSymbol(lt.id)}
-                          onMouseEnter={e => {
-                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                            setUoTooltip({ name: lt.name, x: r.left, y: r.top });
-                            if (!isActive) (e.currentTarget as HTMLElement).style.background = "#e8f0fe";
-                          }}
-                          onMouseLeave={e => {
-                            setUoTooltip(null);
-                            if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent";
-                          }}
-                          style={{
-                            width: 18, height: 18,
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            borderRadius: 3,
-                            border: isActive ? "1.5px solid var(--c-blue, #2563eb)" : "1px solid transparent",
-                            background: isActive ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
-                            cursor: "pointer", padding: 0,
-                            transition: "border-color .1s, background .1s",
-                            outline: "none",
-                          }}>
-                          <svg width={15} height={13} viewBox="0 0 48 40">
-                            <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                          </svg>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {/* ── Встроенная превью-сетка УО прямо в ленте ──
+                      Полторы сотни значков вынесены в отдельный компонент под
+                      memo: раньше они пересобирались при любом действии на
+                      схеме, хотя сама сетка при этом не менялась. */}
+                  <RibbonSymbolGrid
+                    activeSymbolTypeId={activeSymbolTypeId}
+                    symbolToolActive={tool === "symbol"}
+                    onPick={pickSymbolStable}
+                    onTooltip={setUoTooltipStable}
+                  />
 
                   {/* Подсказка активного символа */}
                   {hasActive && (
