@@ -1400,14 +1400,27 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
             sum_2RQ  = 0.0   # Σ(2·R·|Q|) + Σ(dH_вент/dQ)
             sum_Hnat = 0.0   # ΣH_нат по контуру (для дедбанда симметрии)
 
+            # Максимум |Q| и суммарная тепловая депрессия по контуру. Раньше обе
+            # величины считались ДВУМЯ отдельными проходами по тому же контуру
+            # ниже — то есть каждая ветвь обходилась трижды за итерацию, и на
+            # схеме в тысячи выработок это была основная нагрузка расчёта.
+            # Считаем их здесь, в уже идущем проходе: результат тот же.
+            q_max_loop = 0.0
+            h_fire_loop = 0.0
+
             for gi, sign in loop:
                 e  = edges[gi]
                 qi = Q[gi] * sign      # расход в направлении обхода контура
                 R  = e["R"]
+                aq = abs(qi)           # |Q| не зависит от направления обхода
+
+                if aq > q_max_loop:
+                    q_max_loop = aq
+                h_fire_loop += abs(e.get("fireDep", 0.0))
 
                 # Потери давления: R·Q·|Q|
-                sum_H   += R * qi * abs(qi)
-                sum_2RQ += 2.0 * R * abs(qi)
+                sum_H   += R * qi * aq
+                sum_2RQ += 2.0 * R * aq
 
                 # Вентилятор: напор не зависит от знака потока, только от
                 # ориентации вентилятора и направления обхода контура.
@@ -1467,13 +1480,13 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
             # k = stiffness/(stiffness+|h_fire|) ∈ (0..1]. Это НЕ меняет точку
             # сходимости (в решении δQ→0), лишь сглаживает путь к ней —
             # реальные опрокидывания сохраняются.
-            h_fire_loop = sum(abs(edges[gi].get("fireDep", 0.0)) for gi, _ in loop)
+            # h_fire_loop уже накоплен в основном проходе по контуру выше.
             if h_fire_loop > 0.0:
                 fire_damp = sum_2RQ / (sum_2RQ + h_fire_loop)
                 dq *= max(0.15, fire_damp)
 
             # Ограничение взрыва: |δQ| ≤ max(|Q| в контуре, q0)
-            q_max_loop = max((abs(Q[gi]) for gi, _ in loop), default=q0)
+            # q_max_loop уже накоплен в основном проходе по контуру выше.
             q_lim = max(q_max_loop, q0)
             if abs(dq) > q_lim:
                 dq = math.copysign(q_lim, dq)
@@ -2096,8 +2109,12 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         if not b.get("isDead"):
             node_active[b["fromNode"]] += 1
             node_active[b["toNode"]] += 1
+    # Ветви по номеру. Раньше для КАЖДОЙ выработки нужная искалась перебором
+    # всего списка: на схеме в 14 тысяч ветвей это больше 5 секунд ожидания
+    # в самом конце расчёта, когда результат уже фактически готов.
+    edge_by_id = {e["id"]: e for e in edges}
     for b in out:
-        src_edge = next((e for e in edges if e["id"] == b["id"]), None)
+        src_edge = edge_by_id.get(b["id"])
         if not src_edge or not src_edge.get("hasFan"):
             continue
         if src_edge.get("fanType", "ГВУ") != "ВМП":
