@@ -29,7 +29,7 @@
         ]
       },
       "expectedStatus": 200,
-      "expectedBody": {"nodeResults": [{"nodeId": "N1", "staticP": 0.6}], "branchResults": [{"branchId": "B1", "flow": 216.581, "flowFromTo": true}]},
+      "expectedBody": {"nodeResults": [{"nodeId": "N1", "staticP": 0.6}, {"nodeId": "N2", "flow": 0.0}], "branchResults": [{"branchId": "B1", "flow": 216.581, "flowFromTo": true}]},
       "bodyMatcher": "partial"
     },
     {
@@ -69,7 +69,7 @@
         ]
       },
       "expectedStatus": 200,
-      "expectedBody": {"nodeResults": [{"nodeId": "N2", "flow": 0.0}], "branchResults": [{"branchId": "B1", "flow": 0.0}]},
+      "expectedBody": {"nodeResults": [{"nodeId": "N1", "staticP": 0.6, "flow": 0.0}, {"nodeId": "N2", "flow": 0.0}], "branchResults": [{"branchId": "B1", "flow": 0.0}]},
       "bodyMatcher": "partial"
     }
   ]

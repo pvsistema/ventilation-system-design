@@ -103,6 +103,23 @@ def calc_water_network(nodes_in, branches_in):
             }
 
     if not water_branches:
+        # Труб в работе не осталось (например, перекрыт запорный вентиль).
+        # Резервуарам и кранам всё равно выдаём нулевой результат — иначе панель
+        # показывала «нет данных» вместо честного «расхода нет», хотя сами узлы
+        # на схеме никуда не делись. Перекрытым трубам такой результат уже
+        # выдаётся выше — узлы вели себя иначе, и это расхождение.
+        for n in nodes_in:
+            ft = n.get("fireNodeType") or "none"
+            if ft == "none":
+                continue
+            node_results[n["id"]] = {
+                "nodeId": n["id"],
+                "staticP": round(float(n.get("fireInitPressure", 0) or 0), 4) if ft == "reservoir" else 0.0,
+                "dynamicP": 0.0,
+                "flow": 0.0,
+                "resistance": 0.0,
+                "drainTime": 0.0,
+            }
         return {"nodeResults": node_results, "branchResults": branch_results}
 
     # Сопротивление каждой трубы
@@ -333,6 +350,16 @@ def calc_water_network(nodes_in, branches_in):
         if max_change < 0.01:
             break
 
+    # Расход потребителей, сгруппированный по сети (связной компоненте).
+    # Раньше для КАЖДОГО резервуара заново перебирались ВСЕ потребители схемы —
+    # на объекте с полусотней резервуаров работа росла квадратично. Складываем
+    # расходы один раз, результат тот же.
+    comp_consumer_flow = {}
+    for c in consumers:
+        c_comp = comp_of.get(c["id"])
+        comp_consumer_flow[c_comp] = comp_consumer_flow.get(c_comp, 0.0) \
+            + consumer_flow.get(c["id"], 0.0)
+
     # ── Финальные результаты узлов ────────────────────────────────────────────
     for n in nodes_in:
         ft = n.get("fireNodeType") or "none"
@@ -367,8 +394,7 @@ def calc_water_network(nodes_in, branches_in):
             # Суммируем расход ТОЛЬКО потребителей своей сети (связной компоненты),
             # чтобы кран в несоединённой сети не осушал этот резервуар.
             r_comp = comp_of.get(nid)
-            total_flow = sum(consumer_flow.get(c["id"], 0.0) for c in consumers
-                             if comp_of.get(c["id"]) == r_comp)
+            total_flow = comp_consumer_flow.get(r_comp, 0.0)
             capacity   = float(n.get("fireCapacity", 0) or 0)
             node_results[nid] = {
                 "nodeId": nid,
@@ -403,4 +429,11 @@ def handler(event: dict, context) -> dict:
         "nodeResults":   list(result["nodeResults"].values()),
         "branchResults": list(result["branchResults"].values()),
     }
-    return {"statusCode": 200, "headers": CORS, "body": json.dumps(out, ensure_ascii=False)}
+    # Content-Type обязателен: без него ответ читается как обычный текст, а не
+    # как данные — проверки функции падали на всех тестах, хотя сами цифры были
+    # верные. В расчёте воздухораспределения этот заголовок стоит, здесь забыли.
+    return {
+        "statusCode": 200,
+        "headers": {**CORS, "Content-Type": "application/json"},
+        "body": json.dumps(out, ensure_ascii=False),
+    }
