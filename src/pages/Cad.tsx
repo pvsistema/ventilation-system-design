@@ -84,6 +84,7 @@ import SchemeExportDialog, { type SchemeExportFormat, type SchemeExportOptions }
 import CadToolDialogs from "./cad/CadToolDialogs";
 import CadModals from "./cad/CadModals";
 import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
+import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonReferences";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn, RibbonSmallBtn,
   PentagonIcon, RectIcon, MiniSquareIcon,
@@ -2592,8 +2593,18 @@ export default function CadPage() {
 
   // ─── СПРАВОЧНИК ОБОРУДОВАНИЯ ─────────────────────────────────────────
   const [showEquipRef, setShowEquipRef] = useState(false);
-  const [equipRefTab, setEquipRefTab] = useState<"fans" | "types" | "bulkheads" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units">("fans");
+  // Тип разделов справочника один на всю программу (см. RibbonReferences).
+  // Раньше он дублировался здесь и НЕ содержал раздел «Нормы расхода воздуха»,
+  // хотя кнопка на него ссылалась — тип и код разошлись.
+  const [equipRefTab, setEquipRefTab] = useState<EquipRefTab>("fans");
   const [showLegend, setShowLegend] = useState(false);
+  // Стабильные обработчики для вкладки «Справочники»: без них memo на вкладке
+  // снимался бы при каждой перерисовке страницы и вынос не дал бы ничего.
+  const openEquipRef = useCallback((tab: EquipRefTab) => {
+    setEquipRefTab(tab);
+    setShowEquipRef(true);
+  }, []);
+  const openLegend = useCallback(() => setShowLegend(true), []);
 
   // ─── СОХРАНЕНИЕ / ЗАГРУЗКА ПРОЕКТА ───────────────────────────────────
   const { recentFiles, addRecentFile, updateHasHandle, syncHandles, removeRecentFile, clearRecentFiles } = useRecentFiles();
@@ -5326,38 +5337,7 @@ export default function CadPage() {
 
       {/* ═══ RIBBON CONTENT: СПРАВОЧНИКИ ══════════════════════════════════ */}
       {activeRibbon === "general" && !ribbonCollapsed && (
-      <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
-        style={{ background: "linear-gradient(180deg,var(--c-s2, #fafafa),var(--c-s3, #ececec))", borderBottom: "1px solid var(--c-b3, #b8b8b8)" }}>
-        <RibbonGroup label="Вентиляция">
-          <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Wind" label="Вентиляторы" sublabel="" onClick={() => { setEquipRefTab("fans"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="Layers" label="Типы выработок" sublabel="" onClick={() => { setEquipRefTab("types"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="Square" label="Перемычки" sublabel="" onClick={() => { setEquipRefTab("bulkheads"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="Calculator" label="Нормы" sublabel="расхода воздуха" onClick={() => { setEquipRefTab("airnorms"); setShowEquipRef(true); }} />
-          </div>
-        </RibbonGroup>
-        <RibbonGroup label="Аварии">
-          <div className="flex items-stretch gap-1">
-
-            <RibbonBigBtn icon="Radio" label="Датчики" sublabel="" onClick={() => { setEquipRefTab("sensors"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="FileText" label="Типовые мероприятия" sublabel="" onClick={() => { setEquipRefTab("typical"); setShowEquipRef(true); }} />
-          </div>
-        </RibbonGroup>
-        <RibbonGroup label="Трубопровод">
-          <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Gauge" label="Насосы" sublabel="" onClick={() => { setEquipRefTab("pumps"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="Flame" label="Потребители" sublabel="" onClick={() => { setEquipRefTab("consumers"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="GitBranch" label="Трубы" sublabel="" onClick={() => { setEquipRefTab("pipes"); setShowEquipRef(true); }} />
-          </div>
-        </RibbonGroup>
-        <RibbonGroup label="Общее">
-          <div className="flex items-stretch gap-1">
-            <RibbonBigBtn icon="Truck" label="Транспорт" sublabel="" onClick={() => { setEquipRefTab("transport"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="Ruler" label="Единицы" sublabel="измерения" onClick={() => { setEquipRefTab("units"); setShowEquipRef(true); }} />
-            <RibbonBigBtn icon="BookMarked" label="Условные" sublabel="обозначения" onClick={() => setShowLegend(true)} />
-          </div>
-        </RibbonGroup>
-      </div>
+        <RibbonReferences onOpenRef={openEquipRef} onOpenLegend={openLegend} />
       )}
 
       {/* ═══ RIBBON CONTENT: АВАРИИ ════════════════════════════════════════ */}
