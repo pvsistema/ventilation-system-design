@@ -24,6 +24,7 @@ import {
 } from "@/lib/desktopPrint";
 import PrintSettingsPanel from "@/components/cad/printPreview/PrintSettingsPanel";
 import PrintExportDialog from "@/components/cad/printPreview/PrintExportDialog";
+import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 
 // ── Печать через скрытый iframe (работает в Electron и браузере без всплывающих окон) ──
 
@@ -38,6 +39,8 @@ interface PrintDialogProps {
   canvasSize?: { w: number; h: number };
   // Параметры отображения — как настроено в рабочей области
   schemaSymbols?: SchemaSymbol[];
+  /** Доля загрязнения (0..1), с которой струя считается загрязнённой. */
+  pollutionThreshold?: number;
   branchWidth?: number;
   branchBorder?: number;
   thinLines?: boolean;
@@ -71,6 +74,7 @@ export default function PrintDialog({
   onClose, projectName = "Проект",
   nodes, branches, horizons, viewState, canvasSize,
   schemaSymbols = [],
+  pollutionThreshold,
   branchWidth = 2, branchBorder = 0.4,
   thinLines = false, colorByHorizon = false,
   showFlowArrows = false,
@@ -95,34 +99,12 @@ export default function PrintDialog({
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
   const previewRef = useRef<PrintPreviewCanvasHandle>(null);
 
-  // Вычисляем загрязнённые ветви (BFS по потоку от pollutesAir=true) — для цвета стрелок
-  const pollutedBranchIds = useMemo((): Set<string> => {
-    const sources = branches.filter(b => b.pollutesAir);
-    if (sources.length === 0) return new Set();
-    const outEdges = new Map<string, string[]>();
-    for (const b of branches) {
-      const fromNode = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
-      const toNode   = (b.flow ?? 0) >= 0 ? b.toId   : b.fromId;
-      if (!outEdges.has(fromNode)) outEdges.set(fromNode, []);
-      outEdges.get(fromNode)!.push(b.id);
-      if (!outEdges.has(toNode)) outEdges.set(toNode, []);
-    }
-    const branchToNode = new Map<string, string>();
-    for (const b of branches) branchToNode.set(b.id, (b.flow ?? 0) >= 0 ? b.toId : b.fromId);
-    const visited = new Set<string>();
-    const queue: string[] = [];
-    for (const src of sources) {
-      visited.add(src.id);
-      queue.push((src.flow ?? 0) >= 0 ? src.toId : src.fromId);
-    }
-    while (queue.length > 0) {
-      const nodeId = queue.shift()!;
-      for (const bId of outEdges.get(nodeId) ?? []) {
-        if (!visited.has(bId)) { visited.add(bId); const nxt = branchToNode.get(bId); if (nxt) queue.push(nxt); }
-      }
-    }
-    return visited;
-  }, [branches]);
+  // Загрязнённые ветви: доля грязного воздуха в струе (смешение по расходам
+  // в узлах) достигла порога. Печать использует тот же расчёт, что и схема.
+  const pollutedBranchIds = useMemo(
+    () => computePollutedBranchIds(branches, pollutionThreshold ?? DEFAULT_POLLUTION_THRESHOLD),
+    [branches, pollutionThreshold],
+  );
 
   // Берём формат/ориентацию из первого горизонта с активным слоем печати
   const firstActivePrintLayer = horizons.find(h => h.printLayer?.visible)?.printLayer ?? null;

@@ -11,6 +11,7 @@ import {
   FACE_TYPE_OPTIONS, FACE_TYPE_LABEL, FACE_TYPE_FACTORS, simultaneityFactor,
 } from "@/lib/ventSections";
 import { calcFaceDemand, FACTOR_LABEL } from "@/lib/airDemand";
+import { DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 import {
   SectionHeader, EditInput, ComputedInput, SelectField, CheckField, InlineLabel,
 } from "@/components/cad/BranchPropsPrimitives";
@@ -20,15 +21,26 @@ interface BranchAirDemandTabProps {
   onUpdate: (patch: Partial<TopoBranch>) => void;
   ventSections: VentSection[];
   ventNorms: VentNorms;
+  /** Доля загрязнённого воздуха в этой выработке (0..1). */
+  pollutionFraction?: number;
+  /** Доля, с которой струя считается загрязнённой. */
+  pollutionThreshold?: number;
 }
 
 export default function BranchAirDemandTab({
   branch, onUpdate, ventSections, ventNorms,
+  pollutionFraction = 0, pollutionThreshold = DEFAULT_POLLUTION_THRESHOLD,
 }: BranchAirDemandTabProps) {
   const faceType = (branch.ventFaceType ?? "none") as FaceType;
   const isNone = faceType === "none";
   const section = ventSections.find(s => s.id === (branch.ventSectionId ?? "")) ?? null;
   const d = calcFaceDemand(branch, ventNorms, section);
+
+  // Доля загрязнённого воздуха в струе: 0 — свежая, 1 — полностью грязная.
+  const pct = Math.max(0, Math.min(1, pollutionFraction)) * 100;
+  const pctText = pct >= 10 ? pct.toFixed(0) : pct.toFixed(1);
+  const thresholdPct = (pollutionThreshold * 100).toFixed(0);
+  const isPolluted = (branch.pollutesAir ?? false) || pollutionFraction >= pollutionThreshold;
 
   // Набор факторов, применимых к выбранному типу забоя: лишние поля
   // не показываем, чтобы карточка не пугала объёмом. Если по скрытому
@@ -104,10 +116,33 @@ export default function BranchAirDemandTab({
       {(branch.pollutesAir ?? false) && (
         <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
           style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "var(--c-blue-ink, #1e40af)" }}>
-          Стрелки направления воздуха в ветвях ниже по потоку от этой ветви
-          будут отображаться синим цветом.
+          Выработка — источник загрязнения. Ниже по потоку доля загрязнённого
+          воздуха считается по смешению струй: свежий воздух разбавляет
+          загрязнённый пропорционально расходам.
         </div>
       )}
+
+      {/* Доля загрязнения — результат смешения струй в узлах. Показываем
+          всегда: инженеру важно видеть и «струя разбавилась до 7 %», и
+          «здесь уже 89 % грязного воздуха». */}
+      <InlineLabel label="Загрязнение, %">
+        <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
+          style={{
+            background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec",
+            borderRadius: 2, height: 18, lineHeight: "16px",
+            color: isPolluted ? "var(--c-blue, #1d4ed8)" : "var(--c-green, #15803d)",
+          }}
+          title={isPolluted
+            ? `Струя загрязнённая: доля ${pctText} % не ниже порога ${thresholdPct} %`
+            : `Струя свежая: доля ${pctText} % ниже порога ${thresholdPct} %`}>
+          {pctText}
+        </div>
+      </InlineLabel>
+      <div className="px-2 pb-1.5 text-[9px] leading-snug"
+        style={{ color: isPolluted ? "var(--c-blue, #1d4ed8)" : "var(--c-green, #15803d)" }}>
+        {isPolluted ? "Загрязнённая струя" : "Свежая струя"} — стрелки{" "}
+        {isPolluted ? "синие" : "красные"}. Порог {thresholdPct} %.
+      </div>
 
       {isNone ? (
         <div className="px-2 py-2 text-[10px] text-gray-500 leading-snug">

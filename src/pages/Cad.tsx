@@ -77,6 +77,7 @@ import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 import { calcVentPipe, totalLocalXi, type VpLeakMethod } from "@/lib/ventPipeCalc";
 import { buildVentPipeReport, buildVentPipeReportHtml } from "@/lib/ventPipeReport";
 import { printViaIframe } from "@/components/cad/printPreview/printDialogParts";
+import { computePollutionFractions, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 export type { SchemaSymbol } from "./cad/cadTypes";
 import CadImportDialogs from "./cad/CadImportDialogs";
 import CsvExportDialog from "@/components/cad/CsvExportDialog";
@@ -1446,6 +1447,15 @@ export default function CadPage() {
   const [thinLines, setThinLines] = useState<boolean>(false);    // F6: всё в 1px
   const [colorByHorizon, setColorByHorizon] = useState<boolean>(false);
   const [showFlowArrows, setShowFlowArrows] = useState<boolean>(false); // включается F9
+  // Доля загрязнения, с которой струя считается грязной (12 % по умолчанию).
+  const [pollutionThreshold, setPollutionThreshold] = useState<number>(DEFAULT_POLLUTION_THRESHOLD);
+  void setPollutionThreshold;
+  // Доля загрязнённого воздуха в каждой выработке — считается один раз на всю
+  // схему по смешению струй в узлах, панель свойств берёт готовое значение.
+  const pollutionFractions = useMemo(
+    () => computePollutionFractions(branches),
+    [branches],
+  );
 
   // ─── ПАНЕЛЬ ИНФОРМАЦИИ + Z-МАСШТАБ ─────────────────────────────────
   const [infoConfig, setInfoConfig] = useState<InfoDisplayConfig>(DEFAULT_INFO_CONFIG);
@@ -8459,6 +8469,8 @@ export default function CadPage() {
               <BranchPropsPanel
                 branch={selectedBranch}
                 horizons={horizons}
+                pollutionFraction={pollutionFractions.get(selectedBranch.id) ?? 0}
+                pollutionThreshold={pollutionThreshold}
                 onUpdate={(patch) => updateBranch(selectedBranch.id, patch)}
                 activeTab={activeSide}
                 defaultInnerTab={fanSymbolBranchId === selectedBranch.id ? "Вентилятор" : undefined}
@@ -11203,6 +11215,7 @@ export default function CadPage() {
               fanScale={fanScale}
               colorByHorizon={colorMode === "horizon"}
               showFlowArrows={showFlowArrows}
+              pollutionThreshold={pollutionThreshold}
               scaleOverride={viewScale}
               onScaleChange={setViewScale}
               fitToScreenNonce={fitToScreenNonce}

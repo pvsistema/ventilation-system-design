@@ -18,6 +18,10 @@ import BranchConveyorTab from "@/components/cad/branchProps/BranchConveyorTab";
 interface BranchPropsPanelProps {
   branch: TopoBranch;
   horizons: Horizon[];
+  /** Доля загрязнённого воздуха в этой выработке (0..1). */
+  pollutionFraction?: number;
+  /** Доля, с которой струя считается загрязнённой. */
+  pollutionThreshold?: number;
   onUpdate: (patch: Partial<TopoBranch>) => void;
   defaultInnerTab?: InnerTab;
   /** Активная вкладка из вертикального меню (topology/fan/waterpipes/conveyor) */
@@ -97,7 +101,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, onUpdate, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, onUpdate, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -226,6 +230,8 @@ export default function BranchPropsPanel({ branch, onUpdate, defaultInnerTab, ac
           <BranchAirDemandTab
             branch={branch}
             onUpdate={onUpdate}
+            pollutionFraction={pollutionFraction}
+            pollutionThreshold={pollutionThreshold}
             ventSections={ventSections}
             ventNorms={ventNorms}
           />

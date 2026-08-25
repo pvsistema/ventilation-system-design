@@ -43,6 +43,7 @@ import TopoCanvasSymbolsOverlay from "@/components/cad/topoCanvas/TopoCanvasSymb
 import { useViewEffects } from "@/components/cad/topoCanvas/TopoCanvasViewEffects";
 import { useCanvasTheme } from "@/hooks/useTheme";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 
 export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
@@ -55,7 +56,7 @@ export default function TopoCanvas(props: Props) {
     horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, canvasThreshold = CANVAS_THRESHOLD, scaleLimits,
     bulkheadScale = 150,
     fanScale = 450,
-    colorByHorizon = false, showFlowArrows = false,
+    colorByHorizon = false, showFlowArrows = false, pollutionThreshold,
     scaleOverride, onScaleChange, fitToScreenNonce,
     focusNonce, focusNodeId, focusBranchId, focusPos,
     editingHorizonImageId, onHorizonImageBoundsChange,
@@ -606,55 +607,15 @@ export default function TopoCanvas(props: Props) {
   const sortEpochRef = useRef(0);
   const sortEpoch = useMemo(() => ++sortEpochRef.current, [projBase]);
 
-  // ── Загрязнённые ветви (ниже по потоку от ветвей с pollutesAir=true) ───
-  // BFS/DFS по графу в направлении движения воздуха (flow > 0: from→to, flow < 0: to→from).
-  // Включает сами «источники загрязнения» (pollutesAir=true) и все ветви ниже по потоку.
-  const pollutedBranchIds = useMemo((): Set<string> => {
-    // Если нет ни одной ветви-источника — пустой Set (ранний выход)
-    const sources = branches.filter(b => b.pollutesAir);
-    if (sources.length === 0) return new Set();
-
-    // adjacency: для каждого узла — список ветвей, исходящих ИЗ него по потоку
-    // (если flow > 0: from→to; если flow < 0: to→from)
-    const outEdges = new Map<string, string[]>(); // nodeId → [branchId, ...]
-    for (const b of branches) {
-      const fromNode = b.flow >= 0 ? b.fromId : b.toId;
-      const toNode   = b.flow >= 0 ? b.toId   : b.fromId;
-      if (!outEdges.has(fromNode)) outEdges.set(fromNode, []);
-      outEdges.get(fromNode)!.push(b.id);
-      // Убедимся что toNode есть в карте (даже без исходящих рёбер)
-      if (!outEdges.has(toNode)) outEdges.set(toNode, []);
-    }
-    // Карта: branchId → toNode (выходной узел по направлению потока)
-    const branchToNode = new Map<string, string>();
-    for (const b of branches) {
-      branchToNode.set(b.id, b.flow >= 0 ? b.toId : b.fromId);
-    }
-
-    const visited = new Set<string>();
-    const queue: string[] = []; // nodeId
-
-    for (const src of sources) {
-      visited.add(src.id);
-      // Начинаем обход с выходного узла ветви-источника
-      const exitNode = src.flow >= 0 ? src.toId : src.fromId;
-      queue.push(exitNode);
-    }
-
-    while (queue.length > 0) {
-      const nodeId = queue.shift()!;
-      const edges = outEdges.get(nodeId) ?? [];
-      for (const bId of edges) {
-        if (!visited.has(bId)) {
-          visited.add(bId);
-          const nextNode = branchToNode.get(bId);
-          if (nextNode) queue.push(nextNode);
-        }
-      }
-    }
-
-    return visited;
-  }, [branches]);
+  // ── Загрязнённые ветви ────────────────────────────────────────────────
+  // Доля загрязнённого воздуха считается по смешению струй в узлах: грязный
+  // расход делится на общий. Струя красится синим, когда доля достигает
+  // порога. Раньше здесь был обход графа «да/нет», из-за которого небольшая
+  // струя из-за перемычки помечала грязным весь ствол с вентилятором.
+  const pollutedBranchIds = useMemo(
+    () => computePollutedBranchIds(branches, pollutionThreshold ?? DEFAULT_POLLUTION_THRESHOLD),
+    [branches, pollutionThreshold],
+  );
 
   // ВАЖНО: попадание (кликом и тапом) ищем только среди ВИДИМЫХ объектов.
   // Раньше hit-тест шёл по полному списку branches/projNodes, и клик по месту,

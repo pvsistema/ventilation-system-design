@@ -13,6 +13,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -82,6 +83,8 @@ export interface SvgExportOptions {
 
   /** Ветви с загрязнённым воздухом (синие стрелки) */
   pollutedBranchIds?: Set<string>;
+  /** Доля загрязнения (0..1), с которой струя считается загрязнённой. */
+  pollutionThreshold?: number;
   /** Масштаб по осям XY — для нормализации objSF при реальных координатах */
   xyScale?: number;
 }
@@ -385,36 +388,12 @@ export function generateSvg(opts: SvgExportOptions): string {
   //   stepA    ≈ w * 16  (шаг между стрелками ≈ 16 ширин ветви)
   //   minLen   ≈ w * 10  (минимальная длина ветви для отрисовки стрелки)
 
-  // Вычисляем pollutedBranchIds внутри generateSvg — BFS по потоку от ветвей с pollutesAir=true.
-  // Это гарантирует корректность независимо от того, передан ли opts.pollutedBranchIds снаружи.
-  const computedPolluted = ((): Set<string> => {
-    if (opts.pollutedBranchIds && opts.pollutedBranchIds.size > 0) return opts.pollutedBranchIds;
-    const sources = branches.filter(b => b.pollutesAir);
-    if (sources.length === 0) return new Set<string>();
-    const outEdges = new Map<string, string[]>();
-    for (const b of branches) {
-      const fn = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
-      const tn = (b.flow ?? 0) >= 0 ? b.toId   : b.fromId;
-      if (!outEdges.has(fn)) outEdges.set(fn, []);
-      outEdges.get(fn)!.push(b.id);
-      if (!outEdges.has(tn)) outEdges.set(tn, []);
-    }
-    const branchToNode = new Map<string, string>();
-    for (const b of branches) branchToNode.set(b.id, (b.flow ?? 0) >= 0 ? b.toId : b.fromId);
-    const visited = new Set<string>();
-    const queue: string[] = [];
-    for (const src of sources) {
-      visited.add(src.id);
-      queue.push((src.flow ?? 0) >= 0 ? src.toId : src.fromId);
-    }
-    while (queue.length > 0) {
-      const nodeId = queue.shift()!;
-      for (const bId of outEdges.get(nodeId) ?? []) {
-        if (!visited.has(bId)) { visited.add(bId); const nxt = branchToNode.get(bId); if (nxt) queue.push(nxt); }
-      }
-    }
-    return visited;
-  })();
+  // Загрязнённые ветви считаем здесь же — экспорт не должен зависеть от того,
+  // передали их снаружи или нет. Доля грязного воздуха берётся из смешения
+  // струй по расходам в узлах, порог — общий с экраном.
+  const computedPolluted = (opts.pollutedBranchIds && opts.pollutedBranchIds.size > 0)
+    ? opts.pollutedBranchIds
+    : computePollutedBranchIds(branches, opts.pollutionThreshold ?? DEFAULT_POLLUTION_THRESHOLD);
 
   parts.push(`<g id="flow-arrows">`);
   for (const b of showFlowArrows ? visibleBranches : []) {
