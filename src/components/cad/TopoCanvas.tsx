@@ -264,7 +264,59 @@ export default function TopoCanvas(props: Props) {
   const [draggingSymbolId, setDraggingSymbolId] = useState<string | null>(null);
   const [draggingNode, setDraggingNode] = useState<{ id: string; plane: WorkPlane; dsx: number; dsy: number } | null>(null);
   const [branchFrom, setBranchFrom] = useState<string | null>(null);
-  const [hoverPos, setHoverPos] = useState<{ x: number; y: number } | null>(null);
+  // Координаты курсора в строке состояния — САМОЕ частое обновление в программе.
+  // Мышь шлёт до 120 событий в секунду, и раньше каждое из них шло через
+  // состояние React, перерисовывая весь холст со схемой ради двух чисел в углу.
+  // Отсюда и брались рывки при простом ведении мышью над схемой.
+  //
+  // Теперь текст пишется ПРЯМО в DOM: строка состояния обновляется мгновенно,
+  // а схема не перерисовывается вовсе. Лишнюю работу отсекаем дважды — не чаще
+  // одного раза на кадр и только если целые метры реально изменились.
+  const hoverPosElRef = useRef<HTMLSpanElement | null>(null);
+  const hoverPosRef = useRef<{ x: number; y: number } | null>(null);
+  const hoverRafRef = useRef<{ id: number | null; next: { x: number; y: number } | null }>({ id: null, next: null });
+  // Плоскость/zLevel меняются редко — держим их в ref, чтобы не пересоздавать
+  // обработчик записи и не тянуть его в зависимости mousemove.
+  // Значения кладутся ниже, после объявления effPlane (см. hoverFmtRef.current).
+  const hoverFmtRef = useRef<{ effPlane: WorkPlane; zLevel: number; is3D: boolean }>({
+    effPlane: { axis: "z", value: 0 }, zLevel: 0, is3D: false,
+  });
+  const paintHoverPos = useCallback(() => {
+    const el = hoverPosElRef.current;
+    if (!el) return;
+    const p = hoverPosRef.current;
+    if (!p) { el.textContent = ""; return; }
+    const { effPlane: pl, zLevel: zl, is3D: i3 } = hoverFmtRef.current;
+    const fixX = pl.axis === "x" ? pl.value : null;
+    const fixY = pl.axis === "y" ? pl.value : null;
+    const fixZ = pl.axis === "z" ? pl.value : null;
+    el.textContent = `X: ${fixX ?? p.x} м · Y: ${fixY ?? p.y} м · Z: ${fixZ ?? (i3 ? "?" : zl)} м`;
+  }, []);
+  const pushHoverPos = useCallback((p: { x: number; y: number } | null) => {
+    const cur = hoverPosRef.current;
+    if (p === null) {
+      if (cur === null) return;
+      hoverPosRef.current = null;
+      hoverRafRef.current.next = null;
+      if (hoverRafRef.current.id !== null) { cancelAnimationFrame(hoverRafRef.current.id); hoverRafRef.current.id = null; }
+      paintHoverPos();
+      return;
+    }
+    if (cur && cur.x === p.x && cur.y === p.y) return;
+    hoverRafRef.current.next = p;
+    if (hoverRafRef.current.id !== null) return;
+    hoverRafRef.current.id = requestAnimationFrame(() => {
+      hoverRafRef.current.id = null;
+      const n = hoverRafRef.current.next;
+      hoverRafRef.current.next = null;
+      if (!n) return;
+      hoverPosRef.current = n;
+      paintHoverPos();
+    });
+  }, [paintHoverPos]);
+  useEffect(() => () => {
+    if (hoverRafRef.current.id !== null) cancelAnimationFrame(hoverRafRef.current.id);
+  }, []);
   const [hoverBranchId, setHoverBranchId] = useState<string | null>(null);
   // Курсор наведён на подпись ветви в canvas-режиме (для cursor: grab).
   const [hoverBranchLabel, setHoverBranchLabel] = useState(false);
@@ -738,6 +790,11 @@ export default function TopoCanvas(props: Props) {
   const effPlane: WorkPlane = workPlane ?? autoWorkPlane(view.azimuth, view.elevation, {
     z: zLevel, y: 0, x: 0,
   });
+
+  // Актуальные оси для подписи координат курсора (пишется напрямую в DOM).
+  hoverFmtRef.current = { effPlane, zLevel, is3D };
+  // Сменили рабочую плоскость или уровень — перерисуем подпись с новыми осями.
+  useEffect(() => { paintHoverPos(); }, [paintHoverPos, effPlane.axis, effPlane.value, zLevel, is3D]);
 
   // Универсальная обратная проекция: screen → world (реальные координаты, без масштаба xyScale/zScale).
   // proj содержит offsetX/offsetY в масштабированном пространстве (×xyScale),
@@ -1251,8 +1308,7 @@ export default function TopoCanvas(props: Props) {
 
     // hover-позиция: показываем мировые координаты в текущей рабочей плоскости
     const w = screenToWorld(sx, sy);
-    if (w) setHoverPos({ x: Math.round(w.x), y: Math.round(w.y) });
-    else setHoverPos(null);
+    pushHoverPos(w ? { x: Math.round(w.x), y: Math.round(w.y) } : null);
 
     // Экранная позиция курсора нужна ТОЛЬКО когда тянется линия построения
     // выработки или ставится оборудование. В остальное время обновлять её на
@@ -3953,9 +4009,8 @@ export default function TopoCanvas(props: Props) {
         is3D={is3D}
         azimuth={view.azimuth}
         elevation={view.elevation}
-        hoverPos={hoverPos}
+        hoverPosRef={hoverPosElRef}
         effPlane={effPlane}
-        zLevel={zLevel}
         scale={view.scale}
       />
 

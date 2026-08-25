@@ -4011,8 +4011,12 @@ export default function CadPage() {
 
       // Применяем результат
       const resultBranches = data.branches as { id: string; Q: number; velocity: number; H: number; Hfan?: number; isDead?: boolean }[];
+      // Результаты индексируем по id ОДИН раз. Раньше здесь для каждой выработки
+      // заново перебирался весь список результатов — на схеме в 14 тысяч ветвей
+      // это давало почти секунду задержки после каждого расчёта.
+      const rbById = new Map(resultBranches.map(r => [r.id, r]));
       setBranches(prev => prev.map(b => {
-        const rb = resultBranches.find(r => r.id === b.id);
+        const rb = rbById.get(b.id);
         if (!rb) return b;
 
         let newFanPressure = b.fanPressure;

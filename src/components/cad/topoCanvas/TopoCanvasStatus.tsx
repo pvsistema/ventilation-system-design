@@ -15,16 +15,23 @@ interface StatusProps {
   is3D: boolean;
   azimuth: number;
   elevation: number;
-  hoverPos: { x: number; y: number } | null;
+  /** Ref на <span> с координатами — текст пишется напрямую, без перерисовки. */
+  hoverPosRef?: React.Ref<HTMLSpanElement>;
   effPlane: WorkPlane;
-  zLevel: number;
   scale: number;
 }
 
-/** Индикаторы внизу холста (координаты, плоскость, масштаб). */
+/**
+ * Индикаторы внизу холста (координаты, плоскость, масштаб).
+ *
+ * Координаты курсора НЕ хранятся в состоянии React: мышь шлёт до 120 событий в
+ * секунду, и каждое перерисовывало бы весь холст со схемой ради двух чисел в
+ * углу экрана. Вместо этого текст пишется прямо в DOM через ref — строка
+ * состояния обновляется мгновенно, а схема не трогается вовсе.
+ */
 export function TopoCanvasIndicators({
   useCanvas, visibleBranchCount, is3D, azimuth, elevation,
-  hoverPos, effPlane, zLevel, scale,
+  hoverPosRef, effPlane, scale,
 }: StatusProps) {
   return (
     <>
@@ -37,17 +44,11 @@ export function TopoCanvasIndicators({
           </span>
         )}
         {is3D && <span className="mr-2">3D · Az: {azimuth.toFixed(0)}° · El: {elevation.toFixed(0)}°</span>}
-        {hoverPos && (() => {
-          // Вывод координат с учётом активной плоскости
-          const fixZ = effPlane.axis === "z" ? effPlane.value : null;
-          const fixY = effPlane.axis === "y" ? effPlane.value : null;
-          const fixX = effPlane.axis === "x" ? effPlane.value : null;
-          return (
-            <span>
-              X: {fixX ?? hoverPos.x} м · Y: {fixY ?? hoverPos.y} м · Z: {fixZ ?? (is3D ? "?" : zLevel)} м
-            </span>
-          );
-        })()}
+        {/* Текст координат пишет TopoCanvas напрямую в этот span (см. коммент
+            выше). Пустой, пока курсор не над схемой — как и было раньше. */}
+        <span ref={hoverPosRef} />
+        {/* Значения фиксированных осей и zLevel учитывает та же функция в
+            TopoCanvas — они меняются редко и не зависят от движения мыши. */}
         <span className="ml-3 px-1.5 py-0.5 rounded"
           style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #92400e)" }}>
           Плоск: {effPlane.axis.toUpperCase()}={effPlane.value} м
