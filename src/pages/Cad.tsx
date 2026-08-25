@@ -336,6 +336,11 @@ export default function CadPage() {
 
   // Авто-пересчёт длин и аэродинамики по координатам/параметрам
   const branches = useMemo(() => recalcAll(nodes, branchesRaw), [nodes, branchesRaw]);
+  // Узлы по id. Поиск узла перебором всего списка — самая частая мелкая
+  // операция в программе, а в режиме выноски он делался внутри цикла по всем
+  // выработкам на КАЖДОЕ движение мыши: на схеме в 300 ветвей это 78 тысяч
+  // лишних сравнений за кадр. С индексом узел находится сразу.
+  const nodesById = useMemo(() => new Map(nodes.map(n => [n.id, n])), [nodes]);
   // Сводка для «Данных ОПО»: длины и количество вентустройств берутся из схемы,
   // поэтому цифры не могут разойтись с фактическим состоянием сети.
   const opoSummary = useMemo(
@@ -1354,6 +1359,12 @@ export default function CadPage() {
   const [leaderExtraMode, setLeaderExtraMode] = useState(false);
   // Snap к ветви в режиме рисования выноски
   const [leaderSnapBranch, setLeaderSnapBranch] = useState<{ branchId: string; t: number; sx: number; sy: number } | null>(null);
+  // Зеркало leaderSnapBranch для обработчика мыши: позволяет понять, изменилось
+  // ли что-то, не читая состояние и не перерисовывая экран впустую.
+  // Синхронизируется автоматически — привязку сбрасывают из десятка мест
+  // (выход из режима, удаление позиции, Esc), и каждое помнить не нужно.
+  const leaderSnapBranchRef = useRef<{ branchId: string; t: number; sx: number; sy: number } | null>(null);
+  leaderSnapBranchRef.current = leaderSnapBranch;
   // Курсор мыши в экранных координатах для предпросмотра выноски
   const [leaderCursorScreen, setLeaderCursorScreen] = useState<{ sx: number; sy: number } | null>(null);
   // Режим привязки ветвей к позиции (F3)
@@ -11292,30 +11303,60 @@ export default function CadPage() {
                 const SNAP_R = 14;
                 let bestBranchId: string | null = null;
                 let bestT = 0.5;
-                let bestDist = SNAP_R;
                 let bestSx = sx, bestSy = sy;
                 const _xyS = xyScale ?? 1;
+                const _zS = zScale ?? 1;
+                // Узел обычно принадлежит нескольким выработкам, и его экранное
+                // положение пересчитывалось заново для каждой из них. Считаем
+                // один раз за движение мыши и переиспользуем.
+                const projCache = new Map<string, { sx: number; sy: number }>();
+                const projOpts = {
+                  scale: vs.scale ?? 1, offsetX: vs.offsetX ?? 0, offsetY: vs.offsetY ?? 0,
+                  azimuth: vs.azimuth ?? 0, elevation: vs.elevation ?? 90,
+                };
+                const projOf = (n: TopoNode) => {
+                  let p = projCache.get(n.id);
+                  if (!p) {
+                    const q = project3D({ x: n.x * _xyS, y: n.y * _xyS, z: n.z * _zS }, projOpts);
+                    p = { sx: q.sx, sy: q.sy };
+                    projCache.set(n.id, p);
+                  }
+                  return p;
+                };
+                // Сравниваем КВАДРАТЫ расстояний — извлекать корень для каждой
+                // выработки незачем, порядок он не меняет.
+                let bestDist2 = SNAP_R * SNAP_R;
                 for (const b of branches) {
-                  const fromN = nodes.find(n => n.id === b.fromId);
-                  const toN   = nodes.find(n => n.id === b.toId);
+                  const fromN = nodesById.get(b.fromId);
+                  const toN   = nodesById.get(b.toId);
                   if (!fromN || !toN) continue;
-                  const f = project3D({ x: fromN.x * _xyS, y: fromN.y * _xyS, z: fromN.z * (zScale ?? 1) },
-                    { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation });
-                  const t2 = project3D({ x: toN.x * _xyS, y: toN.y * _xyS, z: toN.z * (zScale ?? 1) },
-                    { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation });
+                  const f = projOf(fromN);
+                  const t2 = projOf(toN);
+                  // Быстрый отсев: выработка целиком дальше радиуса привязки по
+                  // одной из осей — считать проекцию точки на неё не нужно.
+                  if (Math.min(f.sx, t2.sx) - SNAP_R > sx || Math.max(f.sx, t2.sx) + SNAP_R < sx
+                   || Math.min(f.sy, t2.sy) - SNAP_R > sy || Math.max(f.sy, t2.sy) + SNAP_R < sy) continue;
                   const C = t2.sx - f.sx, D = t2.sy - f.sy;
                   const A = sx - f.sx,   B = sy - f.sy;
                   const lenSq = C * C + D * D;
                   if (lenSq < 1) continue;
                   const tt = Math.max(0.02, Math.min(0.98, (A * C + B * D) / lenSq));
                   const px = f.sx + C * tt, py = f.sy + D * tt;
-                  const dist = Math.hypot(sx - px, sy - py);
-                  if (dist < bestDist) {
-                    bestDist = dist; bestBranchId = b.id; bestT = tt;
+                  const ddx = sx - px, ddy = sy - py;
+                  const dist2 = ddx * ddx + ddy * ddy;
+                  if (dist2 < bestDist2) {
+                    bestDist2 = dist2; bestBranchId = b.id; bestT = tt;
                     bestSx = px; bestSy = py;
                   }
                 }
-                setLeaderSnapBranch(bestBranchId ? { branchId: bestBranchId, t: bestT, sx: bestSx, sy: bestSy } : null);
+                // Курсор не у выработки — самый частый случай. Если привязки не
+                // было и нет, состояние не трогаем: иначе каждое движение мыши
+                // впустую перерисовывало бы экран.
+                if (bestBranchId === null) {
+                  if (leaderSnapBranchRef.current !== null) setLeaderSnapBranch(null);
+                  return;
+                }
+                setLeaderSnapBranch({ branchId: bestBranchId, t: bestT, sx: bestSx, sy: bestSy });
                 return;
               }
               // Drag конца выноски — проецируем на плоскость z=pos.z
