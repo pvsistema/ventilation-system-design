@@ -493,8 +493,8 @@ export default function CadPage() {
   // Каждый горизонт = слой ветвей с цветом и Z-отметкой; можно скрывать.
   // При выборе горизонта новые узлы создаются с его Z и привязкой horizonId.
   // Существующие объекты НЕ трогаются.
-  // Стартовое состояние горизонтов: пытаемся восстановить из localStorage
-  // (там лежат подложки PNG/JPG как dataURL — не теряются при обновлении страницы).
+  // Стартовое состояние горизонтов: всегда один «Общий вид». Остальные
+  // горизонты приходят вместе со схемой при открытии файла проекта.
   const [horizons, setHorizons] = useState<Horizon[]>(() => {
     const DEFAULT_OVERVIEW: Horizon = {
       id: OVERVIEW_HORIZON_ID, name: "Общий вид", z: 0, color: "var(--c-t3, #6b7280)", visible: true,
@@ -505,44 +505,21 @@ export default function CadPage() {
         paperFormat: "A1", orientation: "landscape" },
     } as Horizon;
 
+    // Горизонты принадлежат ПРОЕКТУ, а не программе: они приходят вместе со
+    // схемой из файла .vproj. Раньше список горизонтов запоминался отдельно и
+    // переживал закрытие программы — при пустой рабочей области показывались
+    // горизонты предыдущего проекта («Гор. 1100 м», «ГВУ» и прочие), хотя
+    // выработок к ним не было. Пустой проект начинается с одного «Общего вида».
     if (typeof window === "undefined") return [DEFAULT_OVERVIEW];
 
-    // Версия схемы данных — при смене сбрасываем горизонты к дефолту
-    const DATA_VERSION = "v5";
-    const storedVersion = localStorage.getItem("vent-cad/data-version");
-    if (storedVersion !== DATA_VERSION) {
-      // Новая версия — очищаем старые горизонты, устанавливаем только Общий вид
-      localStorage.setItem("vent-cad/data-version", DATA_VERSION);
-      localStorage.removeItem("vent-cad/horizons-v4");
-      return [DEFAULT_OVERVIEW];
-    }
-
+    // Подчищаем список от прежних версий программы, где он сохранялся.
     try {
-      const raw = localStorage.getItem("vent-cad/horizons-v4");
-      if (!raw) return [DEFAULT_OVERVIEW];
-      const parsed = JSON.parse(raw) as Horizon[];
-      if (!Array.isArray(parsed) || !parsed.length) return [DEFAULT_OVERVIEW];
-      // Нормализуем: сбрасываем галочки, фиксируем title Общего вида
-      return parsed.map(h => {
-        if (!h.printLayer) return h;
-        const pl = {
-          ...h.printLayer,
-          showLegend: false,
-          showStamp: false,
-          showApprover: false,
-          ...(h.id === OVERVIEW_HORIZON_ID ? { title: "Общий вид вентиляционной схемы" } : {}),
-        };
-        return { ...h, printLayer: pl };
-      });
-    } catch { /* игнорируем повреждённые данные */ }
+      localStorage.removeItem("vent-cad/horizons-v4");
+      localStorage.removeItem("vent-cad/data-version");
+    } catch { /* хранилище недоступно — не важно */ }
+
     return [DEFAULT_OVERVIEW];
   });
-  // Сохраняем горизонты при каждом изменении.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    try { window.localStorage.setItem("vent-cad/horizons-v4", JSON.stringify(horizons)); }
-    catch { /* квота переполнена — пропускаем */ }
-  }, [horizons]);
   const [activeHorizonId, setActiveHorizonId] = useState<string>("");
   // ID горизонта, у которого пользователь редактирует подложку (тащит углы).
   const [editingHorizonImageId, setEditingHorizonImageId] = useState<string | null>(null);
