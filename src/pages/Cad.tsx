@@ -54,8 +54,8 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireMode, calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, getNormativeMouthDistance, setNormativeMouthDistance, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { calcExplosion, GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionMethod, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, getNormativeMouthDistance, setNormativeMouthDistance, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -85,6 +85,8 @@ import CadToolDialogs from "./cad/CadToolDialogs";
 import CadModals from "./cad/CadModals";
 import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
 import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonReferences";
+import { runFireMode } from "@/lib/fireModeRun";
+import { runExplosionMode } from "@/lib/explosionModeRun";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn, RibbonSmallBtn,
   PentagonIcon, RectIcon, MiniSquareIcon,
@@ -5387,187 +5389,27 @@ export default function CadPage() {
                 }
 
                 try {
-                // ── Итеративный учёт тепловой депрессии пожара ────────────────
-                // Алгоритм (Аэросеть / Вентиляция-2):
-                //   Итерация 1: берём расходы из штатного расчёта сети
-                //   → считаем T_пр и h_t для каждого очага
-                //   → пересчитываем сеть с h_t как naturalDraft в ветви-очаге
-                //   Итерация 2–3: уточняем T_пр по новым расходам, повторяем
-                //   Критерий: max|ΔQ| < 0.1 м³/с или 3 итерации
-                // ──────────────────────────────────────────────────────────────
-                const FIRE_ITERS   = 4;    // макс. итераций (каждая = пересчёт всей сети)
-                const FIRE_Q_TOL   = 0.3;  // м³/с — допуск сходимости (уровень шума сети)
                 const AMBIENT_TEMP = surfaceTemp;
-
-                // Исходные расходы ДО пожара — сохраняем для обнаружения опрокидывания
-                const originalFlows = new Map<string, number>(
-                  branches.map(b => [b.id, b.flow ?? 0])
-                );
-
-                // Текущие расходы (начинаем с результатов штатного расчёта)
-                let currentFlows = new Map<string, number>(originalFlows);
-                // Очаги с ПОДТВЕРЖДЁННЫМ опрокидыванием: со следующего раунда
-                // горячий плюм идёт по новому направлению и разгоняет
-                // реверсивную струю (иначе тяга душит её до единиц м³/с).
-                const reversedSeats = new Set<string>();
 
                 addLog("info", "🔥 Итеративный расчёт аварийного режима (учёт тепловой депрессии)...");
 
                 // Индикатор на кнопке: плавная шкала (таймер) ползёт к ~95%
                 // во время расчёта, как в воздухораспределении.
                 startFireProgress();
-                await new Promise(r => setTimeout(r, 0));
 
-                for (let iter = 0; iter < FIRE_ITERS; iter++) {
-                  await new Promise(r => setTimeout(r, 0));
-                  // Шаг A: подставить актуальные расходы в ветви
-                  let branchesIter = branches.map(b => ({
-                    ...b,
-                    flow: currentFlows.get(b.id) ?? b.flow,
-                  }));
-
-                  // Шаг B: пересчитать мощность очага из свойств материала по
-                  // актуальному расходу (кабель/дерево/конвейер/техника). Для
-                  // угля/масла/произвольного авто-расчёта нет — мощность ручная.
-                  branchesIter = branchesIter.map(b => {
-                    if (!b.hasFire) return b;
-                    // В режиме «Температурой» температура задана вручную —
-                    // мощность из материала НЕ пересчитываем и режим не меняем
-                    // (иначе ручная T=1000°C затиралась бы авто-мощностью).
-                    if (b.fireMode === "temp") return b;
-                    // Мощность очага — по ШТАТНОМУ расходу (до пожара), как в
-                    // Аэросети: расход в ветви очага не должен разгонять мощность.
-                    const origQ = originalFlows.get(b.id) ?? b.flow;
-                    const autoP = calcFirePowerFromMaterial({ ...b, flow: origQ });
-                    return autoP != null && autoP > 0
-                      ? { ...b, fireHeatRelease: autoP, fireMode: "heat" as const }
-                      : b;
-                  });
-
-                  // Шаг C: температура продуктов горения T_пр для каждого очага
-                  // + карта горячих узлов пути дыма (правильная модель тяги).
-                  // Тепловая тяга считается решателем через ТЕМПЕРАТУРЫ УЗЛОВ
-                  // (natural_draft_h): горячий восходящий столб уравновешивается
-                  // встречным холодным столбом выхода на поверхность — соседние
-                  // выработки меняются слабо (как в Аэросети). Сосредоточенный
-                  // h_fire на одной ветви (старый способ) нефизично опрокидывал
-                  // соседей.
-                  const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[] = [];
-                  const branchesWithHt = branchesIter.map(b => {
-                    if (!b.hasFire) return b;
-                    // Расход для T_пр — ФАКТИЧЕСКИЙ (как в Аэросети), но не ниже
-                    // половины штатного: верхняя защита от разгона обратной
-                    // связи «расход↓→T↑→h_t↑→расход↓». Раньше брался только
-                    // штатный, и при выросшем расходе (10.5→56.1) температура
-                    // завышалась вчетверо (663.8 вместо 140.8°C).
-                    const qOrigA   = Math.abs(originalFlows.get(b.id) ?? b.flow ?? 0);
-                    const qActualA = Math.abs(currentFlows.get(b.id) ?? b.flow ?? 0);
-                    const airQ  = qOrigA > 0 ? Math.max(qActualA, 0.5 * qOrigA) : qActualA;
-                    const T_pr  = b.fireMode === "temp"
-                      ? (Number.isFinite(Number(b.fireTemperature)) && Number(b.fireTemperature) > AMBIENT_TEMP
-                          ? Math.min(1200, Number(b.fireTemperature))
-                          : AMBIENT_TEMP + 500)
-                      : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQ, AMBIENT_TEMP);
-                    // Температура источника горячего плюма зависит от метода:
-                    // "Норматив 4.5" → Tм из геометрии (форм. 4.11), "Методика" →
-                    // реальная T_пр. Ручную температуру ("temp") не трогаем.
-                    let T_src = T_pr;
-                    if (b.fireMode !== "temp") {
-                      const fromN = nodes.find(n => n.id === b.fromId);
-                      const toN   = nodes.find(n => n.id === b.toId);
-                      const dzGeom = (toN?.z ?? 0) - (fromN?.z ?? 0);
-                      const geomAngle = Math.abs(b.angle ?? 0) * Math.sign(dzGeom || 1);
-                      const dirFlow = originalFlows.get(b.id) ?? b.flow ?? 0;
-                      const flowRelAngle = geomAngle * (dirFlow >= 0 ? 1 : -1);
-                      T_src = fireSourceTempForMethod({
-                        physicalFireTemp_C: T_pr, ambientTemp_C: AMBIENT_TEMP,
-                        angle_deg: flowRelAngle, airFlow_m3s: airQ, sectionArea_m2: b.area,
-                      }, thermalDepMethod);
-                    }
-                    fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, reversedConfirmed: reversedSeats.has(b.id), length: b.length, area: b.area, perimeter: b.perimeter });
-                    // fireThermalDepression больше НЕ прикладываем как источник.
-                    return { ...b, fireThermalDepression: 0 };
-                  });
-
-                  // Карта горячих узлов по актуальным расходам.
-                  const branchesForHot = branchesIter.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: currentFlows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
-                  const hotNodeTemps = computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP, baseNodeTemps);
-
-                  // Шаг D: пересчитать сеть с горячими узлами
-                  const newFlows = await solveFireIteration(branchesWithHt, AMBIENT_TEMP, hotNodeTemps);
-                  if (newFlows.size === 0) break; // ошибка сети — прерываем
-
-                  // Шаг E: адаптивная релаксация + проверка сходимости.
-                  // 1-я итерация — без демпфирования (быстрый честный ответ).
-                  // Релаксацию 0.5 включаем ТОЛЬКО если поток нестабилен (резко
-                  // упал/сменил знак): тогда обратная связь «расход↓→T↑→h_t↑→
-                  // расход↓» иначе расходится (поток схлопывается, T упирается в
-                  // 1200°C, ложное опрокидывание). Устойчивый режим сходится
-                  // за 1-2 пересчёта — как раньше, без лишних запросов к серверу.
-                  const fireBr = branchesWithHt.find(b => b.hasFire);
-                  const qPrevF = fireBr ? (currentFlows.get(fireBr.id) ?? 0) : 0;
-                  const qNewF  = fireBr ? (newFlows.get(fireBr.id) ?? 0) : 0;
-                  const signFlippedF = fireBr != null
-                    && Math.sign(qPrevF || 1) !== Math.sign(qNewF || 1);
-                  const unstable = fireBr != null && (
-                    signFlippedF || Math.abs(qNewF) < Math.abs(qPrevF) * 0.5);
-                  // Фиксируем опрокидывание всех очагов относительно ШТАТНОГО
-                  // направления — со следующего раунда плюм пойдёт «по новому».
-                  for (const seat of fireSeats) {
-                    const qOrig = originalFlows.get(seat.id) ?? 0;
-                    const qNew  = newFlows.get(seat.id) ?? 0;
-                    if (Math.sign(qOrig || 1) !== Math.sign(qNew || 1) && Math.abs(qNew) > 0.05) {
-                      reversedSeats.add(seat.id);
-                    }
-                  }
-                  // При РАЗВОРОТЕ струи релаксация вредна: усреднение с прежним
-                  // (противоположным) расходом держит поток у нуля — 8 м³/с
-                  // вместо 57. Демпфируем только обеднение потока без разворота.
-                  const relax = (iter === 0 || !unstable || signFlippedF) ? 1.0 : 0.5;
-
-                  let maxDQ = 0;
-                  const nextFlows = new Map<string, number>();
-                  newFlows.forEach((q, id) => {
-                    const prev = currentFlows.get(id) ?? 0;
-                    const val = relax >= 1 ? q : prev + relax * (q - prev);
-                    nextFlows.set(id, val);
-                    maxDQ = Math.max(maxDQ, Math.abs(val - prev));
-                  });
-                  addLog("info", `  Итерация ${iter + 1}: max|ΔQ|=${maxDQ.toFixed(3)} м³/с${relax < 1 ? " (демпфирование)" : ""}`);
-
-                  currentFlows = nextFlows;
-                  if (maxDQ < FIRE_Q_TOL) break;
-                }
-
-                // Итерации сети завершены — идёт финальный расчёт характеристик
-                // (шкала продолжает плавно ползти к 95% таймером).
-                await new Promise(r => setTimeout(r, 0));
-
-                // ── Финальный расчёт характеристик пожара по сошедшимся расходам ──
-                // Подставляем итоговые Q и пересчитываем мощность (Техника) ещё раз.
-                // originalFlow = исходный расход ДО итераций (для обнаружения опрокидывания).
-                const branchesForFire = branches.map(b => {
-                  const finalQ = currentFlows.get(b.id) ?? b.flow;
-                  // originalFlow — расход ДО пожара (до итераций), для детектирования опрокидывания
-                  // dPTotal — ОБЩАЯ депрессия ветви (выработка + перемычка/окно).
-                  // Без неё расчёт брал депрессию одной выработки и на ветви
-                  // с перемычкой занижал порог опрокидывания в сотни раз.
-                  const bUpdated = {
-                    ...b,
-                    flow: finalQ,
-                    originalFlow: originalFlows.get(b.id) ?? b.flow,
-                    dPTotal: totalDepByBranch.get(b.id) ?? b.dPTotal,
-                  };
-                  if (!b.hasFire) return bUpdated;
-                  // Режим «Температурой» — оставляем ручную T (не пересчитываем).
-                  if (b.fireMode === "temp") return bUpdated;
-                  // Мощность очага — по ШТАТНОМУ расходу (до пожара), как в
-                  // Аэросети (calcFireMode тоже считает T по originalFlow).
-                  const origQ = originalFlows.get(b.id) ?? b.flow;
-                  const autoP = calcFirePowerFromMaterial({ ...bUpdated, flow: origQ });
-                  return autoP != null && autoP > 0
-                    ? { ...bUpdated, fireHeatRelease: autoP, fireMode: "heat" as const }
-                    : bUpdated;
+                // Сам расчёт живёт в отдельном модуле (см. lib/fireModeRun.ts):
+                // формулы и пороги перенесены дословно, здесь остаётся только
+                // применение результата к схеме.
+                const { flows: currentFlows, originalFlows, result } = await runFireMode({
+                  branches, nodes,
+                  ambientTemp: AMBIENT_TEMP,
+                  thermalDepMethod,
+                  smokeVisThreshold,
+                  baseNodeTemps,
+                  totalDepByBranch,
+                  solveIteration: solveFireIteration,
+                  log: (m) => addLog("info", m),
+                  yieldToUI: () => new Promise(r => setTimeout(r, 0)),
                 });
 
                 // Обновляем flow в state из итеративного расчёта.
@@ -5580,7 +5422,6 @@ export default function CadPage() {
                     : b;
                 }));
 
-                const result = calcFireMode(branchesForFire, nodes, AMBIENT_TEMP, smokeVisThreshold);
                 // Записываем вычисленные параметры обратно в ветви
                 setBranches(prev => prev.map(b => {
                   const fr = result.branches.get(b.id);
@@ -5720,186 +5561,21 @@ export default function CadPage() {
           <div className="flex items-stretch gap-1">
             <button
               onClick={async () => {
-                const expBranches = branches.filter(b => b.hasExplosion);
-                if (expBranches.length === 0) {
+                if (!branches.some(b => b.hasExplosion)) {
                   alert("Сначала установите место взрыва на ветви (кнопка «Установить место взрыва»)");
                   return;
                 }
-                const results: ExplosionResult[] = [];
-
-                // ЭКОНОМИЯ ОБРАЩЕНИЙ. Раньше на КАЖДОЕ место взрыва уходил
-                // отдельный запрос: пять очагов на схеме — пять обращений к
-                // серверу при каждом нажатии «Рассчитать». Теперь все очаги
-                // уходят ОДНИМ запросом и возвращаются одним ответом.
-                const expPayload = expBranches.map(b => ({
-                  method: b.explosionMethod ?? "fnip_494",
-                  sourceType: b.explosionSourceType ?? "mass",
-                  gasId: b.explosionGasId ?? "methane",
-                  gasVolume_m3: b.explosionGasVolume ?? 100,
-                  gasConcentration: b.explosionGasConcentration ?? 9.5,
-                  explosiveId: b.explosionExplosiveId ?? "ammonit",
-                  explosiveMass_kg: b.explosionExplosiveMass ?? 100,
-                  excavationArea_m2: b.area ?? 12,
-                  excavationLength_m: b.length ?? 100,
-                  ambientPressure_kPa: 101.3,
-                  considerWalls: b.explosionConsiderWalls ?? true,
-                }));
-                // Ответы сервера по номеру ветви. Если связи нет — карта пустая,
-                // и каждый взрыв считается на месте (резервный расчёт ниже).
-                const expServerData = new Map<string, ExplosionResult>();
-                try {
-                  const respAll = await fetch(EXPLOSION_URL, {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ items: expPayload }),
-                  });
-                  const dataAll = await respAll.json();
-                  const arr = Array.isArray(dataAll?.results) ? dataAll.results : [];
-                  expBranches.forEach((b, i) => {
-                    if (arr[i]) expServerData.set(b.id, arr[i]);
-                  });
-                } catch { /* нет связи — посчитаем на месте */ }
-
-                const updatedBranchesPromises = branches.map(async b => {
-                  if (!b.hasExplosion) return b;
-                  const area = b.area ?? 12;
-                  const length = b.length ?? 100;
-                  let res: ExplosionResult;
-                  try {
-                    const data = expServerData.get(b.id);
-                    if (!data) throw new Error("no server data");
-                    // Восстанавливаем pressureAtDistance / impulseAtDistance по формуле Садовского
-                    // напрямую из q_tnt_kg и wall_factor (не зависит от таблицы точек)
-                    const _qTnt = data.q_tnt_kg ?? 0.001;
-                    const _considerWalls = b.explosionConsiderWalls ?? true;
-                    const _wfRaw = area <= 0 ? 1.5 : area < 10 ? 2.0 : area < 20 ? 1.8 : area < 40 ? 1.5 : 1.3;
-                    const _wf   = _considerWalls ? _wfRaw : 1.0;
-                    const _meth = b.explosionMethod ?? "gas_dynamics";
-                    // Формулы согласованы с explosionCalculator.ts
-                    const sadovsky = (r: number): number => {
-                      if (_qTnt <= 0 || r <= 0) return 0;
-                      const rBar = r / Math.pow(_qTnt, 1 / 3);
-                      if (rBar < 0.1) return 10000;
-                      // P0 НЕ умножаем — коэффициенты уже в кПа (Садовский)
-                      return Math.round((0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar)) * 10) / 10;
-                    };
-                    const fnip494 = (r: number): number => {
-                      if (_qTnt <= 0 || r <= 0) return 0;
-                      // Коэф. 1.5 согласован с Аэросетью (ВНИМИ) для горных выработок
-                      return Math.round(1.5 * Math.pow(_qTnt / (r * r * r), 1 / 3) * 101.3 * 10) / 10;
-                    };
-                    res = {
-                      ...data,
-                      pressureAtDistance: (r: number) => {
-                        const dp = _meth === "gas_dynamics" ? sadovsky(r) : fnip494(r);
-                        return Math.round(dp * _wf * 10) / 10;
-                      },
-                      impulseAtDistance: (r: number) => {
-                        if (_qTnt <= 0 || r <= 0) return 0;
-                        return Math.round(200 * Math.pow(_qTnt, 1 / 3) / r * _wf * 10) / 10;
-                      },
-                    };
-                  } catch {
-                    res = calcExplosion({
-                      method: (b.explosionMethod ?? "fnip_494") as ExplosionMethod,
-                      sourceType: (b.explosionSourceType ?? "mass") as ExplosionSourceType,
-                      gasId: b.explosionGasId ?? "methane",
-                      gasVolume_m3: b.explosionGasVolume ?? 100,
-                      gasConcentration: b.explosionGasConcentration ?? 9.5,
-                      explosiveId: b.explosionExplosiveId ?? "ammonit",
-                      explosiveMass_kg: b.explosionExplosiveMass ?? 100,
-                      excavationArea_m2: area,
-                      excavationLength_m: length,
-                      ambientPressure_kPa: 101.3,
-                      considerWalls: b.explosionConsiderWalls ?? true,
-                    });
-                  }
-                  results.push(res);
-                  return {
-                    ...b,
-                    explosionComputedQtnt: res.q_tnt_kg,
-                    explosionComputedMaxP: res.maxDeltaP_kPa,
-                    explosionComputedWaveSpeed: res.waveFrontSpeed_ms,
-                    explosionComputedR_lethal: res.zones[0]?.radius_m ?? 0,
-                    explosionComputedR_heavy: res.zones[1]?.radius_m ?? 0,
-                    explosionComputedR_medium: res.zones[2]?.radius_m ?? 0,
-                    explosionComputedR_light: res.zones[3]?.radius_m ?? 0,
-                  };
+                // Сам расчёт живёт в отдельном модуле (см. lib/explosionModeRun.ts):
+                // формулы и коэффициенты перенесены дословно, здесь остаётся
+                // только применение результата к схеме.
+                const run = await runExplosionMode({
+                  branches, nodes,
+                  symbols: symbolsRef.current,
+                  bulkheadSymbolIds: BULKHEAD_SYMBOL_IDS,
+                  explosionUrl: EXPLOSION_URL,
                 });
-                const updatedBranches = await Promise.all(updatedBranchesPromises);
-                // ── Определяем разрушенные перемычки по зонам поражения ──────────
-                // Дейкстра по сети для расчёта расстояния по выработкам от источника
-                type Pt3 = { x: number; y: number; z: number };
-                const expSources: Pt3[] = [];
-                updatedBranches.forEach(src => {
-                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
-                  const fN = nodes.find(n => n.id === src.fromId);
-                  const tN = nodes.find(n => n.id === src.toId);
-                  if (!fN || !tN) return;
-                  const t = src.explosionT ?? 0.5;
-                  expSources.push({ x: fN.x+(tN.x-fN.x)*t, y: fN.y+(tN.y-fN.y)*t, z: fN.z+(tN.z-fN.z)*t });
-                });
-
-                // Расстояние по сети (Дейкстра)
-                const bLen = (b: typeof branches[0]) => {
-                  const fN = nodes.find(n => n.id === b.fromId);
-                  const tN = nodes.find(n => n.id === b.toId);
-                  if (!fN || !tN) return b.length > 0 ? b.length : 1;
-                  return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
-                };
-                const netDist = new Map<string, number>();
-                const pq2: Array<{id: string; d: number}> = [];
-                updatedBranches.forEach(src => {
-                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
-                  const len = bLen(src); const t = src.explosionT ?? 0.5;
-                  [[src.fromId, len*t],[src.toId, len*(1-t)]].forEach(([nid, d]) => {
-                    const cur = netDist.get(nid as string) ?? Infinity;
-                    if ((d as number) < cur) { netDist.set(nid as string, d as number); pq2.push({id: nid as string, d: d as number}); }
-                  });
-                });
-                const adjMap = new Map<string, Array<{to: string; len: number}>>();
-                updatedBranches.forEach(b => {
-                  const len = bLen(b);
-                  if (!adjMap.has(b.fromId)) adjMap.set(b.fromId, []);
-                  if (!adjMap.has(b.toId))   adjMap.set(b.toId, []);
-                  adjMap.get(b.fromId)!.push({to: b.toId, len});
-                  adjMap.get(b.toId)!.push({to: b.fromId, len});
-                });
-                const vis2 = new Set<string>();
-                while (pq2.length > 0) {
-                  pq2.sort((a,b) => a.d - b.d);
-                  const {id: cur, d: curD} = pq2.shift()!;
-                  if (vis2.has(cur)) continue; vis2.add(cur);
-                  for (const e of (adjMap.get(cur) ?? [])) {
-                    const nd = curD + e.len;
-                    // Волна останавливается на атмосферных узлах (выход на поверхность)
-                    const toNode = nodes.find(n => n.id === e.to);
-                    if (toNode?.atmosphereLink) continue;
-                    if (nd < (netDist.get(e.to) ?? Infinity)) { netDist.set(e.to, nd); pq2.push({id: e.to, d: nd}); }
-                  }
-                }
-
-                // Помечаем перемычки разрушенными если ΔP > failurePressure
-                // fp берём из символа (bkFailurePressure) или из ветви как fallback
-                const finalBranches = updatedBranches.map(b => {
-                  if (!b.hasBulkhead) return {...b, bulkheadDestroyedByExplosion: false};
-                  const bkSym = symbolsRef.current.find(s =>
-                    BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id
-                  );
-                  // давление разрушения: из символа (если задано > 0) или из ветви (из справочника)
-                  const fp = (bkSym?.bkFailurePressure && bkSym.bkFailurePressure > 0
-                    ? bkSym.bkFailurePressure
-                    : b.bulkheadFailurePressure) || 0; // МПа
-                  if (!fp || fp <= 0) return {...b, bulkheadDestroyedByExplosion: false};
-                  const dFrom = netDist.get(b.fromId) ?? Infinity;
-                  const dTo   = netDist.get(b.toId) ?? Infinity;
-                  const minD  = Math.min(dFrom, dTo);
-                  if (minD === Infinity || results.length === 0) return {...b, bulkheadDestroyedByExplosion: false};
-                  const dp_kPa = results[0].pressureAtDistance(minD);
-                  const dp_MPa = dp_kPa / 1000;
-                  const destroyed = dp_MPa >= fp;
-                  return {...b, bulkheadDestroyedByExplosion: destroyed};
-                });
+                if (!run) return;
+                const { branches: finalBranches, results } = run;
 
                 setBranches(finalBranches);
                 if (results.length > 0) {
