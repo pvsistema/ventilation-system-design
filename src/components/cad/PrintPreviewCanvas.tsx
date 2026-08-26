@@ -321,6 +321,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           unitsConfig={unitsConfig}
           width={width}
           height={height}
+          defaultBranchWidth={branchWidth}
         />
       )}
 

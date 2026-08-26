@@ -478,6 +478,20 @@ export const REDUCER_SYMBOL_IDS = new Set([
   "valve_reduce",
 ]);
 
+/**
+ * ID устьев и сечений стволов. Ставятся на ветвь и масштабируются от её
+ * ширины — ТАК ЖЕ, как вентилятор и насос (fanScale). Так значок устья
+ * совпадает по размеру с самим стволом, а не «плавает» при зуме:
+ * узкий вентиляционный ходок получает маленькое устье, широкий ствол —
+ * крупное, как это принято на вентиляционных схемах.
+ */
+export const SHAFT_MOUTH_SYMBOL_IDS = new Set([
+  "vert_sq_section", "vert_circ_section",
+  "vert_sq_mouth", "vert_circ_mouth",
+  "vert_sq_full", "vert_circ_full",
+  "slope_circ_full", "slope_rect_full",
+]);
+
 // ID всех символов вентиляторов — одиночный клик по любому из них
 // открывает в левой панели вкладку настроек вентилятора.
 export const FAN_SYMBOL_IDS = new Set([
