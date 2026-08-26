@@ -2,7 +2,7 @@
 // Содержит ту же логику что в TopoCanvas, но без интерактивности.
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { type TopoBranch } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -16,14 +16,12 @@ interface Props {
   width: number;
   height: number;
   defaultBranchWidth?: number;
-  /** Размер вентилятора/насоса/устья в % от ширины ветви. */
-  fanScale?: number;
 }
 
 export default function SchemaSymbolsOverlay({
   symbols, branches, projNodesMap,
   viewScale, unitsConfig = DEFAULT_UNITS_CONFIG,
-  width, height, defaultBranchWidth = 7, fanScale = 450,
+  width, height, defaultBranchWidth = 7,
 }: Props) {
   return (
     <svg
@@ -82,9 +80,9 @@ export default function SchemaSymbolsOverlay({
           const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
           SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
         } else if (isShaftMouthSym && hasBranchPts) {
-          // Устье ствола — размером с саму выработку (как вентилятор/насос).
+          // Устье ствола — ровно того же размера, что и узел этой ветви.
           const mBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
-          SZ = Math.max(8, mBw * viewScale * (fanScale / 100) * sc);
+          SZ = shaftMouthSize(Math.max(mBw * viewScale, 1.0), sc);
         } else {
           SZ = Math.max(4, 32 * sc * symScaleFactor);
         }

@@ -1,6 +1,6 @@
 import React from "react";
 import { type TopoBranch } from "@/lib/topology";
-import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -147,7 +147,11 @@ export function renderSymbolNode(
     // ph = SZ * 0.85 → SZ = ph / 0.85.
     const ph = realBranchW * (bulkheadScale / 100);
     SZ = Math.max(6, (ph / 0.85) * sc);
-  } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce" || SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId)) && sym.branchId && hasBranchPts) {
+  } else if (SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
+    // Устье ствола — ровно того же размера, что и узел этой ветви.
+    const mBw = symbolHostWidth(symBr, branchById, branchWidth);
+    SZ = shaftMouthSize(Math.max(mBw * _branchObjSF, 1.0), sc);
+  } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce") && sym.branchId && hasBranchPts) {
     // Вентилятор, насос, запорный вентиль и редукционный клапан
     // масштабируются от ширины ветви (как перемычка) — синхронно
     // с масштабом схемы, не «плавают» при зуме.

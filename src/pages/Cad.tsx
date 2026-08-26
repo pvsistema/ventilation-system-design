@@ -50,7 +50,7 @@ import { checkSchema } from "@/lib/schemaCheck";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -11409,11 +11409,12 @@ export default function CadPage() {
                   setActiveSide("waterpipes");
                   return;
                 }
-                // Для перемычек, замерных станций, насосов и калориферов — НЕ
-                // выбираем ветвь, чтобы открылась панель символа с его
-                // параметрами, а не свойства выработки.
+                // Для перемычек, замерных станций, насосов, калориферов и
+                // устьев стволов — НЕ выбираем ветвь, чтобы открылась панель
+                // символа с его параметрами, а не свойства выработки.
                 if (sym?.branchId && sym.typeId !== "pump" && !BULKHEAD_SYMBOL_IDS.has(sym.typeId)
-                    && !HEATER_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station") {
+                    && !HEATER_SYMBOL_IDS.has(sym.typeId) && sym.typeId !== "measure_station"
+                    && !SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId)) {
                   setSelectedBranchId(sym.branchId);
                   setSelectedNodeId(null);
                 } else {

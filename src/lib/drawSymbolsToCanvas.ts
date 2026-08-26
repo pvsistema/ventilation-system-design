@@ -3,7 +3,7 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -41,8 +41,6 @@ export async function drawSymbolsToCanvas(
   unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG,
   defaultBranchWidth: number = 7,
   infoConfig?: InfoDisplayConfig,
-  /** Размер вентилятора/насоса/устья в % от ширины ветви. */
-  fanScale: number = 450,
 ): Promise<void> {
   for (const sym of symbols) {
     const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
@@ -86,9 +84,9 @@ export async function drawSymbolsToCanvas(
       const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
       SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
     } else if (SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
-      // Устье ствола — размером с саму выработку (как вентилятор/насос).
+      // Устье ствола — ровно того же размера, что и узел этой ветви.
       const mBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
-      SZ = Math.max(8, mBw * viewScale * (fanScale / 100) * sc);
+      SZ = shaftMouthSize(Math.max(mBw * viewScale, 1.0), sc);
     } else {
       SZ = Math.max(4, 32 * sc * ss);
     }

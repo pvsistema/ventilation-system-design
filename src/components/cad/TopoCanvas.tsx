@@ -6,7 +6,7 @@ import {
   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
   sectionKind, SECTION_KIND_COLORS,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -2726,7 +2726,11 @@ export default function TopoCanvas(props: Props) {
             // поэтому перемычка масштабируется синхронно с шириной ветви (в т.ч. масштаб XY).
             const realBw = Math.max(bkBw * _branchObjSF, 1.0);
             SZ = Math.max(6, (realBw * (bulkheadScale / 100) / 0.85) * sc);
-          } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce" || SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId)) && sym.branchId && hasBranchPts) {
+          } else if (SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts) {
+            // Устье ствола — ровно того же размера, что и узел этой ветви.
+            const mBwSh = symbolHostWidth(sym.branchId ? branchById.get(sym.branchId) : null, branchById, branchWidth);
+            SZ = shaftMouthSize(Math.max(mBwSh * _branchObjSF, 1.0), sc);
+          } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce") && sym.branchId && hasBranchPts) {
             // Вентилятор, насос, запорный вентиль и редукционный клапан
             // масштабируются от ширины ветви (как перемычка), поэтому синхронны
             // с масштабом схемы и не «плавают» при зуме.
