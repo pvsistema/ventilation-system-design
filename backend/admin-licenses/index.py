@@ -5,8 +5,8 @@ Rev: offline-key-2
 
 POST /  body: {action, password, ...params}
   list_licenses    — список всех лицензий с занятыми местами
-  create_license   — создать новый ключ {owner_name, owner_email, max_seats, expires_at, notes}
-  update_license   — изменить лицензию {license_id, owner_name, owner_email, max_seats, expires_at, notes}
+  create_license   — создать новый ключ {owner_name, owner_email, max_seats, expires_at, notes, org_group}
+  update_license   — изменить лицензию {license_id, owner_name, owner_email, max_seats, expires_at, notes, org_group}
   toggle_license   — включить/отключить лицензию {license_id, is_active}
   delete_license   — удалить лицензию и все места {license_id}
   list_seats       — места конкретной лицензии {license_id}
@@ -171,6 +171,7 @@ def handler(event: dict, context) -> dict:
             cur.execute("""
                 SELECT l.id, l.key, l.owner_name, l.owner_email,
                        l.max_seats, l.is_active, l.created_at, l.expires_at, l.notes,
+                       l.org_group,
                        COUNT(s.id) AS used_seats,
                        MAX(s.last_seen_at) AS last_activity,
                        -- Сколько мест лицензии задвоено: один компьютер занял
@@ -200,9 +201,11 @@ def handler(event: dict, context) -> dict:
                     "owner_email": r[3], "max_seats": r[4],
                     "is_active": r[5], "created_at": str(r[6]),
                     "expires_at": str(r[7]) if r[7] else None,
-                    "notes": r[8], "used_seats": int(r[9]),
-                    "last_activity": str(r[10]) if r[10] else None,
-                    "stale_duplicates": int(r[11] or 0),
+                    "notes": r[8],
+                    "org_group": r[9],
+                    "used_seats": int(r[10]),
+                    "last_activity": str(r[11]) if r[11] else None,
+                    "stale_duplicates": int(r[12] or 0),
                 })
             return resp(200, {"licenses": licenses})
 
@@ -213,6 +216,7 @@ def handler(event: dict, context) -> dict:
             max_seats   = int(body.get("max_seats", 5))
             expires_at  = body.get("expires_at") or None
             notes       = body.get("notes", "").strip()
+            org_group   = body.get("org_group", "").strip()
             key         = body.get("key") or generate_key()
 
             if not owner_name:
@@ -221,10 +225,11 @@ def handler(event: dict, context) -> dict:
                 return resp(400, {"error": "invalid_seats"})
 
             cur.execute("""
-                INSERT INTO licenses (key, owner_name, owner_email, max_seats, expires_at, notes)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                INSERT INTO licenses (key, owner_name, owner_email, max_seats, expires_at, notes, org_group)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, key, created_at
-            """, (key, owner_name, owner_email or None, max_seats, expires_at, notes or None))
+            """, (key, owner_name, owner_email or None, max_seats, expires_at,
+                  notes or None, org_group or None))
             row = cur.fetchone()
             conn.commit()
             return resp(200, {
@@ -240,6 +245,7 @@ def handler(event: dict, context) -> dict:
             max_seats   = int(body.get("max_seats", 5))
             expires_at  = body.get("expires_at") or None
             notes       = body.get("notes", "").strip()
+            org_group   = body.get("org_group", "").strip()
 
             if not owner_name:
                 return resp(400, {"error": "owner_name_required"})
@@ -249,10 +255,11 @@ def handler(event: dict, context) -> dict:
             cur.execute("""
                 UPDATE licenses
                 SET owner_name = %s, owner_email = %s, max_seats = %s,
-                    expires_at = %s, notes = %s
+                    expires_at = %s, notes = %s, org_group = %s
                 WHERE id = %s
                 RETURNING id
-            """, (owner_name, owner_email or None, max_seats, expires_at, notes or None, lic_id))
+            """, (owner_name, owner_email or None, max_seats, expires_at,
+                  notes or None, org_group or None, lic_id))
             if not cur.fetchone():
                 return resp(404, {"error": "not_found"})
             conn.commit()

@@ -19,6 +19,12 @@ export interface License {
   notes: string | null;
   last_activity: string | null;
   /**
+   * Головная организация, в которую входит владелец лицензии
+   * (например ФГУП «ВГСЧ»). Филиалы одной группы сворачиваются в
+   * админ-панели в один раскрывающийся раздел. null = вне групп.
+   */
+  org_group: string | null;
+  /**
    * Сколько мест лицензии задвоено: один компьютер занял несколько мест.
    * Такие места можно освобождать — работа идёт на более свежем.
    */
@@ -91,6 +97,7 @@ export interface MonitoringData {
 
 export interface LicenseForm {
   owner_name: string;
+  org_group: string;
   owner_email: string;
   max_seats: string;
   expires_at: string;
@@ -123,4 +130,4 @@ export function toInputDate(s: string | null): string {
   } catch { return ""; }
 }
 
-export const emptyForm: LicenseForm = { owner_name: "", owner_email: "", max_seats: "5", expires_at: "", notes: "", key: "" };
+export const emptyForm: LicenseForm = { owner_name: "", org_group: "", owner_email: "", max_seats: "5", expires_at: "", notes: "", key: "" };

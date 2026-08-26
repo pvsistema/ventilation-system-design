@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import Icon from "@/components/ui/icon";
 import MonitoringTab from "@/pages/admin/MonitoringTab";
 // Вкладки панели вынесены в отдельные файлы (перенос 1:1, без правок логики)
@@ -28,6 +28,13 @@ export default function Admin() {
   const [authed, setAuthed]             = useState(false);
   const [authErr, setAuthErr]           = useState("");
   const [licenses, setLicenses]         = useState<License[]>([]);
+  // Уже заведённые группы организаций — подсказка в диалогах, чтобы филиалы
+  // не разъезжались по разным разделам из-за опечатки в названии.
+  const orgGroups = useMemo(
+    () => Array.from(new Set(licenses.map(l => (l.org_group ?? "").trim()).filter(Boolean))).sort(
+      (a, b) => a.localeCompare(b, "ru")),
+    [licenses],
+  );
   const [loading, setLoading]           = useState(false);
   const [seats, setSeats]               = useState<Seat[] | null>(null);
   const [seatsForId, setSeatsForId]     = useState<number | null>(null);
@@ -280,6 +287,7 @@ export default function Admin() {
       await adminApi(password, {
         action: "create_license",
         owner_name: form.owner_name,
+        org_group: form.org_group || undefined,
         owner_email: form.owner_email || undefined,
         max_seats: parseInt(form.max_seats),
         expires_at: form.expires_at || undefined,
@@ -300,6 +308,7 @@ export default function Admin() {
     setEditingLic(lic);
     setEditForm({
       owner_name: lic.owner_name,
+      org_group: lic.org_group ?? "",
       owner_email: lic.owner_email ?? "",
       max_seats: String(lic.max_seats),
       expires_at: toInputDate(lic.expires_at),
@@ -327,6 +336,7 @@ export default function Admin() {
         action: "update_license",
         license_id: editingLic.id,
         owner_name: editForm.owner_name,
+        org_group: editForm.org_group || undefined,
         owner_email: editForm.owner_email || undefined,
         max_seats: parseInt(editForm.max_seats),
         expires_at: editForm.expires_at || undefined,
@@ -337,6 +347,7 @@ export default function Admin() {
       setLicenses(ls => ls.map(l => l.id === editingLic.id ? {
         ...l,
         owner_name: editForm.owner_name,
+        org_group: editForm.org_group || null,
         owner_email: editForm.owner_email || null,
         max_seats: parseInt(editForm.max_seats),
         expires_at: editForm.expires_at || null,
@@ -591,6 +602,7 @@ export default function Admin() {
         editErr={editErr} editOk={editOk} editSaving={editSaving}
         handleUpdate={handleUpdate} closeEdit={closeEdit}
         inputCls={inputCls}
+        orgGroups={orgGroups}
       />
     </div>
   );

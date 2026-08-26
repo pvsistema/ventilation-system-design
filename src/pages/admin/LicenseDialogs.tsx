@@ -26,16 +26,22 @@ interface Props {
   handleUpdate: (e: React.FormEvent) => void;
   closeEdit: () => void;
   inputCls: string;
+  /** Уже заведённые группы — подсказка, чтобы не плодить опечатки в названиях. */
+  orgGroups?: string[];
 }
 
 export default function LicenseDialogs({
   showCreate, setShowCreate, form, setForm, createErr, setCreateErr, createOk,
   generatedKey, setGeneratedKey, generateKey, handleCreate,
   editingLic, editForm, setEditForm, editErr, editOk, editSaving, handleUpdate, closeEdit,
-  inputCls,
+  inputCls, orgGroups = [],
 }: Props) {
   return (
     <>
+      {/* Подсказка для полей «Группа организаций» в обоих диалогах */}
+      <datalist id="org-groups">
+        {orgGroups.map(g => <option key={g} value={g} />)}
+      </datalist>
       {/* Модал: создание лицензии */}
       {showCreate && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.5)" }}>
@@ -75,6 +81,17 @@ export default function LicenseDialogs({
                   onChange={e => setForm(f => ({ ...f, owner_name: e.target.value }))}
                   placeholder="ООО Шахта Северная"
                   className={inputCls} />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Группа организаций</label>
+                <input type="text" list="org-groups" value={form.org_group}
+                  onChange={e => setForm(f => ({ ...f, org_group: e.target.value }))}
+                  placeholder="ФГУП «ВГСЧ» — оставьте пустым, если вне групп"
+                  className={inputCls} />
+                <div className="text-[10px] text-gray-400 mt-1">
+                  Филиалы одной группы собираются в общий раскрывающийся раздел.
+                </div>
               </div>
 
               <div>
@@ -151,6 +168,17 @@ export default function LicenseDialogs({
                   onChange={e => setEditForm(f => ({ ...f, owner_name: e.target.value }))}
                   placeholder="ООО Шахта Северная"
                   className={inputCls} />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-semibold text-gray-600 mb-1">Группа организаций</label>
+                <input type="text" list="org-groups" value={editForm.org_group}
+                  onChange={e => setEditForm(f => ({ ...f, org_group: e.target.value }))}
+                  placeholder="ФГУП «ВГСЧ» — оставьте пустым, если вне групп"
+                  className={inputCls} />
+                <div className="text-[10px] text-gray-400 mt-1">
+                  Филиалы одной группы собираются в общий раскрывающийся раздел.
+                </div>
               </div>
 
               <div>
