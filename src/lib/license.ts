@@ -1,6 +1,6 @@
 import { API_URLS } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
-import { isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey } from "@/lib/offlineKey";
+import { isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey, verifySignedPayload, decodeB64urlText } from "@/lib/offlineKey";
 import { checkClock, trustServerTime, takePendingClockReport, clearPendingClockReport } from "@/lib/clockGuard";
 const LICENSE_URL = API_URLS.license;
 
@@ -144,6 +144,24 @@ export interface LicenseInfo {
   clockRollback?: boolean;
   /** На сколько суток отведены часы (для сообщения пользователю) */
   clockDaysBack?: number;
+  /**
+   * Подпись лицензии сервером (Ed25519). {payload, sig} в base64url.
+   * payload — канонический JSON {v, fp, licensed, key, owner, exp, iat}.
+   * Именно она делает невозможной подделку кэша: без приватного ключа сервера
+   * нельзя вписать licensed:true в localStorage. См. verifyServerLicense().
+   */
+  signed?: { payload: string; sig: string };
+}
+
+/** Данные внутри подписанного сервером payload. */
+interface SignedLicensePayload {
+  v?: number;
+  fp?: string;        // fp_hash(fingerprint) — привязка к рабочему месту
+  licensed?: boolean;
+  key?: string;
+  owner?: string;
+  exp?: string | null; // ISO срок ключа
+  iat?: number;        // время выдачи (unix, сек)
 }
 
 export interface MachineInfo {
@@ -171,6 +189,78 @@ export interface MachineInfo {
 async function sha256hex(text: string): Promise<string> {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
   return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// ── Проверка подписи онлайн-лицензии ─────────────────────────────────────────
+// Хэш отпечатка ЭТОГО рабочего места, каким его знает сервер (fp_hash).
+// Нужен для сверки поля fp внутри подписанного payload — чтобы чужую (пусть и
+// подлинную) подпись нельзя было перенести на другой ПК. Считается один раз при
+// вычислении MachineInfo и кэшируется здесь, чтобы loadCachedLicense() оставался
+// синхронным (он вызывается на старте до любых await).
+let _fpHashForVerify: string | null = null;
+export function setFingerprintForVerify(fingerprint: string, fpHash: string): void {
+  _fpHashForVerify = fpHash;
+  try { sessionStorage.setItem("pvs_fp_hash", fpHash); } catch { /* ignore */ }
+  void fingerprint;
+}
+function getFpHashForVerify(): string | null {
+  if (_fpHashForVerify) return _fpHashForVerify;
+  try {
+    const v = sessionStorage.getItem("pvs_fp_hash");
+    if (v) { _fpHashForVerify = v; return v; }
+  } catch { /* ignore */ }
+  return null;
+}
+
+/**
+ * Проверяет подпись лицензии, выданную сервером.
+ *
+ * Разблокировка полной версии происходит ТОЛЬКО если:
+ *   • подпись Ed25519 верна (payload не подделан),
+ *   • licensed === true внутри подписанного payload,
+ *   • отпечаток в подписи совпадает с этим рабочим местом (нельзя перенести
+ *     чужую лицензию на свой ПК),
+ *   • срок (exp) не истёк по локальным часам, а часы не отведены назад.
+ *
+ * Возвращает true, если подписанная лицензия действительна для этого места.
+ * Если поля signed нет вовсе (совсем старый кэш) — вернём null: решение о
+ * доверии принимает вызывающий код (мягкая миграция, см. loadCachedLicense).
+ */
+function verifySignedLicense(info: LicenseInfo): boolean | null {
+  const signed = info.signed;
+  if (!signed || !signed.payload || !signed.sig) return null; // подписи нет
+  if (!verifySignedPayload(signed.payload, signed.sig)) return false;
+  let p: SignedLicensePayload;
+  try {
+    p = JSON.parse(decodeB64urlText(signed.payload)) as SignedLicensePayload;
+  } catch {
+    return false;
+  }
+  if (!p.licensed) return false;
+  // Привязка к рабочему месту: подпись действительна только для «своего» fp.
+  // Если хэш отпечатка ещё не посчитан (самый первый запуск до getMachineInfo) —
+  // не отклоняем по этому признаку, сверку сделает следующая серверная проверка.
+  const myFp = getFpHashForVerify();
+  if (myFp && p.fp && p.fp !== myFp) return false;
+  // Срок ключа. Часы переведены назад — проверить нельзя, доверять нельзя.
+  const clock = checkClock();
+  if (!clock.ok) return false;
+  if (p.exp) {
+    const exp = new Date(p.exp).getTime();
+    if (exp && exp < Date.now()) return false;
+  }
+  return true;
+}
+
+/**
+ * Проверяет ответ сервера сразу при получении. Возвращает true, если ответу
+ * можно доверять (подпись валидна) ИЛИ подписи в ответе нет (старый сервер /
+ * ключ не задан — работаем как раньше, по TLS-доверию). false — только если
+ * подпись ЕСТЬ, но она неверная (попытка подмены ответа).
+ */
+function serverResponseTrusted(info: LicenseInfo): boolean {
+  const v = verifySignedLicense(info);
+  return v !== false;
 }
 
 // ── ОС/платформа ─────────────────────────────────────────────────────────────
@@ -347,6 +437,11 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   // Привязка к рабочему месту — ТОЛЬКО по железу: fingerprint = hwFingerprint.
   const fingerprint = hwFingerprint;
 
+  // Хэш отпечатка, каким его знает сервер (fp_hash = sha256(fingerprint)).
+  // Нужен для проверки, что подписанная лицензия выдана именно этому месту.
+  try { setFingerprintForVerify(fingerprint, await sha256hex(fingerprint)); }
+  catch { /* ignore */ }
+
   const platform = detectPlatform();
   const scr = `${window.screen.width}×${window.screen.height}`;
   const ua = navigator.userAgent;
@@ -391,6 +486,27 @@ export function loadCachedLicense(): LicenseInfo | null {
       return { licensed: false, clockRollback: true, clockDaysBack: clock.daysBack };
     }
     if (Date.now() - (data.checkedAt ?? 0) > CACHE_TTL_MS) return null;
+
+    // ЗАЩИТА ОТ ПОДДЕЛКИ КЭША. Раньше сюда можно было вписать licensed:true
+    // прямо в localStorage и включить полную версию. Теперь полную версию из
+    // кэша принимаем ТОЛЬКО с действительной подписью сервера, привязанной к
+    // этому рабочему месту и сроку.
+    if (data.licensed) {
+      const v = verifySignedLicense(data);
+      if (v === false) {
+        // Подпись есть, но неверная/чужая/просроченная — это подделка.
+        return { licensed: false };
+      }
+      if (v === null) {
+        // Подписи в кэше нет вовсе. Это либо кэш, сохранённый прежней версией
+        // программы (до введения подписи), либо ручная правка. Отличить их
+        // локально нельзя, поэтому такой кэш НЕ считаем лицензией — но и не
+        // блокируем: программа сходит на сервер и мгновенно получит подписанный
+        // ответ. Реально работающий человек ничего не заметит, а «включатель»
+        // из консоли ничего не добьётся.
+        return null;
+      }
+    }
     return data;
   } catch { return null; }
 }
@@ -547,10 +663,16 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
     offline:   !!data.offline,
     daysLeft:  data.days_left,
     expiresAt: data.expires_at ?? undefined,
+    signed:    data.signed && data.signed.payload && data.signed.sig ? data.signed : undefined,
     // Планируем следующее обращение к серверу по реальному сроку ключа:
     // годовой ключ — раз в неделю, истекающий — каждый запуск.
     nextCheckAt: data.licensed ? calcNextCheckAt(data.expires_at) : undefined,
   };
+  // Подмена ответа сервера через прокси/DevTools: если пришла подпись и она
+  // НЕ сходится — ответу верить нельзя, полную версию не включаем.
+  if (info.licensed && !serverResponseTrusted(info)) {
+    return { licensed: false };
+  }
   saveCache(info);
   return info;
 }
@@ -626,8 +748,13 @@ export async function activateLicense(
     owner: data.owner,
     seats: data.seats,
     expiresAt: data.expires_at ?? undefined,
+    signed: data.signed && data.signed.payload && data.signed.sig ? data.signed : undefined,
     nextCheckAt: calcNextCheckAt(data.expires_at),
   };
+  // Подпись пришла, но не сходится — активацию не принимаем (подмена ответа).
+  if (!serverResponseTrusted(info)) {
+    throw new Error("Ответ сервера не прошёл проверку подписи");
+  }
   saveCache(info);
   return info;
 }

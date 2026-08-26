@@ -42,6 +42,105 @@ def validate_key(key: str) -> bool:
     return bool(re.match(r"^PVS-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}-[A-Z0-9]{4}$", key))
 
 
+def _b64url(data: bytes) -> str:
+    import base64
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _decode_priv_key(s: str) -> bytes:
+    """Декодирование приватного ключа Ed25519 из секрета (тот же формат, что
+    в admin-licenses: base64/base64url/hex, терпимо к пробелам)."""
+    import base64
+    conv = s.replace("-", "+").replace("_", "/")
+    b64chars = re.sub(r"[^A-Za-z0-9+/]", "", conv)
+    std = b64chars.rstrip("=")
+    pad = "=" * (-len(std) % 4)
+    try:
+        raw = base64.b64decode(std + pad)
+        if len(raw) >= 32:
+            return raw
+    except Exception:
+        pass
+    try:
+        hexs = re.sub(r"[^0-9a-fA-F]", "", s)
+        raw = bytes.fromhex(hexs)
+        if len(raw) >= 32:
+            return raw
+    except Exception:
+        pass
+    raise ValueError("bad_private_key_format")
+
+
+def sign_license(payload: dict) -> dict:
+    """
+    Подписывает лицензионный ответ приватным ключом Ed25519.
+
+    ЗАЧЕМ. Клиент кэширует лицензию в localStorage. Без подписи любой мог
+    вписать туда licensed:true и включить полную версию одной строкой в
+    консоли. Теперь сервер отдаёт вместе с ответом канонический payload и
+    его подпись; клиент проверяет её ПУБЛИЧНЫМ ключом (тем же, что и для
+    аварийного ключа) при каждой загрузке кэша. Подделать нельзя — приватный
+    ключ есть только на сервере.
+
+    payload привязан к fingerprint рабочего места и сроку (exp), поэтому
+    подписанный ответ нельзя ни подделать, ни перенести на другой ПК, ни
+    продлить после окончания.
+
+    Возвращает {"payload": <b64url каноничного JSON>, "sig": <b64url подписи>}.
+    Если приватный ключ не задан — возвращает пусто (клиент тогда работает как
+    раньше, по TLS-доверию; защита просто не включится).
+    """
+    priv_b64 = os.environ.get("OFFLINE_KEY_PRIVATE", "")
+    if not priv_b64.strip():
+        print("[license] OFFLINE_KEY_PRIVATE not set — response left unsigned")
+        return {}
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+        raw = _decode_priv_key(priv_b64)
+        if len(raw) > 32:
+            raw = raw[:32]
+        sk = Ed25519PrivateKey.from_private_bytes(raw)
+        payload_bytes = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
+        sig = sk.sign(payload_bytes)
+        return {"payload": _b64url(payload_bytes), "sig": _b64url(sig)}
+    except Exception as e:
+        print(f"[license] sign_license failed: {e}")
+        return {}
+
+
+def signed_license_body(*, fingerprint: str, licensed: bool, key: str,
+                        owner: str, expires_at, extra: dict) -> dict:
+    """
+    Собирает ответ о лицензии вместе с подписью.
+
+    Канонический payload содержит ровно те поля, на которые клиент опирается
+    при разблокировке: отпечаток места, факт лицензии, ключ, срок и момент
+    выдачи. Именно эти поля подписываются и проверяются на клиенте.
+    """
+    iat = int(datetime.now(timezone.utc).timestamp())
+    exp_iso = expires_at.isoformat() if expires_at else None
+    signed_payload = {
+        "v": 1,
+        "fp": fp_hash(fingerprint),
+        "licensed": bool(licensed),
+        "key": key,
+        "owner": owner,
+        "exp": exp_iso,
+        "iat": iat,
+    }
+    body = {
+        "licensed": bool(licensed),
+        "key": key,
+        "owner": owner,
+        "expires_at": exp_iso,
+        **extra,
+    }
+    sig = sign_license(signed_payload)
+    if sig:
+        body["signed"] = sig
+    return body
+
+
 def fp_hash(raw: str) -> str:
     return hashlib.sha256(raw.encode()).hexdigest()[:64]
 
@@ -333,14 +432,14 @@ def handler(event: dict, context) -> dict:
         # expires_at отдаём клиенту, чтобы он знал реальный срок ключа и не
         # спрашивал сервер каждый запуск: при ключе на год достаточно одной
         # проверки в неделю (см. src/lib/license.ts, nextCheckAt).
-        return resp(200, {
-            "licensed": True,
-            "key": key,
-            "owner": owner,
-            "seats": {"max": max_seats, "used": int(used_seats)},
-            "expires_at": expires_at.isoformat() if expires_at else None,
-            "fingerprint_updated": hw_restored,
-        })
+        return resp(200, signed_license_body(
+            fingerprint=fingerprint, licensed=True, key=key, owner=owner,
+            expires_at=expires_at,
+            extra={
+                "seats": {"max": max_seats, "used": int(used_seats)},
+                "fingerprint_updated": hw_restored,
+            },
+        ))
 
     # ── activate ───────────────────────────────────────────────────────────────
     if action == "activate":
@@ -497,16 +596,16 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         conn.close()
 
-        return resp(200, {
-            "licensed": True,
-            "key": license_key,
-            "owner": owner,
-            "seats": {"max": max_seats, "used": int(used_seats)},
-            # Срок ключа — чтобы программа сразу знала, когда её снова проверять
-            # (годовой ключ достаточно подтверждать раз в неделю).
-            "expires_at": expires_at.isoformat() if expires_at else None,
-            "fingerprint_updated": hw_restored,
-        })
+        # Срок ключа — чтобы программа сразу знала, когда её снова проверять
+        # (годовой ключ достаточно подтверждать раз в неделю).
+        return resp(200, signed_license_body(
+            fingerprint=fingerprint, licensed=True, key=license_key, owner=owner,
+            expires_at=expires_at,
+            extra={
+                "seats": {"max": max_seats, "used": int(used_seats)},
+                "fingerprint_updated": hw_restored,
+            },
+        ))
 
     # ── heartbeat ───────────────────────────────────────────────────────────────
     # Лёгкий пинг «я жива»: обновляет last_seen_at, версию, IP и активные модули.

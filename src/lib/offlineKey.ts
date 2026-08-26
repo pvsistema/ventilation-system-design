@@ -34,7 +34,7 @@ export interface OfflineKeyInfo {
   reason?: string;      // причина невалидности
 }
 
-function b64urlToBytes(s: string): Uint8Array {
+export function b64urlToBytes(s: string): Uint8Array {
   const pad = s.length % 4 === 0 ? "" : "=".repeat(4 - (s.length % 4));
   const b64 = (s + pad).replace(/-/g, "+").replace(/_/g, "/");
   const bin = atob(b64);
@@ -46,6 +46,30 @@ function b64urlToBytes(s: string): Uint8Array {
 /** Похоже ли значение на аварийный оффлайн-ключ (по префиксу). */
 export function isOfflineKey(key: string): boolean {
   return key.trim().startsWith(OFFLINE_PREFIX);
+}
+
+/**
+ * Проверяет подпись Ed25519 произвольного набора байт ТЕМ ЖЕ публичным ключом,
+ * что и аварийный ключ. Используется для проверки подписи онлайн-лицензии
+ * (см. license.ts): сервер подписывает ответ приватным ключом, клиент —
+ * проверяет здесь, без обращения к серверу.
+ *
+ * payloadB64 и sigB64 — base64url. Возвращает true, только если подпись верна.
+ */
+export function verifySignedPayload(payloadB64: string, sigB64: string): boolean {
+  try {
+    const payloadBytes = b64urlToBytes(payloadB64);
+    const sig = b64urlToBytes(sigB64);
+    const pub = b64urlToBytes(PUBLIC_KEY_B64);
+    return ed25519Verify(sig, payloadBytes, pub);
+  } catch {
+    return false;
+  }
+}
+
+/** Декодирует base64url-payload в текст (для чтения подписанного JSON). */
+export function decodeB64urlText(payloadB64: string): string {
+  return new TextDecoder().decode(b64urlToBytes(payloadB64));
 }
 
 /**
