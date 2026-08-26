@@ -110,6 +110,34 @@ export interface OpoNetworkSummary {
   solidBulkheadsCount: number;
   /** Разбивка вентиляционных устройств по видам — для расшифровки. */
   byType: { type: BulkheadType; label: string; count: number }[];
+  /** Вентиляторы по типам установки: ГВУ, ВВУ, ВМП. */
+  fans: OpoFanGroup[];
+  /** Всего вентиляторов на схеме, шт (с учётом работающих в параллель). */
+  fansTotal: number;
+}
+
+/** Тип вентиляторной установки. */
+export type FanKind = "ГВУ" | "ВВУ" | "ВМП";
+
+/** Порядок вывода — от главных установок к местным, как в документах. */
+export const FAN_KIND_ORDER: FanKind[] = ["ГВУ", "ВВУ", "ВМП"];
+
+export const FAN_KIND_LABELS: Record<FanKind, string> = {
+  "ГВУ": "Главные вентиляторные установки (ГВУ)",
+  "ВВУ": "Вспомогательные вентиляторные установки (ВВУ)",
+  "ВМП": "Вентиляторы местного проветривания (ВМП)",
+};
+
+/** Вентиляторы одного типа установки со списком названий. */
+export interface OpoFanGroup {
+  kind: FanKind;
+  label: string;
+  /** Количество вентиляторов, шт (агрегаты в параллель посчитаны отдельно). */
+  count: number;
+  /** Названия установок с количеством одинаковых. */
+  names: { name: string; count: number }[];
+  /** Из них остановлено, шт. */
+  stoppedCount: number;
 }
 
 const TYPE_LABELS: Record<BulkheadType, string> = {
@@ -162,6 +190,8 @@ export function computeOpoNetwork(
   let ventDevicesCount = 0;
   let solidBulkheadsCount = 0;
   const counts = new Map<BulkheadType, number>();
+  // Вентиляторы: по типу установки → названия → количество.
+  const fanAgg = new Map<FanKind, { count: number; stopped: number; names: Map<string, number> }>();
 
   for (const b of branches) {
     if (b.isVentPipeBranch) {
@@ -177,6 +207,22 @@ export function computeOpoNetwork(
       }
     }
 
+    // ─── Вентиляторы ────────────────────────────────────────────────────
+    // Один вентилятор = одна ветвь с hasFan. Если на установке работает
+    // несколько агрегатов в параллель (fanParallel), считаем каждый: в
+    // документах ОПО указывается число машин, а не число точек на схеме.
+    if (b.hasFan) {
+      const kind: FanKind = FAN_KIND_ORDER.includes(b.fanType as FanKind)
+        ? (b.fanType as FanKind) : "ГВУ";
+      const units = Math.max(1, Math.round(Number(b.fanParallel) || 1));
+      let g = fanAgg.get(kind);
+      if (!g) { g = { count: 0, stopped: 0, names: new Map() }; fanAgg.set(kind, g); }
+      g.count += units;
+      if (b.fanStopped) g.stopped += units;
+      const nm = (b.fanName || "").trim() || "Без названия";
+      g.names.set(nm, (g.names.get(nm) ?? 0) + units);
+    }
+
     const t = resolveBulkheadType(b, mineBulkheads);
     if (t) {
       counts.set(t, (counts.get(t) ?? 0) + 1);
@@ -189,6 +235,23 @@ export function computeOpoNetwork(
     .map(([type, count]) => ({ type, label: TYPE_LABELS[type], count }))
     .sort((a, b) => b.count - a.count);
 
+  // Группы вентиляторов в фиксированном порядке ГВУ → ВВУ → ВМП.
+  const fans: OpoFanGroup[] = FAN_KIND_ORDER
+    .filter((k) => fanAgg.has(k))
+    .map((kind) => {
+      const g = fanAgg.get(kind)!;
+      return {
+        kind,
+        label: FAN_KIND_LABELS[kind],
+        count: g.count,
+        stoppedCount: g.stopped,
+        names: Array.from(g.names.entries())
+          .map(([name, count]) => ({ name, count }))
+          .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, "ru")),
+      };
+    });
+  const fansTotal = fans.reduce((s, g) => s + g.count, 0);
+
   return {
     workingsLengthM,
     workingsCount,
@@ -196,6 +259,8 @@ export function computeOpoNetwork(
     ventDevicesCount,
     solidBulkheadsCount,
     byType,
+    fans,
+    fansTotal,
   };
 }
 

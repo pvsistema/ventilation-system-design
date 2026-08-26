@@ -187,7 +187,48 @@ export default function OpoDataDialog({ data, onChange, summary, horizons, onClo
               <SummaryRow
                 label="Перемычки глухие"
                 value={`${summary.solidBulkheadsCount} шт.`} />
+              <div className="border-t border-gray-200" />
+              <SummaryRow
+                label="Вентиляторные установки"
+                hint="ГВУ, ВВУ и ВМП — с учётом агрегатов в параллель"
+                value={`${summary.fansTotal} шт.`} />
             </div>
+
+            {/* Вентиляторы: количество по типам установок и названия машин */}
+            {summary.fans.length > 0 && (
+              <div className="mt-1.5 rounded px-2.5 py-1.5"
+                style={{ background: "var(--c-s2, #fafafa)", border: "1px solid #e5e7eb" }}>
+                {summary.fans.map((g, gi) => (
+                  <div key={g.kind}>
+                    {gi > 0 && <div className="border-t border-gray-200" />}
+                    <div className="py-1">
+                      <div className="flex items-start gap-2">
+                        <span className="text-[11px] text-gray-600 flex-1 leading-tight">
+                          {g.label}
+                          {g.stoppedCount > 0 && (
+                            <span className="block text-[10px] text-amber-700">
+                              остановлено: {g.stoppedCount} шт.
+                            </span>
+                          )}
+                        </span>
+                        <span className="text-[11px] font-semibold text-gray-800 whitespace-nowrap">
+                          {g.count} шт.
+                        </span>
+                      </div>
+                      <div className="mt-0.5 flex flex-wrap gap-1">
+                        {g.names.map((n) => (
+                          <span key={n.name}
+                            className="text-[10px] px-1.5 py-0.5 rounded"
+                            style={{ background: "#e0e7ff", color: "#3730a3" }}>
+                            {n.name}{n.count > 1 ? ` × ${n.count}` : ""}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
 
             {/* Расшифровка по видам — чтобы цифры можно было проверить */}
             {summary.byType.length > 0 && (
