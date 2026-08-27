@@ -1,5 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// canvasRenderer.ts — Canvas 2D рендерер для больших схем (>CANVAS_THRESHOLD ветвей)
+// canvasRenderer.ts — Canvas 2D рендерер для больших схем (>CANVAS_THRESHOLD ветвей).
+// Порог 400: выше него схема рисуется одним холстом, что заметно отзывчивее
+// тысяч отдельных элементов. Значение настраивается пользователем в панели.
 // Математика проекции полностью переиспользуется из topology.ts
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength, sectionKind, SECTION_KIND_COLORS } from "./topology";
@@ -7,7 +9,7 @@ import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
 
-export const CANVAS_THRESHOLD = 800;
+export const CANVAS_THRESHOLD = 400;
 
 export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
 

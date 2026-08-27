@@ -10,6 +10,7 @@ import {
   surveyXYZ, isNodeMoved,
   type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
 } from "@/lib/topology";
+import { CANVAS_THRESHOLD } from "@/lib/canvasRenderer";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { MS_IND_BG_DEFAULT, FAN_IND_BG_DEFAULT } from "@/lib/msIndicatorStyle";
 import IndicatorBgPicker from "@/components/cad/IndicatorBgPicker";
@@ -1228,7 +1229,15 @@ export default function CadPage() {
   const [canvasThreshold, setCanvasThreshold] = useState<number>(() => {
     const raw = localStorage.getItem("vent-cad/canvas-threshold");
     const n = raw ? parseInt(raw, 10) : NaN;
-    return Number.isFinite(n) && n >= 100 ? n : 800;
+    // Порог снижен с 800 до 400: на схемах средней величины быстрая отрисовка
+    // заметно отзывчивее. Старое значение 800 хранится на устройстве, поэтому
+    // разово переносим именно ЕГО — осознанно выставленные вручную числа
+    // (например 1500) не трогаем, иначе настройка пользователя пропала бы.
+    if (n === 800 && localStorage.getItem("vent-cad/canvas-threshold-migrated") !== "1") {
+      try { localStorage.setItem("vent-cad/canvas-threshold-migrated", "1"); } catch { /* ignore */ }
+      return CANVAS_THRESHOLD;
+    }
+    return Number.isFinite(n) && n >= 100 ? n : CANVAS_THRESHOLD;
   });
   useEffect(() => {
     try { localStorage.setItem("vent-cad/canvas-threshold", String(canvasThreshold)); } catch { /* ignore */ }
@@ -12938,7 +12947,7 @@ export default function CadPage() {
                   {thresholdOpen && (
                     <div className="mt-2">
                       <div className="flex items-center justify-end mb-1">
-                        <button onClick={() => setCanvasThreshold(800)}
+                        <button onClick={() => setCanvasThreshold(CANVAS_THRESHOLD)}
                           className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200">
                           Сброс
                         </button>
