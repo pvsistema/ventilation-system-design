@@ -5,14 +5,20 @@
 они лежат на Яндекс.Диске. Мы храним только публичную ссылку, а прямую ссылку
 на скачивание выдаём свежую при каждом запросе (они у Яндекса временные).
 
-GET  /                      → версия + свежие прямые ссылки на скачивание
+GET  /                      → версия + контрольная сумма и подпись ядра
 GET  /  ?file=exe           → редирект на свежую прямую ссылку установщика
 GET  /  ?file=server        → редирект на свежую прямую ссылку расчётного ядра
-POST /  action=set_url      → сохранить публичную ссылку Я.Диска + версию
+POST /  action=set_url      → сохранить публичную ссылку Я.Диска + версию;
+                              для ядра дополнительно считает SHA-256 файла и
+                              подписывает её приватным ключом Ed25519 — программа
+                              проверит целостность обновления перед установкой
 POST /  action=set_version  → обновить только номер версии и заметки
 """
 import json
 import os
+import re
+import hashlib
+import base64
 import urllib.request
 import urllib.parse
 import boto3
@@ -43,6 +49,8 @@ def get_version_info(s3):
         "notes":           "",
         "exe_public_url":  "",   # публичная ссылка Я.Диска на установщик
         "server_public_url": "", # публичная ссылка Я.Диска на расчётное ядро
+        "server_sha256":   "",   # SHA-256 подлинного server.exe (проверка целостности)
+        "server_sig":      "",   # подпись хэша ядра приватным ключом Ed25519
     }
     try:
         obj    = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
@@ -85,6 +93,72 @@ def resolve_download_url(src_url: str) -> str:
 def check_admin(event):
     password = (event.get("headers") or {}).get("X-Admin-Password", "")
     return password == os.environ.get("ADMIN_PASSWORD", "")
+
+
+# ── Подпись файла обновления ─────────────────────────────────────────────────
+def _b64url(data: bytes) -> str:
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+
+def _decode_priv_key(s: str) -> bytes:
+    """Приватный ключ Ed25519 из секрета OFFLINE_KEY_PRIVATE (base64/hex)."""
+    conv = s.replace("-", "+").replace("_", "/")
+    b64chars = re.sub(r"[^A-Za-z0-9+/]", "", conv)
+    std = b64chars.rstrip("=")
+    pad = "=" * (-len(std) % 4)
+    try:
+        raw = base64.b64decode(std + pad)
+        if len(raw) >= 32:
+            return raw
+    except Exception:
+        pass
+    raw = bytes.fromhex(re.sub(r"[^0-9a-fA-F]", "", s))
+    if len(raw) >= 32:
+        return raw
+    raise ValueError("bad_private_key_format")
+
+
+def sign_bytes(data: bytes) -> str:
+    """
+    Подписывает данные приватным ключом Ed25519 (тем же, что для лицензий).
+    Возвращает подпись в base64url или "" если ключ не задан.
+    """
+    priv_b64 = os.environ.get("OFFLINE_KEY_PRIVATE", "")
+    if not priv_b64.strip():
+        return ""
+    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    raw = _decode_priv_key(priv_b64)
+    if len(raw) > 32:
+        raw = raw[:32]
+    sk = Ed25519PrivateKey.from_private_bytes(raw)
+    return _b64url(sk.sign(data))
+
+
+def hash_and_sign_file(direct_url: str) -> tuple:
+    """
+    Скачивает файл по прямой ссылке, считает SHA-256 и подписывает хэш.
+
+    ЗАЧЕМ. При обновлении расчётного ядра десктоп раньше проверял скачанный
+    server.exe лишь на сигнатуру «MZ» — подменив ответ, можно было подсунуть
+    любой exe. Теперь мы фиксируем контрольную сумму подлинного файла и
+    подписываем её приватным ключом. Программа сверит сумму скачанного файла и
+    проверит подпись публичным ключом — подделать нельзя.
+
+    Возвращает (sha256_hex, sig_b64url). Хэш считается потоково, файл целиком
+    в память не грузится.
+    """
+    req = urllib.request.Request(direct_url, headers={"User-Agent": "Mozilla/5.0"})
+    h = hashlib.sha256()
+    with urllib.request.urlopen(req, timeout=300) as r:
+        while True:
+            chunk = r.read(1024 * 1024)
+            if not chunk:
+                break
+            h.update(chunk)
+    digest_hex = h.hexdigest()
+    # Подписываем именно строку hex-хэша: её же проверяет клиент.
+    sig = sign_bytes(digest_hex.encode())
+    return digest_hex, sig
 
 
 def handler(event: dict, context) -> dict:
@@ -144,6 +218,10 @@ def handler(event: dict, context) -> dict:
             "version":        info["version"],
             "server_version": info["server_version"],
             "notes":          info["notes"],
+            # Контроль целостности расчётного ядра: программа сверит сумму
+            # скачанного файла и проверит подпись публичным ключом.
+            "server_sha256":  info.get("server_sha256", ""),
+            "server_sig":     info.get("server_sig", ""),
         }
         if params.get("with_links") in ("1", "true", "yes"):
             try:
@@ -191,6 +269,23 @@ def handler(event: dict, context) -> dict:
             else:
                 info["server_public_url"] = src_url
                 info["server_version"]    = body.get("server_version", info.get("server_version", "1.0.0"))
+                # Фиксируем контрольную сумму подлинного ядра и подписываем её.
+                # Скачиваем файл один раз здесь (в момент публикации), чтобы
+                # программа при обновлении могла проверить целостность и подпись.
+                try:
+                    direct = resolve_download_url(src_url)
+                    sha256, sig = hash_and_sign_file(direct)
+                    info["server_sha256"] = sha256
+                    info["server_sig"]    = sig
+                    if not sig:
+                        # Ключ подписи не настроен — не публикуем «полузащищённое»
+                        # обновление, чтобы клиент не отверг его при проверке.
+                        return {"statusCode": 500, "headers": CORS,
+                                "body": json.dumps({"error": "Подпись обновления не настроена (OFFLINE_KEY_PRIVATE)"},
+                                                   ensure_ascii=False)}
+                except Exception as e:
+                    return {"statusCode": 502, "headers": CORS,
+                            "body": json.dumps({"error": f"Не удалось подписать ядро: {e}"}, ensure_ascii=False)}
             save_version_info(s3, info)
             return {"statusCode": 200, "headers": CORS,
                     "body": json.dumps({"ok": True, "info": info}, ensure_ascii=False)}

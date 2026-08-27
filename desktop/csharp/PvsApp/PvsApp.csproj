@@ -29,6 +29,9 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2739.15" />
+    <!-- Проверка подписи Ed25519 обновления расчётного ядра. Чистый managed-
+         пакет без нативных зависимостей — не усложняет сборку. -->
+    <PackageReference Include="BouncyCastle.Cryptography" Version="2.4.0" />
   </ItemGroup>
 
 </Project>

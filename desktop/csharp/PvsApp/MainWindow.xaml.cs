@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Http;
 using System.Reflection;
 using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -13,6 +14,8 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
+using Org.BouncyCastle.Crypto.Parameters;
+using Org.BouncyCastle.Crypto.Signers;
 
 namespace PvsApp;
 
@@ -147,11 +150,22 @@ public partial class MainWindow : Window
             using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
             var bytes = await httpLarge.GetByteArrayAsync($"{VersionCheckUrl}?file=server");
 
-            // Проверка целостности: сервер должен быть валидным Windows-EXE
-            // (сигнатура "MZ") и разумного размера. Если CDN вернул страницу
-            // ошибки или обрезал закачку, старый рабочий server.exe не трогаем.
+            // Базовая проверка: валидный Windows-EXE (сигнатура "MZ") и размер.
+            // Отсекает страницу ошибки CDN или оборванную закачку.
             if (bytes.Length < 1_000_000 || bytes[0] != 0x4D || bytes[1] != 0x5A)
                 return;
+
+            // ЗАЩИТА ОТ ПОДМЕНЫ ЯДРА. Раньше проверялась лишь сигнатура «MZ» —
+            // подменив ответ, можно было подсунуть любой exe. Теперь сервер
+            // присылает контрольную сумму подлинного ядра и её подпись; здесь
+            // сверяем сумму скачанного файла и проверяем подпись публичным
+            // ключом. Не сошлось или подписи нет — обновление отвергаем и
+            // продолжаем работать на прежней рабочей версии.
+            if (!VerifyServerBinary(bytes, info?.ServerSha256, info?.ServerSig))
+            {
+                LogIntegrity("Обновление ядра отклонено: не прошла проверка целостности/подписи");
+                return;
+            }
 
             string tmpPath = serverExe + ".new";
             await File.WriteAllBytesAsync(tmpPath, bytes);
@@ -189,6 +203,71 @@ public partial class MainWindow : Window
             }
             catch { }
         }
+    }
+
+    // ── Проверка целостности и подписи обновления ядра ──────────────────────────
+
+    // Публичный ключ Ed25519 (base64url, 32 байта) — пара к серверному секрету
+    // OFFLINE_KEY_PRIVATE. Тот же ключ проверяет лицензии и аварийные ключи.
+    // НЕ секретный: им можно только проверять подпись, но не создавать её.
+    private const string UpdatePublicKeyB64Url = "MsyBGg0UlSyEns_shvQD_Ob82SJ-9Klds-naVhQl9hc";
+
+    /// <summary>
+    /// Проверяет скачанное ядро: совпадает ли SHA-256 с заявленным сервером и
+    /// подписан ли этот хэш подлинным приватным ключом. Возвращает true только
+    /// если оба условия выполнены. Пустой хэш или подпись — тоже отказ: без
+    /// подтверждённой целостности обновление ставить нельзя.
+    /// </summary>
+    private static bool VerifyServerBinary(byte[] data, string? expectedSha256, string? sigB64Url)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(expectedSha256) || string.IsNullOrWhiteSpace(sigB64Url))
+                return false;
+
+            // 1. Контрольная сумма скачанного файла.
+            string actual = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+            if (!string.Equals(actual, expectedSha256.Trim().ToLowerInvariant(), StringComparison.Ordinal))
+                return false;
+
+            // 2. Подпись hex-строки хэша (её и подписывает сервер).
+            byte[] pub = FromBase64Url(UpdatePublicKeyB64Url);
+            byte[] sig = FromBase64Url(sigB64Url.Trim());
+            byte[] msg = Encoding.ASCII.GetBytes(actual);
+
+            var verifier = new Ed25519Signer();
+            verifier.Init(false, new Ed25519PublicKeyParameters(pub, 0));
+            verifier.BlockUpdate(msg, 0, msg.Length);
+            return verifier.VerifySignature(sig);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static byte[] FromBase64Url(string s)
+    {
+        string b64 = s.Replace('-', '+').Replace('_', '/');
+        switch (b64.Length % 4)
+        {
+            case 2: b64 += "=="; break;
+            case 3: b64 += "="; break;
+        }
+        return Convert.FromBase64String(b64);
+    }
+
+    private static void LogIntegrity(string message)
+    {
+        try
+        {
+            string log = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "PVS", "update.log");
+            Directory.CreateDirectory(Path.GetDirectoryName(log)!);
+            File.AppendAllText(log, $"{DateTime.Now:o}  {message}\n");
+        }
+        catch { }
     }
 
     private void StartServerProcess()
@@ -1182,6 +1261,13 @@ public class VersionInfo
 
     [System.Text.Json.Serialization.JsonPropertyName("server_url")]
     public string? ServerUrl { get; set; }
+
+    // Контроль целостности расчётного ядра при обновлении.
+    [System.Text.Json.Serialization.JsonPropertyName("server_sha256")]
+    public string? ServerSha256 { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("server_sig")]
+    public string? ServerSig { get; set; }
 
     public string? Notes { get; set; }
 }
