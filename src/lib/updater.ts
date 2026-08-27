@@ -16,6 +16,14 @@ export interface RemoteVersion {
   downloadUrl: string;
   /** SHA-256 подлинного установщика — показывается на странице скачивания. */
   exeSha256: string;
+  /**
+   * Минимальная безопасная версия. Если текущая сборка ниже — обновление
+   * обязательно: показываем блокирующее окно вместо закрываемого баннера.
+   * Пустая строка — требования нет.
+   */
+  minSecureVersion: string;
+  /** Короткое пояснение, почему обновление обязательно. */
+  securityNotes: string;
 }
 
 /** Десктопная сборка (WebView2/C#) инжектирует window.__IS_DESKTOP__ = true. */
@@ -36,6 +44,19 @@ export function isNewerVersion(remote: string, local: string): boolean {
     if (a < b) return false;
   }
   return false;
+}
+
+/**
+ * Требуется ли ОБЯЗАТЕЛЬНОЕ обновление по безопасности.
+ * true — текущая сборка ниже минимальной безопасной, в ней осталась
+ * устранённая уязвимость, и работать на ней нельзя.
+ */
+export function isSecurityUpdateRequired(
+  minSecure: string,
+  local: string,
+): boolean {
+  if (!minSecure.trim()) return false;
+  return isNewerVersion(minSecure, local);
 }
 
 // Кэш ответа о версии. Раньше её независимо спрашивали баннер обновления,
@@ -74,6 +95,8 @@ export async function fetchRemoteVersion(force = false): Promise<RemoteVersion> 
       notes: String(d.notes || ""),
       downloadUrl: String(d.download_url || ""),
       exeSha256: String(d.exe_sha256 || ""),
+      minSecureVersion: String(d.min_secure_version || ""),
+      securityNotes: String(d.security_notes || ""),
     };
     versionCache = { at: Date.now(), data };
     return data;

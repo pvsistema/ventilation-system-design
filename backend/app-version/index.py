@@ -54,6 +54,12 @@ def get_version_info(s3):
         "server_sig":      "",   # подпись хэша ядра приватным ключом Ed25519
         "exe_sha256":      "",   # SHA-256 подлинного установщика PVS-Setup.exe
         "exe_sig":         "",   # подпись хэша установщика приватным ключом Ed25519
+        # Минимальная БЕЗОПАСНАЯ версия. Всё, что ниже, содержит устранённую
+        # уязвимость: такие сборки показывают блокирующее окно «обновитесь»
+        # вместо обычного баннера, который можно закрыть.
+        "min_secure_version": "",
+        # Пояснение для пользователя, почему обновление обязательно.
+        "security_notes":     "",
     }
     try:
         obj    = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
@@ -228,6 +234,10 @@ def handler(event: dict, context) -> dict:
             # То же для установщика — используется для отметки в админ-панели.
             "exe_sha256":     info.get("exe_sha256", ""),
             "exe_sig":        info.get("exe_sig", ""),
+            # Порог обязательного обновления по безопасности: сборки ниже
+            # этой версии обязаны обновиться (блокирующее окно).
+            "min_secure_version": info.get("min_secure_version", ""),
+            "security_notes":     info.get("security_notes", ""),
         }
         if params.get("with_links") in ("1", "true", "yes"):
             try:
@@ -251,6 +261,22 @@ def handler(event: dict, context) -> dict:
 
         body   = json.loads(event.get("body") or "{}")
         action = body.get("action")
+
+        # ── Порог обязательного обновления по безопасности ────────────────────
+        # Админ указывает версию, ниже которой работать небезопасно. Программы
+        # со старой сборкой покажут блокирующее окно с кнопкой «Обновить».
+        # Пустая строка снимает требование.
+        if action == "set_min_secure":
+            info = get_version_info(s3)
+            ver  = (body.get("min_secure_version") or "").strip()
+            if ver and not re.fullmatch(r"\d+(\.\d+)*", ver):
+                return {"statusCode": 400, "headers": CORS,
+                        "body": json.dumps({"error": "Версия вида 2.134.389"}, ensure_ascii=False)}
+            info["min_secure_version"] = ver
+            info["security_notes"]     = (body.get("security_notes") or "").strip()
+            save_version_info(s3, info)
+            return {"statusCode": 200, "headers": CORS,
+                    "body": json.dumps({"ok": True, "info": info}, ensure_ascii=False)}
 
         # ── Сохранить публичную ссылку Я.Диска + версию (без скачивания) ──────
         if action == "set_url":

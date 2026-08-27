@@ -100,6 +100,13 @@ export default function Admin() {
   const [srvStatus, setSrvStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
   const [srvErr, setSrvErr]             = useState("");
   const [srvUrl, setSrvUrl]             = useState("");
+  // Порог обязательного обновления по безопасности: версии ниже получают
+  // блокирующее окно вместо закрываемого баннера.
+  const [minSecure, setMinSecure]       = useState("");
+  const [secNotes, setSecNotes]         = useState("");
+  const [secStatus, setSecStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
+  const [secErr, setSecErr]             = useState("");
+
   const VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
 
   const loadLicenses = useCallback(async (pwd: string) => {
@@ -402,7 +409,37 @@ export default function Admin() {
         // То же для установщика — подпись подтверждает подлинность файла.
         exe_signed: !!(d.exe_sha256 && d.exe_sig),
       });
+      // Подтягиваем текущий порог безопасности, чтобы поля показывали
+      // действующее значение, а не пустоту.
+      setMinSecure(d.min_secure_version || "");
+      setSecNotes(d.security_notes || "");
     } catch { setCurrentVersion(null); }
+  };
+
+  // ── Сохранить порог обязательного обновления ──
+  const handleSaveMinSecure = async () => {
+    setSecStatus("uploading");
+    setSecErr("");
+    try {
+      const res = await fetch(VERSION_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "X-Admin-Password": password },
+        body: JSON.stringify({
+          action: "set_min_secure",
+          min_secure_version: minSecure.trim(),
+          security_notes: secNotes.trim(),
+        }),
+      });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
+      setSecStatus("ok");
+      // Порог изменился — сбрасываем кэш, чтобы программы узнали о требовании.
+      invalidateRemoteVersion();
+      setTimeout(() => setSecStatus("idle"), 2500);
+    } catch (err: unknown) {
+      setSecStatus("err");
+      setSecErr(err instanceof Error ? err.message : "Ошибка сохранения");
+    }
   };
 
   useEffect(() => { if (activeTab === "update") loadCurrentVersion(); }, [activeTab]);
@@ -570,6 +607,10 @@ export default function Admin() {
             handleUploadExeFromUrl={handleUploadExeFromUrl}
             handleUploadServerFromUrl={handleUploadServerFromUrl}
             inputCls={inputCls}
+            minSecure={minSecure} setMinSecure={setMinSecure}
+            secNotes={secNotes} setSecNotes={setSecNotes}
+            secStatus={secStatus} setSecStatus={setSecStatus} secErr={secErr}
+            handleSaveMinSecure={handleSaveMinSecure}
           />
         )}
 

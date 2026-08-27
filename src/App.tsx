@@ -38,6 +38,7 @@ const PageLoading = () => (
 import MobileStub from "./components/MobileStub";
 import { LicenseProvider } from "./context/LicenseContext";
 import AppUpdateBanner from "./components/AppUpdateBanner";
+import SecurityUpdateGate from "./components/SecurityUpdateGate";
 
 const queryClient = new QueryClient();
 
@@ -109,6 +110,7 @@ const App = () => {
           </Suspense>
         </Router>
         <AppUpdateBanner />
+        <SecurityUpdateGate />
       </LicenseProvider>
     </TooltipProvider>
   </QueryClientProvider>

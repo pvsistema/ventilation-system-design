@@ -27,6 +27,15 @@ interface UpdateTabProps {
   handleUploadExeFromUrl: () => void;
   handleUploadServerFromUrl: () => void;
   inputCls: string;
+  // Порог обязательного обновления по безопасности
+  minSecure: string;
+  setMinSecure: (v: string) => void;
+  secNotes: string;
+  setSecNotes: (v: string) => void;
+  secStatus: "idle" | "uploading" | "ok" | "err";
+  setSecStatus: (v: "idle" | "uploading" | "ok" | "err") => void;
+  secErr: string;
+  handleSaveMinSecure: () => void;
 }
 
 export default function UpdateTab({
@@ -34,6 +43,8 @@ export default function UpdateTab({
   updUrl, setUpdUrl, updStatus, setUpdStatus, updErr,
   srvVersion, setSrvVersion, srvUrl, setSrvUrl, srvStatus, setSrvStatus, srvErr,
   handleUploadExeFromUrl, handleUploadServerFromUrl, inputCls,
+  minSecure, setMinSecure, secNotes, setSecNotes,
+  secStatus, setSecStatus, secErr, handleSaveMinSecure,
 }: UpdateTabProps) {
   return (
   <div className="max-w-xl mx-auto">
@@ -154,6 +165,40 @@ export default function UpdateTab({
           className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
           style={{ background: "var(--c-purple-bg, #7c3aed)" }}>
           {srvStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Публикация...</> : <><Icon name="Cpu" size={14} />Обновить расчётное ядро</>}
+        </button>
+      </div>
+    </div>
+
+    {/* ── Обязательное обновление по безопасности ───────────────────────────
+        Версии НИЖЕ указанной получают блокирующее окно с кнопкой «Обновить»
+        вместо обычного баннера, который можно закрыть. */}
+    <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden mt-5">
+      <div className="px-5 py-3 border-b border-gray-100 flex items-center gap-2">
+        <Icon name="ShieldAlert" size={15} className="text-red-600" />
+        <span className="text-[13px] font-bold text-gray-700">Обязательное обновление (безопасность)</span>
+      </div>
+      <div className="p-5 space-y-3">
+        <div className="text-[11px] text-gray-500 leading-relaxed bg-amber-50 border border-amber-100 rounded-lg px-3 py-2.5">
+          Программы с версией <b>ниже</b> указанной покажут окно, которое нельзя
+          закрыть, — работать можно будет только после обновления. Используйте,
+          когда в старой сборке устранена уязвимость. Пустое поле снимает требование.
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Минимальная безопасная версия</label>
+          <input type="text" value={minSecure} onChange={e => { setMinSecure(e.target.value); setSecStatus("idle"); }}
+            className={inputCls} placeholder="2.134.389" />
+        </div>
+        <div>
+          <label className="block text-[11px] font-semibold text-gray-500 mb-1">Причина (видит пользователь)</label>
+          <input type="text" value={secNotes} onChange={e => { setSecNotes(e.target.value); setSecStatus("idle"); }}
+            className={inputCls} placeholder="Устранена уязвимость в проверке лицензии" />
+        </div>
+        {secStatus === "ok" && <div className="flex items-center gap-2 text-green-700 bg-green-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="CheckCircle" size={16} />Сохранено. Устаревшие версии получат требование обновиться.</div>}
+        {secStatus === "err" && <div className="flex items-start gap-2 text-red-700 bg-red-50 rounded-lg px-4 py-3 text-[12px]"><Icon name="AlertCircle" size={16} className="shrink-0 mt-0.5" />{secErr}</div>}
+        <button type="button" onClick={handleSaveMinSecure} disabled={secStatus === "uploading"}
+          className="w-full py-2.5 rounded-lg text-[13px] font-semibold text-white disabled:opacity-40 flex items-center justify-center gap-2"
+          style={{ background: "var(--c-red-bg, #dc2626)" }}>
+          {secStatus === "uploading" ? <><Icon name="Loader" size={14} className="animate-spin" />Сохранение...</> : <><Icon name="ShieldCheck" size={14} />Сохранить порог безопасности</>}
         </button>
       </div>
     </div>
