@@ -409,10 +409,12 @@ export default function Admin() {
         // То же для установщика — подпись подтверждает подлинность файла.
         exe_signed: !!(d.exe_sha256 && d.exe_sig),
       });
-      // Подтягиваем текущий порог безопасности, чтобы поля показывали
-      // действующее значение, а не пустоту.
-      setMinSecure(d.min_secure_version || "");
-      setSecNotes(d.security_notes || "");
+      // Подтягиваем текущий порог безопасности. Если он ещё не задан —
+      // подставляем текущую версию как готовое предложение: администратору
+      // остаётся нажать кнопку, а не вспоминать номер сборки вручную.
+      const savedMin = d.min_secure_version || "";
+      setMinSecure(savedMin || d.version || "");
+      setSecNotes(d.security_notes || (savedMin ? "" : "Устранена уязвимость в защите программы"));
     } catch { setCurrentVersion(null); }
   };
 
