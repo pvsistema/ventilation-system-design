@@ -8,7 +8,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { VERSION_URL, INSTALLER_URL } from "@/lib/updater";
+import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 
 interface VersionData {
   version: string;
@@ -25,15 +25,12 @@ export default function Download() {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(VERSION_URL, { cache: "no-store" });
-        const t = await r.text();
-        if (!t.trim().startsWith("{")) throw new Error("bad");
-        const d = JSON.parse(t);
+        const d = await fetchRemoteVersion();
         if (!cancelled) {
           setData({
             version: d.version || "—",
-            notes: d.notes || "",
-            exe_sha256: d.exe_sha256 || "",
+            notes: d.notes,
+            exe_sha256: d.exeSha256,
           });
         }
       } catch {

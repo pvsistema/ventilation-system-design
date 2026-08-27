@@ -14,6 +14,7 @@ import {
   type License, type OfflineKey, type Seat, type LicenseForm, type MonitoringData,
   adminApi, fmtDate, toInputDate, emptyForm,
 } from "@/pages/admin/adminTypes";
+import { invalidateRemoteVersion } from "@/lib/updater";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import LicensesTab from "@/pages/admin/LicensesTab";
 import LicenseDialogs from "@/pages/admin/LicenseDialogs";
@@ -420,6 +421,9 @@ export default function Admin() {
       const text = await res.text();
       if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
       setUpdStatus("ok");
+      // Опубликовали новую сборку — сбрасываем кэш версии, чтобы страница
+      // скачивания и баннер обновления сразу увидели свежие данные.
+      invalidateRemoteVersion();
       // Ответ содержит info с актуальными полями (в т.ч. exe_sha256/exe_sig) —
       // берём признак подписи оттуда, чтобы отметка сразу была верной.
       let exeSigned = false;

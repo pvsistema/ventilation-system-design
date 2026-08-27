@@ -21,7 +21,7 @@ def handler(event, context):
     """Генерирует ICO и PNG-иконки из логотипа, заливает в S3."""
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": {"Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type"}, "body": ""}
+            "Access-Control-Allow-Methods": "GET, OPTIONS", "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "86400"}, "body": ""}
 
     params = event.get("queryStringParameters") or {}
     source_url = params.get("url") or DEFAULT_SOURCE_URL

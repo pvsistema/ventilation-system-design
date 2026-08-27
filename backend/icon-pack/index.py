@@ -31,7 +31,7 @@ def handler(event, context):
         return {"statusCode": 200, "headers": {
             "Access-Control-Allow-Origin": "*",
             "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Headers": "Content-Type"}, "body": ""}
+            "Access-Control-Allow-Headers": "Content-Type", "Access-Control-Max-Age": "86400"}, "body": ""}
 
     with urllib.request.urlopen(SOURCE_URL, timeout=20) as resp:
         raw = resp.read()

@@ -14,6 +14,8 @@ export interface RemoteVersion {
   version: string;
   notes: string;
   downloadUrl: string;
+  /** SHA-256 подлинного установщика — показывается на странице скачивания. */
+  exeSha256: string;
 }
 
 /** Десктопная сборка (WebView2/C#) инжектирует window.__IS_DESKTOP__ = true. */
@@ -36,17 +38,53 @@ export function isNewerVersion(remote: string, local: string): boolean {
   return false;
 }
 
-/** Запрашивает у сервера актуальную версию. Бросает при ошибке сети/формата. */
-export async function fetchRemoteVersion(): Promise<RemoteVersion> {
-  const res = await fetch(VERSION_URL, { cache: "no-store" });
-  const text = await res.text();
-  if (!text.trim().startsWith("{")) throw new Error("bad response");
-  const d = JSON.parse(text);
-  return {
-    version: String(d.version || ""),
-    notes: String(d.notes || ""),
-    downloadUrl: String(d.download_url || ""),
-  };
+// Кэш ответа о версии. Раньше её независимо спрашивали баннер обновления,
+// окно «О программе», страница скачивания и админ-панель — при открытии
+// нескольких экранов подряд это давало поток одинаковых обращений к серверу.
+// Версия меняется редко, поэтому ответ живёт 5 минут, а параллельные вызовы
+// разделяют один запрос (дедупликация) вместо того, чтобы дублировать его.
+const VERSION_TTL_MS = 5 * 60 * 1000;
+let versionCache: { at: number; data: RemoteVersion } | null = null;
+let versionInFlight: Promise<RemoteVersion> | null = null;
+
+/** Сбрасывает кэш версии — после публикации новой сборки из админ-панели. */
+export function invalidateRemoteVersion(): void {
+  versionCache = null;
+  versionInFlight = null;
+}
+
+/**
+ * Запрашивает у сервера актуальную версию. Бросает при ошибке сети/формата.
+ * Ответ кэшируется на 5 минут; force = true запрашивает заново.
+ */
+export async function fetchRemoteVersion(force = false): Promise<RemoteVersion> {
+  if (!force && versionCache && Date.now() - versionCache.at < VERSION_TTL_MS) {
+    return versionCache.data;
+  }
+  // Запрос уже в пути — присоединяемся к нему, второй раз сервер не тревожим.
+  if (!force && versionInFlight) return versionInFlight;
+
+  const run = (async () => {
+    const res = await fetch(VERSION_URL, { cache: "no-store" });
+    const text = await res.text();
+    if (!text.trim().startsWith("{")) throw new Error("bad response");
+    const d = JSON.parse(text);
+    const data: RemoteVersion = {
+      version: String(d.version || ""),
+      notes: String(d.notes || ""),
+      downloadUrl: String(d.download_url || ""),
+      exeSha256: String(d.exe_sha256 || ""),
+    };
+    versionCache = { at: Date.now(), data };
+    return data;
+  })();
+
+  versionInFlight = run;
+  try {
+    return await run;
+  } finally {
+    if (versionInFlight === run) versionInFlight = null;
+  }
 }
 
 interface DesktopApi {
