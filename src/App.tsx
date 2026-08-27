@@ -24,6 +24,7 @@ import NotFound from "./pages/NotFound";
 // дробить нельзя, иначе появится задержка на главном сценарии.
 const Admin = lazy(() => import("./pages/Admin"));
 const Index = lazy(() => import("./pages/Index"));
+const Download = lazy(() => import("./pages/Download"));
 
 // Заставка на время подгрузки страницы (доли секунды на локальном диске).
 const PageLoading = () => (
@@ -100,6 +101,7 @@ const App = () => {
             <Routes>
               <Route path="/" element={<Cad />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/download" element={<Download />} />
               <Route path="/legacy" element={<Index />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
