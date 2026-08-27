@@ -229,8 +229,12 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
 
   // Начало координат сдвигаем в угол модели: координаты в файле
   // государственные (десятки тысяч метров) и уводят схему от рабочей области.
-  const minX = Math.min(...rawNodes.map(n => n.x));
-  const minY = Math.min(...rawNodes.map(n => n.y));
+  // Служебные точки (0, 0) в расчёт сдвига не берём — иначе вся схема
+  // уезжала бы в угол на десятки километров от начала координат.
+  const realNodes = rawNodes.filter(n => Math.abs(n.x) > 1e-6 || Math.abs(n.y) > 1e-6);
+  const base = realNodes.length > 0 ? realNodes : rawNodes;
+  const minX = Math.min(...base.map(n => n.x));
+  const minY = Math.min(...base.map(n => n.y));
 
   for (const rn of rawNodes) {
     if (rn.atm) atmCount++;
@@ -497,6 +501,10 @@ function isNodeAt(raw: Uint8Array, dv: DataView, o: number): boolean {
   const y = dv.getFloat64(o + 8, true);
   const z = dv.getFloat64(o + 16, true);
   if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return false;
+  // Нулевые X и Y — не узел, а служебный «хвост» за концом таблицы. У рудника
+  // Джусинский такая запись стояла последней: она тянула габарит схемы до
+  // 70 км, и таблица целиком отбраковывалась проверкой компактности.
+  if (Math.abs(x) < 1e-6 && Math.abs(y) < 1e-6) return false;
   if (Math.abs(x) > 1e7 || Math.abs(y) > 1e7 || z < -2000 || z > 5000) return false;
   const id = dv.getInt32(o - 4, true);
   return id > 0 && id < 200000;
@@ -525,6 +533,16 @@ function readNodes(raw: Uint8Array, dv: DataView, S: number, cnt: number, step: 
   }
   // Узлы шахты компактны; много нулевых точек означает, что шаг подобран неверно
   if (zeroXY > cnt * 0.05) return null;
+  // Габарит считаем по НАСТОЯЩИМ узлам, без нулевых точек: одна служебная
+  // запись с координатами (0, 0) в конце таблицы растягивала габарит до
+  // десятков километров, и вся схема отбраковывалась как «слишком большая».
+  const real = out.filter(nd => Math.abs(nd.x) > 1e-6 || Math.abs(nd.y) > 1e-6);
+  if (real.length > 0) {
+    const rxs = real.map(nd => nd.x);
+    const rys = real.map(nd => nd.y);
+    minX = Math.min(...rxs); maxX = Math.max(...rxs);
+    minY = Math.min(...rys); maxY = Math.max(...rys);
+  }
   if (maxX - minX > 50000 || maxY - minY > 50000) return null;
   const ids = new Set(out.map(n => n.id));
   if (ids.size < cnt * 0.9) return null;
@@ -535,8 +553,13 @@ function readBranches(raw: Uint8Array, dv: DataView, nodes: RawNode[], tail: num
   const pos = new Map<number, RawNode>();
   for (const n of nodes) pos.set(n.id, n);
 
+  // Число выработок лежит перед таблицей. Проверяем не только начало, но и
+  // КОНЕЦ поля: при неудачно подобранном шаге записи tail уходит за конец
+  // файла, и чтение падало с ошибкой «Offset is outside the bounds of the
+  // DataView» — импорт срывался целиком, хотя достаточно было отбросить
+  // неподходящий шаг и продолжить перебор.
   let expected = 0;
-  if (tail - 8 >= 0) {
+  if (tail >= 8 && tail - 4 <= raw.length) {
     const c = dv.getInt32(tail - 8, true);
     if (c >= 1 && c < 200000) expected = c;
   }
