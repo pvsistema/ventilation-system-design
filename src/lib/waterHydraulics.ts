@@ -328,6 +328,14 @@ export function calcWaterNetwork(
     addAdj(b.toId,   b.id, b.fromId);
   }
 
+  // ПРОИЗВОДИТЕЛЬНОСТЬ. Справочники «по номеру» строим один раз. Раньше обход
+  // сети искал ветвь и оба её узла перебором массива на КАЖДОМ шаге: на схеме
+  // в 13 000 труб это сотни тысяч переборов и заметное подвисание расчёта.
+  const branchById = new Map<string, typeof waterBranches[number]>();
+  for (const b of waterBranches) branchById.set(b.id, b);
+  const nodeById = new Map<string, typeof nodes[number]>();
+  for (const n of nodes) nodeById.set(n.id, n);
+
   // ─── Связность сети ─────────────────────────────────────────────────────────
   // Множество узлов, достижимых от заданного по ОТКРЫТЫМ трубам. Граф adj
   // построен только из waterBranches, поэтому закрытые вентили уже вырезаны:
@@ -448,12 +456,12 @@ export function calcWaterNetwork(
       for (const { branchId, neighborId } of edges) {
         if (tdVisited.has(neighborId)) continue;
 
-        const br = waterBranches.find(b => b.id === branchId)!;
+        const br = branchById.get(branchId)!;
         const R = pipeR.get(branchId) ?? 0;
 
         // Высотная поправка
-        const fromNode = nodes.find(n => n.id === br.fromId);
-        const toNode   = nodes.find(n => n.id === br.toId);
+        const fromNode = nodeById.get(br.fromId);
+        const toNode   = nodeById.get(br.toId);
         // Перепад высот берём с МАРКШЕЙДЕРСКИХ отметок: сдвиг узла на схеме
         // ради читаемости не должен менять гидростатический напор.
         const dz = fromNode && toNode

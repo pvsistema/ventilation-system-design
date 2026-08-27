@@ -632,6 +632,12 @@ export function generateSvg(opts: SvgExportOptions): string {
   }
 
   // ── Символы УО (schemaSymbols) ────────────────────────────────────────────
+  // ПРОИЗВОДИТЕЛЬНОСТЬ. Каждый символ и каждая выноска несколько раз искали
+  // свою ветвь перебором всего массива. На плане с тысячами условных
+  // обозначений это давало миллионы сравнений и надолго подвешивало выгрузку.
+  // Справочник строим один раз — он нужен и символам, и выноскам ниже.
+  const brById = new Map(branches.map(b => [b.id, b]));
+
   if (schemaSymbols.length > 0) {
     parts.push(`<g id="schema-symbols">`);
 
@@ -653,7 +659,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
 
       if (sym.branchId) {
-        const br = branches.find(b => b.id === sym.branchId);
+        const br = sym.branchId ? brById.get(sym.branchId) : undefined;
         const fPt = br ? projMap.get(br.fromId) : null;
         const tPt = br ? projMap.get(br.toId)   : null;
         if (!fPt || !tPt) continue; // ветвь/узлы не найдены — пропускаем символ
@@ -719,7 +725,7 @@ export function generateSvg(opts: SvgExportOptions): string {
         parts.push(`</g>`);
 
         // Индикаторы замерной станции
-        const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        const brMs = sym.branchId ? brById.get(sym.branchId) : null;
         const msLines: string[] = [];
         if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
         if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
@@ -839,7 +845,7 @@ export function generateSvg(opts: SvgExportOptions): string {
 
         // Индикаторы перемычки
         if (sym.branchId) {
-          const br = branches.find(b => b.id === sym.branchId);
+          const br = sym.branchId ? brById.get(sym.branchId) : undefined;
           if (br) {
             const uRes2 = getUnit(unitsConfig, "resistance");
             const uPres2 = getUnit(unitsConfig, "pressure");
@@ -883,7 +889,7 @@ export function generateSvg(opts: SvgExportOptions): string {
         const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
         const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
 
-        const brForFan = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        const brForFan = sym.branchId ? brById.get(sym.branchId) : null;
         const isFanStopped = sym.typeId === "fan" ? (brForFan?.fanStopped ?? false) : false;
         const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForFan?.fanType) : lt.svgContent;
 
@@ -1006,7 +1012,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const dash = `${n(r * 0.4)} ${n(r * 0.25)}`;
       const leaderEnds: Array<{ sx: number; sy: number }> = [];
       if (pos.leaderBranchId && pos.leaderT != null) {
-        const lb = branches.find(b => b.id === pos.leaderBranchId);
+        const lb = pos.leaderBranchId ? brById.get(pos.leaderBranchId) : undefined;
         const lbFrom = lb ? projMap.get(lb.fromId) : null;
         const lbTo   = lb ? projMap.get(lb.toId)   : null;
         if (lbFrom && lbTo) {

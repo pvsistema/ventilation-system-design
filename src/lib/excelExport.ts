@@ -134,15 +134,20 @@ export const PRESET_LABELS: Record<ExportPreset, string> = {
 
 // ─── Получение значения ячейки ветви ─────────────────────────────────────────
 
+// ПРОИЗВОДИТЕЛЬНОСТЬ. Раньше сюда передавались массивы, и на КАЖДУЮ ячейку
+// таблицы шёл линейный поиск узлов и горизонта. При 40 колонках и 13 000
+// ветвей это больше миллиона переборов — выгрузка подвисала на десятки секунд.
+// Теперь функция принимает готовые справочники (Map), собранные один раз:
+// поиск стал мгновенным независимо от размера схемы.
 function getBranchValue(
   b: TopoBranch,
   key: string,
-  nodes: TopoNode[],
-  horizons: Horizon[]
+  nodeMap: Map<string, TopoNode>,
+  horizonMap: Map<string, Horizon>
 ): string | number {
-  const fromNode = nodes.find(n => n.id === b.fromId);
-  const toNode   = nodes.find(n => n.id === b.toId);
-  const horizon  = horizons.find(h => h.id === b.horizonId);
+  const fromNode = nodeMap.get(b.fromId);
+  const toNode   = nodeMap.get(b.toId);
+  const horizon  = b.horizonId ? horizonMap.get(b.horizonId) : undefined;
 
   switch (key) {
     case "name":           return b.type || "";
@@ -281,8 +286,11 @@ export function exportToExcel(params: ExportParams): void {
 
     const columns = BRANCH_COLUMNS.filter(c => selectedKeys.includes(c.key));
     const headers = columns.map(c => c.label);
+    // Справочники строим ОДИН раз на всю выгрузку, а не на каждую ячейку.
+    const nodeMap    = new Map(nodes.map(n => [n.id, n]));
+    const horizonMap = new Map(horizons.map(h => [h.id, h]));
     const rows = filtered.map(b =>
-      columns.map(c => getBranchValue(b, c.key, nodes, horizons))
+      columns.map(c => getBranchValue(b, c.key, nodeMap, horizonMap))
     );
 
     const wsData = [headers, ...rows];

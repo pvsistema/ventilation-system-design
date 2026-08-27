@@ -706,12 +706,18 @@ export default function PrintDialog({
     const nodeProj = (n: { x: number; y: number; z: number }) =>
       project3D({ x: n.x * _xySF, y: n.y * _xySF, z: n.z * zScale }, sv);
 
+    // ПРОИЗВОДИТЕЛЬНОСТЬ. Справочники «по номеру» — один раз на всю подготовку
+    // листа. Раньше каждая выноска искала свою ветвь и оба узла перебором всей
+    // схемы: на большом плане подготовка печати заметно подвисала.
+    const brById = new Map(branches.map(b => [b.id, b]));
+    const ndById = new Map(nodes.map(n => [n.id, n]));
+
     // Экранный конец выноски (привязка к ветви или свободная точка)
     const leaderEnd = (pos: Position): { sx: number; sy: number } | null => {
       if (pos.leaderBranchId && pos.leaderT != null) {
-        const br = branches.find(b => b.id === pos.leaderBranchId);
-        const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
-        const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+        const br = pos.leaderBranchId ? brById.get(pos.leaderBranchId) : null;
+        const fromN = br ? ndById.get(br.fromId) : null;
+        const toN   = br ? ndById.get(br.toId)   : null;
         if (!fromN || !toN) return null;
         const fP = nodeProj(fromN), tP = nodeProj(toN);
         return { sx: fP.sx + (tP.sx - fP.sx) * pos.leaderT, sy: fP.sy + (tP.sy - fP.sy) * pos.leaderT };
@@ -740,9 +746,9 @@ export default function PrintDialog({
       if (mainEnd) ends.push({ ...mainEnd, attached: !!(pos.leaderBranchId && pos.leaderT != null) });
       for (const el of pos.extraLeaders ?? []) {
         if (el.branchId && el.t != null) {
-          const br = branches.find(b => b.id === el.branchId);
-          const fromN = br ? nodes.find(n => n.id === br.fromId) : null;
-          const toN   = br ? nodes.find(n => n.id === br.toId)   : null;
+          const br = brById.get(el.branchId);
+          const fromN = br ? ndById.get(br.fromId) : null;
+          const toN   = br ? ndById.get(br.toId)   : null;
           if (fromN && toN) {
             const fP = nodeProj(fromN), tP = nodeProj(toN);
             ends.push({ sx: fP.sx + (tP.sx - fP.sx) * el.t, sy: fP.sy + (tP.sy - fP.sy) * el.t, attached: true });
