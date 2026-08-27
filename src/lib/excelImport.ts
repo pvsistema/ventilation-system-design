@@ -342,7 +342,9 @@ export function parseExcel(buffer: ArrayBuffer): ExcelImportResult {
 
     branches.push(makeBranch(`B${ts}_${bi++}`, fromNode.id, toNode.id, {
       layer: "Ветви",
-      name: rb.name || `Ветвь ${rb.id}`,
+      // Название выработки хранится в поле type. Раньше писалось в name —
+      // такого поля у ветви нет, и название из таблицы молча пропадало.
+      type: rb.name || `Ветвь ${rb.id}`,
       length: rb.length > 0 ? rb.length : Math.round(Math.sqrt(
         (toNode.x - fromNode.x) ** 2 + (toNode.y - fromNode.y) ** 2 + (toNode.z - fromNode.z) ** 2
       ) * 10) / 10,

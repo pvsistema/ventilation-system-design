@@ -1565,7 +1565,9 @@ export default function TopoCanvas(props: Props) {
   const asS = <T,>(e: T) => e as unknown as any;
   const onMouseDownCanvas   = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseDown(asS(e));
   const onMouseMoveCanvas   = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseMove(asS(e));
-  const onMouseUpCanvas     = (e: React.MouseEvent<HTMLCanvasElement>)  => onMouseUp(asS(e));
+  // onMouseUp не использует само событие — просто сбрасывает режимы
+  // перетаскивания, поэтому аргумент не передаём.
+  const onMouseUpCanvas     = ()  => onMouseUp();
   const onWheelCanvas       = (e: React.WheelEvent<HTMLCanvasElement>)  => onWheel(asS(e));
   const onContextMenuCanvas = (e: React.MouseEvent<HTMLCanvasElement>)  => onContextMenuSVG(asS(e));
   // Двойной клик по подписи ветви в canvas-режиме — сброс смещения в дефолт

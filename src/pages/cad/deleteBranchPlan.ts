@@ -31,7 +31,8 @@ export interface DeleteBranchPlan {
   orphanNodeLabels: string[];
 }
 
-interface SymbolLite { id: string; typeId: string; branchId?: string }
+// branchId может быть null — символ без привязки к ветви.
+interface SymbolLite { id: string; typeId: string; branchId?: string | null }
 
 /**
  * Считает последствия удаления ветвей: какие УО с них исчезнут и какие узлы

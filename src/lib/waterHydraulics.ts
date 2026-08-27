@@ -105,7 +105,9 @@ export function calcDrainTime(capacityM3: number, flowM3h: number): number {
  */
 export interface PumpSymbolLite {
   typeId: string;
-  branchId?: string;
+  // null — символ не привязан к ветви (свободно стоит на схеме). Раньше здесь
+  // допускалась только строка, и реальный тип символа сюда не подходил.
+  branchId?: string | null;
   pumpHead?: number;      // м вод. ст. — номинальный напор одного насоса
   pumpParallel?: number;  // число параллельно работающих насосов
   airDirection?: string;  // "reverse" = качает против направления ветви

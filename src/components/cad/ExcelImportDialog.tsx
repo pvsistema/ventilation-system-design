@@ -150,7 +150,7 @@ export default function ExcelImportDialog({ onImport, onClose }: Props) {
               {result.branches.length > 0 && (
                 <pre className="text-[10px] bg-gray-100 rounded px-2 py-1.5 overflow-auto max-h-32 whitespace-pre-wrap border border-gray-300">
                   {result.branches.slice(0, 6).map(b =>
-                    `${b.name || b.id.slice(-6)}: L=${b.length}м A=${b.angle}° | S=${b.area}м² P=${b.perimeter}м`
+                    `${b.type || b.id.slice(-6)}: L=${b.length}м A=${b.angle}° | S=${b.area}м² P=${b.perimeter}м`
                   ).join("\n")}
                 </pre>
               )}

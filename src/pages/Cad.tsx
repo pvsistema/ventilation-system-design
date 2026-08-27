@@ -79,7 +79,11 @@ import { calcVentPipe, totalLocalXi, type VpLeakMethod } from "@/lib/ventPipeCal
 import { buildVentPipeReport, buildVentPipeReportHtml } from "@/lib/ventPipeReport";
 import { printViaIframe } from "@/components/cad/printPreview/printDialogParts";
 import { computePollutionFractions, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
-export type { SchemaSymbol } from "./cad/cadTypes";
+// Тип нужен и ВНУТРИ файла, и наружу: `export type { ... } from` только
+// пробрасывает его дальше, но в самом файле имя остаётся неизвестным —
+// из-за этого проверка типов не видела 18 мест использования.
+import type { SchemaSymbol } from "./cad/cadTypes";
+export type { SchemaSymbol };
 import CadImportDialogs from "./cad/CadImportDialogs";
 import CsvExportDialog from "@/components/cad/CsvExportDialog";
 import SchemeExportDialog, { type SchemeExportFormat, type SchemeExportOptions } from "@/components/cad/SchemeExportDialog";
@@ -4352,7 +4356,10 @@ export default function CadPage() {
       fromId,
       toId,
       length: (brA.length ?? 0) + (brB.length ?? 0),
-      name: brA.name || brB.name,
+      // Название выработки хранится в поле type. Раньше здесь писалось
+      // несуществующее поле name — оно молча терялось, и объединённая
+      // выработка могла остаться без названия.
+      type: brA.type || brB.type,
     };
 
     // Перепривязываем символы со второй ветви на объединённую
@@ -8061,7 +8068,7 @@ export default function CadPage() {
                                   pU: fr.critical?.p_u,
                                   reversed: fr.actuallyReversed,
                                   ascending,
-                                  branchName: `Ветвь ${b.num ?? b.id}${b.name ? ` — ${b.name}` : ""}`,
+                                  branchName: `Ветвь ${b.id}${b.type ? ` — ${b.type}` : ""}`,
                                 })}
                                 className="flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] rounded border bg-white hover:bg-gray-50 shrink-0"
                                 style={{ borderColor: "var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)" }}
@@ -8078,7 +8085,7 @@ export default function CadPage() {
                                 pU: fr.critical?.p_u,
                                 reversed: fr.actuallyReversed,
                                 ascending,
-                                branchName: `Ветвь ${b.num ?? b.id}${b.name ? ` — ${b.name}` : ""}`,
+                                branchName: `Ветвь ${b.id}${b.type ? ` — ${b.type}` : ""}`,
                               })}
                               style={{ cursor: "zoom-in" }}
                               title="Нажмите, чтобы открыть диаграмму в увеличенном виде"

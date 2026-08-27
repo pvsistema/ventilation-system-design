@@ -35,13 +35,13 @@ export function compareBranches(
   const newMap = new Map(newBranches.map(b => [b.id, b]));
   for (const [id, ob] of oldMap) {
     if (!newMap.has(id)) {
-      result.push({ id, status: "removed", name: ob.name || ob.id, fromId: ob.fromId, toId: ob.toId });
+      result.push({ id, status: "removed", name: ob.type || ob.id, fromId: ob.fromId, toId: ob.toId });
     }
   }
   for (const [id, nb] of newMap) {
     const ob = oldMap.get(id);
     if (!ob) {
-      result.push({ id, status: "added", name: nb.name || nb.id, fromId: nb.fromId, toId: nb.toId });
+      result.push({ id, status: "added", name: nb.type || nb.id, fromId: nb.fromId, toId: nb.toId });
     } else {
       const changes: CompareBranchDiff["changes"] = [];
       for (const { field, label } of BRANCH_COMPARE_FIELDS) {
@@ -51,7 +51,7 @@ export function compareBranches(
         }
       }
       if (changes.length > 0) {
-        result.push({ id, status: "changed", name: nb.name || nb.id, fromId: nb.fromId, toId: nb.toId, changes });
+        result.push({ id, status: "changed", name: nb.type || nb.id, fromId: nb.fromId, toId: nb.toId, changes });
       }
     }
   }

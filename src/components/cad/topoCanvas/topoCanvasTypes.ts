@@ -122,21 +122,11 @@ export interface Props {
   /** Пороги авто-скрытия узлов при отдалении (настройка «Видимость узлов») */
   nodeLodThresholds?: { circle: number; label: number };
   /** Условные обозначения на схеме */
-  schemaSymbols?: { id: string; typeId: string; x: number; y: number; branchId: string | null; t?: number; offsetX?: number; offsetY?: number; scale?: number; label?: string; description?: string; airDirection?: "forward" | "reverse"; appearYear?: number; appearMonth?: string; appearDay?: number;
-    indDescription?: boolean; indResistance?: boolean; indDeltaP?: boolean; indLeakage?: boolean; indOffsetX?: number; indOffsetY?: number; indFontSize?: number;
-    bkResMode?: "project" | "survey" | "manual"; bkManualR?: number; bkWindowArea?: number; bkAirPerm?: number; bkManualAirPerm?: boolean; bkCustomAirPerm?: number; bkSurveyQ?: number; bkSurveyDP?: number; bkBulkheadR?: number;
-    /** Подпись вентилятора: смещение перетаскиванием и размер шрифта */
-    fanIndOffsetX?: number; fanIndOffsetY?: number; fanIndFontSize?: number;
-    /** Цвет подложки подписи вентилятора ("none" — без фона) */
-    fanIndBgColor?: string;
-    /** Замерная станция: данные замера и настройки её индикаторов */
-    msNumber?: string; msLocation?: string; msArea?: number; msFlow?: number; msVelocity?: number;
-    msIndNumber?: boolean; msIndLocation?: boolean; msIndFlow?: boolean;
-    msIndArea?: boolean; msIndVelocity?: boolean;
-    msIndOffsetX?: number; msIndOffsetY?: number; msIndFontSize?: number;
-    /** Цвет подложки индикаторов ЗС ("none" — без фона) */
-    msIndBgColor?: string;
-  }[];
+  // Единый тип символа (см. pages/cad/cadTypes.ts). Раньше здесь была
+  // РУЧНАЯ КОПИЯ списка полей, и она отстала от оригинала: новые поля
+  // (например показ стрелки вентилятора) в копию не попали, из-за чего
+  // проверка типов ругалась в трёх местах отрисовки.
+  schemaSymbols?: import("@/pages/cad/cadTypes").SchemaSymbol[];
   /** Перетаскивание подписи вентилятора мышью */
   onSymbolFanIndOffset?: (id: string, ox: number, oy: number) => void;
   /** Клик по символу — выбрать */
