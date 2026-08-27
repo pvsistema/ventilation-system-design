@@ -1,7 +1,6 @@
 import { useState, useRef } from "react";
 import {
-  type Position, makePosition, POSITION_COLORS,
-  VENT_MODES, ACCIDENT_TYPES, FONT_OPTIONS,
+  type Position, makePosition,   VENT_MODES, ACCIDENT_TYPES, FONT_OPTIONS,
 } from "@/lib/positions";
 import { type TopoBranch, type TopoNode } from "@/lib/topology";
 import Icon from "@/components/ui/icon";

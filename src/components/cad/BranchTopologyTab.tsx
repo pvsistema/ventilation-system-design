@@ -1,11 +1,10 @@
 import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { SURFACE_TYPES, resistanceFromAlpha } from "@/lib/aerodynamics";
 import { type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { type UnitsConfig, getUnit } from "@/lib/unitsConfig";
+import { type UnitsConfig, } from "@/lib/unitsConfig";
 import {
   SectionHeader, InlineLabel, EditInput, ComputedInput, CheckField,
-  ParamRow, numFmt, BRANCH_TYPES, PLAST_OPTIONS, PLA_OPTIONS, POLE_OPTIONS,
-} from "./BranchPropsPrimitives";
+  ParamRow, numFmt, BRANCH_TYPES, PLAST_OPTIONS, } from "./BranchPropsPrimitives";
 
 interface BranchTopologyTabProps {
   branch: TopoBranch;

@@ -4,8 +4,7 @@ import type { TopoBranch, TopoNode } from "@/lib/topology";
 import {
   checkWaterNetwork, checkFireWaterSupply,
   DEFAULT_WATER_NORMS, DEFAULT_FIRE_WATER_OPTIONS, DEFAULT_RESCUE_WATER_OPTIONS,
-  type WaterCheckRow, type WaterNorms, type FireHydrantRow,
-} from "@/lib/waterFireCheck";
+  type WaterNorms, } from "@/lib/waterFireCheck";
 import { exportWaterCheckAct } from "@/lib/waterCheckExport";
 import { CONSUMER_CATALOG } from "@/lib/waterConsumers";
 import { withWaterPumps, type PumpSymbolLite } from "@/lib/waterHydraulics";

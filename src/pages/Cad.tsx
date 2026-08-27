@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { useLicenseContext } from "@/context/LicenseContext";
-import AppLogo from "@/components/AppLogo";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
-  DEMO_NODES, DEMO_BRANCHES, OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
+  OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
   project3D, unprojectToPlane, calcBranchLength,
   surveyXYZ, isNodeMoved,
   type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
@@ -15,8 +14,7 @@ import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { MS_IND_BG_DEFAULT, FAN_IND_BG_DEFAULT } from "@/lib/msIndicatorStyle";
 import IndicatorBgPicker from "@/components/cad/IndicatorBgPicker";
 import { type SolveResult } from "@/lib/networkSolver";
-import { FAN_CATALOG, getFanById, findFanByName, fanEfficiency, fanShaftPower, bladeAngleFactor } from "@/lib/fanCurves";
-import FanCurveChart from "@/components/cad/FanCurveChart";
+import { getFanById, findFanByName, fanEfficiency, fanShaftPower, bladeAngleFactor } from "@/lib/fanCurves";
 import HQFireDiagram from "@/components/cad/HQFireDiagram";
 import HQFireDiagramDialog from "@/components/cad/HQFireDiagramDialog";
 import type { HQDiagramData } from "@/lib/hqDiagramExcel";
@@ -46,13 +44,13 @@ import { exportErp } from "@/lib/erpExport";
 import { exportVent2Cdf3 } from "@/lib/vent2Cdf3Export";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { BULKHEAD_CATALOG, airPermToR, branchBulkheadRkMurg, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
+import { BULKHEAD_CATALOG, airPermToR, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { checkSchema } from "@/lib/schemaCheck";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
-import { getValveById, PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
+import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, getNormativeMouthDistance, setNormativeMouthDistance, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
@@ -64,15 +62,14 @@ import PanelErrorBoundary from "@/components/cad/PanelErrorBoundary";
 import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 import { calcBranchFirePower, type FireStabilityFact } from "@/lib/fireStability";
-import { API_URLS } from "@/lib/api-urls";
-import { postCompute, refreshComputeConfig, isOnBackup } from "@/lib/computeServer";
+import { } from "@/lib/api-urls";
+import { refreshComputeConfig, isOnBackup } from "@/lib/computeServer";
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
-  type CompareBranchDiff, type CompareNodeDiff,
-  type TextBlock, type Excavation, type ViewPresetName, type HeatingSeason,
+    type TextBlock, type Excavation, type HeatingSeason,
   makeTextBlock, DEFAULT_EXC, LAYERS,
 } from "./cad/cadTypes";
-import { calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
+import { isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 import { DEFAULT_MINE_HUMIDITY, DEFAULT_SURFACE_HUMIDITY, P_STD_KPA } from "@/lib/airHumidity";
 import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 import { calcVentPipe, totalLocalXi, type VpLeakMethod } from "@/lib/ventPipeCalc";
@@ -94,15 +91,10 @@ import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonRefer
 import { runFireMode } from "@/lib/fireModeRun";
 import { runExplosionMode } from "@/lib/explosionModeRun";
 import {
-  RibbonTabBtn, RibbonGroup, RibbonBigBtn, RibbonSmallBtn,
-  PentagonIcon, RectIcon, MiniSquareIcon,
-  PropGroup, SelectRow, SelectRowLabeled, FieldRow, CheckRow,
-  FrameGroup, LabeledRow, CadCheckbox, NumWithUnit, ComputedRow,
-  ToolBtn, toolLabel, ViewBtn, FlowBtn,
-} from "./cad/cadComponents";
+  RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
 import {
-  AIRFLOW_URL, EXPLOSION_URL, WATER_URL, safeFixed,
+  EXPLOSION_URL, WATER_URL, safeFixed,
   clearAirflowCache, wasAirflowCached, postAirflow,
 } from "./cad/cadCompute";
 import CadTitleBar from "./cad/CadTitleBar";

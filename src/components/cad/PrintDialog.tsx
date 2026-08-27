@@ -16,7 +16,7 @@ import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
 import { generateSvg, downloadSvg } from "@/lib/svgExporter";
 // Общие части и блоки диалога вынесены в отдельные файлы (перенос 1:1)
 import {
-  printDocument, Section, Row, inp, sel, ih, PAPER_SIZES,
+  printDocument, PAPER_SIZES,
   type PaperFormat, type Orientation,
 } from "@/components/cad/printPreview/printDialogParts";
 import {

@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import Icon from "@/components/ui/icon";
 import {
-  FAN_CATALOG, FAN_TYPE_NAMES, selectFans, fanPressure, fanEfficiency,
+  FAN_TYPE_NAMES, selectFans, fanPressure, fanEfficiency,
   type FanModel, type FanType, type FanSelection,
 } from "@/lib/fans";
 

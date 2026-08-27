@@ -10,9 +10,9 @@
 //      и берём длины/сечения из Excel, X/Y из DXF
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { parseDxf, type DxfImportResult } from "@/lib/dxfImport";
-import { parseExcel, type ExcelImportResult } from "@/lib/excelImport";
-import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
+import { type DxfImportResult } from "@/lib/dxfImport";
+import { type ExcelImportResult } from "@/lib/excelImport";
+import { makeNode, type TopoNode, type TopoBranch } from "@/lib/topology";
 
 export interface CombinedImportResult {
   nodes: TopoNode[];

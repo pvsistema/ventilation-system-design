@@ -8,8 +8,7 @@ import {
   computeObjSF,
   setHorizonImageLoadCallback,
   type FlowDisplayMode, type ProjNode,
-  CANVAS_THRESHOLD,
-} from "@/lib/canvasRenderer";
+  } from "@/lib/canvasRenderer";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "@/lib/waterHydraulics";
@@ -116,19 +115,14 @@ interface CanvasLayerProps {
 
 export default function CanvasLayer(props: CanvasLayerProps) {
   const {
-    width, height,
-    nodes, branches, horizons, horizonMap, visibleBranches, hiddenBranchIds,
-    projNodes, projNodesMap,
-    proj, view, is3D, zScale, zLevel,
-    selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
-    hoverBranchId,
-    branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows, flowDisplay, animSpeed,
-    infoConfig, unitsConfig = DEFAULT_UNITS_CONFIG, waterNodeResults,
+    width, height, flowDisplay,
     onMouseDown, onMouseMove, onMouseUp, onWheel, onContextMenu,
     onTouchStart, onTouchMove, onTouchEnd,
     onRegisterGetCanvas, onRegisterCanvasEl,
-    compareBranchColors,
   } = props;
+  // Остальные данные схемы намеренно НЕ распаковываются: отрисовка читает их
+  // напрямую через props.* (см. массив зависимостей ниже), а дублирующая
+  // распаковка только вводила в заблуждение.
 
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   // Верхний прозрачный холст: на нём рисуется только выделение и подсветка.

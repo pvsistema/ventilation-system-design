@@ -12,7 +12,7 @@ import EmergencyTab from "@/pages/admin/EmergencyTab";
 //   LicenseDialogs  — диалоги создания и редактирования лицензии
 import {
   type License, type OfflineKey, type Seat, type LicenseForm, type MonitoringData,
-  adminApi, fmtDate, toInputDate, emptyForm,
+  adminApi, toInputDate, emptyForm,
 } from "@/pages/admin/adminTypes";
 import { invalidateRemoteVersion } from "@/lib/updater";
 import AdminLogin from "@/pages/admin/AdminLogin";

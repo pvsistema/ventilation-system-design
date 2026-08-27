@@ -22,7 +22,9 @@ const BRANCH_COMPARE_FIELDS: { field: keyof TopoBranch; label: string }[] = [
   { field: "fanStopped",  label: "Вент. остановлен" },
   { field: "hasBulkhead", label: "Перемычка" },
   { field: "bulkheadR",   label: "R перемычки" },
-  { field: "name",        label: "Название" },
+  // Строка «Название» удалена: она ссылалась на несуществующее поле name.
+  // Название выработки хранится в type и уже сравнивается выше
+  // («Тип выработки») — иначе одно и то же поле попадало бы в список дважды.
   { field: "horizonId",   label: "Горизонт" },
 ];
 
