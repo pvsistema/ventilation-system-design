@@ -7,7 +7,7 @@
 import Icon from "@/components/ui/icon";
 
 interface UpdateTabProps {
-  currentVersion: { version: string; notes: string; server_version?: string } | null;
+  currentVersion: { version: string; notes: string; server_version?: string; server_signed?: boolean } | null;
   updVersion: string;
   setUpdVersion: (v: string) => void;
   updNotes: string;
@@ -55,6 +55,21 @@ export default function UpdateTab({
             <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Расчётное ядро server.exe</div>
             <span className="text-[24px] font-bold text-blue-600">{currentVersion.server_version || "—"}</span>
             <div className="text-[11px] text-gray-400 mt-0.5">обновляется без переустановки</div>
+            {/* Отметка защиты обновления: подпись позволяет программе проверить
+                целостность ядра и отвергнуть подменённый файл. */}
+            {currentVersion.server_signed ? (
+              <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200"
+                title="Контрольная сумма ядра подписана. Программа проверит целостность обновления и не примет подменённый файл.">
+                <Icon name="ShieldCheck" size={12} />
+                Обновление подписано
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-50 text-amber-700 border border-amber-200"
+                title="У текущего ядра нет подписи. Опубликуйте ядро заново, чтобы включить защиту от подмены при обновлении.">
+                <Icon name="ShieldAlert" size={12} />
+                Без подписи — переопубликуйте ядро
+              </div>
+            )}
           </div>
         </div>
       ) : (

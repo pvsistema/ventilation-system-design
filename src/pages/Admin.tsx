@@ -87,7 +87,7 @@ export default function Admin() {
   const [monLoading, setMonLoading]     = useState(false);
 
   // Обновление PVS.exe (установщик)
-  const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string; server_version?: string} | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string; server_version?: string; server_signed?: boolean} | null>(null);
   const [updVersion, setUpdVersion]     = useState("");
   const [updNotes, setUpdNotes]         = useState("");
   const [updStatus, setUpdStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
@@ -391,7 +391,14 @@ export default function Admin() {
       const text = await r.text();
       if (!text.trim().startsWith("{")) { setCurrentVersion(null); return; }
       const d = JSON.parse(text);
-      setCurrentVersion({ version: d.version || "—", notes: d.notes || "", server_version: d.server_version || "—" });
+      setCurrentVersion({
+        version: d.version || "—",
+        notes: d.notes || "",
+        server_version: d.server_version || "—",
+        // Ядро считается защищённым, если сервер выдал и контрольную сумму,
+        // и подпись — программа сможет проверить целостность обновления.
+        server_signed: !!(d.server_sha256 && d.server_sig),
+      });
     } catch { setCurrentVersion(null); }
   };
 
@@ -434,7 +441,9 @@ export default function Admin() {
       const text = await res.text();
       if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
       setSrvStatus("ok");
-      setCurrentVersion(prev => prev ? { ...prev, server_version: srvVersion } : null);
+      // Успешная публикация ядра означает, что сервер посчитал сумму и подписал
+      // её (иначе он вернул бы ошибку) — сразу отмечаем ядро защищённым.
+      setCurrentVersion(prev => prev ? { ...prev, server_version: srvVersion, server_signed: true } : null);
       setSrvVersion("");
     } catch (err: unknown) {
       setSrvStatus("err");
