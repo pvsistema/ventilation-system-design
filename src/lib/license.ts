@@ -1,7 +1,7 @@
 import { API_URLS } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
 import { isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey, verifySignedPayload, decodeB64urlText } from "@/lib/offlineKey";
-import { checkClock, trustServerTime, takePendingClockReport, clearPendingClockReport } from "@/lib/clockGuard";
+import { checkClock, trustServerTime, takePendingClockReport, restorePendingClockReport } from "@/lib/clockGuard";
 const LICENSE_URL = API_URLS.license;
 
 // ── Версия расчётного ядра (server.exe) ───────────────────────────────────────
@@ -780,6 +780,8 @@ export async function activateLicense(
  * Ошибки намеренно игнорируем: это уведомление, а не критичная операция.
  */
 function reportPendingClockRollback(fingerprint: string, machineInfo?: MachineInfo): void {
+  // Сигнал забирается и удаляется сразу — иначе две параллельные проверки
+  // лицензии отправили бы один случай дважды (см. takePendingClockReport).
   const pending = takePendingClockReport();
   if (!pending) return;
   try {
@@ -795,9 +797,12 @@ function reportPendingClockRollback(fingerprint: string, machineInfo?: MachineIn
         app_version: APP_VERSION,
       }),
     })
-      .then(() => clearPendingClockReport())
-      .catch(() => { /* связь пропала — попробуем в следующий раз */ });
-  } catch { /* ignore */ }
+      .then((r) => { if (!r.ok) restorePendingClockReport(pending); })
+      // Связь пропала — возвращаем сигнал и дошлём при следующем выходе в сеть.
+      .catch(() => restorePendingClockReport(pending));
+  } catch {
+    restorePendingClockReport(pending);
+  }
 }
 
 export async function sendHeartbeat(

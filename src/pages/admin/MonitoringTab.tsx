@@ -7,6 +7,11 @@ interface Props {
   loading: boolean;
 }
 
+// Со скольких случаев перевода даты стоит связаться с организацией.
+// Один раз — обычно сбой часов (села батарейка BIOS, не подхватилась
+// синхронизация времени). Повторы — уже похоже на обход срока лицензии.
+const REPEAT_WARN_COUNT = 2;
+
 // Тип клиента по имени компьютера: десктоп-приложение помечает hostname
 // строкой "(десктоп)", всё остальное — веб-браузер.
 function isDesktopClient(hostname: string | null): boolean {
@@ -285,21 +290,51 @@ export default function MonitoringTab({ data, loading }: Props) {
             {(data.violations.clock_rollbacks?.length ?? 0) > 0 && (
               <div className="border-t border-gray-100 pt-2 mt-2">
                 <div className="text-[11px] text-gray-400 mb-1.5">Переводили дату назад (обход срока лицензии):</div>
-                {data.violations.clock_rollbacks!.map((c, i) => (
-                  <div key={`${c.hostname}-${c.key}-${i}`} className="py-0.5">
-                    <div className="flex items-center justify-between text-[11px]">
-                      <span className="text-gray-600">{c.hostname}</span>
-                      <span className="text-red-600 font-semibold">
+                {data.violations.clock_rollbacks!.map((c, i) => {
+                  // Повторные случаи — повод связаться с организацией: разовый
+                  // сбой бывает от севшей батарейки BIOS, systematic — намеренно.
+                  const repeated = c.count >= REPEAT_WARN_COUNT && !c.is_demo;
+                  return (
+                  <div key={`${c.hostname}-${c.key}-${i}`} className="py-1">
+                    <div className="flex items-center justify-between text-[11px] gap-2">
+                      <span className="text-gray-700 font-medium truncate">
+                        {c.is_demo ? c.hostname : (c.owner || c.hostname)}
+                      </span>
+                      <span className="text-red-600 font-semibold shrink-0">
                         {c.count > 1 ? `${c.count} раз` : "1 раз"}
                       </span>
                     </div>
-                    <div className="text-[10px] text-gray-400">
+                    {/* Демо-режим — не клиент по договору: такие случаи не должны
+                        выглядеть как нарушение со стороны организации. */}
+                    <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                      {c.is_demo ? (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium"
+                          style={{ background: "var(--c-s3, #f1f5f9)", color: "var(--c-t3, #475569)" }}>
+                          <Icon name="Globe" size={9} />Демо-режим
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium"
+                          style={{ background: "#fef2f2", color: "#b91c1c" }}>
+                          <Icon name="Building2" size={9} />Клиент
+                        </span>
+                      )}
+                      {repeated && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-medium"
+                          style={{ background: "#fffbeb", color: "#b45309" }}
+                          title="Повторные переводы даты. Стоит связаться с организацией — возможен обход срока лицензии.">
+                          <Icon name="TriangleAlert" size={9} />Связаться с организацией
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-[10px] text-gray-400 mt-0.5">
+                      {!c.is_demo && c.owner ? `${c.hostname} · ` : ""}
                       {c.key !== "—" ? `${c.key} · ` : ""}
                       {new Date(c.last_at).toLocaleString("ru-RU")}
                       {c.detail ? ` · ${c.detail}` : ""}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>

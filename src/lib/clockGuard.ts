@@ -122,19 +122,32 @@ export function checkClock(): ClockCheck {
   return { ok: true };
 }
 
-/** Есть ли неотправленный сигнал о переводе часов (и на сколько суток). */
+/**
+ * Забрать неотправленный сигнал о переводе часов.
+ *
+ * ВАЖНО: сигнал удаляется СРАЗУ, а не после ответа сервера. Раньше он лежал
+ * до успешной отправки, и если проверка лицензии успевала пойти дважды
+ * (второе окно программы, повторный запуск, перезапрос при обрыве связи),
+ * оба обращения читали один и тот же сигнал и отправляли его на сервер.
+ * В админ-панели один случай отображался как два — счётчик нарушений был
+ * завышен вдвое. Если отправка не удалась, сигнал возвращается на место
+ * (см. restorePendingClockReport).
+ */
 export function takePendingClockReport(): { daysBack: number } | null {
   try {
     const raw = localStorage.getItem(PENDING_KEY);
     if (!raw) return null;
+    localStorage.removeItem(PENDING_KEY);
     const d = JSON.parse(raw) as { daysBack?: number };
     return { daysBack: typeof d.daysBack === "number" ? d.daysBack : 0 };
   } catch { return null; }
 }
 
-/** Сигнал доставлен — больше не досылаем. */
-export function clearPendingClockReport(): void {
-  try { localStorage.removeItem(PENDING_KEY); } catch { /* ignore */ }
+/** Отправка не удалась — возвращаем сигнал, чтобы дослать при следующей связи. */
+export function restorePendingClockReport(report: { daysBack: number }): void {
+  try {
+    localStorage.setItem(PENDING_KEY, JSON.stringify({ ...report, at: Date.now() }));
+  } catch { /* ignore */ }
 }
 
 /**

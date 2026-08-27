@@ -443,21 +443,39 @@ def handler(event: dict, context) -> dict:
 
             # Рабочие места, где переводили дату назад (обход срока лицензии).
             # Показываем поимённо: счётчика мало — нужно знать, с кем говорить.
+            # Организацию берём из лицензии: событие хранит license_id, но если
+            # лицензию так и не активировали (демо-браузер), связи нет — тогда
+            # владелец неизвестен, и такой случай помечается как демо-режим.
+            # Без этой пометки незнакомый компьютер в списке выглядел как
+            # нарушение со стороны реального клиента.
+            #
+            # Группируем по отпечатку рабочего места, а НЕ по имени компьютера:
+            # у всех браузеров имя одинаковое («Chrome / Windows 10»), из-за чего
+            # разные машины сливались в одну строку.
             cur.execute("""
                 SELECT COALESCE(NULLIF(e.hostname, ''), '—') AS host,
                        COALESCE(e.license_key, '—')          AS key,
                        COUNT(*)                              AS cnt,
                        MAX(e.created_at)                     AS last_at,
-                       MAX(e.detail)                         AS detail
+                       MAX(e.detail)                         AS detail,
+                       MAX(l.owner_name)                     AS owner,
+                       MAX(l.org_group)                      AS org_group,
+                       e.fingerprint                         AS fp
                 FROM license_events e
+                LEFT JOIN licenses l ON l.id = e.license_id
                 WHERE e.event_type = 'clock_rollback'
                   AND e.created_at > NOW() - INTERVAL '30 days'
-                GROUP BY host, key
+                GROUP BY COALESCE(NULLIF(e.hostname, ''), '—'),
+                         COALESCE(e.license_key, '—'),
+                         e.fingerprint
                 ORDER BY last_at DESC LIMIT 20
             """)
             clock_rollbacks = [{
                 "hostname": r[0], "key": r[1], "count": int(r[2]),
                 "last_at": str(r[3]), "detail": r[4],
+                "owner": r[5], "org_group": r[6],
+                # Лицензии нет — значит это демо-режим, а не клиент по договору.
+                "is_demo": r[5] is None,
             } for r in cur.fetchall()]
 
             # 4. Сроки лицензий: скоро истекают / просрочены
