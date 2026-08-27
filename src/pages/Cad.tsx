@@ -3279,7 +3279,14 @@ export default function CadPage() {
     // Сохраняем в список последних файлов + JSON данные для открытия по клику
     const loadedNodes = Array.isArray(data.nodes) ? (data.nodes as unknown[]).length : 0;
     const loadedBranches = Array.isArray(data.branches) ? (data.branches as unknown[]).length : 0;
-    addRecentFile({ name: resolvedName, openedAt: Date.now(), nodeCount: loadedNodes, branchCount: loadedBranches });
+    // Путь запоминаем, если он известен (десктоп: открытие из проводника,
+    // «Открыть», «Сохранить как»). По нему файл откроется из списка напрямую —
+    // без запроса разрешения у браузера.
+    addRecentFile({
+      name: resolvedName, openedAt: Date.now(),
+      nodeCount: loadedNodes, branchCount: loadedBranches,
+      path: filePathRef.current ?? undefined,
+    });
     saveRecentData(resolvedName, data);
     setActiveRibbon("home");
   };
@@ -5204,7 +5211,42 @@ export default function CadPage() {
                         ? window.confirm("Открыть проект? Текущие данные будут заменены.")
                         : true;
 
-                    // 1. Пробуем FileSystemFileHandle из IndexedDB (файл с диска)
+                    // 1. ДЕСКТОП: читаем файл напрямую по сохранённому пути.
+                    // Это главный путь для десктопной версии: ядро программы
+                    // читает файл само, поэтому окно «Разрешить этому сайту
+                    // просматривать и копировать…» не появляется вовсе. Раньше
+                    // здесь всегда шёл файловый доступ браузера, и WebView2
+                    // спрашивал разрешение при каждом открытии из списка.
+                    if (rf.path) {
+                      type EAPI = { readFile?: (p: string) => Promise<{ content?: string; error?: string }> };
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      const eAPI = (window as any).electronAPI as EAPI | undefined;
+                      if (eAPI?.readFile) {
+                        try {
+                          const res = await eAPI.readFile(rf.path);
+                          if (res?.content) {
+                            const data = JSON.parse(res.content) as Record<string, unknown>;
+                            if (!confirmReplace()) return;
+                            // Запоминаем путь: «Сохранить» перезапишет этот же
+                            // файл, без диалога «Сохранить как».
+                            filePathRef.current = rf.path;
+                            fileHandleRef.current = null;
+                            applyProjectData(data, rf.name, true);
+                            setActiveRibbon("home");
+                            return;
+                          }
+                        } catch {
+                          // Файл переместили или удалили — пробуем прежние способы ниже.
+                        }
+                      }
+                    }
+
+                    // 2. Пробуем FileSystemFileHandle из IndexedDB (файл с диска).
+                    // Здесь браузер и может показать окно запроса разрешения —
+                    // но подменять этот путь локальной копией НЕЛЬЗЯ: копия
+                    // обновляется только при открытии и после правок в другой
+                    // программе окажется устаревшей. Лучше запрос разрешения,
+                    // чем молча открытая старая версия схемы.
                     const handle = await loadHandleFromIDB(rf.name);
                     if (handle) {
                       try {
@@ -5232,7 +5274,7 @@ export default function CadPage() {
                       }
                     }
 
-                    // 2. Fallback — данные из localStorage
+                    // 3. Fallback — данные из localStorage
                     const data = loadRecentData(rf.name);
                     if (data) {
                       if (!confirmReplace()) return;
@@ -5241,15 +5283,17 @@ export default function CadPage() {
                       return;
                     }
 
-                    // 3. Ничего нет — предлагаем открыть вручную
+                    // 4. Ничего нет — предлагаем открыть вручную
                     alert(`Файл «${rf.name}» недоступен.\nОткройте его через «Файл → Открыть» — он снова появится в списке.`);
                   };
 
                   // Пометка «недоступен» — только когда открыть действительно
                   // нечем. Флаг hasHandle сверяется с IndexedDB при открытии
                   // вкладки (syncHandles), поэтому здесь он уже достоверен.
+                  // Файл с известным путём (десктоп) открывается всегда —
+                  // его читает ядро программы, разрешение браузера не нужно.
                   const canOpen = (rf: typeof recentFiles[0]) =>
-                    rf.hasHandle || !!loadRecentData(rf.name);
+                    !!rf.path || rf.hasHandle || !!loadRecentData(rf.name);
 
                   return (
                     <>
@@ -5291,7 +5335,7 @@ export default function CadPage() {
                                     {rf.nodeCount !== undefined && (
                                       <span className="ml-2">· Узлов: {rf.nodeCount} · Ветвей: {rf.branchCount ?? 0}</span>
                                     )}
-                                    {rf.hasHandle && <span className="ml-2 text-green-500">· с диска</span>}
+                                    {(rf.path || rf.hasHandle) && <span className="ml-2 text-green-500">· с диска</span>}
                                     {!available && <span className="ml-2 text-amber-400">· недоступен</span>}
                                   </div>
                                 </div>

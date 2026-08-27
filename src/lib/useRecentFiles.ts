@@ -6,6 +6,13 @@ export interface RecentFile {
   nodeCount?: number;
   branchCount?: number;
   hasHandle?: boolean; // есть ли FileSystemFileHandle в IndexedDB
+  /**
+   * Полный путь к файлу на диске — только для десктопа.
+   * Позволяет открыть файл напрямую через ядро программы, без обращения к
+   * файловому доступу браузера: именно он показывал окно «Разрешить этому
+   * сайту просматривать и копировать…» при каждом открытии из списка.
+   */
+  path?: string;
 }
 
 const STORAGE_KEY = "vnt_recent_files";
@@ -147,8 +154,13 @@ export function useRecentFiles() {
 
   const addRecentFile = useCallback((file: RecentFile) => {
     setRecentFiles((prev) => {
+      const known = prev.find((f) => f.name === file.name);
       const filtered = prev.filter((f) => f.name !== file.name);
-      const updated = [file, ...filtered].slice(0, MAX_RECENT);
+      // Путь, известный с прошлого раза, НЕ затираем: файл могли открыть
+      // способом, при котором путь неизвестен (например перетаскиванием), —
+      // иначе он бы потерялся и снова появилось окно запроса разрешения.
+      const merged: RecentFile = { ...file, path: file.path ?? known?.path };
+      const updated = [merged, ...filtered].slice(0, MAX_RECENT);
       saveRecent(updated);
       return updated;
     });
