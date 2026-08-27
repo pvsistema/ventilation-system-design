@@ -26,6 +26,9 @@
 //                     -4  ID узла (i32)  ← нумерация с пропусками
 //                     +0  X, +8 Y, +16 Z (double)
 //                     +80 признак выхода на поверхность (байт)
+//   ВНИМАНИЕ: в версии программы 2.7 таблица лежит БЕЗ выравнивания по 4
+//   байтам, а запись узла может быть нечётной длины (встречалось 489 байт).
+//   Такие файлы разбирает запасной поиск по координатам — findTablesByScan.
 //   Таблица выработок идёт сразу за узлами:
 //                     -8  общее число выработок (i32)
 //                     +0  признак записи, всегда 1 (i32)
@@ -404,7 +407,99 @@ function findTables(raw: Uint8Array, dv: DataView, debug: string[]) {
       }
     }
   }
+  // Заголовок таблицы не нашёлся — ищем её по самим координатам.
+  return findTablesByScan(raw, dv, debug);
+}
+
+/**
+ * Запасной поиск таблицы узлов — по координатам, без опоры на заголовок.
+ *
+ * ЗАЧЕМ. Разбор выше ищет таблицу по служебной метке (число 44) и перебирает
+ * ЧЁТНЫЕ шаги записи, считая, что таблица выровнена по 4 байтам. В файлах
+ * Вентиляции 2.0 версии 2.7 это перестало выполняться: таблица лежит со
+ * сдвигом (например, смещение 125101), а запись узла занимает 489 байт —
+ * длину нечётную. Из-за этого схемы таких версий не открывались с ошибкой
+ * «расположение данных в файле не распознано», хотя данные в файле целы.
+ *
+ * КАК ИЩЕМ. Запись узла — три координаты подряд (X, Y, Z типа double).
+ * Собираем такие точки по всему файлу при ЛЮБОМ выравнивании, затем ищем
+ * расстояние между ними, повторяющееся чаще всего: это и есть длина записи.
+ * Проверка та же, что и у основного разбора, — по числу прочитанных выработок.
+ */
+function findTablesByScan(raw: Uint8Array, dv: DataView, debug: string[]) {
+  // 1. Точки-кандидаты: координаты шахты. X и Y обязаны различаться — иначе
+  // это параметры оформления (углы, отступы), они лежат тройками одинаковых.
+  const pts: number[] = [];
+  for (let o = 0; o + 24 <= raw.length; o++) {
+    const x = dv.getFloat64(o, true);
+    const y = dv.getFloat64(o + 8, true);
+    const z = dv.getFloat64(o + 16, true);
+    if (!isFinite(x) || !isFinite(y) || !isFinite(z)) continue;
+    if (Math.abs(x) < 1 || Math.abs(x) > 1e7) continue;
+    if (Math.abs(y) < 1 || Math.abs(y) > 1e7) continue;
+    if (z < -2000 || z > 5000) continue;
+    if (Math.abs(x - y) < 1e-6) continue;
+    pts.push(o);
+  }
+  if (pts.length < 20) return null;
+
+  // 2. Частые расстояния между соседними точками — кандидаты в длину записи.
+  const freq = new Map<number, number>();
+  for (let i = 1; i < pts.length; i++) {
+    const d = pts[i] - pts[i - 1];
+    if (d >= 60 && d <= 4000) freq.set(d, (freq.get(d) ?? 0) + 1);
+  }
+  const steps = [...freq.entries()]
+    .filter(([, n]) => n >= 5)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 12)
+    .map(([d]) => d);
+
+  for (const step of steps) {
+    // 3. Берём САМУЮ ДЛИННУЮ цепочку записей с этим шагом. Просто первая
+    // подходящая точка не годится: в начале файла лежат одиночные числа
+    // оформления, похожие на координаты, и таблица на них не начинается.
+    let S = -1;
+    let cnt = 0;
+    const seen = new Set<number>();
+    for (const p of pts) {
+      if (seen.has(p) || !isNodeAt(raw, dv, p)) continue;
+      // Отматываем к началу цепочки.
+      let s = p;
+      while (s - step >= 4 && isNodeAt(raw, dv, s - step)) s -= step;
+      if (seen.has(s)) continue;
+      let c = 0;
+      while (s + c * step + 88 <= raw.length && isNodeAt(raw, dv, s + c * step)) {
+        seen.add(s + c * step);
+        c++;
+      }
+      if (c > cnt) { cnt = c; S = s; }
+    }
+    if (S < 0 || cnt < 10) continue;
+
+    const nodes = readNodes(raw, dv, S, cnt, step);
+    if (!nodes) continue;
+    const br = readBranches(raw, dv, nodes, S + cnt * step);
+    if (br.length >= Math.max(5, cnt * 0.2)) {
+      debug.push(`Таблица узлов найдена поиском: смещение ${S}, записей ${cnt}, шаг ${step} байт`);
+      const layers = readLayers(raw, dv, S);
+      debug.push(`Список горизонтов: ${layers.length} строк`);
+      return { nodes, branches: br, layers };
+    }
+  }
   return null;
+}
+
+/** Похоже ли на запись узла в этом месте: разумные координаты и номер узла. */
+function isNodeAt(raw: Uint8Array, dv: DataView, o: number): boolean {
+  if (o - 4 < 0 || o + 88 > raw.length) return false;
+  const x = dv.getFloat64(o, true);
+  const y = dv.getFloat64(o + 8, true);
+  const z = dv.getFloat64(o + 16, true);
+  if (!isFinite(x) || !isFinite(y) || !isFinite(z)) return false;
+  if (Math.abs(x) > 1e7 || Math.abs(y) > 1e7 || z < -2000 || z > 5000) return false;
+  const id = dv.getInt32(o - 4, true);
+  return id > 0 && id < 200000;
 }
 
 function readNodes(raw: Uint8Array, dv: DataView, S: number, cnt: number, step: number): RawNode[] | null {
