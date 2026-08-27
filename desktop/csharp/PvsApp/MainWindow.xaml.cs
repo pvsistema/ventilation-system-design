@@ -42,6 +42,9 @@ public partial class MainWindow : Window
     private Process?     _serverProcess;
     private string?      _pendingFile;
     private UpdateInfo?  _updateInfo;
+    // true — установленная сборка ниже минимальной безопасной: в ней осталась
+    // устранённая уязвимость, работать нельзя до обновления.
+    private bool         _securityUpdateRequired;
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     // Флаг: JS уже подтвердил закрытие — пропускаем повторный запрос
@@ -383,6 +386,10 @@ public partial class MainWindow : Window
     // На старых сборках флага нет — веб-часть откатывается на печать через
     // окно браузера, поэтому программа не ломается.
     window.__PVS_PRINT_API__    = 1;
+    // Оболочка сама умеет показывать окно обязательного обновления. Флаг
+    // говорит веб-части не показывать своё — иначе на новых сборках человек
+    // увидел бы два одинаковых требования подряд.
+    window.__PVS_SECURITY_GATE__ = 1;
 
     function sendCs(cmd, params) {
         try { window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd }, params || {}))); }
@@ -594,6 +601,16 @@ public partial class MainWindow : Window
         });
 
         _ = WebView.CoreWebView2.ExecuteScriptAsync(BuildJsBootstrap());
+
+        // Обязательное обновление по безопасности. Показываем ПОСЛЕ загрузки
+        // интерфейса и только один раз: так окно не появляется поверх пустого
+        // экрана, а свежие сборки покажут собственное окно в веб-части.
+        if (_securityUpdateRequired)
+        {
+            _securityUpdateRequired = false;
+            Dispatcher.InvokeAsync(ShowSecurityUpdateDialog,
+                System.Windows.Threading.DispatcherPriority.Background);
+        }
     }
 
     private void OnWebMessage(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -896,6 +913,14 @@ public partial class MainWindow : Window
             if (string.IsNullOrWhiteSpace(json) || !json.TrimStart().StartsWith("{")) return null;
             var data = JsonSerializer.Deserialize<UpdateInfo>(json,
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            // Порог безопасности проверяем ОТДЕЛЬНО от обычного обновления:
+            // если текущая сборка ниже минимальной безопасной, данные нужны
+            // всегда — даже когда обычный баннер показывать не полагается.
+            if (data != null && IsSecurityUpdateRequired(data.MinSecureVersion))
+            {
+                _securityUpdateRequired = true;
+                return data;
+            }
             // Баннер показываем ТОЛЬКО если серверная версия СТРОГО НОВЕЕ текущей.
             // Раньше сравнивали строки на "!=" — из-за чего баннер вылезал даже
             // когда установлена та же или более свежая версия.
@@ -934,6 +959,48 @@ public partial class MainWindow : Window
             return false; // версии равны
         }
         catch { return false; }
+    }
+
+    // Требуется ли ОБЯЗАТЕЛЬНОЕ обновление по безопасности: текущая сборка
+    // ниже минимальной безопасной, заданной администратором. Пустой порог —
+    // требования нет (обычный режим).
+    private static bool IsSecurityUpdateRequired(string? minSecure)
+    {
+        if (string.IsNullOrWhiteSpace(minSecure)) return false;
+        return IsNewerVersion(minSecure!, AppVersion);
+    }
+
+    // Блокирующее окно: работать на уязвимой сборке нельзя. Кнопка одна —
+    // «Обновить». Отказ от обновления закрывает программу, чтобы человек не
+    // продолжал работу на небезопасной версии.
+    private void ShowSecurityUpdateDialog()
+    {
+        string latest = _updateInfo?.Version ?? "";
+        string why    = _updateInfo?.SecurityNotes ?? "";
+
+        string text =
+            "В вашей версии программы обнаружена и устранена уязвимость.\n" +
+            "Чтобы продолжить работу, установите защищённую версию.\n\n" +
+            $"Установлена:  {AppVersion}\n" +
+            (string.IsNullOrWhiteSpace(latest) ? "" : $"Безопасная:   {latest}\n") +
+            (string.IsNullOrWhiteSpace(why) ? "" : $"\n{why}\n") +
+            "\nОбновить сейчас?\n\n" +
+            "Программа скачает обновление и перезапустится.\n" +
+            "Без обновления работа невозможна.";
+
+        var answer = MessageBox.Show(this, text, "Требуется обновление безопасности",
+            MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.OK);
+
+        if (answer == MessageBoxResult.OK)
+        {
+            _ = HandleInstallUpdate();
+        }
+        else
+        {
+            // Пользователь отказался — на уязвимой сборке работать нельзя.
+            StopServerForUpdate();
+            Application.Current.Shutdown();
+        }
     }
 
     private async Task HandleInstallUpdate()
@@ -1125,6 +1192,9 @@ public partial class MainWindow : Window
     // На старых сборках флага нет — веб-часть откатывается на печать через
     // окно браузера, поэтому программа не ломается.
     window.__PVS_PRINT_API__    = 1;
+    // Окно обязательного обновления показывает сама оболочка — веб-часть
+    // своё окно не выводит, чтобы не дублировать требование.
+    window.__PVS_SECURITY_GATE__ = 1;
 
     // ── Реестр pending-промисов для C# ответов ──
     var _pending = {};
@@ -1247,6 +1317,16 @@ public class UpdateInfo
     // т.к. PropertyNameCaseInsensitive не превращает snake_case в PascalCase.
     [System.Text.Json.Serialization.JsonPropertyName("download_url")]
     public string? DownloadUrl { get; set; }
+
+    // Минимальная БЕЗОПАСНАЯ версия. Если текущая сборка ниже — обновление
+    // обязательно: оболочка сама покажет блокирующее окно, не полагаясь на
+    // веб-часть (в старых сборках интерфейс локальный и окна безопасности
+    // в нём просто нет).
+    [System.Text.Json.Serialization.JsonPropertyName("min_secure_version")]
+    public string? MinSecureVersion { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("security_notes")]
+    public string? SecurityNotes { get; set; }
 }
 
 public class VersionInfo

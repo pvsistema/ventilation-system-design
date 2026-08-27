@@ -40,6 +40,13 @@ export default function SecurityUpdateGate() {
 
   useEffect(() => {
     let cancelled = false;
+    // Оболочка новой сборки показывает своё окно обязательного обновления
+    // (оно работает даже там, где интерфейс локальный и устаревший). Чтобы
+    // человек не увидел два одинаковых требования — уступаем ей.
+    const shellHandlesIt = !!(window as Window & { __PVS_SECURITY_GATE__?: number })
+      .__PVS_SECURITY_GATE__;
+    if (shellHandlesIt) return;
+
     const check = async () => {
       try {
         const d = await fetchRemoteVersion();
