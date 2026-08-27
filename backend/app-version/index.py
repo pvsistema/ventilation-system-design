@@ -51,6 +51,8 @@ def get_version_info(s3):
         "server_public_url": "", # публичная ссылка Я.Диска на расчётное ядро
         "server_sha256":   "",   # SHA-256 подлинного server.exe (проверка целостности)
         "server_sig":      "",   # подпись хэша ядра приватным ключом Ed25519
+        "exe_sha256":      "",   # SHA-256 подлинного установщика PVS-Setup.exe
+        "exe_sig":         "",   # подпись хэша установщика приватным ключом Ed25519
     }
     try:
         obj    = s3.get_object(Bucket=BUCKET, Key=VERSION_KEY)
@@ -222,6 +224,9 @@ def handler(event: dict, context) -> dict:
             # скачанного файла и проверит подпись публичным ключом.
             "server_sha256":  info.get("server_sha256", ""),
             "server_sig":     info.get("server_sig", ""),
+            # То же для установщика — используется для отметки в админ-панели.
+            "exe_sha256":     info.get("exe_sha256", ""),
+            "exe_sig":        info.get("exe_sig", ""),
         }
         if params.get("with_links") in ("1", "true", "yes"):
             try:
@@ -266,6 +271,19 @@ def handler(event: dict, context) -> dict:
                 info["exe_public_url"] = src_url
                 info["version"]        = body.get("version", info["version"])
                 info["notes"]          = body.get("notes", info.get("notes", ""))
+                # Фиксируем контрольную сумму установщика и подписываем её —
+                # чтобы в админ-панели было видно, что файл на Я.Диске подлинный
+                # и не подменён. Установщик ставится вручную, поэтому отсутствие
+                # ключа подписи не блокирует публикацию: просто оставим пусто.
+                try:
+                    direct = resolve_download_url(src_url)
+                    exe_sha, exe_sig = hash_and_sign_file(direct)
+                    info["exe_sha256"] = exe_sha
+                    info["exe_sig"]    = exe_sig
+                except Exception as e:
+                    info["exe_sha256"] = ""
+                    info["exe_sig"]    = ""
+                    print(f"[app-version] exe sign skipped: {e}")
             else:
                 info["server_public_url"] = src_url
                 info["server_version"]    = body.get("server_version", info.get("server_version", "1.0.0"))

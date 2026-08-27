@@ -7,7 +7,7 @@
 import Icon from "@/components/ui/icon";
 
 interface UpdateTabProps {
-  currentVersion: { version: string; notes: string; server_version?: string; server_signed?: boolean } | null;
+  currentVersion: { version: string; notes: string; server_version?: string; server_signed?: boolean; exe_signed?: boolean } | null;
   updVersion: string;
   setUpdVersion: (v: string) => void;
   updNotes: string;
@@ -49,6 +49,22 @@ export default function UpdateTab({
             <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Установщик PVS.exe</div>
             <span className="text-[24px] font-bold text-green-600">{currentVersion.version}</span>
             {currentVersion.notes && <div className="text-[11px] text-gray-400 mt-0.5">{currentVersion.notes}</div>}
+            {/* Отметка подлинности установщика: подпись подтверждает, что файл
+                на хранилище не подменён. Установщик ставится вручную, поэтому
+                это информационный признак, а не автоматическая защита. */}
+            {currentVersion.exe_signed ? (
+              <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-green-50 text-green-700 border border-green-200"
+                title="Контрольная сумма установщика подписана — файл подлинный и не подменён.">
+                <Icon name="ShieldCheck" size={12} />
+                Файл подписан
+              </div>
+            ) : (
+              <div className="inline-flex items-center gap-1 mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-gray-50 text-gray-500 border border-gray-200"
+                title="У текущего установщика нет подписи. Опубликуйте его заново, чтобы зафиксировать контрольную сумму.">
+                <Icon name="ShieldAlert" size={12} />
+                Без подписи
+              </div>
+            )}
           </div>
           <div className="w-px bg-gray-200" />
           <div>

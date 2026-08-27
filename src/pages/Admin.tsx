@@ -87,7 +87,7 @@ export default function Admin() {
   const [monLoading, setMonLoading]     = useState(false);
 
   // Обновление PVS.exe (установщик)
-  const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string; server_version?: string; server_signed?: boolean} | null>(null);
+  const [currentVersion, setCurrentVersion] = useState<{version: string; notes: string; server_version?: string; server_signed?: boolean; exe_signed?: boolean} | null>(null);
   const [updVersion, setUpdVersion]     = useState("");
   const [updNotes, setUpdNotes]         = useState("");
   const [updStatus, setUpdStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
@@ -398,6 +398,8 @@ export default function Admin() {
         // Ядро считается защищённым, если сервер выдал и контрольную сумму,
         // и подпись — программа сможет проверить целостность обновления.
         server_signed: !!(d.server_sha256 && d.server_sig),
+        // То же для установщика — подпись подтверждает подлинность файла.
+        exe_signed: !!(d.exe_sha256 && d.exe_sig),
       });
     } catch { setCurrentVersion(null); }
   };
@@ -418,7 +420,20 @@ export default function Admin() {
       const text = await res.text();
       if (!res.ok) throw new Error(text.startsWith("{") ? (JSON.parse(text).error || "Ошибка") : `HTTP ${res.status}`);
       setUpdStatus("ok");
-      setCurrentVersion(prev => ({ version: updVersion, notes: updNotes, server_version: prev?.server_version }));
+      // Ответ содержит info с актуальными полями (в т.ч. exe_sha256/exe_sig) —
+      // берём признак подписи оттуда, чтобы отметка сразу была верной.
+      let exeSigned = false;
+      try {
+        const info = JSON.parse(text).info;
+        exeSigned = !!(info?.exe_sha256 && info?.exe_sig);
+      } catch { /* оставим false */ }
+      setCurrentVersion(prev => ({
+        version: updVersion,
+        notes: updNotes,
+        server_version: prev?.server_version,
+        server_signed: prev?.server_signed,
+        exe_signed: exeSigned,
+      }));
       setUpdVersion("");
       setUpdNotes("");
     } catch (err: unknown) {
