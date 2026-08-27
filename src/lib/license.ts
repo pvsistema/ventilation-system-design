@@ -194,23 +194,20 @@ async function sha256hex(text: string): Promise<string> {
 // ── Проверка подписи онлайн-лицензии ─────────────────────────────────────────
 // Хэш отпечатка ЭТОГО рабочего места, каким его знает сервер (fp_hash).
 // Нужен для сверки поля fp внутри подписанного payload — чтобы чужую (пусть и
-// подлинную) подпись нельзя было перенести на другой ПК. Считается один раз при
-// вычислении MachineInfo и кэшируется здесь, чтобы loadCachedLicense() оставался
-// синхронным (он вызывается на старте до любых await).
+// подлинную) подпись нельзя было перенести на другой ПК.
+//
+// ВАЖНО: хранится ТОЛЬКО В ПАМЯТИ и вычисляется заново при каждом запуске из
+// реального железа (см. getMachineInfo). В хранилище его класть нельзя: тогда
+// вместе с подделанной лицензией подложили бы и «подходящий» отпечаток, и
+// сверка потеряла бы смысл.
 let _fpHashForVerify: string | null = null;
-export function setFingerprintForVerify(fingerprint: string, fpHash: string): void {
+export function setFingerprintForVerify(fpHash: string): void {
   _fpHashForVerify = fpHash;
-  try { sessionStorage.setItem("pvs_fp_hash", fpHash); } catch { /* ignore */ }
-  void fingerprint;
 }
 function getFpHashForVerify(): string | null {
-  if (_fpHashForVerify) return _fpHashForVerify;
-  try {
-    const v = sessionStorage.getItem("pvs_fp_hash");
-    if (v) { _fpHashForVerify = v; return v; }
-  } catch { /* ignore */ }
-  return null;
+  return _fpHashForVerify;
 }
+
 
 /**
  * Проверяет подпись лицензии, выданную сервером.
@@ -226,7 +223,7 @@ function getFpHashForVerify(): string | null {
  * Если поля signed нет вовсе (совсем старый кэш) — вернём null: решение о
  * доверии принимает вызывающий код (мягкая миграция, см. loadCachedLicense).
  */
-function verifySignedLicense(info: LicenseInfo): boolean | null {
+function verifySignedLicense(info: LicenseInfo, strict = false): boolean | null {
   const signed = info.signed;
   if (!signed || !signed.payload || !signed.sig) return null; // подписи нет
   if (!verifySignedPayload(signed.payload, signed.sig)) return false;
@@ -237,11 +234,20 @@ function verifySignedLicense(info: LicenseInfo): boolean | null {
     return false;
   }
   if (!p.licensed) return false;
+  // В подписи ОБЯЗАН быть отпечаток места: подпись без привязки к ПК
+  // расходилась бы по рукам как обычный файл.
+  if (!p.fp) return false;
   // Привязка к рабочему месту: подпись действительна только для «своего» fp.
-  // Если хэш отпечатка ещё не посчитан (самый первый запуск до getMachineInfo) —
-  // не отклоняем по этому признаку, сверку сделает следующая серверная проверка.
+  // Отпечаток считается из реального железа при каждом запуске и живёт только
+  // в памяти, поэтому подменить его вместе с лицензией нельзя.
   const myFp = getFpHashForVerify();
-  if (myFp && p.fp && p.fp !== myFp) return false;
+  if (myFp) {
+    if (p.fp !== myFp) return false;
+  } else if (strict) {
+    // Строгий режим (проверка ответа сервера): отпечаток к этому моменту всегда
+    // посчитан. Если его нет — что-то не так, лицензию не принимаем.
+    return false;
+  }
   // Срок ключа. Часы переведены назад — проверить нельзя, доверять нельзя.
   const clock = checkClock();
   if (!clock.ok) return false;
@@ -249,6 +255,9 @@ function verifySignedLicense(info: LicenseInfo): boolean | null {
     const exp = new Date(p.exp).getTime();
     if (exp && exp < Date.now()) return false;
   }
+  // Момент выдачи: подпись из будущего — признак подмены часов или подделки.
+  // Небольшой запас на расхождение часов клиента и сервера.
+  if (p.iat && p.iat * 1000 > Date.now() + 24 * 3600 * 1000) return false;
   return true;
 }
 
@@ -259,7 +268,7 @@ function verifySignedLicense(info: LicenseInfo): boolean | null {
  * подпись ЕСТЬ, но она неверная (попытка подмены ответа).
  */
 function serverResponseTrusted(info: LicenseInfo): boolean {
-  const v = verifySignedLicense(info);
+  const v = verifySignedLicense(info, true);
   return v !== false;
 }
 
@@ -439,7 +448,7 @@ export async function getMachineInfo(): Promise<MachineInfo> {
 
   // Хэш отпечатка, каким его знает сервер (fp_hash = sha256(fingerprint)).
   // Нужен для проверки, что подписанная лицензия выдана именно этому месту.
-  try { setFingerprintForVerify(fingerprint, await sha256hex(fingerprint)); }
+  try { setFingerprintForVerify(await sha256hex(fingerprint)); }
   catch { /* ignore */ }
 
   const platform = detectPlatform();
