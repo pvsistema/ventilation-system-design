@@ -45,6 +45,30 @@ if (splash) {
     el.style.visibility = 'hidden';
     setTimeout(() => el.remove(), 600);
   };
-  // Убираем через 1.5 сек — гарантированно, независимо от React
-  setTimeout(hideSplash, 1500);
+  // Раньше заставка держалась ровно 1,5 секунды независимо ни от чего: на
+  // быстрой машине интерфейс был готов раньше, а человек всё равно ждал.
+  // Теперь убираем её, КАК ТОЛЬКО рабочий экран реально отрисован — на
+  // быстрых машинах это заметно раньше полутора секунд.
+  //
+  // Ждём двух кадров подряд: первый кадр — React только вставил разметку,
+  // ко второму браузер её уже показал. Уберёшь второй — на миг мелькнёт
+  // белый экран между исчезновением заставки и появлением схемы.
+  const hideWhenPainted = () =>
+    requestAnimationFrame(() => requestAnimationFrame(hideSplash));
+
+  if (document.getElementById('root')?.childElementCount) {
+    hideWhenPainted();
+  } else {
+    // Интерфейс ещё строится — ждём появления разметки в корне страницы.
+    const obs = new MutationObserver(() => {
+      if (document.getElementById('root')?.childElementCount) {
+        obs.disconnect();
+        hideWhenPainted();
+      }
+    });
+    obs.observe(document.getElementById('root')!, { childList: true });
+    // Страховка: если что-то пойдёт не так, заставка всё равно уйдёт —
+    // человек не должен остаться перед вечным логотипом.
+    setTimeout(() => { obs.disconnect(); hideSplash(); }, 8000);
+  }
 }

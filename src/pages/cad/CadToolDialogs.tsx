@@ -5,22 +5,33 @@
 // редактирование ветвей, вентрубопровод, руководство пользователя.
 // Логика/состояние остаются в CadPage. Поведение 1:1 с исходником.
 // ─────────────────────────────────────────────────────────────────────────────
-import type React from "react";
-import LegendDialog from "@/components/cad/LegendDialog";
-import PrintDialog from "@/components/cad/PrintDialog";
-import RenumberDialog, { type RenumberOptions } from "@/components/cad/RenumberDialog";
-import SelectSimilarDialog from "@/components/cad/SelectSimilarDialog";
-import DepressogramDialog from "@/components/cad/DepressogramDialog";
-import FireStabilityDialog from "@/components/cad/FireStabilityDialog";
+import React, { lazy, Suspense } from "react";
+// ── Диалоги подгружаются в момент открытия ──────────────────────────────────
+// Раньше код ВСЕХ этих окон (печать, легенда, депрессограмма, настройки и
+// прочие — вместе больше 300 КБ исходников) лежал в основном файле программы и
+// читался при каждом запуске, хотя на стартовом экране не нужен ни один из них.
+// Теперь каждое окно загружается только когда его открывают: запуск быстрее,
+// а сами окна открываются без заметной задержки — файлы лежат на локальном диске.
+//
+// ВАЖНО: типы (`type ...`) импортируются обычным способом — они существуют
+// только при сборке и в готовую программу не попадают.
+import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import type { FireStabilityFact } from "@/lib/fireStability";
-import WaterFireCheckDialog from "@/components/cad/WaterFireCheckDialog";
-import EvacRiskDialog from "@/components/cad/EvacRiskDialog";
-import VdsDialog from "@/components/cad/VdsDialog";
-import LicenseDialog from "@/components/LicenseDialog";
-import SettingsDialog from "@/components/cad/SettingsDialog";
-import MultiBranchPropsDialog from "@/components/cad/MultiBranchPropsDialog";
-import VentPipeDialog from "@/components/cad/VentPipeDialog";
-import HelpDialog from "@/components/cad/HelpDialog";
+
+const LegendDialog           = lazy(() => import("@/components/cad/LegendDialog"));
+const PrintDialog            = lazy(() => import("@/components/cad/PrintDialog"));
+const RenumberDialog         = lazy(() => import("@/components/cad/RenumberDialog"));
+const SelectSimilarDialog    = lazy(() => import("@/components/cad/SelectSimilarDialog"));
+const DepressogramDialog     = lazy(() => import("@/components/cad/DepressogramDialog"));
+const FireStabilityDialog    = lazy(() => import("@/components/cad/FireStabilityDialog"));
+const WaterFireCheckDialog   = lazy(() => import("@/components/cad/WaterFireCheckDialog"));
+const EvacRiskDialog         = lazy(() => import("@/components/cad/EvacRiskDialog"));
+const VdsDialog              = lazy(() => import("@/components/cad/VdsDialog"));
+const LicenseDialog          = lazy(() => import("@/components/LicenseDialog"));
+const SettingsDialog         = lazy(() => import("@/components/cad/SettingsDialog"));
+const MultiBranchPropsDialog = lazy(() => import("@/components/cad/MultiBranchPropsDialog"));
+const VentPipeDialog         = lazy(() => import("@/components/cad/VentPipeDialog"));
+const HelpDialog             = lazy(() => import("@/components/cad/HelpDialog"));
 import { type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { type UnitsConfig } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
@@ -155,7 +166,10 @@ export interface CadToolDialogsProps {
 
 export default function CadToolDialogs(p: CadToolDialogsProps) {
   return (
-    <>
+    // Suspense обязателен для подгружаемых окон. Запасной вид — пустой:
+    // окна читаются с локального диска за доли секунды, и мелькающая
+    // надпись «Загрузка…» раздражала бы сильнее самой паузы.
+    <Suspense fallback={null}>
       {/* ═══ УСЛОВНЫЕ ОБОЗНАЧЕНИЯ ═══════════════════════════════════════════ */}
       {p.showLegend && (
         <LegendDialog onClose={() => p.setShowLegend(false)} />
@@ -387,6 +401,6 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
       {p.showHelpDialog && (
         <HelpDialog onClose={() => p.setShowHelpDialog(false)} />
       )}
-    </>
+    </Suspense>
   );
 }
