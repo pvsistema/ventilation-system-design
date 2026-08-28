@@ -13,6 +13,12 @@
 //   кМюрг = R / 9.81e-3   (обратно к импорту: Н·с²/м⁸ = кМюрг × 9.81e-3)
 // ─────────────────────────────────────────────────────────────────────────────
 
+// JSZip импортируется СТАТИЧЕСКИ, как и в erpExport/erpImport/hqDiagramExcel.
+// Раньше здесь стоял динамический import(): библиотека всё равно попадала в
+// общий пакет (её статически тянут соседние модули), но сборщик каждый раз
+// предупреждал о смешанном импорте. Отдельного чанка это не давало —
+// только шум в логе сборки.
+import JSZip from "jszip";
 import { type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { type Position } from "@/lib/positions";
 
@@ -444,7 +450,6 @@ export async function downloadCsvZip(
   files: Record<string, string> | Vent2Files | AeroSetFiles,
   zipName: string,
 ): Promise<void> {
-  const JSZip = (await import("jszip")).default;
   const zip = new JSZip();
   const bom = "\uFEFF"; // UTF-8 BOM — кириллица корректно читается
   for (const [name, content] of Object.entries(files)) {
