@@ -45,6 +45,11 @@ public partial class MainWindow : Window
     // true — установленная сборка ниже минимальной безопасной: в ней осталась
     // устранённая уязвимость, работать нельзя до обновления.
     private bool         _securityUpdateRequired;
+    // true — интерфейс загружен и виден. Нужен потому, что проверка обновлений
+    // теперь идёт фоном и может завершиться как до показа окна, так и после:
+    // по этому флагу решаем, кто именно покажет окно обязательного обновления,
+    // чтобы оно не выскочило поверх заставки и не показалось дважды.
+    private bool         _webViewReady;
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(10) };
 
     // Флаг: JS уже подтвердил закрытие — пропускаем повторный запрос
@@ -122,10 +127,45 @@ public partial class MainWindow : Window
             return;
         }
 
-        _updateInfo = await checkUpdate;
+        // ЗАПУСК НЕ ЖДЁТ ПРОВЕРКУ ОБНОВЛЕНИЙ.
+        // Раньше здесь стояло ожидание ответа сервера версий (до 10 секунд по
+        // таймауту Http). На руднике со слабой или обрывающейся связью человек
+        // всё это время смотрел на заставку — хотя обновление никак не влияет
+        // на то, можно ли уже начать работу.
+        //
+        // Теперь проверка продолжается в фоне, а интерфейс грузится сразу.
+        // Когда ответ придёт, результат применяется задним числом: если версия
+        // признана небезопасной, окно обязательного обновления всё равно
+        // появится — на пару секунд позже, но НЕ пропадёт. Защита сохранена.
+        _ = ApplyUpdateInfoWhenReadyAsync(checkUpdate);
 
         SetStatus("Загрузка интерфейса...");
         await InitWebViewAsync();
+    }
+
+    /// <summary>
+    /// Досматривает фоновую проверку обновлений, начатую при запуске.
+    /// Вызывается без ожидания, чтобы не задерживать показ интерфейса.
+    ///
+    /// Если к моменту ответа интерфейс уже загружен (обычный случай), окно
+    /// обязательного обновления показываем здесь же. Если ответ пришёл раньше
+    /// навигации — окно покажет OnNavigationCompleted по флагу, как и прежде.
+    /// </summary>
+    private async Task ApplyUpdateInfoWhenReadyAsync(Task<UpdateInfo?> checkUpdate)
+    {
+        UpdateInfo? info;
+        try { info = await checkUpdate; }
+        catch { return; }   // нет связи — работаем на текущей версии
+
+        _updateInfo = info;
+
+        // Обязательное обновление по безопасности. Показываем только если
+        // интерфейс уже на экране: иначе окно выскочит поверх заставки, а
+        // OnNavigationCompleted покажет его сам чуть позже.
+        if (!_securityUpdateRequired || !_webViewReady) return;
+        _securityUpdateRequired = false;
+        await Dispatcher.InvokeAsync(ShowSecurityUpdateDialog,
+            System.Windows.Threading.DispatcherPriority.Background);
     }
 
     private async Task UpdateServerExeIfNeededAsync()
@@ -600,11 +640,17 @@ public partial class MainWindow : Window
             WebView.Visibility    = Visibility.Visible;
         });
 
+        _webViewReady = true;
         _ = WebView.CoreWebView2.ExecuteScriptAsync(BuildJsBootstrap());
 
         // Обязательное обновление по безопасности. Показываем ПОСЛЕ загрузки
         // интерфейса и только один раз: так окно не появляется поверх пустого
         // экрана, а свежие сборки покажут собственное окно в веб-части.
+        //
+        // Проверка обновлений теперь идёт фоном и часто ещё не завершена к
+        // этому моменту — тогда окно покажет ApplyUpdateInfoWhenReadyAsync,
+        // как только придёт ответ сервера. Оба пути гасят флаг, поэтому
+        // требование показывается ровно один раз, кто бы ни успел первым.
         if (_securityUpdateRequired)
         {
             _securityUpdateRequired = false;
