@@ -1081,14 +1081,34 @@ public partial class MainWindow : Window
                 long read  = 0;
                 int  last  = -1;
                 int  n;
+
+                // Скорость закачки. На руднике связь узкая и рваная, поэтому
+                // мгновенная скорость скачет — считаем сглаженную (EMA) по
+                // окну ~0,5 с: так цифра читаемая, а не мельтешит.
+                var swAll   = System.Diagnostics.Stopwatch.StartNew();
+                var swTick  = System.Diagnostics.Stopwatch.StartNew();
+                long tickBytes = 0;
+                double bps = 0;
+
                 while ((n = await stream.ReadAsync(buffer)) > 0)
                 {
                     await file.WriteAsync(buffer.AsMemory(0, n));
                     read += n;
+                    tickBytes += n;
+
+                    if (swTick.ElapsedMilliseconds >= 500)
+                    {
+                        double inst = tickBytes * 1000.0 / swTick.ElapsedMilliseconds;
+                        // Первое измерение принимаем как есть, дальше сглаживаем.
+                        bps = bps <= 0 ? inst : bps * 0.7 + inst * 0.3;
+                        tickBytes = 0;
+                        swTick.Restart();
+                    }
+
+                    int pct;
                     if (total > 0)
                     {
-                        int pct = (int)(read * 100 / total);
-                        if (pct != last) { last = pct; ReportUpdateProgress(pct); }
+                        pct = (int)(read * 100 / total);
                     }
                     else
                     {
@@ -1097,11 +1117,19 @@ public partial class MainWindow : Window
                         // слалось НИЧЕГО и полоса загрузки стояла на нуле всё
                         // скачивание. Оцениваем по типовому размеру установщика
                         // (~82 МБ) и держим до 99%, чтобы полоса двигалась.
-                        int pct = (int)Math.Min(99, read * 100 / (82L * 1024 * 1024));
-                        if (pct != last) { last = pct; ReportUpdateProgress(pct); }
+                        pct = (int)Math.Min(99, read * 100 / (82L * 1024 * 1024));
+                    }
+                    if (pct != last)
+                    {
+                        last = pct;
+                        // Средняя скорость за всю закачку — запасной вариант,
+                        // если окно ещё не набралось (первые доли секунды).
+                        double avg = swAll.Elapsed.TotalSeconds > 0.2
+                            ? read / swAll.Elapsed.TotalSeconds : 0;
+                        ReportUpdateProgress(pct, read, total, bps > 0 ? bps : avg);
                     }
                 }
-                ReportUpdateProgress(100);
+                ReportUpdateProgress(100, read, total > 0 ? total : read, 0);
             }
 
             // ВАЖНО: перед запуском установщика ОСТАНАВЛИВАЕМ расчётное ядро.
@@ -1152,16 +1180,34 @@ public partial class MainWindow : Window
         _ = WebView.CoreWebView2.ExecuteScriptAsync(js);
     }
 
-    // Сообщает JS-баннеру прогресс скачивания обновления (0..100).
-    private void ReportUpdateProgress(int percent)
+    /// <summary>
+    /// Сообщает интерфейсу ход скачивания обновления.
+    ///
+    /// percent — 0..100, либо −1 = обновление отменено/сорвалось.
+    /// Вторым аргументом идут подробности {loaded, total, speed} в БАЙТАХ и
+    /// байтах/с: по ним экран «О программе» показывает скорость и оставшееся
+    /// время. На руднике связь узкая, и без этих цифр непонятно, идёт ли
+    /// закачка вообще или программа зависла.
+    ///
+    /// Старые сборки веб-части принимают только первый аргумент и просто
+    /// игнорируют второй — совместимость сохраняется.
+    /// </summary>
+    private void ReportUpdateProgress(int percent, long loaded = 0,
+                                      long total = 0, double speed = 0)
     {
         try
         {
             Dispatcher.Invoke(() =>
             {
                 if (WebView?.CoreWebView2 == null) return;
+                string det = JsonSerializer.Serialize(new
+                {
+                    loaded,
+                    total = total > 0 ? total : 0,
+                    speed = (long)Math.Max(0, speed),
+                });
                 _ = WebView.CoreWebView2.ExecuteScriptAsync(
-                    $"window.__pvsUpdateProgress && window.__pvsUpdateProgress({percent});");
+                    $"window.__pvsUpdateProgress && window.__pvsUpdateProgress({percent}, {det});");
             });
         }
         catch { /* окно закрывается — прогресс уже не нужен */ }

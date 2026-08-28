@@ -133,7 +133,16 @@ interface DesktopApi {
  * Теперь прогресс раздаётся ВСЕМ подписчикам, поэтому и баннер, и окно
  * «О программе» показывают одну и ту же полосу загрузки.
  */
-type ProgressListener = (percent: number) => void;
+/** Подробности закачки: сколько скачано, всего (байт) и скорость (байт/с). */
+export interface UpdateProgressDetails {
+  loaded: number;
+  total: number;
+  speed: number;
+  /** Оставшееся время, секунды. null — оценить нельзя (нет размера/скорости). */
+  etaSec: number | null;
+}
+
+type ProgressListener = (percent: number, details?: UpdateProgressDetails) => void;
 const progressListeners = new Set<ProgressListener>();
 let progressHookInstalled = false;
 
@@ -141,17 +150,58 @@ export function onUpdateProgress(fn: ProgressListener): () => void {
   progressListeners.add(fn);
   if (!progressHookInstalled) {
     progressHookInstalled = true;
-    const w = window as Window & { __pvsUpdateProgress?: ProgressListener };
-    w.__pvsUpdateProgress = (p: number) => {
+    const w = window as Window & {
+      __pvsUpdateProgress?: (p: number, d?: Partial<UpdateProgressDetails>) => void;
+    };
+    w.__pvsUpdateProgress = (p, d) => {
       const raw = Number(p);
       // −1 — оболочка сообщает, что обновление отменено или сорвалось
       // (например, человек отклонил запрос прав администратора). Передаём
       // как есть, чтобы экран снял надпись «Установка…» и вернул кнопку.
       const value = raw < 0 ? -1 : Math.max(0, Math.min(100, raw || 0));
-      progressListeners.forEach((l) => l(value));
+
+      // Подробности шлют только свежие сборки оболочки. Старые вызывают
+      // функцию с одним аргументом — тогда details просто нет.
+      let details: UpdateProgressDetails | undefined;
+      if (d && (Number(d.total) > 0 || Number(d.speed) > 0)) {
+        const loaded = Math.max(0, Number(d.loaded) || 0);
+        const total  = Math.max(0, Number(d.total) || 0);
+        const speed  = Math.max(0, Number(d.speed) || 0);
+        const etaSec = total > loaded && speed > 0
+          ? Math.round((total - loaded) / speed)
+          : null;
+        details = { loaded, total, speed, etaSec };
+      }
+      progressListeners.forEach((l) => l(value, details));
     };
   }
   return () => { progressListeners.delete(fn); };
+}
+
+/** «12,4 МБ» — размер по-русски, без лишних знаков. */
+export function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 МБ";
+  const mb = bytes / (1024 * 1024);
+  if (mb >= 10) return `${Math.round(mb)} МБ`;
+  if (mb >= 1) return `${mb.toFixed(1).replace(".", ",")} МБ`;
+  return `${Math.max(1, Math.round(bytes / 1024))} КБ`;
+}
+
+/** «2,3 МБ/с» или «450 КБ/с» — скорость закачки. */
+export function formatSpeed(bytesPerSec: number): string {
+  if (!Number.isFinite(bytesPerSec) || bytesPerSec <= 0) return "";
+  return `${formatBytes(bytesPerSec)}/с`;
+}
+
+/** «осталось ~2 мин» — оставшееся время крупными, честными единицами. */
+export function formatEta(sec: number | null): string {
+  if (sec == null || !Number.isFinite(sec) || sec <= 0) return "";
+  if (sec < 10) return "осталось несколько секунд";
+  if (sec < 60) return `осталось ~${Math.round(sec / 5) * 5} с`;
+  const min = Math.round(sec / 60);
+  if (min < 60) return `осталось ~${min} мин`;
+  const h = Math.floor(min / 60);
+  return `осталось ~${h} ч ${min % 60} мин`;
 }
 
 export function downloadAndInstall(): void {

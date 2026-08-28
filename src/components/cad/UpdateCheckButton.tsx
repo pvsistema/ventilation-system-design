@@ -1,6 +1,10 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { fetchRemoteVersion, isNewerVersion, downloadAndInstall, onUpdateProgress, isDesktopApp } from "@/lib/updater";
+import {
+  fetchRemoteVersion, isNewerVersion, downloadAndInstall, onUpdateProgress,
+  isDesktopApp, formatBytes, formatSpeed, formatEta,
+  type UpdateProgressDetails,
+} from "@/lib/updater";
 
 interface Props {
   /** Текущая версия установленной программы (например "2.3.24") */
@@ -25,12 +29,16 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
   // не запускается (жал кнопку повторно).
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  // Скорость и оставшееся время: на руднике связь узкая, и без этих цифр
+  // непонятно, идёт закачка или зависла. Приходят от свежей оболочки.
+  const [details, setDetails] = useState<UpdateProgressDetails | null>(null);
 
-  useEffect(() => onUpdateProgress((p) => {
+  useEffect(() => onUpdateProgress((p, d) => {
     // −1: обновление отменено (отказ от прав администратора) или сорвалось —
     // возвращаем кнопку в исходное состояние, чтобы можно было повторить.
-    if (p < 0) { setBusy(false); setProgress(null); return; }
+    if (p < 0) { setBusy(false); setProgress(null); setDetails(null); return; }
     setProgress(p);
+    if (d) setDetails(d);
   }), []);
 
   const startDownload = () => {
@@ -88,6 +96,18 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
                 : progress < 100 ? `Загрузка обновления… ${progress}%`
                 : "Установка и перезапуск программы…"}
             </div>
+
+            {/* Вторая строка — сколько скачано, скорость, оставшееся время.
+                Показываем только пока идёт сама закачка и только если оболочка
+                прислала подробности (старые сборки их не шлют). */}
+            {details && progress !== null && progress < 100 && (
+              <div className="text-[11px] text-gray-500 tabular-nums">
+                {details.total > 0
+                  && `${formatBytes(details.loaded)} из ${formatBytes(details.total)}`}
+                {details.speed > 0 && ` · ${formatSpeed(details.speed)}`}
+                {formatEta(details.etaSec) && ` · ${formatEta(details.etaSec)}`}
+              </div>
+            )}
           </div>
         )}
 

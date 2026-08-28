@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { APP_VERSION } from "@/lib/appVersion";
-import { fetchRemoteVersion, isNewerVersion, downloadAndInstall, reloadBrowserToUpdate, onUpdateProgress } from "@/lib/updater";
+import {
+  fetchRemoteVersion, isNewerVersion, downloadAndInstall, reloadBrowserToUpdate,
+  onUpdateProgress, formatSpeed, formatEta, type UpdateProgressDetails,
+} from "@/lib/updater";
 
 /**
  * Единый баннер обновления приложения — работает и в браузере, и в десктопе
@@ -20,6 +23,7 @@ export default function AppUpdateBanner() {
   const [notes, setNotes] = useState("");
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
+  const [details, setDetails] = useState<UpdateProgressDetails | null>(null);
   const [dismissed, setDismissed] = useState(false);
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
@@ -27,11 +31,12 @@ export default function AppUpdateBanner() {
   // Десктоп (C#) шлёт прогресс скачивания обновления. Подписка общая
   // (updater.ts), поэтому окно «О программе» видит тот же прогресс —
   // раньше обработчик был единственным и принадлежал только баннеру.
-  useEffect(() => onUpdateProgress((p) => {
+  useEffect(() => onUpdateProgress((p, d) => {
     // −1: обновление отменено или сорвалось — снимаем «занятость», иначе
     // баннер навсегда застревал бы на «Установка и перезапуск…».
-    if (p < 0) { setBusy(false); setProgress(null); return; }
+    if (p < 0) { setBusy(false); setProgress(null); setDetails(null); return; }
     setProgress(p);
+    if (d) setDetails(d);
   }), []);
 
   useEffect(() => {
@@ -171,8 +176,16 @@ export default function AppUpdateBanner() {
       <div className="flex-1 min-w-0 truncate">
         <b>Доступно обновление v{version}</b>
         {busy && progress !== null ? (
-          <span className="opacity-90 ml-2 text-[12px]">
+          <span className="opacity-90 ml-2 text-[12px] tabular-nums">
             {progress < 100 ? `Загрузка обновления… ${progress}%` : "Установка и перезапуск…"}
+            {/* Скорость и оставшееся время — чтобы на узкой связи было видно,
+                что закачка идёт, и сколько ещё ждать. */}
+            {details && progress < 100 && (
+              <>
+                {details.speed > 0 && ` · ${formatSpeed(details.speed)}`}
+                {formatEta(details.etaSec) && ` · ${formatEta(details.etaSec)}`}
+              </>
+            )}
           </span>
         ) : (
           notes && <span className="opacity-80 ml-2 text-[12px]">{notes}</span>
