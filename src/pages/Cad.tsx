@@ -3592,14 +3592,21 @@ export default function CadPage() {
         // Горячие узлы пути дыма пожара: T перегрета → решатель считает
         // тепловую тягу через natural_draft_h (сбалансированный контур).
         const hotT = hotNodeTemps?.[n.id];
-        const isHot = hotT !== undefined && !n.atmosphereLink;
+        // Устье, через которое ВЫХОДЯТ продукты горения, тоже считается
+        // горячим. Раньше атмосферные узлы исключались (|| !n.atmosphereLink),
+        // и в стволе, идущем одной ветвью прямо на поверхность, нагрев некуда
+        // было записать: низ и верх ствола получали одинаковые 15°C, тяги не
+        // возникало и расход при пожаре не менялся. По нормативу (прил. 2,
+        // п. 2.2, форм. 2.3) горячая исходящая струя, наоборот, работает как
+        // дымовая труба и увеличивает расход при восходящем проветривании.
+        const isHot = hotT !== undefined;
         return {
           id: n.id,
           isAtm: n.atmosphereLink,
           // Высотная отметка для естественной тяги — МАРКШЕЙДЕРСКАЯ:
           // сдвиг узла на схеме не должен менять тягу.
           z: surveyXYZ(n).z,
-          airTemp: n.atmosphereLink ? surfaceTempVal : (isHot ? hotT : (n.airTemp ?? surfaceTempVal)),
+          airTemp: isHot ? hotT : (n.atmosphereLink ? surfaceTempVal : (n.airTemp ?? surfaceTempVal)),
           userTemp: isHot ? true : (!n.atmosphereLink && (n.airTemp ?? 20) !== 20),
           // hotNode — признак узла пути дыма пожара. Бэкенд НЕ перетирает его
           // температуру геотермическим градиентом при включённой ест.тяге.
