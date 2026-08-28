@@ -121,6 +121,39 @@ interface DesktopApi {
  *   она скачивает установщик, подменяет .exe через .bat и перезапускается.
  * - Браузер: скачиваем .exe по ?file=exe (сервер отдаёт корректное имя файла).
  */
+/**
+ * Подписка на прогресс скачивания обновления в десктопе, % (0–100).
+ *
+ * Оболочка (C#) во время загрузки установщика вызывает window.__pvsUpdateProgress.
+ * Раньше этот обработчик ставил ТОЛЬКО верхний баннер обновления. Поэтому в окне
+ * «О программе» кнопка «Скачать и обновить» выглядела мёртвой: нажатие ничего
+ * видимо не меняло, установщик (~82 МБ) молча качался минуту, и пользователь
+ * решал, что обновление не работает, — и жал кнопку снова.
+ *
+ * Теперь прогресс раздаётся ВСЕМ подписчикам, поэтому и баннер, и окно
+ * «О программе» показывают одну и ту же полосу загрузки.
+ */
+type ProgressListener = (percent: number) => void;
+const progressListeners = new Set<ProgressListener>();
+let progressHookInstalled = false;
+
+export function onUpdateProgress(fn: ProgressListener): () => void {
+  progressListeners.add(fn);
+  if (!progressHookInstalled) {
+    progressHookInstalled = true;
+    const w = window as Window & { __pvsUpdateProgress?: ProgressListener };
+    w.__pvsUpdateProgress = (p: number) => {
+      const raw = Number(p);
+      // −1 — оболочка сообщает, что обновление отменено или сорвалось
+      // (например, человек отклонил запрос прав администратора). Передаём
+      // как есть, чтобы экран снял надпись «Установка…» и вернул кнопку.
+      const value = raw < 0 ? -1 : Math.max(0, Math.min(100, raw || 0));
+      progressListeners.forEach((l) => l(value));
+    };
+  }
+  return () => { progressListeners.delete(fn); };
+}
+
 export function downloadAndInstall(): void {
   const api = (window as Window & { electronAPI?: DesktopApi }).electronAPI;
   if (isDesktopApp() && api?.installUpdate) {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { APP_VERSION } from "@/lib/appVersion";
-import { fetchRemoteVersion, isNewerVersion, downloadAndInstall, reloadBrowserToUpdate } from "@/lib/updater";
+import { fetchRemoteVersion, isNewerVersion, downloadAndInstall, reloadBrowserToUpdate, onUpdateProgress } from "@/lib/updater";
 
 /**
  * Единый баннер обновления приложения — работает и в браузере, и в десктопе
@@ -24,12 +24,15 @@ export default function AppUpdateBanner() {
   const [showSavePrompt, setShowSavePrompt] = useState(false);
   const [showReminder, setShowReminder] = useState(false);
 
-  // Десктоп (C#) шлёт прогресс скачивания обновления сюда.
-  useEffect(() => {
-    const w = window as Window & { __pvsUpdateProgress?: (p: number) => void };
-    w.__pvsUpdateProgress = (p: number) => setProgress(Math.max(0, Math.min(100, p)));
-    return () => { w.__pvsUpdateProgress = undefined; };
-  }, []);
+  // Десктоп (C#) шлёт прогресс скачивания обновления. Подписка общая
+  // (updater.ts), поэтому окно «О программе» видит тот же прогресс —
+  // раньше обработчик был единственным и принадлежал только баннеру.
+  useEffect(() => onUpdateProgress((p) => {
+    // −1: обновление отменено или сорвалось — снимаем «занятость», иначе
+    // баннер навсегда застревал бы на «Установка и перезапуск…».
+    if (p < 0) { setBusy(false); setProgress(null); return; }
+    setProgress(p);
+  }), []);
 
   useEffect(() => {
     let cancelled = false;

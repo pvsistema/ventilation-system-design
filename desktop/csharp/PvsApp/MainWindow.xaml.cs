@@ -1090,6 +1090,16 @@ public partial class MainWindow : Window
                         int pct = (int)(read * 100 / total);
                         if (pct != last) { last = pct; ReportUpdateProgress(pct); }
                     }
+                    else
+                    {
+                        // Сервер не сообщил размер файла (нет Content-Length) —
+                        // процент посчитать не из чего. Раньше в этом случае не
+                        // слалось НИЧЕГО и полоса загрузки стояла на нуле всё
+                        // скачивание. Оцениваем по типовому размеру установщика
+                        // (~82 МБ) и держим до 99%, чтобы полоса двигалась.
+                        int pct = (int)Math.Min(99, read * 100 / (82L * 1024 * 1024));
+                        if (pct != last) { last = pct; ReportUpdateProgress(pct); }
+                    }
                 }
                 ReportUpdateProgress(100);
             }
@@ -1120,6 +1130,11 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
+            // Сообщаем интерфейсу, что обновление НЕ состоялось: иначе окно
+            // «О программе» навсегда осталось бы с надписью «Установка и
+            // перезапуск…», хотя ничего уже не происходит. −1 = отмена/ошибка.
+            ReportUpdateProgress(-1);
+
             // Код 1223 = пользователь отклонил UAC-запрос прав администратора.
             if (ex is System.ComponentModel.Win32Exception w32 && w32.NativeErrorCode == 1223)
                 return;

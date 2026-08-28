@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { fetchRemoteVersion, isNewerVersion, downloadAndInstall } from "@/lib/updater";
+import { fetchRemoteVersion, isNewerVersion, downloadAndInstall, onUpdateProgress, isDesktopApp } from "@/lib/updater";
 
 interface Props {
   /** Текущая версия установленной программы (например "2.3.24") */
@@ -19,6 +19,32 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
   const [status, setStatus] = useState<Status>("idle");
   const [newVersion, setNewVersion] = useState("");
   const [notes, setNotes] = useState("");
+  // Идёт скачивание установщика и на сколько процентов оно продвинулось.
+  // Без этого кнопка выглядела мёртвой: установщик ~82 МБ качается около
+  // минуты, никакой реакции не было, и пользователь считал, что обновление
+  // не запускается (жал кнопку повторно).
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<number | null>(null);
+
+  useEffect(() => onUpdateProgress((p) => {
+    // −1: обновление отменено (отказ от прав администратора) или сорвалось —
+    // возвращаем кнопку в исходное состояние, чтобы можно было повторить.
+    if (p < 0) { setBusy(false); setProgress(null); return; }
+    setProgress(p);
+  }), []);
+
+  const startDownload = () => {
+    setBusy(true);
+    // В браузере файл просто уходит в загрузки — прогресс показывает сам
+    // браузер, поэтому «занятость» снимаем сразу и не морочим человека.
+    if (!isDesktopApp()) {
+      downloadAndInstall();
+      window.setTimeout(() => setBusy(false), 1500);
+      return;
+    }
+    setProgress(0);
+    downloadAndInstall();
+  };
 
   const check = async () => {
     setStatus("checking");
@@ -43,13 +69,39 @@ export default function UpdateCheckButton({ currentVersion }: Props) {
           <Icon name="Sparkles" size={14} />
           Доступна новая версия <b>v{newVersion}</b>
         </div>
-        {notes && <div className="text-[11px] text-gray-500">{notes}</div>}
+        {notes && !busy && <div className="text-[11px] text-gray-500">{notes}</div>}
+
+        {/* Ход загрузки: полоса + подпись. Пока оболочка не прислала первый
+            процент, показываем «Подготовка…» — человек сразу видит реакцию. */}
+        {busy && (
+          <div className="w-full max-w-[260px] flex flex-col gap-1">
+            <div className="h-2 rounded-full overflow-hidden bg-gray-200">
+              <div
+                className="h-full rounded-full transition-all duration-200"
+                style={{
+                  width: `${progress ?? 3}%`,
+                  background: "var(--c-green-bg, #16a34a)",
+                }} />
+            </div>
+            <div className="text-[11px] text-gray-600">
+              {progress === null ? "Подготовка к загрузке…"
+                : progress < 100 ? `Загрузка обновления… ${progress}%`
+                : "Установка и перезапуск программы…"}
+            </div>
+          </div>
+        )}
+
         <button
-          onClick={downloadAndInstall}
-          className="h-7 px-3 text-[12px] rounded text-white font-medium flex items-center gap-1.5"
+          onClick={startDownload}
+          disabled={busy}
+          className="h-7 px-3 text-[12px] rounded text-white font-medium flex items-center gap-1.5 disabled:opacity-60"
           style={{ background: "var(--c-green-bg, #16a34a)" }}>
-          <Icon name="Download" size={13} />
-          Скачать и обновить
+          {busy ? (
+            <><Icon name="Loader2" size={13} className="animate-spin" />
+              {progress !== null && progress < 100 ? `${progress}%` : "Обновление…"}</>
+          ) : (
+            <><Icon name="Download" size={13} />Скачать и обновить</>
+          )}
         </button>
       </div>
     );
