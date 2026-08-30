@@ -544,6 +544,40 @@ function calcNextCheckAt(expiresAt?: string): number {
   return now; // срок на исходе — проверяем каждый запуск
 }
 
+/** За сколько дней до окончания лицензии начинаем предупреждать. */
+export const LICENSE_WARN_DAYS = 14;
+
+/**
+ * Сколько полных суток осталось до окончания лицензии.
+ *
+ * Считаем по КАЛЕНДАРНЫМ дням, а не по «прошло N часов»: ключ, истекающий
+ * завтра в 00:00, для человека заканчивается «завтра» независимо от того,
+ * сколько сейчас времени. Иначе вечером 31-го числа программа сказала бы
+ * «осталось 0 дней» при живой ещё лицензии.
+ *
+ * Возвращает null, если срок неизвестен (бессрочный ключ) — тогда
+ * предупреждать не о чем.
+ */
+export function daysUntilExpiry(expiresAt?: string): number | null {
+  if (!expiresAt) return null;
+  const exp = new Date(expiresAt);
+  if (Number.isNaN(exp.getTime())) return null;
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  const expDay = new Date(exp.getFullYear(), exp.getMonth(), exp.getDate());
+  return Math.round((expDay.getTime() - startOfToday.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+/** Правильное склонение: 1 день, 3 дня, 5 дней. */
+export function pluralDays(n: number): string {
+  const a = Math.abs(n) % 100;
+  const b = a % 10;
+  if (a > 10 && a < 20) return "дней";
+  if (b > 1 && b < 5) return "дня";
+  if (b === 1) return "день";
+  return "дней";
+}
+
 /**
  * Пора ли обращаться к серверу. Если нет — программа стартует полностью
  * офлайн, по сохранённой лицензии, без единого сетевого запроса.
