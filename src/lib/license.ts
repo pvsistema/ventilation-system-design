@@ -403,6 +403,15 @@ export async function getMachineInfo(): Promise<MachineInfo> {
       // спрашивался бы в каждом браузере.
       const fresh = Date.now() - (parsed.cachedAt ?? 0) < 30 * 24 * 3600 * 1000;
       if (fresh && parsed.hwFingerprint && parsed.fpVersion === FP_VERSION) {
+        // ВАЖНО: отпечаток для сверки подписи нужно поставить и на этой ветке.
+        // Ниже, при полном расчёте, это делается — а здесь раньше терялось:
+        // программа возвращала готовый ответ из кэша, _fpHashForVerify
+        // оставался пустым, и строгая проверка ответа сервера отвергала
+        // подлинную подпись с ошибкой «Ответ сервера не прошёл проверку
+        // подписи». Активация становилась невозможной на компьютерах, где
+        // отпечаток уже был закэширован.
+        try { setFingerprintForVerify(await sha256hex(parsed.fingerprint)); }
+        catch { /* ignore */ }
         return { fingerprint: parsed.fingerprint, hwFingerprint: parsed.hwFingerprint,
                  legacyHwFingerprint: parsed.legacyHwFingerprint,
                  prevHwFingerprint: parsed.prevHwFingerprint,
