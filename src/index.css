@@ -800,6 +800,45 @@ select.cad-input {
   scrollbar-color: #8a93a3 #e4e7ec;
 }
 
+/* Кнопки-стрелки по краям прокручиваемых панелей (ScrollArrows).
+ * Фон — градиент к прозрачному: кнопка не обрезает содержимое резкой
+ * границей, а как бы «растворяет» его под собой, и сразу понятно, что
+ * дальше есть продолжение. */
+.cad-scroll-arrow {
+  background: linear-gradient(
+    90deg,
+    var(--c-s2, #f5f5f5) 55%,
+    rgba(245, 245, 245, 0)
+  );
+}
+.cad-scroll-arrow[data-side="right"] {
+  background: linear-gradient(
+    270deg,
+    var(--c-s2, #f5f5f5) 55%,
+    rgba(245, 245, 245, 0)
+  );
+}
+.cad-scroll-arrow:hover {
+  color: var(--c-blue-bg, #2563eb);
+}
+.cad-scroll-arrow:active {
+  color: var(--c-blue, #1d4ed8);
+}
+.dark .cad-scroll-arrow {
+  background: linear-gradient(
+    90deg,
+    var(--s-2, #1c2128) 55%,
+    rgba(28, 33, 40, 0)
+  );
+}
+.dark .cad-scroll-arrow[data-side="right"] {
+  background: linear-gradient(
+    270deg,
+    var(--s-2, #1c2128) 55%,
+    rgba(28, 33, 40, 0)
+  );
+}
+
 /* Таблица результатов */
 .results-table th {
   color: hsl(215, 15%, 55%);

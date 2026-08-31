@@ -87,6 +87,7 @@ import SchemeExportDialog, { type SchemeExportFormat, type SchemeExportOptions }
 import CadToolDialogs from "./cad/CadToolDialogs";
 import CadModals from "./cad/CadModals";
 import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
+import ScrollArrows from "@/components/cad/ScrollArrows";
 import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonReferences";
 import { runFireMode } from "@/lib/fireModeRun";
 import { runExplosionMode } from "@/lib/explosionModeRun";
@@ -10772,8 +10773,13 @@ export default function CadPage() {
         {/* ── РАБОЧАЯ ОБЛАСТЬ (CANVAS + ИНСТРУМЕНТЫ) ────────────────── */}
         <div className="flex-1 flex flex-col overflow-hidden" style={{ background: "var(--c-s1, #ffffff)" }}>
 
-          {/* Локальная панель инструментов рисования */}
-          <div className="h-8 flex items-center gap-1 px-2 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 cad-toolbar-scroll"
+          {/* Локальная панель инструментов рисования.
+              ScrollArrows добавляет стрелки по краям, когда панель не влезает
+              по ширине — листать можно не целясь в полосу прокрутки. */}
+          <ScrollArrows
+            className="h-8 flex items-center gap-1 px-2 overflow-x-auto overflow-y-hidden [&>*]:shrink-0 cad-toolbar-scroll w-full"
+            step={180}
+            wrapperStyle={{ flex: "0 0 auto" }}
             style={{ background: "var(--c-s2, #f5f5f5)", borderBottom: "1px solid var(--c-b2, #d0d0d0)" }}>
             <ToolBtn icon="MousePointer2" label="Выбрать" active={tool === "select"} onClick={() => setTool("select")} />
             <ToolBtn icon="Plus" label="Узел" active={tool === "node"} onClick={() => setTool("node")} />
@@ -10937,7 +10943,7 @@ export default function CadPage() {
               <span>·</span>
               <span>Ветвей: <b>{branches.length}</b></span>
             </div>
-          </div>
+          </ScrollArrows>
 
           {/* Стартовый экран — только когда схема пустая */}
           {nodes.length === 0 && branches.length === 0 && (

@@ -14,6 +14,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useMemo } from "react";
 import { LEGEND_TYPES, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
+import ScrollArrows from "@/components/cad/ScrollArrows";
 
 interface Props {
   /** id активного УО (подсвечивается рамкой), null — ничего не выбрано. */
@@ -28,8 +29,9 @@ function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick, o
   // Список УО неизменен на всё время работы программы — фильтруем один раз.
   const items = useMemo(() => LEGEND_TYPES.filter(lt => !HIDDEN_LEGEND_IDS.has(lt.id)), []);
   return (
-    <div
+    <ScrollArrows
       className="cad-symbol-scroll"
+      step={120}
       style={{
         display: "grid",
         gridAutoFlow: "column",
@@ -72,7 +74,7 @@ function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick, o
           </button>
         );
       })}
-    </div>
+    </ScrollArrows>
   );
 }
 
