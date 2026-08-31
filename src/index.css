@@ -535,11 +535,22 @@
 }
 
 /* Прокрутка в тёмной теме */
-.dark .cad-toolbar-scroll::-webkit-scrollbar-thumb {
-  background: var(--s-4);
+.dark .cad-toolbar-scroll::-webkit-scrollbar-track,
+.dark .cad-symbol-scroll::-webkit-scrollbar-track {
+  background: var(--s-2, #1c2128);
 }
-.dark .cad-toolbar-scroll::-webkit-scrollbar-thumb:hover {
-  background: var(--br-3);
+.dark .cad-toolbar-scroll::-webkit-scrollbar-thumb,
+.dark .cad-symbol-scroll::-webkit-scrollbar-thumb {
+  background: var(--s-4, #6b7280);
+  border-color: var(--s-2, #1c2128);
+}
+.dark .cad-toolbar-scroll::-webkit-scrollbar-thumb:hover,
+.dark .cad-symbol-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--br-3, #3b82f6);
+}
+.dark .cad-toolbar-scroll,
+.dark .cad-symbol-scroll {
+  scrollbar-color: var(--s-4, #6b7280) var(--s-2, #1c2128);
 }
 
 /* ── Фоны, заданные прямо в разметке ──────────────────────────────────────
@@ -750,15 +761,43 @@ select.cad-input {
   background: hsl(210, 100%, 56%);
 }
 
-/* Верхняя панель инструментов CAD — тонкая горизонтальная прокрутка вместо обрезки */
-.cad-toolbar-scroll::-webkit-scrollbar {
-  height: 3px;
+/* Горизонтальная прокрутка панелей инструментов CAD.
+ *
+ * Ползунок был высотой 3px и бледно-серым — попасть в него мышью было
+ * трудно, особенно на большом мониторе. Теперь 10px и заметный контраст:
+ * это ниже стандартной полосы Windows (17px), поэтому ряды кнопок не
+ * съезжают, но по ней уже можно уверенно попасть курсором.
+ * Дорожка сделана видимой — так понятно, что элемент вообще прокручивается. */
+.cad-toolbar-scroll::-webkit-scrollbar,
+.cad-symbol-scroll::-webkit-scrollbar {
+  height: 10px;
 }
-.cad-toolbar-scroll::-webkit-scrollbar-thumb {
-  background: #c0c0c0;
+.cad-toolbar-scroll::-webkit-scrollbar-track,
+.cad-symbol-scroll::-webkit-scrollbar-track {
+  background: #e4e7ec;
+  border-radius: 5px;
 }
-.cad-toolbar-scroll::-webkit-scrollbar-thumb:hover {
-  background: #909090;
+.cad-toolbar-scroll::-webkit-scrollbar-thumb,
+.cad-symbol-scroll::-webkit-scrollbar-thumb {
+  background: #8a93a3;
+  border-radius: 5px;
+  /* Рамка цветом дорожки: визуально ползунок чуть уже полосы, но кликабельная
+   * зона остаётся все 10px — попасть легче, чем кажется на глаз. */
+  border: 2px solid #e4e7ec;
+}
+.cad-toolbar-scroll::-webkit-scrollbar-thumb:hover,
+.cad-symbol-scroll::-webkit-scrollbar-thumb:hover {
+  background: var(--c-blue-bg, #2563eb);
+}
+.cad-toolbar-scroll::-webkit-scrollbar-thumb:active,
+.cad-symbol-scroll::-webkit-scrollbar-thumb:active {
+  background: var(--c-blue, #1d4ed8);
+}
+/* Firefox не поддерживает ::-webkit-*, задаём отдельно. */
+.cad-toolbar-scroll,
+.cad-symbol-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #8a93a3 #e4e7ec;
 }
 
 /* Таблица результатов */

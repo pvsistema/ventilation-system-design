@@ -29,6 +29,7 @@ function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick, o
   const items = useMemo(() => LEGEND_TYPES.filter(lt => !HIDDEN_LEGEND_IDS.has(lt.id)), []);
   return (
     <div
+      className="cad-symbol-scroll"
       style={{
         display: "grid",
         gridAutoFlow: "column",
