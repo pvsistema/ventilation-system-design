@@ -65,6 +65,47 @@ export default function ScrollArrows({
     };
   }, [update]);
 
+  // ── Прокрутка колёсиком мыши ───────────────────────────────────────────
+  // У обычной мыши колесо даёт вертикальное движение (deltaY), а панель
+  // прокручивается вбок — поэтому вертикальное движение превращаем в
+  // горизонтальное. У трекпадов и мышей с горизонтальным колесом есть deltaX,
+  // его берём как есть.
+  //
+  // Обработчик вешаем вручную с passive: false: React вешает onWheel как
+  // пассивный, а в пассивном обработчике браузер запрещает preventDefault —
+  // без него страница дёргалась бы вместе с панелью.
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const onWheel = (e: WheelEvent) => {
+      // Панель влезает целиком — прокручивать нечего, отдаём событие странице.
+      if (el.scrollWidth <= el.clientWidth) return;
+
+      // Горизонтальное движение (трекпад) имеет приоритет: пользователь уже
+      // задал направление явно, подменять его не нужно.
+      let delta = Math.abs(e.deltaX) > Math.abs(e.deltaY) ? e.deltaX : e.deltaY;
+      if (!delta) return;
+
+      // deltaMode: 0 — пиксели, 1 — строки, 2 — страницы. Мыши часто шлют
+      // строки; без пересчёта один щелчок колеса сдвигал бы панель на 3px.
+      if (e.deltaMode === 1) delta *= 16;
+      else if (e.deltaMode === 2) delta *= el.clientWidth;
+
+      // Уже упёрлись в край — не перехватываем: пусть прокрутится страница
+      // или родительская панель, иначе колесо «залипало» бы на краю.
+      const atLeftEdge = delta < 0 && el.scrollLeft <= 0;
+      const atRightEdge = delta > 0 && el.scrollLeft + el.clientWidth >= el.scrollWidth - 1;
+      if (atLeftEdge || atRightEdge) return;
+
+      e.preventDefault();
+      el.scrollLeft += delta;
+    };
+
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
   const scrollBy = (dir: -1 | 1) => {
     ref.current?.scrollBy({ left: dir * step, behavior: "smooth" });
   };
