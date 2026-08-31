@@ -3,6 +3,7 @@
 Раздаёт React-билд и обрабатывает все расчётные API-запросы локально.
 Лицензия проверяется через облачный сервер (один раз при запуске).
 """
+import gzip
 import json
 import os
 import sys
@@ -317,14 +318,101 @@ def serve_spa(path):
     return send_from_directory(DIST_FOLDER, "index.html")
 
 
+# Минимальный размер ответа, который имеет смысл сжимать. Мелкие ответы
+# (статус, machine-id) от сжатия только проигрывают: расход процессора есть,
+# выигрыша в объёме нет.
+_GZIP_MIN_BYTES = 1024
+
+# Что сжимаем. Картинки (png/jpg/webp) и шрифты уже сжаты — повторное сжатие
+# бесполезно и лишь тратит время.
+_GZIP_TYPES = (
+    "application/json",
+    "application/javascript",
+    "text/javascript",
+    "text/css",
+    "text/html",
+    "image/svg+xml",
+    "text/plain",
+)
+
+
 @app.after_request
-def _no_cache(resp):
-    # Десктоп грузит фронтенд из локального сервера. Отключаем кэш браузера,
-    # иначе WebView2 после пересборки показывает СТАРЫЙ интерфейс
-    # (старые index.html/js/css из кэша). Файлы локальные — кэш не нужен.
-    resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    resp.headers["Pragma"] = "no-cache"
-    resp.headers["Expires"] = "0"
+def _cache_and_compress(resp):
+    """Кэширование статики и сжатие ответов.
+
+    БЫЛО: на ВСЕ ответы вешался no-store и не было сжатия.
+    Из-за этого десктоп проигрывал браузерной версии:
+      • результат расчёта большой схемы (сотни килобайт JSON) передавался
+        без сжатия — в облаке его сжимает сервер;
+      • интерфейс при каждом запуске полностью перечитывался с диска,
+        хотя файлы не менялись.
+
+    СТАЛО: файлы с хешем в имени (assets/*.js, *.css — их имя меняется при
+    каждой пересборке) кэшируются надолго, а index.html по-прежнему никогда
+    не кэшируется. Поэтому после обновления программы WebView2 гарантированно
+    берёт новый index.html, а тот уже ссылается на новые имена файлов —
+    показать старый интерфейс невозможно.
+    """
+    path = request.path or ""
+    is_asset = path.startswith("/assets/") and not path.endswith(".map")
+
+    if is_asset:
+        # Имя содержит хеш содержимого — файл неизменяем.
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        resp.headers.pop("Pragma", None)
+        resp.headers.pop("Expires", None)
+    else:
+        # index.html и API — всегда свежие.
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+
+    # ── Сжатие ────────────────────────────────────────────────────────────
+    # Только если клиент его понимает и ответ ещё не сжат.
+    if "gzip" not in (request.headers.get("Accept-Encoding") or ""):
+        return resp
+    if resp.headers.get("Content-Encoding"):
+        return resp
+    # direct_passthrough — ответ отдаётся потоком (send_from_directory).
+    # Обычно тело трогать нельзя, но для файлов интерфейса это делается
+    # осознанно: они сжимаются один раз (дальше работает кэш), зато первый
+    # запуск после обновления заметно быстрее. Размер таких файлов измеряется
+    # мегабайтами — читать их в память безопасно.
+    if resp.direct_passthrough:
+        if not is_asset:
+            return resp
+        try:
+            resp.direct_passthrough = False
+        except Exception:
+            return resp
+    if resp.status_code < 200 or resp.status_code >= 300:
+        return resp
+
+    ctype = (resp.headers.get("Content-Type") or "").split(";")[0].strip()
+    if ctype not in _GZIP_TYPES:
+        return resp
+
+    try:
+        data = resp.get_data()
+    except Exception:
+        return resp
+    if len(data) < _GZIP_MIN_BYTES:
+        return resp
+
+    try:
+        # Уровень 5 — компромисс: сжимает почти как максимальный, но заметно
+        # быстрее. На локальной машине важнее время сжатия, чем лишние байты.
+        packed = gzip.compress(data, 5)
+    except Exception:
+        return resp
+    # Если сжатие не дало выигрыша — отдаём как есть.
+    if len(packed) >= len(data):
+        return resp
+
+    resp.set_data(packed)
+    resp.headers["Content-Encoding"] = "gzip"
+    resp.headers["Content-Length"] = str(len(packed))
+    resp.headers.add("Vary", "Accept-Encoding")
     return resp
 
 
