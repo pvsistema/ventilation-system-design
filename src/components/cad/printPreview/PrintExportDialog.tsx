@@ -6,6 +6,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React from "react";
 import Icon from "@/components/ui/icon";
+import { fitDpiToCanvas } from "@/lib/canvasLimits";
 
 // Набор форматов — ровно тот же, что в состоянии PrintDialog.
 type ExportFormat = "png" | "png-hq" | "jpg" | "bmp" | "tiff" | "svg" | "pdf" | "pdf-vector";
@@ -94,18 +95,17 @@ export default function PrintExportDialog({
             <span style={{ fontSize: 11, color: "#555" }}>dpi</span>
           </div>
           {(() => {
-            const pw = Math.round(paper.w * exportDpi / 25.4);
-            const ph = Math.round(paper.h * exportDpi / 25.4);
-            const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-            const MAX_PX = isMobile ? 8192 : 32768;
-            const clipped = pw > MAX_PX || ph > MAX_PX;
-            const effW = Math.min(pw, MAX_PX);
-            const effH = Math.min(ph, MAX_PX);
+            // Предел холста считается по стороне И по площади: раньше учитывалась
+            // только сторона, и лист A0 при 600 dpi выходил пустым (см. canvasLimits.ts).
+            const fit = fitDpiToCanvas(paper.w, paper.h, exportDpi);
             return (
-              <div style={{ fontSize: 11, marginTop: 6, color: clipped ? "#b45309" : "#555" }}>
-                Размер: {effW} × {effH} пикс.
-                {clipped && <span> (ограничено браузером — исходный {pw}×{ph})</span>}
-                {exportFormat === "png-hq" && !clipped && <span style={{ color: "#1a6e2e" }}> — вектор без пикселизации</span>}
+              <div style={{ fontSize: 11, marginTop: 6, color: fit.limited ? "#b45309" : "#555" }}>
+                Размер: {fit.width} × {fit.height} пикс.
+                {fit.limited && (
+                  <span> — запрошено {fit.requestedWidth}×{fit.requestedHeight}, качество снижено
+                    до {fit.effectiveDpi} dpi (предел браузера)</span>
+                )}
+                {exportFormat === "png-hq" && !fit.limited && <span style={{ color: "#1a6e2e" }}> — вектор без пикселизации</span>}
               </div>
             );
           })()}

@@ -22,6 +22,7 @@ import {
 import {
   isDesktopPrintAvailable, listPrinters, type DesktopPrinter,
 } from "@/lib/desktopPrint";
+import { fitDpiToCanvas, describeLimit } from "@/lib/canvasLimits";
 import PrintSettingsPanel from "@/components/cad/printPreview/PrintSettingsPanel";
 import PrintExportDialog from "@/components/cad/printPreview/PrintExportDialog";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
@@ -345,6 +346,13 @@ export default function PrintDialog({
   // «Подготовка 2 из 5»: при многолистовой схеме отрисовка идёт долго, и без
   // счётчика непонятно, идёт работа или программа встала.
   const [printProgress, setPrintProgress] = useState<{ done: number; total: number } | null>(null);
+  // Сообщение об ошибке печати. Раньше сбой уходил в никуда: программа молча
+  // откатывалась на системное окно (или не печатала вовсе), и человек не
+  // понимал, почему нет распечатки.
+  const [printError, setPrintError] = useState<string | null>(null);
+  // Предупреждение о вынужденном снижении качества — показываем до отправки
+  // задания, чтобы не тратить бумагу большого формата впустую.
+  const [printWarning, setPrintWarning] = useState<string | null>(null);
   // Запрос отмены подготовки. Проверяется между листами: прервать отрисовку
   // одного листа нельзя, но на большой схеме листов много — и отмена
   // срабатывает на ближайшей границе.
@@ -900,25 +908,22 @@ export default function PrintDialog({
     // раз, и если иконка ещё читалась с диска, в чертёж вместо условного
     // обозначения крана попал бы запасной кружок.
     await ensureFireCraneIcons();
-    const mmToPx = (mm: number) => Math.round(mm * dpi / 25.4);
-
-    const canvasW = mmToPx(paper.w);
-    const canvasH = mmToPx(paper.h);
-
-    // Мобильные браузеры ограничены ~16384px, десктоп держит до 32768px.
-    // Для плоттерной печати A0 @ 600dpi нужно ~28346x40126px — укладывается в 32768.
-    const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-    const MAX_PX = isMobile ? 8192 : 32768;
-    const safeW = Math.min(canvasW, MAX_PX);
-    const safeH = Math.min(canvasH, MAX_PX);
-    const effectiveDpi = dpi * Math.min(safeW / canvasW, safeH / canvasH);
+    // Подбор безопасного качества: учитываются И длина стороны, И общая
+    // площадь холста. Раньше проверялась только сторона — из-за этого лист
+    // A0 при 600 dpi (19866×28087 px) молча выходил ПУСТЫМ: стороны в предел
+    // укладывались, а площадь превышала его втрое. См. lib/canvasLimits.ts.
+    const fit = fitDpiToCanvas(paper.w, paper.h, dpi);
+    const effectiveDpi = fit.effectiveDpi;
     const mmToPxE = (mm: number) => Math.round(mm * effectiveDpi / 25.4);
 
     const oc = document.createElement("canvas");
-    oc.width = mmToPxE(paper.w);
-    oc.height = mmToPxE(paper.h);
+    oc.width = fit.width;
+    oc.height = fit.height;
     const ctx = oc.getContext("2d");
-    if (!ctx) return "";
+    if (!ctx) throw new Error(
+      `Не удалось подготовить лист ${fit.width}×${fit.height} пикс. — не хватило памяти. `
+      + "Уменьшите формат листа или качество печати.",
+    );
 
     const { sc, offsetX, offsetY, isScene3D, horizonMap, pageW, pageH } = baseView;
     const BASE_DPI = 150;
@@ -1112,9 +1117,17 @@ export default function PrintDialog({
     printingRef.current = true;
     printCancelRef.current = false;
     setPrinting(true);
+    setPrintError(null);
     try {
     const PRINT_DPI = 300;
     const total = totalPages * copies;
+
+    // Предупреждаем ЗАРАНЕЕ, если лист такого формата не удастся отрисовать в
+    // полном качестве: человек должен узнать об этом до того, как отправит
+    // задание на плоттер, а не после получения размытой распечатки.
+    const printFit = fitDpiToCanvas(paper.w, paper.h, PRINT_DPI);
+    if (printFit.limited) setPrintWarning(describeLimit(printFit));
+    else setPrintWarning(null);
 
     const tilesList = reverseOrder ? [...tiles.list].reverse() : tiles.list;
     setPrintProgress({ done: 0, total: tilesList.length });
@@ -1159,11 +1172,18 @@ body{background:white;font-family:Arial,sans-serif}
 @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
 </style></head><body>${pageHtmls.join("")}</body></html>`;
 
-    await printDocument(html, {
+    const outcome = await printDocument(html, {
       printerName, copies,
       paperWidthMm: paper.w, paperHeightMm: paper.h,
       landscape: orientation === "landscape",
     });
+    // Прямая печать сорвалась — объясняем, почему открылось системное окно.
+    if (outcome.fallbackReason) {
+      setPrintError(`${outcome.fallbackReason}. Документ отправлен через окно печати Windows.`);
+    }
+    } catch (e) {
+      // Ошибка подготовки листа (не хватило памяти, слишком большой формат).
+      setPrintError(e instanceof Error ? e.message : "Не удалось подготовить документ к печати");
     } finally {
       printingRef.current = false;
       setPrinting(false);
@@ -1238,14 +1258,10 @@ body{background:white;font-family:Arial,sans-serif}
       setPdfExporting(true);
       try {
         const proj = buildProjForExport();
-        const mmToPx = (mm: number) => Math.round(mm * exportDpi / 25.4);
-        const isMobile = /Mobi|Android/i.test(navigator.userAgent);
-        const MAX_PX = isMobile ? 8192 : 32768;
-        const rawW = mmToPx(paper.w);
-        const rawH = mmToPx(paper.h);
-        const ratio = Math.min(MAX_PX / rawW, MAX_PX / rawH, 1);
-        const canvasW = Math.round(rawW * ratio);
-        const canvasH = Math.round(rawH * ratio);
+        // Единый расчёт предела холста (сторона + площадь) — см. canvasLimits.ts.
+        const expFit = fitDpiToCanvas(paper.w, paper.h, exportDpi);
+        const canvasW = expFit.width;
+        const canvasH = expFit.height;
 
         const svgStr = generateSvg({
           nodes, branches, horizons, horizonMap: baseView.horizonMap,
@@ -1533,6 +1549,33 @@ body{background:white;font-family:Arial,sans-serif}
               className="w-6 h-6 flex items-center justify-center text-white hover:bg-red-500 rounded text-[13px]">✕</button>
           </div>
         </div>
+
+        {/* Сообщения печати: ошибка принтера или вынужденное снижение качества.
+            Раньше и то, и другое происходило молча. */}
+        {(printError || printWarning) && (
+          <div className="flex flex-col">
+            {printError && (
+              <div className="flex items-start gap-2 px-3 py-2"
+                style={{ background: "#fef2f2", borderBottom: "1px solid #fecaca" }}>
+                <Icon name="TriangleAlert" size={14} style={{ color: "#b91c1c", marginTop: 1, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "#991b1b", lineHeight: 1.4 }}>{printError}</span>
+                <button onClick={() => setPrintError(null)}
+                  className="ml-auto flex-shrink-0" title="Скрыть"
+                  style={{ color: "#b91c1c", fontSize: 13 }}>✕</button>
+              </div>
+            )}
+            {printWarning && (
+              <div className="flex items-start gap-2 px-3 py-2"
+                style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a" }}>
+                <Icon name="Info" size={14} style={{ color: "#b45309", marginTop: 1, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "#92400e", lineHeight: 1.4 }}>{printWarning}</span>
+                <button onClick={() => setPrintWarning(null)}
+                  className="ml-auto flex-shrink-0" title="Скрыть"
+                  style={{ color: "#b45309", fontSize: 13 }}>✕</button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Тело */}
         <div className="flex flex-1 overflow-hidden">

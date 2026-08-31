@@ -31,12 +31,25 @@ export interface DirectPrintOpts {
  * используется как запасной, если прямая печать почему-то не удалась: инженер
  * в любом случае должен получить распечатку, а не молчаливый отказ.
  */
-export async function printDocument(html: string, opts?: DirectPrintOpts): Promise<void> {
+export interface PrintOutcome {
+  /** Печать ушла напрямую на принтер (без системного окна). */
+  direct: boolean;
+  /** Причина, по которой прямая печать не удалась и пришлось откатиться. */
+  fallbackReason: string;
+}
+
+export async function printDocument(html: string, opts?: DirectPrintOpts): Promise<PrintOutcome> {
   if (opts && isDesktopPrintAvailable()) {
-    const ok = await printViaDesktop({ html, ...opts });
-    if (ok) return;
+    const res = await printViaDesktop({ html, ...opts });
+    if (res.ok) return { direct: true, fallbackReason: "" };
+    // Прямая печать не удалась — печатаем обычным способом, но причину
+    // возвращаем наверх: раньше она терялась, и человек не понимал, почему
+    // вдруг открылось системное окно (или почему нет распечатки).
+    printViaIframe(html);
+    return { direct: false, fallbackReason: res.error };
   }
   printViaIframe(html);
+  return { direct: false, fallbackReason: "" };
 }
 
 export function printViaIframe(html: string) {

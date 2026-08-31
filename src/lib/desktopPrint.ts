@@ -22,6 +22,13 @@ export interface DesktopPrinter {
   isDefault: boolean;
 }
 
+/** Итог печати: удалась ли и почему нет. */
+export interface PrintResult {
+  ok: boolean;
+  /** Причина отказа для показа пользователю. Пустая строка — причина неизвестна. */
+  error: string;
+}
+
 /** Параметры задания печати, которые задаются в нашем диалоге. */
 export interface DesktopPrintJob {
   /** Готовый HTML документа (те же листы, что уходят в системную печать). */
@@ -148,10 +155,10 @@ export async function listPrinters(): Promise<DesktopPrinter[]> {
  * Таймаут большой (5 минут): лист A3 при 300 dpi весит десятки мегабайт, его
  * растеризация и отправка на принтер занимают заметное время.
  */
-export async function printViaDesktop(job: DesktopPrintJob): Promise<boolean> {
-  if (!isDesktopPrintAvailable()) return false;
+export async function printViaDesktop(job: DesktopPrintJob): Promise<PrintResult> {
+  if (!isDesktopPrintAvailable()) return { ok: false, error: "" };
   try {
-    const res = await callDesktop<{ ok?: boolean }>("print-html", {
+    const res = await callDesktop<{ ok?: boolean; error?: string }>("print-html", {
       html: job.html,
       printerName: job.printerName,
       copies: job.copies,
@@ -159,8 +166,22 @@ export async function printViaDesktop(job: DesktopPrintJob): Promise<boolean> {
       paperHeightMm: job.paperHeightMm,
       landscape: job.landscape,
     }, 300000);
-    return res?.ok === true;
-  } catch {
-    return false;
+    if (res?.ok === true) return { ok: true, error: "" };
+    // Текст ошибки от Windows («принтер недоступен», «нет бумаги») раньше
+    // отбрасывался — человек видел лишь то, что распечатки нет. Теперь
+    // причина доходит до интерфейса.
+    return { ok: false, error: humanizePrintError(res?.error ?? "") };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "" };
   }
+}
+
+/** Переводит коды состояния WebView2 в понятный текст. */
+function humanizePrintError(raw: string): string {
+  const map: Record<string, string> = {
+    PrinterUnavailable: "Принтер недоступен — проверьте, включён ли он и подключён ли кабель",
+    PrinterError: "Принтер сообщил об ошибке — проверьте бумагу, тонер и очередь печати",
+    OtherError: "Windows не смогла напечатать документ",
+  };
+  return map[raw] ?? raw;
 }
