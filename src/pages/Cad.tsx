@@ -50,7 +50,7 @@ import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
-import HorizonShiftBlock from "@/components/cad/HorizonShiftBlock";
+import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
@@ -2216,6 +2216,45 @@ export default function CadPage() {
       : { all: 0, visible: 0, selected: 0 }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   ), [showMoveSchema, nodes, branchesRaw, horizons, selectedNodeIds]);
+
+  /**
+   * Совмещение горизонта по паре выделенных узлов.
+   *
+   * Пользователь выделяет два узла (Ctrl+клик): один на горизонте, который
+   * двигаем, второй — на основной схеме, куда его надо посадить. Возвращаем
+   * готовое смещение, чтобы горизонт встал точно по этим узлам, без ручного
+   * подбора цифр.
+   *
+   * Возвращает null, если выделение не подходит: узлов не два, оба на одном
+   * горизонте или ни один к нему не относится — тогда непонятно, что и куда
+   * двигать, и кнопка остаётся выключенной.
+   */
+  const horizonAlignFor = (horizonId: string): HorizonAlign | null => {
+    if (selectedNodeIds.size !== 2) return null;
+    const [a, b] = [...selectedNodeIds].map(id => nodes.find(n => n.id === id));
+    if (!a || !b) return null;
+
+    // Узел «принадлежит» горизонту, если у него есть ветвь этого горизонта
+    const onHorizon = (nodeId: string) =>
+      branchesRaw.some(br => br.horizonId === horizonId &&
+        (br.fromId === nodeId || br.toId === nodeId));
+
+    const aOn = onHorizon(a.id);
+    const bOn = onHorizon(b.id);
+    // Нужен ровно один узел на горизонте и ровно один вне его
+    if (aOn === bOn) return null;
+
+    const from = aOn ? a : b;   // узел горизонта — он поедет
+    const to = aOn ? b : a;     // узел основной схемы — он останется
+    const s1 = surveyXYZ(from);
+    const s2 = surveyXYZ(to);
+    return {
+      dx: s2.x - s1.x,
+      dy: s2.y - s1.y,
+      dz: s2.z - s1.z,
+      label: `${from.number || from.name || "узел"} → ${to.number || to.name || "узел"}`,
+    };
+  };
   const handleNodeMultiSelect = (id: string) => {
     setSelectedNodeIds((prev) => {
       const next = new Set(prev);
@@ -9970,6 +10009,7 @@ export default function CadPage() {
                                 horizonId={h.id}
                                 branchCount={usedCount}
                                 onMove={moveHorizon}
+                                align={horizonAlignFor(h.id)}
                               />
                             )}
                             {/* Подложка плана — только для обычных горизонтов */}

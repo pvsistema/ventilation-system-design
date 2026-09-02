@@ -1,4 +1,4 @@
-// Блок «Смещение горизонта» в настройках каждого горизонта.
+// Блок «Смещение горизонта» в настройках каждого горизонта — одна строка.
 //
 // Зачем нужен: горизонты часто импортируют по одному, отдельными чертежами.
 // Маркшейдер ведёт каждый горизонт в своих координатах, поэтому свежий
@@ -11,11 +11,25 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 
+/** Готовое совмещение по двум выделенным узлам */
+export interface HorizonAlign {
+  dx: number;
+  dy: number;
+  dz: number;
+  /** Что с чем совмещаем — для подсказки */
+  label: string;
+}
+
 interface Props {
   horizonId: string;
   /** Сколько выработок на горизонте — если ноль, двигать нечего */
   branchCount: number;
   onMove: (horizonId: string, dx: number, dy: number, dz: number) => void;
+  /**
+   * Совмещение по узлам: null — выделение не подходит (нужны ровно два узла,
+   * один на этом горизонте, другой вне его).
+   */
+  align: HorizonAlign | null;
 }
 
 /** Текст поля → число. Пустая строка и одиночный минус считаются нулём. */
@@ -27,7 +41,7 @@ function toNum(raw: string): number {
 /** Пропускаем в поле только то, из чего может получиться число */
 const isTypable = (v: string) => v === "" || /^-?\d*[.,]?\d*$/.test(v);
 
-export default function HorizonShiftBlock({ horizonId, branchCount, onMove }: Props) {
+export default function HorizonShiftBlock({ horizonId, branchCount, onMove, align }: Props) {
   // Значения храним как ТЕКСТ: иначе нельзя набрать «-40» — после первого
   // символа «-» строка превратилась бы в 0 и минус пропал.
   const [dx, setDx] = useState("0");
@@ -35,7 +49,8 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove }: Pr
   const [dz, setDz] = useState("0");
 
   const nx = toNum(dx), ny = toNum(dy), nz = toNum(dz);
-  const canMove = branchCount > 0 && (nx !== 0 || ny !== 0 || nz !== 0);
+  const empty = branchCount === 0;
+  const canMove = !empty && (nx !== 0 || ny !== 0 || nz !== 0);
 
   const apply = () => {
     if (!canMove) return;
@@ -43,21 +58,19 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove }: Pr
     setDx("0"); setDy("0"); setDz("0");
   };
 
-  /** Шаговая кнопка: сдвигает горизонт сразу, без ввода числа */
-  const step = (ax: "x" | "y" | "z", d: number) => {
-    if (branchCount === 0) return;
-    onMove(horizonId, ax === "x" ? d : 0, ax === "y" ? d : 0, ax === "z" ? d : 0);
+  const doAlign = () => {
+    if (empty || !align) return;
+    onMove(horizonId, align.dx, align.dy, align.dz);
   };
 
   const field = (
     label: string,
     value: string,
     set: (v: string) => void,
-    axis: "x" | "y" | "z",
     title: string,
   ) => (
-    <div className="flex items-center gap-1" title={title}>
-      <span className="text-[10px] text-gray-600 w-4 flex-shrink-0">{label}</span>
+    <div className="flex items-center gap-0.5 flex-1 min-w-0" title={title}>
+      <span className="text-[10px] text-gray-500 flex-shrink-0">{label}</span>
       <input
         type="text"
         inputMode="text"
@@ -66,54 +79,60 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove }: Pr
         onFocus={(e) => e.target.select()}
         onBlur={() => { if (value === "" || value === "-") set("0"); }}
         onKeyDown={(e) => { if (e.key === "Enter") apply(); }}
-        className="cad-input flex-1 min-w-0 text-right"
-        disabled={branchCount === 0}
+        className="cad-input w-full min-w-0 text-right"
+        disabled={empty}
       />
-      <span className="text-[10px] text-gray-400 flex-shrink-0">м</span>
-      {/* Мелкая подстройка на месте — удобнее, чем набирать число */}
-      <button onClick={() => step(axis, -1)} disabled={branchCount === 0}
-        title="Сдвинуть на −1 м"
-        className="w-4 h-4 flex items-center justify-center rounded hover:bg-blue-100 disabled:opacity-30 text-[11px] leading-none">−</button>
-      <button onClick={() => step(axis, 1)} disabled={branchCount === 0}
-        title="Сдвинуть на +1 м"
-        className="w-4 h-4 flex items-center justify-center rounded hover:bg-blue-100 disabled:opacity-30 text-[11px] leading-none">+</button>
     </div>
   );
 
   return (
     <div className="pt-1 pb-1 space-y-1" style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-      <div className="flex items-center gap-1 text-[10px] font-medium text-gray-700">
-        <Icon name="Move" size={11} className="flex-shrink-0" style={{ color: "var(--c-blue, #2563eb)" }} />
-        Смещение горизонта
+      {/* Всё смещение — в одну строку: подпись, три поля, кнопки */}
+      <div className="flex items-center gap-1">
+        <Icon name="Move" size={11} className="flex-shrink-0"
+          style={{ color: empty ? "var(--c-t3, #9ca3af)" : "var(--c-blue, #2563eb)" }} />
+        <span className="text-[10px] text-gray-600 flex-shrink-0" title="Смещение горизонта по осям, м">
+          Сдвиг:
+        </span>
+
+        {field("X", dx, setDx, "Плюс — на восток (вправо), минус — на запад")}
+        {field("Y", dy, setDy, "Плюс — на север (вверх), минус — на юг")}
+        {field("Z", dz, setDz, "Плюс — вверх, минус — вниз")}
+
+        <button onClick={apply} disabled={!canMove}
+          title="Переместить горизонт на указанное смещение"
+          className="w-5 h-5 flex items-center justify-center rounded border flex-shrink-0 disabled:opacity-30"
+          style={{
+            background: canMove ? "var(--c-tint-blue, #eff6ff)" : "transparent",
+            borderColor: canMove ? "var(--c-blue-lt, #3b82f6)" : "var(--c-b2, #d1d5db)",
+          }}>
+          <Icon name="Check" size={11} style={{ color: canMove ? "var(--c-blue, #1d4ed8)" : "var(--c-t3, #9ca3af)" }} />
+        </button>
+
+        <button onClick={doAlign} disabled={empty || !align}
+          title={align
+            ? `Совместить по узлам: ${align.label}`
+            : "Совместить по узлу: выделите два узла (Ctrl+клик) — один на этом горизонте, второй на основной схеме"}
+          className="w-5 h-5 flex items-center justify-center rounded border flex-shrink-0 disabled:opacity-30"
+          style={{
+            background: align && !empty ? "var(--c-tint-green, #ecfdf5)" : "transparent",
+            borderColor: align && !empty ? "var(--c-green, #10b981)" : "var(--c-b2, #d1d5db)",
+          }}>
+          <Icon name="Crosshair" size={11}
+            style={{ color: align && !empty ? "var(--c-green-dk, #047857)" : "var(--c-t3, #9ca3af)" }} />
+        </button>
       </div>
 
-      {branchCount === 0 ? (
-        <div className="text-[10px] text-gray-400 leading-snug">
+      {/* Подсказка: что произойдёт по кнопке совмещения */}
+      {!empty && align && (
+        <div className="text-[9px] leading-snug" style={{ color: "var(--c-green-dk, #047857)" }}>
+          Совместить: {align.label} · сдвиг {align.dx.toFixed(1)}, {align.dy.toFixed(1)}, {align.dz.toFixed(1)} м
+        </div>
+      )}
+      {empty && (
+        <div className="text-[9px] text-gray-400 leading-snug">
           На горизонте нет выработок — двигать нечего.
         </div>
-      ) : (
-        <>
-          {field("X:", dx, setDx, "x", "Плюс — на восток (вправо), минус — на запад")}
-          {field("Y:", dy, setDy, "y", "Плюс — на север (вверх), минус — на юг")}
-          {field("Z:", dz, setDz, "z", "Плюс — вверх, минус — вниз")}
-
-          <div className="flex items-center gap-1">
-            <button onClick={apply} disabled={!canMove}
-              className="flex-1 px-2 py-1 text-[10px] rounded border font-medium disabled:opacity-40"
-              style={{
-                background: canMove ? "var(--c-tint-blue, #eff6ff)" : "transparent",
-                borderColor: canMove ? "var(--c-blue-lt, #3b82f6)" : "var(--c-b2, #d1d5db)",
-                color: canMove ? "var(--c-blue, #1d4ed8)" : "var(--c-t3, #9ca3af)",
-              }}>
-              Переместить горизонт
-            </button>
-          </div>
-
-          <div className="text-[9px] text-gray-500 leading-snug">
-            Узлы стыковки с другими горизонтами остаются на месте.
-            Длины выработок не меняются. Отмена — Ctrl+Z.
-          </div>
-        </>
       )}
     </div>
   );
