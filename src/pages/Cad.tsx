@@ -4889,7 +4889,7 @@ export default function CadPage() {
                       { icon: "FileText" as const,    label: "CSV из Ventsim",                  ext: "Ventsim 5/6",    action: "csv-ventsim" },
                       { icon: "FileJson" as const,    label: "Добавить схему из файла",        ext: ".vproj / .json", action: "json" },
                       { icon: "Code" as const,        label: "Добавить схему из XML",           ext: ".xml",           action: "xml"  },
-                      { icon: "Pencil" as const,      label: "Добавить схему из DXF",           ext: ".dxf",           action: "dxf"  },
+                      { icon: "Pencil" as const,      label: "Добавить схему из DXF / DWG",     ext: ".dxf, .dwg",     action: "dxf"  },
                       { icon: "FileText" as const,    label: "Добавить схему из TXT",           ext: ".txt",           action: "txt"  },
                     ].map((item) => (
                       <button key={item.label}

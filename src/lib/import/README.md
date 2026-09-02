@@ -12,7 +12,8 @@
 | Схема Вентиляция 2.0 | `.cdf3` — двоичный файл схемы | `vent2Cdf3Import.ts` | `Vent2Cdf3ImportDialog.tsx` |
 | Модель Ventsim | `.vsm` — файл модели (gzip + текст) | `ventsimVsmImport.ts` | `VentsimVsmImportDialog.tsx` |
 | CSV из Ventsim | Branch Report / Export to CSV | `ventsimCsvImport.ts` | `VentsimCsvImportDialog.tsx` |
-| Схема из DXF | `.dxf` — чертёж | `../dxfImport.ts` | `DxfImportDialog.tsx` |
+| Схема из DXF | `.dxf` — чертёж (текст) | `../dxfImport.ts` | `DxfImportDialog.tsx` |
+| Схема из DWG | `.dwg` — чертёж (двоичный) | `../dwgImport.ts` | `DxfImportDialog.tsx` |
 | Excel (Вентиляция 2.0) | `.xlsx` | `../excelImport.ts` | `ExcelImportDialog.tsx` |
 | DXF + Excel вместе | пара файлов | `../combinedImport.ts` | `CombinedImportDialog.tsx` |
 

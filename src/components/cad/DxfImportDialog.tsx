@@ -1,6 +1,7 @@
 // Диалог импорта DXF-файла вентиляционной схемы
 import { useState, useRef } from "react";
 import { parseDxf, type DxfImportResult } from "@/lib/dxfImport";
+import { parseDwg } from "@/lib/dwgImport";
 import Icon from "@/components/ui/icon";
 
 interface DxfImportDialogProps {
@@ -66,6 +67,8 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const [filePreview, setFilePreview] = useState<string>("");
   const [epsilon, setEpsilon] = useState<number>(0.05);
   const [encoding, setEncoding] = useState<EncodingId>("auto");
+  /** Открыт файл DWG — выбор кодировки не нужен, её определяет сам формат */
+  const [dwgMode, setDwgMode] = useState(false);
   const fileTextRef = useRef<string>("");
   const fileBufRef = useRef<ArrayBuffer | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -84,13 +87,27 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     setResult(null);
     setError(null);
     setLoading(true);
+    const isDwg = f.name.toLowerCase().endsWith(".dwg");
+    setDwgMode(isDwg);
     try {
       const buf = await f.arrayBuffer();
       fileBufRef.current = buf;
-      const text = decodeDxfBytes(buf, encoding);
-      fileTextRef.current = text;
-      setFilePreview(text.split("\n").slice(0, 60).join("\n"));
-      parseWithEpsilon(text, epsilon, true);  // первый парсинг — автоопределение epsilon
+
+      if (isDwg) {
+        // DWG — двоичный формат: его читает отдельный модуль и отдаёт уже
+        // разобранную схему. Кодировку выбирать не нужно, библиотека всегда
+        // возвращает текст в UTF-8.
+        const parsed = await parseDwg(buf);
+        fileTextRef.current = parsed.dxfText;
+        setFilePreview(parsed.dxfText.split("\n").slice(0, 60).join("\n"));
+        setResult(parsed);
+        if (parsed.epsilonUsed !== undefined) setEpsilon(parsed.epsilonUsed);
+      } else {
+        const text = decodeDxfBytes(buf, encoding);
+        fileTextRef.current = text;
+        setFilePreview(text.split("\n").slice(0, 60).join("\n"));
+        parseWithEpsilon(text, epsilon, true);  // первый парсинг — автоопределение epsilon
+      }
     } catch (e) {
       setError(`Ошибка чтения файла: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -118,10 +135,11 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
     const f = e.dataTransfer.files[0];
-    if (f && (f.name.toLowerCase().endsWith(".dxf"))) {
+    const name = f?.name.toLowerCase() ?? "";
+    if (f && (name.endsWith(".dxf") || name.endsWith(".dwg"))) {
       handleFile(f);
     } else {
-      setError("Поддерживаются только файлы .dxf");
+      setError("Поддерживаются файлы .dxf и .dwg");
     }
   };
 
@@ -139,7 +157,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
         {/* Заголовок */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-400"
           style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
-          <span className="text-sm font-semibold text-gray-800">Импорт схемы из DXF</span>
+          <span className="text-sm font-semibold text-gray-800">Импорт схемы из DXF / DWG</span>
           <button onClick={onClose}
             className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white text-gray-600">✕</button>
         </div>
@@ -163,16 +181,18 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
               </>
             ) : (
               <>
-                <div className="text-sm font-medium text-gray-700">Перетащите DXF-файл или нажмите для выбора</div>
-                <div className="text-xs text-gray-400">НаноКАД, АэроСеть, AutoCAD (ASCII DXF)</div>
+                <div className="text-sm font-medium text-gray-700">Перетащите файл DXF или DWG либо нажмите для выбора</div>
+                <div className="text-xs text-gray-400">НаноКАД, АэроСеть, AutoCAD — чертёж DXF или DWG</div>
               </>
             )}
-            <input ref={inputRef} type="file" accept=".dxf,.DXF" className="hidden"
+            <input ref={inputRef} type="file" accept=".dxf,.DXF,.dwg,.DWG" className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           </div>
 
-          {/* Кодировка файла — как в АэроСеть / Вентиляция 2.0 */}
-          {file && (
+          {/* Кодировка файла — как в АэроСеть / Вентиляция 2.0.
+              Для DWG не показываем: имена слоёв приходят из чертежа уже
+              в UTF-8, выбирать пользователю нечего. */}
+          {file && !dwgMode && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-gray-600 flex-shrink-0">Кодировка файла:</span>
               <select
@@ -195,7 +215,9 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
           {loading && (
             <div className="flex items-center gap-2 text-sm text-blue-600">
               <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-              Анализ файла...
+              {dwgMode
+                ? "Чтение чертежа DWG — это занимает несколько секунд..."
+                : "Анализ файла..."}
             </div>
           )}
 
