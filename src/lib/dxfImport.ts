@@ -489,6 +489,60 @@ export function parseDxf(
     };
   }
 
+  // ── Отсев объектов, брошенных у начала координат ─────────────────────────
+  // Схема лежит компактным пятном где-то в госсистеме координат, а отдельные
+  // забытые объекты — далеко в стороне (чаще всего ровно в точке 0,0). Если их
+  // оставить, схема растянется на десятки километров пустоты: реальные
+  // выработки сожмутся в точку, а «мусорная» линия уедет за край экрана.
+  // Находим основное скопление по медиане и выбрасываем всё, что дальше
+  // десяти размахов схемы от него.
+  {
+    const cx: number[] = [];
+    const cy: number[] = [];
+    for (const s of segments) { cx.push(s.x1, s.x2); cy.push(s.y1, s.y2); }
+    for (const c of circles) { cx.push(c.cx); cy.push(c.cy); }
+    if (cx.length >= 20) {
+      const sorted = (a: number[]) => [...a].sort((p, q) => p - q);
+      const sx = sorted(cx);
+      const sy = sorted(cy);
+      const med = (a: number[]) => a[Math.floor(a.length / 2)];
+      const pct = (a: number[], p: number) => a[Math.floor(a.length * p)];
+      const mx = med(sx);
+      const my = med(sy);
+      // Размер основного скопления — по процентилям, выбросы на него не влияют
+      const coreSpan = Math.max(
+        pct(sx, 0.99) - pct(sx, 0.01),
+        pct(sy, 0.99) - pct(sy, 0.01),
+        1,
+      );
+      const maxDist = coreSpan * 10;
+      const near = (x: number, y: number) =>
+        Math.abs(x - mx) <= maxDist && Math.abs(y - my) <= maxDist;
+
+      const segBefore = segments.length;
+      const cirBefore = circles.length;
+      // Отрезок оставляем, только если ОБА конца в основном скоплении:
+      // иначе останется линия, тянущаяся через весь чертёж.
+      const segKept = segments.filter(s => near(s.x1, s.y1) && near(s.x2, s.y2));
+      const cirKept = circles.filter(c => near(c.cx, c.cy));
+      const textKept = texts.filter(t => near(t.x, t.y));
+      const polyKept = sectionPolys.filter(p => near(p.cx, p.cy));
+      const dropped = (segBefore - segKept.length) + (cirBefore - cirKept.length);
+      // Страховка: если «выбросами» оказалась половина чертежа, значит схема
+      // распадается на несколько удалённых участков — тогда ничего не трогаем.
+      if (dropped > 0 && segKept.length > segBefore * 0.5) {
+        segments.splice(0, segments.length, ...segKept);
+        circles.splice(0, circles.length, ...cirKept);
+        texts.splice(0, texts.length, ...textKept);
+        sectionPolys.splice(0, sectionPolys.length, ...polyKept);
+        debugLines.push(
+          `Отброшено объектов вне основного скопления: ${dropped} ` +
+          `(центр ${mx.toFixed(0)},${my.toFixed(0)}, радиус ${maxDist.toFixed(0)})`,
+        );
+      }
+    }
+  }
+
   // ── Определяем масштаб единиц (по всем сегментам и кругам) ──────────────
   const allAbsCoords: number[] = [];
   for (const s of segments) {
@@ -505,15 +559,36 @@ export function parseDxf(
   // (порог слияния 0.10 м) и импорт давал 0 ветвей.
   // Размах же от системы координат не зависит: у шахтного поля в метрах он
   // сотни-тысячи, в миллиметрах — сотни тысяч.
-  const spanOf = (get: (s: Seg) => number[]): number => {
+  // ВАЖНО: размах считаем по 1-му и 99-му процентилю, а не по крайним точкам.
+  // В маркшейдерском чертеже почти всегда находится один-два «забытых» объекта
+  // у начала координат (X=0, Y=0), тогда как сама схема лежит далеко от нуля —
+  // например, около X = −88 000. Крайние точки дают тогда размах 88 000 вместо
+  // настоящих ~900 м, файл в МЕТРАХ принимается за сантиметры, и вся схема
+  // сжимается в 100 раз: выработки по 0,5 м, узлы слипаются, а кружки узлов
+  // рисуются поверх схемы огромными «шарами».
+  // Процентили такие одиночные выбросы отсекают, а на нормальный чертёж
+  // (где точки распределены по всей схеме) почти не влияют.
+  const spanOf = (
+    get: (s: Seg) => number[],
+    getCircle: (c: CircleEnt) => number,
+  ): number => {
     const vals: number[] = [];
     for (const s of segments) vals.push(...get(s));
-    for (const c of circles) vals.push(c.cx, c.cy, c.cz);
+    // Раньше сюда добавлялись сразу cx, cy и cz каждой окружности, из-за чего
+    // в «размах по X» попадали координаты Y и Z. У маркшейдерского плана X
+    // отрицательный, а Y положительный, поэтому размах получался равен
+    // расстоянию между ними (150 000 вместо 900) и метры принимались за
+    // сантиметры. Берём только ту ось, которую считаем.
+    for (const c of circles) vals.push(getCircle(c));
     if (vals.length === 0) return 0;
-    return Math.max(...vals) - Math.min(...vals);
+    vals.sort((a, b) => a - b);
+    if (vals.length < 20) return vals[vals.length - 1] - vals[0];
+    const lo = vals[Math.floor(vals.length * 0.01)];
+    const hi = vals[Math.floor(vals.length * 0.99)];
+    return hi - lo;
   };
-  const spanX = spanOf(s => [s.x1, s.x2]);
-  const spanY = spanOf(s => [s.y1, s.y2]);
+  const spanX = spanOf(s => [s.x1, s.x2], c => c.cx);
+  const spanY = spanOf(s => [s.y1, s.y2], c => c.cy);
   const span = Math.max(spanX, spanY);
   const maxCoord = allAbsCoords.length > 0 ? Math.max(...allAbsCoords) : 0;
   let scale = 1;
