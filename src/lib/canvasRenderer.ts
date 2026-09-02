@@ -141,6 +141,8 @@ export interface CanvasRenderOptions {
   selectedBranchIds: Set<string>;
   selectedNodeId: string | null;
   selectedNodeIds: Set<string>;
+  /** Роли узлов при совмещении горизонта: "move" — поедет, "stay" — останется */
+  alignRoles?: Map<string, "move" | "stay">;
   hoverBranchId: string | null;
   /** ID горизонта для временной подсветки его ветвей (наведение в списке слоёв). */
   highlightHorizonId?: string | null;
@@ -563,7 +565,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   const {
     ctx, width, height, view, proj, is3D,
     branches, visibleBranches, projNodesMap, projNodes,
-    selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
+    selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds, alignRoles,
     hoverBranchId,
     branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows,
     flowDisplay, animOffset, animSpeed = 1,
@@ -1563,7 +1565,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const baseNodeR = Math.max(1.5, branchPx * 0.55);
       const r = isSel ? baseNodeR * 1.5 : baseNodeR;
       const color = isAtm ? "#7dd3fc" : "#c8a882";
-      const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
+      // Совмещение горизонта: жёлтый — узел, который поедет, зелёный — тот,
+      // к которому его подставят. См. alignRoles в TopoCanvas.
+      const _alignRole = alignRoles?.get(n.id);
+      const ringColor = _alignRole === "stay" ? "#10b981"
+        : _alignRole === "move" ? "#f59e0b"
+        : isMultiSel ? "#f59e0b" : "#2563eb";
 
       // Основной круг
       const rawFireType = n.fireNodeType ?? "none";

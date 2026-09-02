@@ -125,8 +125,20 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove, alig
 
       {/* Подсказка: что произойдёт по кнопке совмещения */}
       {!empty && align && (
-        <div className="text-[9px] leading-snug" style={{ color: "var(--c-green-dk, #047857)" }}>
-          Совместить: {align.label} · сдвиг {align.dx.toFixed(1)}, {align.dy.toFixed(1)}, {align.dz.toFixed(1)} м
+        <div className="text-[9px] leading-snug flex items-center gap-1 flex-wrap"
+          style={{ color: "var(--c-green-dk, #047857)" }}>
+          {/* Точки повторяют цвет колец на схеме: жёлтый узел поедет,
+              зелёный останется — так подсказка читается без пояснений */}
+          <span className="inline-flex items-center gap-0.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#f59e0b" }} />
+            поедет
+          </span>
+          <span>→</span>
+          <span className="inline-flex items-center gap-0.5">
+            <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ background: "#10b981" }} />
+            останется
+          </span>
+          <span>· {align.label} · сдвиг {align.dx.toFixed(1)}, {align.dy.toFixed(1)}, {align.dz.toFixed(1)} м</span>
         </div>
       )}
       {empty && (

@@ -2218,6 +2218,39 @@ export default function CadPage() {
   ), [showMoveSchema, nodes, branchesRaw, horizons, selectedNodeIds]);
 
   /**
+   * Роли двух выделенных узлов для подсветки на схеме.
+   *
+   * Горизонт здесь не указан: пользователь ещё не нажал кнопку и не выбрал,
+   * какой горизонт двигать. Поэтому определяем роли по самому выделению —
+   * узел, у которого есть ветви ровно одного горизонта, считаем
+   * перемещаемым, второй — целевым. Если так решить нельзя (оба узла
+   * одинаковы по смыслу), подсветку не показываем.
+   */
+  const alignRoles = useMemo(() => {
+    if (selectedNodeIds.size !== 2) return undefined;
+    const [a, b] = [...selectedNodeIds];
+    // Набор горизонтов, к которым принадлежит узел
+    const horizonsOf = (nodeId: string) => {
+      const set = new Set<string>();
+      for (const br of branchesRaw) {
+        if (br.fromId === nodeId || br.toId === nodeId) set.add(br.horizonId || "");
+      }
+      return set;
+    };
+    const ha = horizonsOf(a);
+    const hb = horizonsOf(b);
+    // Узлы на одном и том же горизонте — совмещать нечего
+    if (ha.size === 1 && hb.size === 1 && [...ha][0] === [...hb][0]) return undefined;
+    // Поедет тот, кто «сидит» на одном горизонте: он и есть импортированный
+    const moveId = ha.size === 1 && hb.size !== 1 ? a
+      : hb.size === 1 && ha.size !== 1 ? b
+      : null;
+    if (!moveId) return undefined;
+    const stayId = moveId === a ? b : a;
+    return new Map<string, "move" | "stay">([[moveId, "move"], [stayId, "stay"]]);
+  }, [selectedNodeIds, branchesRaw]);
+
+  /**
    * Совмещение горизонта по паре выделенных узлов.
    *
    * Пользователь выделяет два узла (Ctrl+клик): один на горизонте, который
@@ -11546,6 +11579,7 @@ export default function CadPage() {
               onBranchMultiSelect={handleBranchMultiSelect}
               selectedNodeIds={selectedNodeIds}
               onNodeMultiSelect={handleNodeMultiSelect}
+              alignRoles={alignRoles}
               infoConfig={infoConfig}
               unitsConfig={unitsConfig}
               waterNodeResults={waterNetwork.nodeResults}

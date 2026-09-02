@@ -62,7 +62,7 @@ export default function TopoCanvas(props: Props) {
     editingPrintLayerId, onPrintLayerBoundsChange, onPrintLayerChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
     selectedBranchIds, onBranchMultiSelect,
-    selectedNodeIds, onNodeMultiSelect,
+    selectedNodeIds, onNodeMultiSelect, alignRoles,
     infoConfig, zScale = 1, xyScale = 1, nodeLodThresholds,
     schemaSymbols = [], onSelectSymbol, selectedSymbolId, onSymbolMove,
     onSymbolMoveAlongBranch, onSymbolOffset, onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart, onSymbolClick, onSymbolDblClick,
@@ -1655,6 +1655,7 @@ export default function TopoCanvas(props: Props) {
           selectedBranchIds={selectedBranchIds ?? EMPTY_SET}
           selectedNodeId={selectedNodeId}
           selectedNodeIds={selectedNodeIds ?? EMPTY_SET}
+          alignRoles={alignRoles}
           hoverBranchId={hoverBranchId}
           highlightHorizonId={highlightHorizonId}
           branchWidth={branchWidth}
@@ -3709,7 +3710,14 @@ export default function TopoCanvas(props: Props) {
           const baseNodeR = Math.max(1.5, branchPx * 0.55);
           const r = isSel ? baseNodeR * 1.5 : baseNodeR;
           const color = node.atmosphereLink ? "#7dd3fc" : "#c8a882";
-          const ringColor = isMultiSel ? "#f59e0b" : "#2563eb";
+          // Цвет кольца выделения. При совмещении горизонта два выделенных
+          // узла красим по-разному: жёлтый — тот, что поедет вместе с
+          // горизонтом, зелёный — тот, к которому он встанет. Так до нажатия
+          // кнопки видно, что куда переместится.
+          const alignRole = alignRoles?.get(node.id);
+          const ringColor = alignRole === "stay" ? "#10b981"
+            : alignRole === "move" ? "#f59e0b"
+            : isMultiSel ? "#f59e0b" : "#2563eb";
           const rawFireType = node.fireNodeType ?? "none";
           // Видимость водопроводных типов узлов управляется вкладкой «Водопровод».
           const waterTypeVisible =

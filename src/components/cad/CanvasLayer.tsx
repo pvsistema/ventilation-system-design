@@ -47,6 +47,8 @@ interface CanvasLayerProps {
   selectedBranchIds: Set<string>;
   selectedNodeId: string | null;
   selectedNodeIds: Set<string>;
+  /** Роли узлов при совмещении горизонта: "move" — поедет, "stay" — останется */
+  alignRoles?: Map<string, "move" | "stay">;
   hoverBranchId: string | null;
   highlightHorizonId?: string | null;
 
@@ -207,6 +209,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         selectedBranchIds: p.selectedBranchIds,
         selectedNodeId: p.selectedNodeId,
         selectedNodeIds: p.selectedNodeIds,
+        alignRoles: p.alignRoles,
         hoverBranchId: p.hoverBranchId,
         highlightHorizonId: p.highlightHorizonId,
         branchWidth: p.branchWidth,
@@ -347,7 +350,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     drawOverlay();
   }, [drawOverlay,
     props.selectedBranchId, props.selectedBranchIds,
-    props.selectedNodeId, props.selectedNodeIds,
+    props.selectedNodeId, props.selectedNodeIds, props.alignRoles,
     props.hoverBranchId,
     props.projNodesMap, props.view, props.width, props.height,
     props.branchWidth, props.thinLines, props.branches,

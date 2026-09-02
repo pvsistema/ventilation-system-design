@@ -119,6 +119,12 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
             его под строкой; останется нажать кнопку — горизонт встанет точно
             по этим узлам. Порядок выделения значения не имеет.
           </p>
+          <p className="text-[12px] text-gray-600 leading-relaxed">
+            Пока оба узла выделены, они подсвечены на схеме разными цветами:
+            <b style={{ color: "#b45309" }}> жёлтый</b> — узел, который поедет
+            вместе с горизонтом, <b style={{ color: "#047857" }}>зелёный</b> —
+            тот, что останется на месте. Так до нажатия видно, что куда встанет.
+          </p>
           <div className="p-2 rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a" }}>
             <span className="text-[11px] text-amber-800">
               Узлы, через которые горизонт связан с другими (стволы, сбойки),
