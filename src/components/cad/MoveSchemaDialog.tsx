@@ -25,13 +25,31 @@ interface Props {
   onClose: () => void;
 }
 
+/**
+ * Превращает введённый текст в число.
+ * Пустая строка, одиночный минус и «-,» — это промежуточные состояния набора,
+ * они считаются нулём, но НЕ стирают то, что человек печатает.
+ */
+function parseShift(raw: string): number {
+  const v = parseFloat(raw.replace(",", "."));
+  return isFinite(v) ? v : 0;
+}
+
 export default function MoveSchemaDialog({ counts, onConfirm, onClose }: Props) {
   // По умолчанию — «Выделенные», если пользователь что-то выделил: обычно
   // диалог открывают именно ради них. Иначе вся схема.
   const [area, setArea] = useState<MoveArea>(counts.selected > 0 ? "selected" : "all");
-  const [dx, setDx] = useState(0);
-  const [dy, setDy] = useState(0);
-  const [dz, setDz] = useState(0);
+
+  // Смещения храним КАК ТЕКСТ, а не как число. Иначе нельзя набрать «-40»:
+  // после первого символа «-» строка превращалась бы в 0 и минус пропадал,
+  // так же как и «0,» при вводе дробного значения.
+  const [dxText, setDxText] = useState("0");
+  const [dyText, setDyText] = useState("0");
+  const [dzText, setDzText] = useState("0");
+
+  const dx = parseShift(dxText);
+  const dy = parseShift(dyText);
+  const dz = parseShift(dzText);
 
   const affected = counts[area];
   const noShift = dx === 0 && dy === 0 && dz === 0;
@@ -40,12 +58,6 @@ export default function MoveSchemaDialog({ counts, onConfirm, onClose }: Props) 
   const handleOk = () => {
     if (!canApply) return;
     onConfirm({ area, dx, dy, dz });
-  };
-
-  /** Ввод числа: разрешаем минус, запятую и пустое поле во время набора */
-  const parse = (raw: string): number => {
-    const v = parseFloat(raw.replace(",", "."));
-    return isFinite(v) ? v : 0;
   };
 
   const S = {
@@ -68,19 +80,37 @@ export default function MoveSchemaDialog({ counts, onConfirm, onClose }: Props) 
     btnCancel: { height: 26, padding: "0 14px", fontSize: 12, background: "var(--c-s2, #f5f5f5)", color: "var(--c-t1, #1a1a1a)", border: "1px solid var(--c-b3, #aaa)", borderRadius: 2, cursor: "pointer" },
   };
 
-  /** Поле ввода смещения по одной оси */
-  const AxisRow = ({ label, value, onChange, title }: {
-    label: string; value: number; onChange: (v: number) => void; title: string;
-  }) => (
+  /**
+   * Строка ввода смещения по одной оси.
+   *
+   * Это обычная функция, а НЕ вложенный компонент. Раньше здесь был компонент,
+   * объявленный внутри MoveSchemaDialog: при каждом нажатии клавиши React
+   * считал его новым типом, выбрасывал старое поле и создавал пустое — фокус
+   * слетал, и цифры «не набирались».
+   */
+  const axisRow = (
+    label: string,
+    value: string,
+    onChange: (v: string) => void,
+    title: string,
+  ) => (
     <div style={S.row} title={title}>
       <span style={S.label}>{label}</span>
       <div style={S.inputWrap}>
         <input
           type="text"
-          inputMode="decimal"
-          value={String(value)}
-          onChange={(e) => onChange(parse(e.target.value))}
+          inputMode="text"
+          value={value}
+          // Пропускаем только то, из чего может получиться число:
+          // цифры, минус в начале, одна точка или запятая.
+          onChange={(e) => {
+            const v = e.target.value;
+            if (v === "" || /^-?\d*[.,]?\d*$/.test(v)) onChange(v);
+          }}
           onFocus={(e) => e.target.select()}
+          // Пустое поле после ухода — возвращаем ноль, чтобы не осталось
+          // непонятного пробела вместо значения.
+          onBlur={() => { if (value === "" || value === "-") onChange("0"); }}
           onKeyDown={(e) => { if (e.key === "Enter") handleOk(); }}
           style={S.input}
         />
@@ -116,12 +146,12 @@ export default function MoveSchemaDialog({ counts, onConfirm, onClose }: Props) 
             </select>
           </div>
 
-          <AxisRow label="Вдоль OX:" value={dx} onChange={setDx}
-            title="Плюс — на восток (вправо), минус — на запад" />
-          <AxisRow label="Вдоль OY:" value={dy} onChange={setDy}
-            title="Плюс — на север (вверх), минус — на юг" />
-          <AxisRow label="Вдоль OZ:" value={dz} onChange={setDz}
-            title="Плюс — вверх, минус — вниз. Например, −40 опустит схему на горизонт −40 м" />
+          {axisRow("Вдоль OX:", dxText, setDxText,
+            "Плюс — на восток (вправо), минус — на запад")}
+          {axisRow("Вдоль OY:", dyText, setDyText,
+            "Плюс — на север (вверх), минус — на юг")}
+          {axisRow("Вдоль OZ:", dzText, setDzText,
+            "Плюс — вверх, минус — вниз. Например, −40 опустит схему на горизонт −40 м")}
 
           <div style={S.hint}>
             {affected > 0 ? (
