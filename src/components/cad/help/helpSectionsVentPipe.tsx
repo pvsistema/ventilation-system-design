@@ -162,6 +162,32 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
           актом. Особенно важно для наклонных и вертикальных выработок,
           где тепловая тяга может пересилить работу вентилятора.
         </p>
+        <p className="text-[12px] text-gray-600 leading-relaxed">
+          Выработки разбираются по направлению потока — <b>нисходящие</b> и
+          <b> восходящие</b>, наклонные и вертикальные отдельно. Для нисходящей
+          струи опрокидывание наступает, когда тепловая депрессия достигает
+          критической. Для восходящей проверяется условие устойчивости, а при его
+          нарушении программа подсказывает сопротивление перемычки, которое
+          вернёт режим в норму.
+        </p>
+        <table className="w-full text-[11px] border-collapse mt-1">
+          <thead><tr style={{ background: "var(--c-tint-amber, #fffbeb)" }}>
+            <th className="text-left p-1.5 border border-gray-200">Степень устойчивости</th>
+            <th className="text-left p-1.5 border border-gray-200">Оценка режима</th>
+          </tr></thead>
+          <tbody>
+            {[
+              ["больше 1", "устойчиво"],
+              ["от 0,3 до 1", "неустойчиво"],
+              ["меньше 0,3", "весьма неустойчиво"],
+            ].map(([p, v]) => (
+              <tr key={p} className="even:bg-gray-50">
+                <td className="p-1.5 border border-gray-200 font-medium">{p}</td>
+                <td className="p-1.5 border border-gray-200 text-gray-600">{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
 
         <H3>Проверка ППЗ</H3>
         <p className="text-[12px] text-gray-600 leading-relaxed">
