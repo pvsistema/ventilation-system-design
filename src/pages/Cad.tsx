@@ -50,6 +50,7 @@ import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
+import HorizonShiftBlock from "@/components/cad/HorizonShiftBlock";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
@@ -1062,21 +1063,16 @@ export default function CadPage() {
   };
 
   /**
-   * Сдвигает схему по осям. Двигаем не только координаты отрисовки, но и
-   * маркшейдерские: иначе программа посчитает, что узлы «отодвинули от их
-   * настоящего положения», пометит их как смещённые, а длины выработок
-   * (они считаются по маркшейдерским координатам) разъедутся со схемой.
-   * Параллельный перенос расстояний не меняет, поэтому сопротивление сети
-   * и результаты расчёта остаются прежними.
+   * Сдвигает указанные узлы по осям.
+   *
+   * Двигаем не только координаты отрисовки, но и маркшейдерские: иначе
+   * программа посчитает, что узлы «отодвинули от их настоящего положения»,
+   * пометит их как смещённые, а длины выработок (они считаются по
+   * маркшейдерским координатам) разъедутся со схемой. Параллельный перенос
+   * расстояний не меняет, поэтому сопротивление сети и результаты расчёта
+   * остаются прежними.
    */
-  const handleMoveSchema = ({ area, dx, dy, dz }: MoveSchemaOptions) => {
-    const ids = moveTargetIds(area);
-    if (ids.size === 0 || (dx === 0 && dy === 0 && dz === 0)) {
-      setShowMoveSchema(false);
-      return;
-    }
-    pushHistory();
-
+  const shiftNodes = (ids: Set<string>, dx: number, dy: number, dz: number) => {
     setNodes(prev => prev.map(n => {
       if (!ids.has(n.id)) return n;
       const s = surveyXYZ(n);
@@ -1086,6 +1082,62 @@ export default function CadPage() {
         surveyX: s.x + dx, surveyY: s.y + dy, surveyZ: s.z + dz,
       };
     }));
+  };
+
+  /**
+   * Перемещение ОДНОГО горизонта — вкладка «Горизонты», строка горизонта.
+   *
+   * Нужно, когда горизонт импортировали отдельным файлом и его надо
+   * состыковать с уже построенной сетью: чертежи разных горизонтов часто
+   * ведутся в своих координатах и не совпадают друг с другом.
+   *
+   * Узел к горизонту напрямую не привязан — привязаны ветви. Поэтому берём
+   * узлы ветвей этого горизонта, но ПРОПУСКАЕМ те, что связаны и с другими
+   * горизонтами: это точки стыковки (стволы, сбойки). Если их сдвинуть,
+   * соединение с остальной схемой порвётся, а длины стволов изменятся.
+   */
+  const moveHorizon = (horizonId: string, dx: number, dy: number, dz: number) => {
+    if (dx === 0 && dy === 0 && dz === 0) return;
+
+    const own = new Set<string>();
+    const foreign = new Set<string>();
+    for (const b of branchesRaw) {
+      const target = b.horizonId === horizonId ? own : foreign;
+      target.add(b.fromId);
+      target.add(b.toId);
+    }
+    const ids = new Set([...own].filter(id => !foreign.has(id)));
+    const shared = [...own].filter(id => foreign.has(id)).length;
+
+    if (ids.size === 0) {
+      addLog("warn", shared > 0
+        ? `Горизонт не перемещён: все его узлы связаны с другими горизонтами`
+        : `Горизонт не перемещён: на нём нет выработок`);
+      return;
+    }
+
+    pushHistory();
+    shiftNodes(ids, dx, dy, dz);
+
+    const parts = [
+      dx !== 0 ? `X ${dx > 0 ? "+" : ""}${dx}` : "",
+      dy !== 0 ? `Y ${dy > 0 ? "+" : ""}${dy}` : "",
+      dz !== 0 ? `Z ${dz > 0 ? "+" : ""}${dz}` : "",
+    ].filter(Boolean).join(", ");
+    const name = horizons.find(h => h.id === horizonId)?.name ?? "Горизонт";
+    addLog("ok", `«${name}» перемещён: ${parts} м · узлов: ${ids.size}` +
+      (shared > 0 ? ` · узлов стыковки сохранено: ${shared}` : ""));
+  };
+
+  /** Перемещение всей схемы — вкладка «Схема» */
+  const handleMoveSchema = ({ area, dx, dy, dz }: MoveSchemaOptions) => {
+    const ids = moveTargetIds(area);
+    if (ids.size === 0 || (dx === 0 && dy === 0 && dz === 0)) {
+      setShowMoveSchema(false);
+      return;
+    }
+    pushHistory();
+    shiftNodes(ids, dx, dy, dz);
 
     // Подписи и обозначения двигаем только при переносе всей схемы: они не
     // привязаны к узлам, и при частичном сдвиге непонятно, какие из них
@@ -9911,6 +9963,15 @@ export default function CadPage() {
                           {/* ── Настройки горизонта (подложка + слой печати) ── */}
                           {expandedHorizons.has(h.id) && (
                           <div className="px-1 pb-1 pt-0">
+                            {/* Смещение горизонта — стыковка импортированного
+                                горизонта с уже построенной сетью */}
+                            {h.id !== OVERVIEW_HORIZON_ID && (
+                              <HorizonShiftBlock
+                                horizonId={h.id}
+                                branchCount={usedCount}
+                                onMove={moveHorizon}
+                              />
+                            )}
                             {/* Подложка плана — только для обычных горизонтов */}
                             {h.id !== OVERVIEW_HORIZON_ID && (h.image ? (
                               <div className="space-y-1 pt-1">
