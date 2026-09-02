@@ -1,6 +1,6 @@
 // Диалог импорта DXF-файла вентиляционной схемы
 import { useState, useRef } from "react";
-import { parseDxf, type DxfImportResult } from "@/lib/dxfImport";
+import { parseDxf, type DxfImportResult, type DxfLayerInfo } from "@/lib/dxfImport";
 import { parseDwg } from "@/lib/dwgImport";
 import Icon from "@/components/ui/icon";
 
@@ -69,17 +69,40 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const [encoding, setEncoding] = useState<EncodingId>("auto");
   /** Открыт файл DWG — выбор кодировки не нужен, её определяет сам формат */
   const [dwgMode, setDwgMode] = useState(false);
+  /** Все слои чертежа — список для галочек */
+  const [layers, setLayers] = useState<DxfLayerInfo[]>([]);
+  /** Отмеченные слои. Пустое множество = «берём всё», как до появления выбора */
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  /** Показывать все слои или только те, где есть геометрия */
+  const [showAllLayers, setShowAllLayers] = useState(false);
   const fileTextRef = useRef<string>("");
   const fileBufRef = useRef<ArrayBuffer | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const parseWithEpsilon = (text: string, eps: number, useAutoEpsilon = false) => {
-    const parsed = parseDxf(text, useAutoEpsilon ? undefined : eps);
+  /**
+   * Пересобирает схему из уже прочитанного файла.
+   * Список слоёв берём из первого разбора и больше не трогаем — иначе он
+   * «схлопывался» бы до отмеченных, и вернуть снятую галочку было бы нельзя.
+   */
+  const reparse = (text: string, eps: number, sel: Set<string>, useAutoEpsilon = false) => {
+    const only = sel.size > 0 ? [...sel] : undefined;
+    const parsed = parseDxf(text, useAutoEpsilon ? undefined : eps, only);
     setResult(parsed);
-    // При первом парсинге — берём epsilon из файла
     if (useAutoEpsilon && parsed.epsilonUsed !== undefined) {
       setEpsilon(parsed.epsilonUsed);
     }
+    return parsed;
+  };
+
+  /** Первый разбор файла: заполняем список слоёв и отмечаем распознанные */
+  const initLayers = (parsed: DxfImportResult) => {
+    const list = parsed.layers ?? [];
+    setLayers(list);
+    // По умолчанию отмечаем то, что программа распознала сама: осевые слои
+    // (по ним строятся ветви) плюс слои с узлами-окружностями и подписями —
+    // без них потеряются номера и названия выработок.
+    const auto = list.filter(l => l.isAxis || l.circles > 0 || l.texts > 0).map(l => l.name);
+    setPicked(new Set(auto.length > 0 ? auto : list.map(l => l.name)));
   };
 
   const handleFile = async (f: File) => {
@@ -89,6 +112,8 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     setLoading(true);
     const isDwg = f.name.toLowerCase().endsWith(".dwg");
     setDwgMode(isDwg);
+    setLayers([]);
+    setPicked(new Set());
     try {
       const buf = await f.arrayBuffer();
       fileBufRef.current = buf;
@@ -102,11 +127,13 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
         setFilePreview(parsed.dxfText.split("\n").slice(0, 60).join("\n"));
         setResult(parsed);
         if (parsed.epsilonUsed !== undefined) setEpsilon(parsed.epsilonUsed);
+        initLayers(parsed);
       } else {
         const text = decodeDxfBytes(buf, encoding);
         fileTextRef.current = text;
         setFilePreview(text.split("\n").slice(0, 60).join("\n"));
-        parseWithEpsilon(text, epsilon, true);  // первый парсинг — автоопределение epsilon
+        // Первый разбор — без фильтра слоёв и с автоподбором точности
+        initLayers(reparse(text, epsilon, new Set(), true));
       }
     } catch (e) {
       setError(`Ошибка чтения файла: ${e instanceof Error ? e.message : String(e)}`);
@@ -116,20 +143,40 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   };
 
   // Смена кодировки — перечитываем сохранённые байты и парсим заново.
+  // Имена слоёв при этом меняются (в этом и смысл), поэтому список собираем
+  // заново и галочки расставляем автоматически.
   const handleEncodingChange = (enc: EncodingId) => {
     setEncoding(enc);
     if (!fileBufRef.current) return;
     const text = decodeDxfBytes(fileBufRef.current, enc);
     fileTextRef.current = text;
     setFilePreview(text.split("\n").slice(0, 60).join("\n"));
-    parseWithEpsilon(text, epsilon, true);
+    initLayers(reparse(text, epsilon, new Set(), true));
   };
 
   const handleEpsilonChange = (val: number) => {
     setEpsilon(val);
     if (fileTextRef.current) {
-      parseWithEpsilon(fileTextRef.current, val);
+      reparse(fileTextRef.current, val, picked);
     }
+  };
+
+  /** Галочка слоя: пересобираем схему сразу, чтобы результат было видно */
+  const toggleLayer = (name: string) => {
+    const next = new Set(picked);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    setPicked(next);
+    if (fileTextRef.current) reparse(fileTextRef.current, epsilon, next);
+  };
+
+  /** Отметить все слои / снять все, кроме распознанных программой */
+  const setLayerPreset = (kind: "all" | "auto") => {
+    const next = kind === "all"
+      ? new Set(layers.map(l => l.name))
+      : new Set(layers.filter(l => l.isAxis || l.circles > 0 || l.texts > 0).map(l => l.name));
+    setPicked(next);
+    if (fileTextRef.current) reparse(fileTextRef.current, epsilon, next);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -271,6 +318,73 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                   </span>
                 </div>
               )}
+
+              {/* Выбор слоёв чертежа */}
+              {layers.length > 0 && (() => {
+                // Пустые слои (без геометрии и подписей) по умолчанию прячем:
+                // в маркшейдерском чертеже их бывают десятки, и они только
+                // мешают найти нужный.
+                const meaningful = layers.filter(l => l.segments + l.circles + l.texts > 0);
+                const shown = showAllLayers ? layers : meaningful;
+                const hiddenCount = layers.length - meaningful.length;
+                return (
+                  <div className="border rounded"
+                    style={{ background: "var(--c-s2, #fafafa)", borderColor: "var(--c-b1, #e0e0e0)" }}>
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b"
+                      style={{ borderColor: "var(--c-b1, #e0e0e0)" }}>
+                      <span className="text-[11px] font-semibold text-gray-700">
+                        Слои чертежа — отмечено {picked.size} из {layers.length}
+                      </span>
+                      <div className="flex gap-2">
+                        <button onClick={() => setLayerPreset("auto")}
+                          className="text-[10px] text-blue-600 underline hover:text-blue-800">
+                          Только нужные
+                        </button>
+                        <button onClick={() => setLayerPreset("all")}
+                          className="text-[10px] text-blue-600 underline hover:text-blue-800">
+                          Все
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="max-h-44 overflow-y-auto px-1 py-1">
+                      {shown.map(l => (
+                        <label key={l.name}
+                          className="flex items-center gap-2 px-2 py-1 rounded cursor-pointer hover:bg-blue-50">
+                          <input type="checkbox" checked={picked.has(l.name)}
+                            onChange={() => toggleLayer(l.name)} className="flex-shrink-0" />
+                          <span className="text-[11px] text-gray-800 truncate flex-1" title={l.name}>
+                            {l.name || "(без имени)"}
+                          </span>
+                          {l.isAxis && (
+                            <span className="text-[9px] px-1 rounded flex-shrink-0"
+                              style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue, #1d4ed8)" }}>
+                              выработки
+                            </span>
+                          )}
+                          <span className="text-[10px] text-gray-400 flex-shrink-0 tabular-nums">
+                            {l.segments > 0 && `${l.segments} лин.`}
+                            {l.circles > 0 && ` ${l.circles} круг.`}
+                            {l.texts > 0 && ` ${l.texts} подп.`}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+
+                    <div className="px-3 py-1.5 border-t text-[10px] text-gray-500 leading-snug"
+                      style={{ borderColor: "var(--c-b1, #e0e0e0)" }}>
+                      Отмечены слои, распознанные как выработки, узлы и подписи. Снимите
+                      галочки со слоёв крепления, геологии и сетки — на схему сети они не идут.
+                      {hiddenCount > 0 && (
+                        <button onClick={() => setShowAllLayers(v => !v)}
+                          className="ml-1 text-blue-600 underline hover:text-blue-800">
+                          {showAllLayers ? "Скрыть пустые" : `Показать пустые (${hiddenCount})`}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Настройка точности слияния узлов */}
               {result.stats.lines + result.stats.polylines > 0 && (

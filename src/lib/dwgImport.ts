@@ -186,12 +186,14 @@ function entitiesToDxf(entities: DwgEntity[]): { dxf: string; used: number } {
 /**
  * Читает чертёж DWG и строит схему сети.
  *
- * @param buffer   содержимое файла .dwg
- * @param epsilon  радиус склейки близких точек в узел (как у DXF-импорта)
+ * @param buffer      содержимое файла .dwg
+ * @param epsilon     радиус склейки близких точек в узел (как у DXF-импорта)
+ * @param onlyLayers  если задан — берутся только эти слои чертежа
  */
 export async function parseDwg(
   buffer: ArrayBuffer,
   epsilon?: number,
+  onlyLayers?: string[],
 ): Promise<DwgImportResult> {
   // Библиотека тяжёлая (~10 МБ), поэтому грузим её только сейчас — в момент,
   // когда пользователь действительно открыл файл DWG.
@@ -252,7 +254,7 @@ export async function parseDwg(
     );
   }
 
-  const result = parseDxf(dxf, epsilon);
+  const result = parseDxf(dxf, epsilon, onlyLayers);
 
   return {
     ...result,

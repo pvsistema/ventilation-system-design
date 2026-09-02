@@ -24,6 +24,20 @@
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
 
+/** Слой чертежа и что на нём нарисовано — для выбора слоёв при импорте */
+export interface DxfLayerInfo {
+  /** Имя слоя, как в чертеже */
+  name: string;
+  /** Сколько отрезков (включая звенья полилиний) лежит на слое */
+  segments: number;
+  /** Сколько окружностей — ими обычно обозначают узлы сети */
+  circles: number;
+  /** Сколько подписей */
+  texts: number;
+  /** Слой распознан как осевой — по нему строятся ветви */
+  isAxis: boolean;
+}
+
 export interface DxfImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
@@ -32,6 +46,8 @@ export interface DxfImportResult {
   debug?: string;
   epsilonUsed?: number;
   scaleUsed?: number;
+  /** Все слои чертежа с содержимым — список для галочек в окне импорта */
+  layers?: DxfLayerInfo[];
   /** Обнаруженный коэффициент косоугольной проекции (0 = нет проекции / плоский файл) */
   obliqueFactor?: number;
   zRange?: { min: number; max: number; hasZ: boolean };
@@ -90,7 +106,19 @@ function polygonPerimeter(pts: Pt3[]): number {
 }
 
 // ── Главный парсер ─────────────────────────────────────────────────────────────
-export function parseDxf(content: string, epsilonOverride?: number): DxfImportResult {
+/**
+ * @param content       текст файла DXF
+ * @param epsilonOverride радиус склейки близких точек в один узел
+ * @param onlyLayers    если задан — в схему берутся ТОЛЬКО перечисленные слои.
+ *                      Пусто/не задан = поведение как раньше: слои определяются
+ *                      автоматически. Список нужен окну импорта, где пользователь
+ *                      снимает галочки с лишних слоёв чертежа.
+ */
+export function parseDxf(
+  content: string,
+  epsilonOverride?: number,
+  onlyLayers?: string[],
+): DxfImportResult {
   const warnings: string[] = [];
   const debugLines: string[] = [];
 
@@ -347,6 +375,37 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
   if (inPolyline) flushPolyline();
 
   debugLines.push(`LINE: ${lineCount}, POLY: ${polylineCount}, CIRCLE: ${circles.length}, TEXT: ${texts.length}`);
+
+  // ── Список всех слоёв чертежа (для галочек в окне импорта) ───────────────
+  // Считаем ДО фильтрации, чтобы пользователь видел полный набор слоёв файла,
+  // включая те, что сейчас отключены.
+  const layerStat = new Map<string, { segments: number; circles: number; texts: number }>();
+  const bump = (layer: string, key: "segments" | "circles" | "texts") => {
+    const rec = layerStat.get(layer) ?? { segments: 0, circles: 0, texts: 0 };
+    rec[key]++;
+    layerStat.set(layer, rec);
+  };
+  for (const s of segments) bump(s.layer, "segments");
+  for (const c of circles) bump(c.layer, "circles");
+  for (const t of texts) bump(t.layer, "texts");
+
+  // ── Отбор слоёв, выбранных пользователем ─────────────────────────────────
+  // Когда список задан, всё остальное отбрасывается ещё до анализа: и оси,
+  // и узлы-окружности, и подписи. Иначе снятая галочка не давала бы эффекта —
+  // узлы с отключённого слоя всё равно попадали бы в схему.
+  const pickedSet = onlyLayers && onlyLayers.length > 0 ? new Set(onlyLayers) : null;
+  if (pickedSet) {
+    const keep = <T extends { layer: string }>(arr: T[]): T[] =>
+      arr.filter(item => pickedSet.has(item.layer));
+    const segBefore = segments.length;
+    segments.splice(0, segments.length, ...keep(segments));
+    circles.splice(0, circles.length, ...keep(circles));
+    texts.splice(0, texts.length, ...keep(texts));
+    sectionPolys.splice(0, sectionPolys.length, ...keep(sectionPolys));
+    debugLines.push(
+      `Выбрано слоёв: ${pickedSet.size}, сегментов осталось ${segments.length} из ${segBefore}`,
+    );
+  }
 
   // ── Определяем слои осей ─────────────────────────────────────────────────
   const allLayers = [...new Set(segments.map(s => s.layer))];
@@ -857,10 +916,20 @@ export function parseDxf(content: string, epsilonOverride?: number): DxfImportRe
 
   debugLines.push(`Ветвей: ${branches.length}, узлов: ${nodes.length}`);
 
+  // Список слоёв для окна импорта: сначала осевые (по ним строятся ветви),
+  // дальше — по убыванию количества геометрии.
+  const layerList: DxfLayerInfo[] = [...layerStat.entries()]
+    .map(([name, rec]) => ({ name, ...rec, isAxis: axisLayers.includes(name) }))
+    .sort((a, b2) =>
+      (Number(b2.isAxis) - Number(a.isAxis)) ||
+      (b2.segments - a.segments) ||
+      a.name.localeCompare(b2.name));
+
   return {
     nodes, branches, warnings,
     stats: { lines: lineCount, polylines: polylineCount, nodes: nodes.length, branches: branches.length, circles: circles.length },
     debug: debugLines.join("\n"),
+    layers: layerList,
     epsilonUsed: epsilon,
     scaleUsed: scale,
     obliqueFactor,
