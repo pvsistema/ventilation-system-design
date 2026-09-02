@@ -86,6 +86,9 @@ export function renderSymbolNode(
   const isNarrowOnBranch = isBulkheadOv
     || HEATER_SYMBOL_IDS.has(sym.typeId)
     || sym.typeId === "emergency_exit";
+  // Устье ствола: значок вписан в квадрат SZ, но занимает по ширине лишь
+  // 36/48 холста — подложке нужен именно этот габарит, а не полный SZ.
+  const isShaftMouthOv = SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId);
   const lt = legendTypeById.get(sym.typeId);
   if (!lt && !isBulkheadOv) return null;
   if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
@@ -306,10 +309,19 @@ export function renderSymbolNode(
         // на соседние перемычки и, просвечивая в зазорах открытых дверей,
         // выглядит как белый прямоугольник поверх соседей. Берём ровно
         // ширину символа вдоль ветви (без множителя-запаса).
+        //
+        // Устье ствола — отдельный случай. Значок рисуется в КВАДРАТЕ SZ×SZ,
+        // но его холст 48×40, а сама фигура занимает по ширине лишь 36 единиц
+        // из 48 (rect x=6 width=36). Реальная ширина значка = SZ·36/48 = SZ·0.75,
+        // тогда как подложка бралась SZ+uW — вдвое длиннее знака, из-за чего
+        // она далеко выступала вдоль ствола за пределы устья.
+        //
         // Для остальных символов (иконки, вентиляторы) — прежний размер SZ+uW.
         const uLen = isNarrowOnBranch
           ? Math.max(uW, SZ * 0.85 * 0.38 + uW * 0.5)
-          : Math.max(uW, SZ + uW);
+          : isShaftMouthOv
+            ? Math.max(uW, SZ * (36 / 48))
+            : Math.max(uW, SZ + uW);
         // Проекция символа на линию ветви (t вдоль from→to) — подложку
         // ставим на САМУ ветвь (не на смещённый offset'ом символ), чтобы
         // окраска не прерывалась именно в точке пересечения с ветвью.
