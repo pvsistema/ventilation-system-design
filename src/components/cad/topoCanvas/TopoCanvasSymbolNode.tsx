@@ -1,6 +1,6 @@
 import React from "react";
 import { type TopoBranch } from "@/lib/topology";
-import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent } from "@/lib/schemaSymbols";
+import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolContentBox } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -86,9 +86,7 @@ export function renderSymbolNode(
   const isNarrowOnBranch = isBulkheadOv
     || HEATER_SYMBOL_IDS.has(sym.typeId)
     || sym.typeId === "emergency_exit";
-  // Устье ствола: значок вписан в квадрат SZ, но занимает по ширине лишь
-  // 36/48 холста — подложке нужен именно этот габарит, а не полный SZ.
-  const isShaftMouthOv = SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId);
+
   const lt = legendTypeById.get(sym.typeId);
   if (!lt && !isBulkheadOv) return null;
   if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
@@ -310,18 +308,31 @@ export function renderSymbolNode(
         // выглядит как белый прямоугольник поверх соседей. Берём ровно
         // ширину символа вдоль ветви (без множителя-запаса).
         //
-        // Устье ствола — отдельный случай. Значок рисуется в КВАДРАТЕ SZ×SZ,
-        // но его холст 48×40, а сама фигура занимает по ширине лишь 36 единиц
-        // из 48 (rect x=6 width=36). Реальная ширина значка = SZ·36/48 = SZ·0.75,
-        // тогда как подложка бралась SZ+uW — вдвое длиннее знака, из-за чего
-        // она далеко выступала вдоль ствола за пределы устья.
+        // Значки-иконки (устье, вентиляторы, пожарные и аварийные знаки)
+        // рисуются в КВАДРАТЕ SZ×SZ с viewBox="0 0 48 40", но сама фигура
+        // занимает лишь часть этого холста: у устья 36 единиц из 48, у
+        // вентилятора — круг диаметром 30. Подложка же бралась SZ+uW, то есть
+        // в 2–2,4 раза длиннее знака, и выступала далеко за него вдоль ветви,
+        // накрывая соседние обозначения. Берём РЕАЛЬНЫЙ габарит значка.
         //
-        // Для остальных символов (иконки, вентиляторы) — прежний размер SZ+uW.
+        // ВАЖНО: сам значок НЕ вращается вместе с ветвью (рисуется по осям
+        // экрана), а подложка вращается на угол ветви. Поэтому на наклонной
+        // ветви её длина должна покрывать ПРОЕКЦИЮ неповёрнутого
+        // прямоугольника значка на направление ветви: w·|cos| + h·|sin|.
+        // Без этого на наклонном стволе подложка оказалась бы короче значка и
+        // окраска ветви снова разорвалась бы — теперь уже с другой стороны.
+        const bAngRad = Math.atan2(bDy, bDx);
+        // Обе стороны делятся на 48: при viewBox="0 0 48 40" в квадрате SZ×SZ
+        // браузер масштабирует холст единым коэффициентом min(SZ/48, SZ/40),
+        // то есть SZ/48 — иначе высота вышла бы завышенной.
+        const iconBox = symbolContentBox(sym.typeId);
+        const iconW = SZ * (iconBox.w / 48);
+        const iconH = SZ * (iconBox.h / 48);
+        const iconProj = iconW * Math.abs(Math.cos(bAngRad))
+                       + iconH * Math.abs(Math.sin(bAngRad));
         const uLen = isNarrowOnBranch
           ? Math.max(uW, SZ * 0.85 * 0.38 + uW * 0.5)
-          : isShaftMouthOv
-            ? Math.max(uW, SZ * (36 / 48))
-            : Math.max(uW, SZ + uW);
+          : Math.max(uW, iconProj);
         // Проекция символа на линию ветви (t вдоль from→to) — подложку
         // ставим на САМУ ветвь (не на смещённый offset'ом символ), чтобы
         // окраска не прерывалась именно в точке пересечения с ветвью.

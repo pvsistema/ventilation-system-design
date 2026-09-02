@@ -549,3 +549,112 @@ export const WATER_SYMBOL_IDS = new Set([
 export const VENT_JET_SYMBOL_IDS = new Set([
   "fresh_inlet", "exhaust_outlet", "leak_inlet", "leak_outlet",
 ]);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Габарит содержимого значка
+//
+// Значки рисуются в квадрате SZ×SZ с viewBox="0 0 48 40", но фигура внутри
+// занимает лишь ЧАСТЬ холста: у устья ствола — 36 единиц из 48, у вентилятора
+// круг диаметром 30, у мелких пожарных знаков — 6-10. Подложка цвета ветви под
+// значком раньше бралась по ПОЛНОМУ квадрату и потому выступала за знак
+// в 2-2,4 раза, накрывая соседние обозначения на схеме.
+//
+// Здесь габарит вычисляется из самого svgContent — разбором координат фигур.
+// Так значение не разъедется при правке картинки значка, в отличие от
+// вручную выписанных чисел.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Габарит содержимого значка в единицах холста 48×40. */
+export interface SymbolContentBox { w: number; h: number }
+
+const contentBoxCache = new Map<string, SymbolContentBox>();
+
+/** Полный холст — запасной вариант, когда разобрать фигуру не удалось. */
+const FULL_BOX: SymbolContentBox = { w: 48, h: 40 };
+
+function parseContentBox(svg: string): SymbolContentBox {
+  // Элементы, размер которых по разметке надёжно не вычислить: текст (зависит
+  // от шрифта и метрик браузера) и кривые/дуги (реальный контур проходит не
+  // по опорным точкам). Для таких значков возвращаем ПОЛНЫЙ холст — подложка
+  // будет как раньше, с запасом. Это осознанный компромисс: занижение
+  // габарита рвёт окраску ветви, а завышение лишь чуть удлиняет подложку.
+  const hasCurves = [...svg.matchAll(/\sd="([^"]+)"/g)]
+    .some(m => /[AaQqCcSsTt]/.test(m[1]));
+  if (/<text/.test(svg) || hasCurves) return FULL_BOX;
+
+  const xs: number[] = [];
+  const ys: number[] = [];
+  const push = (x: number, y: number) => {
+    if (Number.isFinite(x)) xs.push(x);
+    if (Number.isFinite(y)) ys.push(y);
+  };
+
+  // <rect x y width height>
+  for (const m of svg.matchAll(/<rect[^>]*?x="(-?[\d.]+)"[^>]*?y="(-?[\d.]+)"[^>]*?width="([\d.]+)"[^>]*?height="([\d.]+)"/g)) {
+    const x = +m[1], y = +m[2], w = +m[3], h = +m[4];
+    push(x, y); push(x + w, y + h);
+  }
+  // <circle cx cy r>
+  for (const m of svg.matchAll(/<circle[^>]*?cx="(-?[\d.]+)"[^>]*?cy="(-?[\d.]+)"[^>]*?r="([\d.]+)"/g)) {
+    const cx = +m[1], cy = +m[2], r = +m[3];
+    push(cx - r, cy - r); push(cx + r, cy + r);
+  }
+  // <ellipse cx cy rx ry>
+  for (const m of svg.matchAll(/<ellipse[^>]*?cx="(-?[\d.]+)"[^>]*?cy="(-?[\d.]+)"[^>]*?rx="([\d.]+)"[^>]*?ry="([\d.]+)"/g)) {
+    const cx = +m[1], cy = +m[2], rx = +m[3], ry = +m[4];
+    push(cx - rx, cy - ry); push(cx + rx, cy + ry);
+  }
+  // <line x1 y1 x2 y2>
+  for (const m of svg.matchAll(/<line[^>]*?x1="(-?[\d.]+)"[^>]*?y1="(-?[\d.]+)"[^>]*?x2="(-?[\d.]+)"[^>]*?y2="(-?[\d.]+)"/g)) {
+    push(+m[1], +m[2]); push(+m[3], +m[4]);
+  }
+  // <polygon points> / <polyline points>
+  for (const m of svg.matchAll(/points="([^"]+)"/g)) {
+    for (const pair of m[1].trim().split(/\s+/)) {
+      const [a, b] = pair.split(",");
+      if (b !== undefined) push(+a, +b);
+    }
+  }
+  // <path d> — берём числовые пары после команд M/L (достаточно для наших значков)
+  for (const m of svg.matchAll(/\sd="([^"]+)"/g)) {
+    for (const seg of m[1].matchAll(/[ML]\s*(-?[\d.]+)[,\s]+(-?[\d.]+)/g)) {
+      push(+seg[1], +seg[2]);
+    }
+  }
+
+  if (!xs.length || !ys.length) return FULL_BOX;
+
+  // Запас на обводку и на элементы, которые разбор не охватывает (текст,
+  // дуги, кривые Безье). Сверка со ФАКТИЧЕСКИМ размером в браузере показала:
+  // без запаса габарит у части значков занижается на 2-4 единицы, и подложка
+  // оказывается КОРОЧЕ знака — окраска ветви рвётся по краям. Занижение здесь
+  // опаснее завышения, поэтому берём максимальную толщину линии значка
+  // (обводка выходит за геометрию на половину ширины с каждой стороны) плюс
+  // небольшой допуск.
+  const strokes = [...svg.matchAll(/stroke-width="([\d.]+)"/g)].map(m => +m[1]);
+  const maxStroke = strokes.length ? Math.max(...strokes) : 2;
+  const pad = maxStroke + 2;
+
+  const w = Math.max(...xs) - Math.min(...xs) + pad;
+  const h = Math.max(...ys) - Math.min(...ys) + pad;
+  if (!(w > 0) || !(h > 0)) return FULL_BOX;
+  // Габарит НЕ обрезаем по 48×40: часть значков намеренно выходит за границы
+  // viewBox (лучи «очага пожара» идут от y=2 до y=46 при высоте холста 40),
+  // это разрешено атрибутом overflow="visible" при отрисовке. Обрезка сделала
+  // бы подложку короче знака и снова разорвала окраску ветви.
+  return { w, h };
+}
+
+/**
+ * Габарит фигуры значка в единицах холста 48×40.
+ * Результат кэшируется: значков около 120, а подложка считается на каждой
+ * перерисовке схемы.
+ */
+export function symbolContentBox(typeId: string): SymbolContentBox {
+  const hit = contentBoxCache.get(typeId);
+  if (hit) return hit;
+  const lt = LEGEND_TYPES.find(l => l.id === typeId);
+  const box = lt?.svgContent ? parseContentBox(lt.svgContent) : FULL_BOX;
+  contentBoxCache.set(typeId, box);
+  return box;
+}
