@@ -79,6 +79,13 @@ export function renderSymbolNode(
   } = d;
 
   const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
+  // Символы, у которых размер считается ОТ ШИРИНЫ ВЕТВИ (см. расчёт SZ ниже):
+  // они узкие вдоль ветви, и подложка цвета должна повторять этот узкий габарит.
+  // Список обязан совпадать с условием расчёта SZ, иначе подложка окажется
+  // в 2–3 раза длиннее самого знака и накроет соседние символы и выработки.
+  const isNarrowOnBranch = isBulkheadOv
+    || HEATER_SYMBOL_IDS.has(sym.typeId)
+    || sym.typeId === "emergency_exit";
   const lt = legendTypeById.get(sym.typeId);
   if (!lt && !isBulkheadOv) return null;
   if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
@@ -300,7 +307,7 @@ export function renderSymbolNode(
         // выглядит как белый прямоугольник поверх соседей. Берём ровно
         // ширину символа вдоль ветви (без множителя-запаса).
         // Для остальных символов (иконки, вентиляторы) — прежний размер SZ+uW.
-        const uLen = isBulkheadOv
+        const uLen = isNarrowOnBranch
           ? Math.max(uW, SZ * 0.85 * 0.38 + uW * 0.5)
           : Math.max(uW, SZ + uW);
         // Проекция символа на линию ветви (t вдоль from→to) — подложку
