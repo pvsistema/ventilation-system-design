@@ -16,11 +16,13 @@ import React, { lazy, Suspense } from "react";
 // ВАЖНО: типы (`type ...`) импортируются обычным способом — они существуют
 // только при сборке и в готовую программу не попадают.
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
+import { type MoveSchemaOptions } from "@/components/cad/MoveSchemaDialog";
 import type { FireStabilityFact } from "@/lib/fireStability";
 
 const LegendDialog           = lazy(() => import("@/components/cad/LegendDialog"));
 const PrintDialog            = lazy(() => import("@/components/cad/PrintDialog"));
 const RenumberDialog         = lazy(() => import("@/components/cad/RenumberDialog"));
+const MoveSchemaDialog       = lazy(() => import("@/components/cad/MoveSchemaDialog"));
 const SelectSimilarDialog    = lazy(() => import("@/components/cad/SelectSimilarDialog"));
 const DepressogramDialog     = lazy(() => import("@/components/cad/DepressogramDialog"));
 const FireStabilityDialog    = lazy(() => import("@/components/cad/FireStabilityDialog"));
@@ -90,6 +92,11 @@ export interface CadToolDialogsProps {
 
   // Автонумерация
   showRenumberDialog: boolean;
+  showMoveSchema: boolean;
+  setShowMoveSchema: (v: boolean) => void;
+  /** Сколько узлов затронет каждая область перемещения */
+  moveSchemaCounts: { all: number; visible: number; selected: number };
+  onMoveSchema: (opts: MoveSchemaOptions) => void;
   setShowRenumberDialog: (v: boolean) => void;
   renumberAll: (opts: RenumberOptions | "asc" | "desc") => void;
 
@@ -232,6 +239,15 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
             p.renumberAll(opts);
             p.setShowRenumberDialog(false);
           }}
+        />
+      )}
+
+      {/* ═══ ПЕРЕМЕЩЕНИЕ СХЕМЫ ════════════════════════════════════════════ */}
+      {p.showMoveSchema && (
+        <MoveSchemaDialog
+          counts={p.moveSchemaCounts}
+          onClose={() => p.setShowMoveSchema(false)}
+          onConfirm={p.onMoveSchema}
         />
       )}
 

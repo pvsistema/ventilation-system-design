@@ -49,6 +49,7 @@ import { checkSchema } from "@/lib/schemaCheck";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
+import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
@@ -1033,6 +1034,77 @@ export default function CadPage() {
   const fixCurrentAsSurvey = () => {
     pushHistory();
     setNodes(prev => prev.map(n => ({ ...n, surveyX: n.x, surveyY: n.y, surveyZ: n.z })));
+  };
+
+  // ─── Перемещение схемы (вкладка «Схема») ───────────────────────────
+  const [showMoveSchema, setShowMoveSchema] = useState(false);
+
+  /**
+   * Узлы, попадающие под выбранную область перемещения.
+   * «Видимые» — те, что реально отрисованы: не скрытые вручную и не лежащие
+   * целиком на скрытых горизонтах.
+   */
+  const moveTargetIds = (area: MoveArea): Set<string> => {
+    if (area === "selected") return new Set(selectedNodeIds);
+    if (area === "all") return new Set(nodes.map(n => n.id));
+    const hiddenHorizons = new Set(horizons.filter(h => !h.visible).map(h => h.id));
+    const visibleIds = new Set<string>();
+    for (const n of nodes) {
+      if (n.visible === false) continue;
+      // Узел виден, если хотя бы одна его ветвь на видимом горизонте
+      // (или у него вообще нет ветвей — тогда он просто виден).
+      const adj = branchesRaw.filter(b => b.fromId === n.id || b.toId === n.id);
+      const allHidden = adj.length > 0 && adj.every(b =>
+        b.horizonId ? hiddenHorizons.has(b.horizonId) : false);
+      if (!allHidden) visibleIds.add(n.id);
+    }
+    return visibleIds;
+  };
+
+  /**
+   * Сдвигает схему по осям. Двигаем не только координаты отрисовки, но и
+   * маркшейдерские: иначе программа посчитает, что узлы «отодвинули от их
+   * настоящего положения», пометит их как смещённые, а длины выработок
+   * (они считаются по маркшейдерским координатам) разъедутся со схемой.
+   * Параллельный перенос расстояний не меняет, поэтому сопротивление сети
+   * и результаты расчёта остаются прежними.
+   */
+  const handleMoveSchema = ({ area, dx, dy, dz }: MoveSchemaOptions) => {
+    const ids = moveTargetIds(area);
+    if (ids.size === 0 || (dx === 0 && dy === 0 && dz === 0)) {
+      setShowMoveSchema(false);
+      return;
+    }
+    pushHistory();
+
+    setNodes(prev => prev.map(n => {
+      if (!ids.has(n.id)) return n;
+      const s = surveyXYZ(n);
+      return {
+        ...n,
+        x: n.x + dx, y: n.y + dy, z: n.z + dz,
+        surveyX: s.x + dx, surveyY: s.y + dy, surveyZ: s.z + dz,
+      };
+    }));
+
+    // Подписи и обозначения двигаем только при переносе всей схемы: они не
+    // привязаны к узлам, и при частичном сдвиге непонятно, какие из них
+    // относятся к перемещаемому участку — лучше оставить на месте.
+    if (area === "all") {
+      setTextBlocks(prev => prev.map(t => ({ ...t, x: t.x + dx, y: t.y + dy })));
+      // У символов, привязанных к ветви, координаты пересчитываются от неё
+      // самой — трогаем только «свободные», стоящие сами по себе.
+      setSchemaSymbols(prev => prev.map(s =>
+        s.branchId ? s : { ...s, x: s.x + dx, y: s.y + dy }));
+    }
+
+    const parts = [
+      dx !== 0 ? `X ${dx > 0 ? "+" : ""}${dx}` : "",
+      dy !== 0 ? `Y ${dy > 0 ? "+" : ""}${dy}` : "",
+      dz !== 0 ? `Z ${dz > 0 ? "+" : ""}${dz}` : "",
+    ].filter(Boolean).join(", ");
+    addLog("ok", `Схема перемещена: ${parts} м · узлов: ${ids.size}`);
+    setShowMoveSchema(false);
   };
 
   // ─── Результат расчёта пожара ───────────────────────────────────────
@@ -2080,6 +2152,18 @@ export default function CadPage() {
 
   // ─── МУЛЬТИВЫБОР УЗЛОВ (Ctrl+клик) ─────────────────────────────────
   const [selectedNodeIds, setSelectedNodeIds] = useState<Set<string>>(new Set());
+
+  /**
+   * Сколько узлов затронет каждая область в диалоге «Перемещение схемы».
+   * Считаем только при открытом диалоге — на большой схеме обход всех ветвей
+   * заметен, а вне диалога эти числа никому не нужны.
+   */
+  const moveSchemaCounts = useMemo(() => (
+    showMoveSchema
+      ? { all: nodes.length, visible: moveTargetIds("visible").size, selected: selectedNodeIds.size }
+      : { all: 0, visible: 0, selected: 0 }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [showMoveSchema, nodes, branchesRaw, horizons, selectedNodeIds]);
   const handleNodeMultiSelect = (id: string) => {
     setSelectedNodeIds((prev) => {
       const next = new Set(prev);
@@ -6401,6 +6485,15 @@ export default function CadPage() {
 
         {/* ── Группа: Сравнение схем (только во вкладке Схема) ── */}
         {activeRibbon === "vent" && (<>
+          <RibbonGroup label="Преобразования координат">
+            <RibbonBigBtn
+              icon="Move"
+              label="Перемещение"
+              sublabel="схемы"
+              title="Сдвинуть схему по осям X, Y, Z. Форма схемы и длины выработок не меняются"
+              onClick={() => setShowMoveSchema(true)}
+            />
+          </RibbonGroup>
           <RibbonGroup label="Сравнение">
             <RibbonBigBtn
               icon="GitCompare"
@@ -13276,6 +13369,10 @@ export default function CadPage() {
       printDialogOpenExport={printDialogOpenExport}
       setPrintDialogOpenExport={setPrintDialogOpenExport}
       showRenumberDialog={showRenumberDialog}
+      showMoveSchema={showMoveSchema}
+      setShowMoveSchema={setShowMoveSchema}
+      moveSchemaCounts={moveSchemaCounts}
+      onMoveSchema={handleMoveSchema}
       setShowRenumberDialog={setShowRenumberDialog}
       renumberAll={renumberAll}
       showSelectSimilar={showSelectSimilar}
