@@ -2107,10 +2107,22 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
             if not _any_marked:
                 return True
             return bool(e.get("isVentPipe")) or bool(e.get("hasFan"))
-        # Узел «проходной» для става: ровно две тупиковые ветви и ни одной
-        # активной — воздух идёт насквозь, ответвлений нет.
+        # Соседи по САМОЙ трубе (без горной выработки).
+        # Раньше «проходным» считался узел, где сходятся ровно две ЛЮБЫЕ
+        # тупиковые ветви. Но в реальных схемах став и выработка разбиты на
+        # участки по одним и тем же точкам, поэтому в узле стыка сходятся и
+        # труба, и выработка — четыре ветви вместо двух. Узел признавался
+        # непроходным, цепочка обрывалась, и участок трубы за вентилятором
+        # оставался с нулём, а сам ВМП — со своей цифрой. Теперь проходность
+        # смотрим только по ветвям трубопровода.
+        node_follow = collections.defaultdict(list)
+        for e in dead_edges:
+            if _can_follow(e):
+                node_follow[e["a"]].append(e)
+                node_follow[e["b"]].append(e)
+
         def _pass_through(n):
-            return len(node_dead[n]) == 2 and len(active_adj.get(n, [])) == 0
+            return len(node_follow[n]) == 2 and len(active_adj.get(n, [])) == 0
 
         # ── Ставы со СТЫКАМИ (труба ветвится и питает несколько забоев) ──────
         # Формула «сумма напоров = сумма сопротивлений» верна только для одной
@@ -2152,10 +2164,18 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 nodes_c[c["a"]].append(c); nodes_c[c["b"]].append(c)
             if not any(len(v) >= 3 for v in nodes_c.values()):
                 continue
-            # Граничные узлы: вход из выработки и выпуск в забой — там
-            # давление задаёт сама выработка, принимаем его за отсчётное.
+            # Граничные узлы — концы трубы: ввод из выработки и выпуски в
+            # забои. Там давление задаёт сама выработка, принимаем его за
+            # отсчётное. Признак конца — к узлу подходит лишь ОДИН участок
+            # трубы (либо узел стоит на действующей струе).
+            #
+            # Раньше граничным считался любой узел, к которому примыкала
+            # ветвь вне става. В реальных схемах став и выработка разбиты по
+            # одним и тем же точкам, поэтому граничными оказывались ВСЕ узлы,
+            # свободных переменных не оставалось и решатель молча отступал —
+            # расчёт выглядел как без правки.
             fixed = {n for n, lst in nodes_c.items()
-                     if active_adj.get(n) or any(x["id"] not in comp_of for x in node_dead[n])}
+                     if len(lst) <= 1 or active_adj.get(n)}
             if not fixed:
                 continue
             q_c = _solve_duct_network(comp, nodes_c, fixed)
@@ -2174,8 +2194,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 cur, node = start, start[side]
                 while _pass_through(node):
                     nxt = None
-                    for cand in node_dead[node]:
-                        if cand["id"] != cur["id"] and _can_follow(cand):
+                    for cand in node_follow[node]:
+                        if cand["id"] != cur["id"]:
                             nxt = cand
                             break
                     if nxt is None or nxt["id"] in seen:
