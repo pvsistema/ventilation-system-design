@@ -1991,14 +1991,32 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
             return bool(e.get("isVentPipe")) or (
                 e.get("hasFan") and e.get("fanType", "ГВУ") == "ВМП"
             )
-        dead_edges = [e for e in edges if e["id"] in dead_ends and _is_duct(e)]
-        if not dead_edges:
+        dead_edges = [e for e in edges if e["id"] in dead_ends]
+        if not any(_is_duct(e) for e in dead_edges):
             return {}
-        # Узел → тупиковые ветви (став и выработка забоя)
+        # Узел → тупиковые ветви (став и выработка забоя).
+        # ВАЖНО: карту строим по ВСЕМ тупиковым ветвям, а не только по тем,
+        # что помечены как труба. Иначе обход обрывался на «безымянных»
+        # участках нити — вводе става и выпуске в забой, где вентилятора нет
+        # и признак трубы мог не проставиться. Именно они и оставались с
+        # расходом, посчитанным отдельно от вентилятора (5,40 против 5,58).
         node_dead = collections.defaultdict(list)
         for e in dead_edges:
             node_dead[e["a"]].append(e)
             node_dead[e["b"]].append(e)
+
+        # Куда цепочке можно продолжаться. Сама горная выработка забоя тоже
+        # тупиковая и висит на тех же узлах, но по ней идёт ОБРАТНАЯ струя —
+        # включать её в нить нельзя, иначе выработка получит расход трубы
+        # вместо нуля. Отличаем нить от выработки: у трубы есть признак става
+        # либо на ней стоит ВМП. Если признак става не проставлен нигде
+        # (старые схемы), считаем ниткой любые участки — иначе цепочка
+        # оборвётся на вводе и выпуске.
+        _any_marked = any(e.get("isVentPipe") for e in dead_edges)
+        def _can_follow(e):
+            if not _any_marked:
+                return True
+            return bool(e.get("isVentPipe")) or bool(e.get("hasFan"))
         # Узел «проходной» для става: ровно две тупиковые ветви и ни одной
         # активной — воздух идёт насквозь, ответвлений нет.
         def _pass_through(n):
@@ -2017,7 +2035,7 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 while _pass_through(node):
                     nxt = None
                     for cand in node_dead[node]:
-                        if cand["id"] != cur["id"]:
+                        if cand["id"] != cur["id"] and _can_follow(cand):
                             nxt = cand
                             break
                     if nxt is None or nxt["id"] in seen:
