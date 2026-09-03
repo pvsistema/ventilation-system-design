@@ -2196,6 +2196,114 @@
         "converged": true
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Став с ДВУМЯ ВМП последовательно — сеть не должна рваться",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {
+            "id": "ATM",
+            "isAtm": true
+          },
+          {
+            "id": "N10",
+            "isAtm": false
+          },
+          {
+            "id": "N85",
+            "isAtm": false
+          },
+          {
+            "id": "N86",
+            "isAtm": false
+          },
+          {
+            "id": "N87",
+            "isAtm": false
+          },
+          {
+            "id": "N88",
+            "isAtm": false
+          },
+          {
+            "id": "N30",
+            "isAtm": false
+          }
+        ],
+        "branches": [
+          {
+            "id": "IN",
+            "fromId": "ATM",
+            "toId": "N10",
+            "R": 0.3
+          },
+          {
+            "id": "APPR",
+            "fromId": "N10",
+            "toId": "N85",
+            "R": 0.4
+          },
+          {
+            "id": "VP1",
+            "fromId": "N85",
+            "toId": "N86",
+            "R": 1.5,
+            "hasFan": true,
+            "fanType": "ВМП",
+            "fanMode": "constant",
+            "fanPressure": 2500,
+            "fanInstall": "Без перемычки",
+            "area": 3.5
+          },
+          {
+            "id": "VP2",
+            "fromId": "N86",
+            "toId": "N87",
+            "R": 1.5,
+            "area": 3.5,
+            "hasFan": true,
+            "fanType": "ВМП",
+            "fanMode": "constant",
+            "fanPressure": 2500,
+            "fanInstall": "Без перемычки"
+          },
+          {
+            "id": "VP3",
+            "fromId": "N87",
+            "toId": "N88",
+            "R": 1.5,
+            "area": 3.5
+          },
+          {
+            "id": "RET",
+            "fromId": "N88",
+            "toId": "N30",
+            "R": 0.3
+          },
+          {
+            "id": "GVU",
+            "fromId": "N30",
+            "toId": "ATM",
+            "R": 0.3,
+            "hasFan": true,
+            "fanType": "ГВУ",
+            "fanMode": "constant",
+            "fanPressure": 3000
+          }
+        ],
+        "options": {
+          "method": "mkr",
+          "tolerance": 0.001,
+          "maxIter": 2000
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }
