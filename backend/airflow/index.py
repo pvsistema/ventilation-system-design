@@ -1980,6 +1980,96 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
     # сходятся в узле, где нет других активных выходов (то есть воздуху из
     # этого узла деться некуда, кроме как дальше по ставу).
     # ══════════════════════════════════════════════════════════════════════
+    def _fan_head(_e, qv):
+        """Напор вентилятора при расходе qv (общая формула для обоих методов)."""
+        N = max(1, int(_e.get("fanParallel", 1) or 1))
+        q_one = abs(qv) / N
+        if _e.get("fanMode", "constant") == "curve":
+            h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
+            q_max_f = float(_e.get("qMax", 1e9))
+            if q_one > q_max_f:
+                return 0.0
+            return max(0.0, h0v + h1v * q_one + h2v * q_one * q_one)
+        fp = float(_e.get("fanPressure", 0))
+        q_max_c = float(_e.get("qMax", 0))
+        if q_max_c > 0 and q_one > q_max_c:
+            return fp * max(0.0, 1.0 - (q_one - q_max_c) / (0.1 * q_max_c))
+        return fp
+
+    def _solve_duct_network(comp, nodes_c, fixed):
+        """Расход в разветвлённом ставе: узловой метод с балансом Кирхгофа.
+
+        Считаем давления в узлах трубы. В каждом узле сумма приходящего и
+        уходящего воздуха равна нулю, поэтому на стыке ветвей воздух больше
+        не «появляется» и не «исчезает». Граничные узлы (вход из выработки и
+        выпуски в забои) держим на нулевом давлении — они сообщаются с
+        выработкой, где давление задаёт общая сеть.
+        """
+        free = [n for n in nodes_c if n not in fixed]
+        if not free:
+            return {}
+        idx = {n: i for i, n in enumerate(free)}
+        P = {n: 0.0 for n in nodes_c}
+        for _ in range(300):
+            A = [[0.0] * len(free) for _ in range(len(free))]
+            b = [0.0] * len(free)
+            for e in comp:
+                r = max(e["R"], 1e-6)
+                dp = P[e["a"]] - P[e["b"]] + _fan_head(e, _q_of(e, P))
+                q = math.copysign(math.sqrt(abs(dp) / r), dp) if abs(dp) > 1e-12 else 0.0
+                # линеаризация: g = dQ/dP ≈ 1/(2·R·|Q|)
+                g = 1.0 / (2.0 * r * max(abs(q), 0.05))
+                for n, sgn in ((e["a"], 1.0), (e["b"], -1.0)):
+                    if n not in idx:
+                        continue
+                    i = idx[n]
+                    b[i] -= sgn * q
+                    for m, sgn2 in ((e["a"], 1.0), (e["b"], -1.0)):
+                        if m in idx:
+                            A[i][idx[m]] += sgn * sgn2 * g
+            dP = _solve_dense(A, b)
+            if dP is None:
+                return {}
+            shift = 0.0
+            for n in free:
+                d = max(-500.0, min(500.0, dP[idx[n]]))
+                P[n] += d
+                shift = max(shift, abs(d))
+            if shift < 1e-4:
+                break
+        out = {}
+        for e in comp:
+            r = max(e["R"], 1e-6)
+            dp = P[e["a"]] - P[e["b"]] + _fan_head(e, _q_of(e, P))
+            # Знак обязателен: он показывает, в какую сторону идёт воздух.
+            # Без него на стыке става «приход» и «уход» складывались неверно
+            # и баланс расходился.
+            out[e["id"]] = math.copysign(math.sqrt(abs(dp) / r), dp) if abs(dp) > 1e-12 else 0.0
+        return out
+
+    def _q_of(e, P):
+        r = max(e["R"], 1e-6)
+        dp = P.get(e["a"], 0.0) - P.get(e["b"], 0.0)
+        return math.copysign(math.sqrt(abs(dp) / r), dp) if abs(dp) > 1e-12 else 0.0
+
+    def _solve_dense(A, b):
+        n = len(b)
+        M = [row[:] + [b[i]] for i, row in enumerate(A)]
+        for c in range(n):
+            p = max(range(c, n), key=lambda r_: abs(M[r_][c]))
+            if abs(M[p][c]) < 1e-14:
+                return None
+            M[c], M[p] = M[p], M[c]
+            pv = M[c][c]
+            for r_ in range(n):
+                if r_ == c:
+                    continue
+                f = M[r_][c] / pv
+                if f:
+                    for k in range(c, n + 1):
+                        M[r_][k] -= f * M[c][k]
+        return [M[i][n] / M[i][i] for i in range(n)]
+
     def _series_flow_map():
         """id ветви ВМП → общий расход его последовательной цепочки."""
         # Цепочку собираем ТОЛЬКО из ветвей трубопровода (става) с ВМП.
@@ -2022,8 +2112,58 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         def _pass_through(n):
             return len(node_dead[n]) == 2 and len(active_adj.get(n, [])) == 0
 
-        seen = set()
+        # ── Ставы со СТЫКАМИ (труба ветвится и питает несколько забоев) ──────
+        # Формула «сумма напоров = сумма сопротивлений» верна только для одной
+        # нити без ответвлений. Если став ветвится, каждая ветка считала свою
+        # рабочую точку отдельно, и в узле стыка воздух не сходился: приходило
+        # 28,2, а уходило 33,3 — в один забой шло верно, в соседний нет.
+        # Поэтому разветвлённый став решаем как маленькую сеть с соблюдением
+        # баланса в каждом узле стыка.
+        duct_edges = [e for e in dead_edges if _can_follow(e)]
+        node_duct = collections.defaultdict(list)
+        for e in duct_edges:
+            node_duct[e["a"]].append(e)
+            node_duct[e["b"]].append(e)
+        # Компоненты связности става
+        comp_of, comps = {}, []
+        for e in duct_edges:
+            if e["id"] in comp_of:
+                continue
+            ci = len(comps); comps.append([])
+            stack = [e]
+            comp_of[e["id"]] = ci
+            while stack:
+                cur = stack.pop()
+                comps[ci].append(cur)
+                for nd in (cur["a"], cur["b"]):
+                    for nb in node_duct[nd]:
+                        if nb["id"] not in comp_of:
+                            comp_of[nb["id"]] = ci
+                            stack.append(nb)
+
         out_map = {}
+        branched = set()
+        for comp in comps:
+            if not any(c.get("hasFan") and not c.get("fanStopped") for c in comp):
+                continue
+            # Стык = узел, где сходятся 3+ труб. Без него это простая нить.
+            nodes_c = collections.defaultdict(list)
+            for c in comp:
+                nodes_c[c["a"]].append(c); nodes_c[c["b"]].append(c)
+            if not any(len(v) >= 3 for v in nodes_c.values()):
+                continue
+            # Граничные узлы: вход из выработки и выпуск в забой — там
+            # давление задаёт сама выработка, принимаем его за отсчётное.
+            fixed = {n for n, lst in nodes_c.items()
+                     if active_adj.get(n) or any(x["id"] not in comp_of for x in node_dead[n])}
+            if not fixed:
+                continue
+            q_c = _solve_duct_network(comp, nodes_c, fixed)
+            if q_c:
+                out_map.update(q_c)
+                branched.update(c["id"] for c in comp)
+
+        seen = set(branched)
         for start in dead_edges:
             if start["id"] in seen or not start.get("hasFan") or start.get("fanStopped"):
                 continue
