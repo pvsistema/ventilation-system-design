@@ -188,7 +188,8 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
       // Браузерное «обновить страницу» здесь перехватывается намеренно: в CAD
       // перезагрузка означала бы потерю несохранённой схемы, а F5 привычна как
       // «освежить вид». Работает и в браузере, и в десктопной оболочке.
-      if (e.key === "F5") {
+      // Ctrl+F5 / Shift+F5 оставляем браузеру — это «перезагрузить без кэша».
+      if (e.key === "F5" && !e.ctrlKey && !e.shiftKey) {
         e.preventDefault();
         requestResetToSurvey?.();
         return;
@@ -221,8 +222,15 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
         return;
       }
 
-      // Ctrl+R / Ctrl+К — развернуть выбранную ветвь
-      if (e.ctrlKey && (e.key === "r" || e.key === "R" || e.key === "к" || e.key === "К") && !isEditing) {
+      // Ctrl+R / Ctrl+К — развернуть выбранную ветвь.
+      // ВАЖНО: Ctrl+SHIFT+R не трогаем — это стандартное «обновить страницу
+      // без кэша». Раньше Shift не проверялся, и попытка сбросить кэш вместо
+      // перезагрузки разворачивала ветвь и запускала пересчёт схемы.
+      if (
+        e.ctrlKey && !e.shiftKey && !e.altKey &&
+        (e.key === "r" || e.key === "R" || e.key === "к" || e.key === "К") &&
+        !isEditing
+      ) {
         e.preventDefault();
         if (selectedBranchId) handleReverseBranch(selectedBranchId);
         return;
