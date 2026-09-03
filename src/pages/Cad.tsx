@@ -3749,6 +3749,11 @@ export default function CadPage() {
         area: b.area,
         angle: b.angle ?? 0,
         hasFan: b.hasFan,
+        // Признак «это нить вентрубопровода (става)». Нужен расчёту, чтобы
+        // отличить трубу от самой горной выработки: при нескольких ВМП на
+        // одном ставе расход должен быть общим по ТРУБЕ, а обратная струя
+        // по выработке в эту цепочку входить не должна.
+        isVentPipe: b.isVentPipeBranch ?? false,
         fanType: b.fanType ?? "ГВУ",
         fanMode: b.fanMode,
         fanPressure: b.fanPressure,

@@ -684,6 +684,9 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0,
             "fanStopped":  bool(b.get("fanStopped", False)),
             "fanType":     b.get("fanType", "ГВУ"),     # ГВУ / ВВУ / ВМП
             "fanInstall":  b.get("fanInstall", "Внутри перемычки"),
+            # Нить вентиляционного трубопровода (става). Отличает трубу от
+            # самой выработки: каскад ВМП должен объединяться только по трубе.
+            "isVentPipe":  bool(b.get("isVentPipe", False)),
             "isLeakage":   bool(b.get("isLeakage", False)),
             "leakageCoeff": float(b.get("leakageCoeff", 0) or 0),
             "angle":       abs(float(b.get("angle", 0) or 0)),
@@ -1955,13 +1958,128 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         if e["id"] not in dead_ends:
             active_adj[e["a"]].append(e)
             active_adj[e["b"]].append(e)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # ПОСЛЕДОВАТЕЛЬНЫЕ ВМП НА ОДНОМ ВЕНТСТАВЕ (каскад «толкачей»)
+    #
+    # Через став идёт ОДИН поток воздуха, поэтому у всех вентиляторов на нём
+    # расход обязан быть одинаковым: первый ВМП подаёт воздух до промежуточной
+    # точки, второй подхватывает и доводит до забоя.
+    #
+    # Раньше каждый ВМП в тупике считал свою рабочую точку ОТДЕЛЬНО и только
+    # по сопротивлению СВОЕЙ ветви. При одном вентиляторе это верно, а при двух
+    # получались разные расходы на одной трубе (на схеме: 5,40 у вентилятора
+    # против 5,58 в соседней ветви) — воздух будто исчезал между ними.
+    #
+    # Физически последовательные вентиляторы работают как ОДИН с суммарным
+    # напором на суммарное сопротивление цепочки:
+    #     H₁(Q) + H₂(Q) + … = (R₁ + R₂ + …)·Q²
+    # Отсюда единый расход Q для всей цепочки — его и раздаём каждому ВМП.
+    #
+    # Цепочки ищем по тупиковым ветвям става: соседними считаем те, что
+    # сходятся в узле, где нет других активных выходов (то есть воздуху из
+    # этого узла деться некуда, кроме как дальше по ставу).
+    # ══════════════════════════════════════════════════════════════════════
+    def _series_flow_map():
+        """id ветви ВМП → общий расход его последовательной цепочки."""
+        # Цепочку собираем ТОЛЬКО из ветвей трубопровода (става) с ВМП.
+        # Сама горная выработка в неё входить не должна: по ней идёт обратная
+        # (исходящая) струя, а не поток из трубы, и её расход считается сетью.
+        # Если схема старая и признак става не передан, ориентируемся на то,
+        # что ветвь несёт вентилятор ВМП — так поведение не ломается.
+        def _is_duct(e):
+            return bool(e.get("isVentPipe")) or (
+                e.get("hasFan") and e.get("fanType", "ГВУ") == "ВМП"
+            )
+        dead_edges = [e for e in edges if e["id"] in dead_ends and _is_duct(e)]
+        if not dead_edges:
+            return {}
+        # Узел → тупиковые ветви (став и выработка забоя)
+        node_dead = collections.defaultdict(list)
+        for e in dead_edges:
+            node_dead[e["a"]].append(e)
+            node_dead[e["b"]].append(e)
+        # Узел «проходной» для става: ровно две тупиковые ветви и ни одной
+        # активной — воздух идёт насквозь, ответвлений нет.
+        def _pass_through(n):
+            return len(node_dead[n]) == 2 and len(active_adj.get(n, [])) == 0
+
+        seen = set()
+        out_map = {}
+        for start in dead_edges:
+            if start["id"] in seen or not start.get("hasFan") or start.get("fanStopped"):
+                continue
+            # Идём в обе стороны, пока узлы проходные
+            chain = [start]
+            seen.add(start["id"])
+            for side in ("a", "b"):
+                cur, node = start, start[side]
+                while _pass_through(node):
+                    nxt = None
+                    for cand in node_dead[node]:
+                        if cand["id"] != cur["id"]:
+                            nxt = cand
+                            break
+                    if nxt is None or nxt["id"] in seen:
+                        break
+                    chain.append(nxt)
+                    seen.add(nxt["id"])
+                    node = nxt["b"] if nxt["a"] == node else nxt["a"]
+                    cur = nxt
+            fans = [c for c in chain if c.get("hasFan") and not c.get("fanStopped")]
+            if len(fans) < 2:
+                continue  # одиночный ВМП — прежний расчёт по своей ветви
+            # Суммарное сопротивление цепочки и суммарный напор вентиляторов
+            R_sum = sum(max(c["R"], 0.0) for c in chain)
+            if R_sum <= 1e-6:
+                R_sum = 1e-3
+
+            def _h_one(_e, qv):
+                N = max(1, int(_e.get("fanParallel", 1) or 1))
+                q_one = qv / N
+                if _e.get("fanMode", "constant") == "curve":
+                    h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
+                    q_max_f = float(_e.get("qMax", 1e9))
+                    return max(0.0, h0v + h1v * q_one + h2v * q_one * q_one) if q_one <= q_max_f else 0.0
+                fp = float(_e.get("fanPressure", 0))
+                q_max_c = float(_e.get("qMax", 0))
+                if q_max_c > 0 and q_one > q_max_c:
+                    return fp * max(0.0, 1.0 - (q_one - q_max_c) / (0.1 * q_max_c))
+                return fp
+
+            def _f(qv):
+                return sum(_h_one(c, qv) for c in fans) - R_sum * qv * qv
+
+            q_lo = min(float(c.get("qMin", 0.1)) for c in fans)
+            q_hi = max(float(c.get("qMax", 90.0)) for c in fans)
+            if _f(q_lo) > 0 and _f(q_hi) < 0:
+                for _ in range(60):
+                    qm = 0.5 * (q_lo + q_hi)
+                    if _f(qm) > 0: q_lo = qm
+                    else:          q_hi = qm
+                    if q_hi - q_lo < 0.001:
+                        break
+                q_ser = 0.5 * (q_lo + q_hi)
+            elif _f(q_lo) <= 0:
+                q_ser = q_lo
+            else:
+                q_ser = q_hi
+            for c in chain:
+                out_map[c["id"]] = q_ser
+        return out_map
+
+    series_q = _series_flow_map()
     out = []
     for e in edges:
         is_dead = e["id"] in dead_ends
         q = Q.get(e["id"], 0.0)
 
         if is_dead and (not e.get("hasFan") or e.get("fanStopped")):
-            q = 0.0  # тупиковая выработка без вентилятора ИЛИ с остановленным — Q=0
+            # Тупиковая выработка без вентилятора — Q=0. Исключение: участок
+            # ТРУБЫ внутри каскада ВМП (между вентиляторами или за последним).
+            # По нему идёт тот же поток, что гонят вентиляторы, поэтому расход
+            # берём общий для цепочки — иначе воздух «обрывался» на стыке.
+            q = series_q.get(e["id"], 0.0)
         elif is_dead and e.get("hasFan"):
             # Тупиковая ветвь с ВМП: рабочая точка H_вент(Q) = R·Q²
             #
@@ -1978,6 +2096,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
             R = e["R"] if e["R"] > 1e-6 else 1e-3
             q_lo = float(e.get("qMin", 0.1))
             q_hi = float(e.get("qMax", 90.0))
+            # Если ВМП стоит в каскаде (несколько вентиляторов подряд на одном
+            # ставе), расход берём общий для всей цепочки — он посчитан выше по
+            # суммарному напору и суммарному сопротивлению. Иначе каждый
+            # вентилятор дал бы свою цифру на одной и той же трубе.
+            _q_ser = series_q.get(e["id"])
             def _h_vmp(qv, _e=e):
                 """Напор ВМП по прямой характеристике (Q > 0)."""
                 N = max(1, int(_e.get("fanParallel", 1) or 1))
@@ -1993,7 +2116,9 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 return fp
             def f_vmp(qv, _R=R):
                 return _h_vmp(qv) - _R * qv * qv
-            if f_vmp(q_lo) > 0 and f_vmp(q_hi) < 0:
+            if _q_ser is not None:
+                q = _q_ser          # каскад ВМП — единый расход всей цепочки
+            elif f_vmp(q_lo) > 0 and f_vmp(q_hi) < 0:
                 for _ in range(60):
                     qm = 0.5 * (q_lo + q_hi)
                     if f_vmp(qm) > 0: q_lo = qm

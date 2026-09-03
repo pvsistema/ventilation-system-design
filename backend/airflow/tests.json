@@ -2304,6 +2304,113 @@
         "converged": true
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Каскад ВМП: расход одинаков у обоих вентиляторов и в трубе",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {
+            "id": "ATM",
+            "isAtm": true
+          },
+          {
+            "id": "N10",
+            "isAtm": false
+          },
+          {
+            "id": "P85",
+            "isAtm": false
+          },
+          {
+            "id": "P86",
+            "isAtm": false
+          },
+          {
+            "id": "P87",
+            "isAtm": false
+          },
+          {
+            "id": "P88",
+            "isAtm": false
+          }
+        ],
+        "branches": [
+          {
+            "id": "IN",
+            "fromId": "ATM",
+            "toId": "N10",
+            "R": 0.3
+          },
+          {
+            "id": "OUT",
+            "fromId": "N10",
+            "toId": "ATM",
+            "R": 0.3,
+            "hasFan": true,
+            "fanType": "ГВУ",
+            "fanMode": "constant",
+            "fanPressure": 3000
+          },
+          {
+            "id": "APPR",
+            "fromId": "N10",
+            "toId": "P85",
+            "R": 0.4
+          },
+          {
+            "id": "VP1",
+            "fromId": "P85",
+            "toId": "P86",
+            "R": 1.5,
+            "hasFan": true,
+            "fanType": "ВМП",
+            "fanMode": "constant",
+            "fanPressure": 950,
+            "fanInstall": "Без перемычки",
+            "area": 3.5,
+            "isVentPipe": true
+          },
+          {
+            "id": "VP2",
+            "fromId": "P86",
+            "toId": "P87",
+            "R": 4.0,
+            "hasFan": true,
+            "fanType": "ВМП",
+            "fanMode": "constant",
+            "fanPressure": 950,
+            "fanInstall": "Без перемычки",
+            "area": 3.5,
+            "isVentPipe": true
+          },
+          {
+            "id": "VP3",
+            "fromId": "P87",
+            "toId": "P88",
+            "R": 2.0,
+            "area": 3.5,
+            "isVentPipe": true
+          },
+          {
+            "id": "DR",
+            "fromId": "P88",
+            "toId": "P85",
+            "R": 0.6
+          }
+        ],
+        "options": {
+          "method": "mkr",
+          "tolerance": 0.0001,
+          "maxIter": 5000
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }
