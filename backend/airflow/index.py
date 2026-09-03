@@ -863,10 +863,30 @@ def check_kirchhoff(edges, Q_map, diag, tol=0.5, dead_end_ids=None):
     не нарушение Кирхгофа (воздух физически входит и выходит из тупика).
     """
     dead_ends = dead_end_ids or set()
+    # Узел «забойный» — из него нет выхода в действующую сеть: все ветви,
+    # кроме самого става, тупиковые.
+    active_cnt = collections.defaultdict(int)
+    for e in edges:
+        if e["id"] not in dead_ends:
+            active_cnt[e["a"]] += 1
+            active_cnt[e["b"]] += 1
+
     node_balance = collections.defaultdict(float)
     for e in edges:
         # Тупиковые ветви с ВМП — исключаем из проверки баланса
         if e["id"] in dead_ends and e.get("hasFan"):
+            continue
+        # Ветви вентиляционного става (труба к забою) — тоже вне баланса сети.
+        #
+        # Это промежуточная проверка: она идёт по СЫРЫМ расходам итераций,
+        # где расход става ещё не роздан. Вентилятор из неё уже исключался, а
+        # соседние участки его трубы — нет, поэтому в узле подключения
+        # оставалась разница и в лог попадало предупреждение о дисбалансе,
+        # хотя итоговый результат сходится точно. Став — локальная петля:
+        # воздух уходит по трубе и возвращается по самой выработке.
+        if e.get("isVentPipe") and (
+            active_cnt.get(e["a"], 0) == 0 or active_cnt.get(e["b"], 0) == 0
+        ):
             continue
         q = Q_map.get(e["id"], 0.0)
         if e["a"] != GND:
@@ -2459,9 +2479,14 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
     edge_by_id = {e["id"]: e for e in edges}
     for b in out:
         src_edge = edge_by_id.get(b["id"])
-        if not src_edge or not src_edge.get("hasFan"):
+        if not src_edge:
             continue
-        if src_edge.get("fanType", "ГВУ") != "ВМП":
+        # Локальной петлёй считаем не только сам ВМП, но и участки его трубы.
+        # Раньше метка ставилась только вентилятору, а соседний участок става
+        # оставался в балансе сети — в узле подключения возникала разница
+        # ровно на расход трубы.
+        is_vmp = src_edge.get("hasFan") and src_edge.get("fanType", "ГВУ") == "ВМП"
+        if not is_vmp and not src_edge.get("isVentPipe"):
             continue
         # Забойный конец — тот, где нет других активных ветвей (кроме ВМП).
         fromN, toN = b["fromNode"], b["toNode"]
