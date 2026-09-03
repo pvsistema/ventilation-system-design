@@ -2327,9 +2327,21 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 return s
             supply_a = _supply(e["a"])
             supply_b = _supply(e["b"])
+            if _q_ser is not None:
+                # Разветвлённый став уже решён как сеть с балансом в каждом
+                # стыке, и знак расхода там означает реальное направление
+                # воздуха. Ниже вход выбирался бы заново по активным ветвям,
+                # но второй ВМП питается ИЗ ТРУБЫ, а не из выработки — активной
+                # струи рядом нет, и направление переворачивалось. После этого
+                # расходы на стыке переставали сходиться, и в логе оставался
+                # дисбаланс. Сохраняем направление, найденное решателем.
+                forced_neg = _q_ser < 0
+                inlet_node = e["b"] if forced_neg else e["a"]
+                q_supply = supply_b if forced_neg else supply_a
+                q = -q_mag if forced_neg else q_mag
             # Вход — тот конец, где есть активная струя (или её больше).
             # Если оба нулевые (изолированная петля ВМП) — вход = a (a→b).
-            if supply_b > supply_a:
+            elif supply_b > supply_a:
                 inlet_node = e["b"]
                 q_supply = supply_b
                 q = -q_mag          # поток b→a: нагнетание в забой у узла a
@@ -2340,7 +2352,11 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
 
             # ── Ограничение по подходящей струе ─────────────────────────
             # Расход ВМП не может превышать расход питающей струи на входе.
-            if q_supply > 0.1 and q_mag > q_supply:
+            # НО для разветвлённого става обрезать нельзя: обрезался бы только
+            # сам вентилятор, а соседние участки трубы оставались с прежним
+            # расходом — на стыке возникал дисбаланс. Там ограничение уже учтено
+            # решателем нити через сопротивление всей трубы.
+            if _q_ser is None and q_supply > 0.1 and q_mag > q_supply:
                 diag.append({
                     "level": "warning",
                     "category": "vmp_supply",
