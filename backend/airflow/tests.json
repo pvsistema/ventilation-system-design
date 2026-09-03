@@ -2530,6 +2530,143 @@
         "converged": true
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "МКР: последовательные ВМП в дереве — баланс Кирхгофа",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {
+            "id": "ATM",
+            "isAtm": true
+          },
+          {
+            "id": "N1",
+            "isAtm": false
+          },
+          {
+            "id": "N2",
+            "isAtm": false
+          },
+          {
+            "id": "n0",
+            "isAtm": false
+          },
+          {
+            "id": "p1",
+            "isAtm": false
+          },
+          {
+            "id": "p2",
+            "isAtm": false
+          },
+          {
+            "id": "W1",
+            "isAtm": false
+          },
+          {
+            "id": "W2",
+            "isAtm": false
+          }
+        ],
+        "branches": [
+          {
+            "id": "IN",
+            "fromId": "ATM",
+            "toId": "N1",
+            "R": 0.3
+          },
+          {
+            "id": "OUT",
+            "fromId": "N2",
+            "toId": "ATM",
+            "R": 0.3,
+            "hasFan": true,
+            "fanType": "ГВУ",
+            "fanMode": "constant",
+            "fanPressure": 3000
+          },
+          {
+            "id": "L1",
+            "fromId": "N1",
+            "toId": "n0",
+            "R": 0.5
+          },
+          {
+            "id": "L2",
+            "fromId": "n0",
+            "toId": "N2",
+            "R": 0.5
+          },
+          {
+            "id": "F1",
+            "fromId": "n0",
+            "toId": "p1",
+            "R": 1.5,
+            "hasFan": true,
+            "fanType": "ВМП",
+            "fanMode": "constant",
+            "fanPressure": 1585,
+            "fanInstall": "Внутри перемычки",
+            "area": 3.5,
+            "isVentPipe": true
+          },
+          {
+            "id": "F2",
+            "fromId": "p1",
+            "toId": "p2",
+            "R": 1.5,
+            "hasFan": true,
+            "fanType": "ВМП",
+            "fanMode": "constant",
+            "fanPressure": 950,
+            "fanInstall": "Внутри перемычки",
+            "area": 3.5,
+            "isVentPipe": true
+          },
+          {
+            "id": "O2",
+            "fromId": "p2",
+            "toId": "W2",
+            "R": 0.4,
+            "area": 3.5,
+            "isVentPipe": true
+          },
+          {
+            "id": "O1",
+            "fromId": "p1",
+            "toId": "W1",
+            "R": 0.4,
+            "area": 3.5,
+            "isVentPipe": true
+          },
+          {
+            "id": "D1",
+            "fromId": "n0",
+            "toId": "W1",
+            "R": 0.5
+          },
+          {
+            "id": "D2",
+            "fromId": "W1",
+            "toId": "W2",
+            "R": 0.5
+          }
+        ],
+        "options": {
+          "method": "mkr",
+          "tolerance": 0.001,
+          "maxIter": 5000,
+          "alpha": 0.25
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true,
+        "kirchhoffBalance": 0.0
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }
