@@ -171,10 +171,14 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   };
 
   /** Отметить все слои / снять все, кроме распознанных программой */
-  const setLayerPreset = (kind: "all" | "auto") => {
+  const setLayerPreset = (kind: "all" | "auto" | "none") => {
     const next = kind === "all"
       ? new Set(layers.map(l => l.name))
-      : new Set(layers.filter(l => l.isAxis || l.circles > 0 || l.texts > 0).map(l => l.name));
+      : kind === "none"
+        // «Снять все» — удобно, когда из большого чертежа нужно
+        // отметить руками два-три слоя: проще начать с чистого листа.
+        ? new Set<string>()
+        : new Set(layers.filter(l => l.isAxis || l.circles > 0 || l.texts > 0).map(l => l.name));
     setPicked(next);
     if (fileTextRef.current) reparse(fileTextRef.current, epsilon, next);
   };
@@ -343,6 +347,10 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                         <button onClick={() => setLayerPreset("all")}
                           className="text-[10px] text-blue-600 underline hover:text-blue-800">
                           Все
+                        </button>
+                        <button onClick={() => setLayerPreset("none")}
+                          className="text-[10px] text-blue-600 underline hover:text-blue-800">
+                          Снять все
                         </button>
                       </div>
                     </div>
