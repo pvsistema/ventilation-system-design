@@ -677,26 +677,6 @@ export default function CadModals(p: CadModalsProps) {
                 })()}
               </div>
 
-              {/* Готовые документы для отправки заказчику */}
-              <a href="/KP-PV-Sistema.docx" download
-                className="w-full mt-4 flex items-center justify-center gap-2 h-8 rounded text-[12px] font-medium border"
-                style={{ borderColor: "var(--c-blue-bg, #2563eb)", color: "var(--c-blue-bg, #2563eb)" }}>
-                <Icon name="FileDown" size={14} />
-                Скачать коммерческое предложение (Word)
-              </a>
-              <a href="/Dogovor-PV-Sistema-Bogoslovskoe.docx" download
-                className="w-full mt-2 flex items-center justify-center gap-2 h-8 rounded text-[12px] font-medium border"
-                style={{ borderColor: "var(--c-blue-bg, #2563eb)", color: "var(--c-blue-bg, #2563eb)" }}>
-                <Icon name="FileSignature" size={14} />
-                Скачать лицензионный договор (Word)
-              </a>
-              <a href="/Prilozheniya-PV-Sistema-Bogoslovskoe.docx" download
-                className="w-full mt-2 flex items-center justify-center gap-2 h-8 rounded text-[12px] font-medium border"
-                style={{ borderColor: "var(--c-blue-bg, #2563eb)", color: "var(--c-blue-bg, #2563eb)" }}>
-                <Icon name="Paperclip" size={14} />
-                Скачать приложения к договору (Word)
-              </a>
-
               <div className="w-full mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-500 leading-relaxed">
                 © 2026 ПВ-Система. Все права защищены.<br/>
                 Программа предназначена для проектирования систем<br/>
