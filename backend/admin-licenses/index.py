@@ -854,13 +854,26 @@ def handler(event: dict, context) -> dict:
         # ── delete_offline_key — удалить запись из реестра ────────────────────────
         if action == "delete_offline_key":
             oid = int(body.get("offline_key_id", 0))
+            # Сначала убираем отметившиеся по ключу компьютеры. Они ссылаются на
+            # ключ, и без этого база не даёт удалить саму запись (ошибка связи
+            # между таблицами) — кнопка «Удалить» молча не срабатывала.
+            cur.execute("DELETE FROM offline_key_seats WHERE offline_key_id = %s", (oid,))
             cur.execute("DELETE FROM offline_keys WHERE id = %s RETURNING id", (oid,))
             if not cur.fetchone():
+                conn.rollback()
                 return resp(404, {"error": "not_found"})
             conn.commit()
             return resp(200, {"ok": True})
 
         return resp(400, {"error": "unknown_action"})
+
+    except Exception as e:
+        # Без этого любая ошибка базы обрывала функцию с кодом 502, и в админке
+        # кнопка просто «не работала» — без единого пояснения, что случилось.
+        conn.rollback()
+        import traceback
+        print(f"[admin] action={action} failed: {e}\n{traceback.format_exc()}")
+        return resp(500, {"error": "server_error", "detail": str(e)[:200]})
 
     finally:
         conn.close()

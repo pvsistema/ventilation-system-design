@@ -291,9 +291,17 @@ export default function Admin() {
   };
 
   const deleteOffline = async (k: OfflineKey) => {
-    if (!confirm(`Удалить аварийный ключ «${k.org}» из реестра?`)) return;
-    await adminApi(password, { action: "delete_offline_key", offline_key_id: k.id });
-    loadOfflineKeys(password);
+    const warn = k.used_seats > 0
+      ? `\n\nПо ключу отметилось компьютеров: ${k.used_seats}. Записи о них тоже будут удалены.`
+      : "";
+    if (!confirm(`Удалить аварийный ключ «${k.org}» из реестра?${warn}`)) return;
+    try {
+      await adminApi(password, { action: "delete_offline_key", offline_key_id: k.id });
+      loadOfflineKeys(password);
+    } catch (e: unknown) {
+      // Раньше сбой удаления не показывался вовсе: кнопка «не работала» молча.
+      alert(`Не удалось удалить ключ: ${e instanceof Error ? e.message : "ошибка запроса"}`);
+    }
   };
 
   useEffect(() => {

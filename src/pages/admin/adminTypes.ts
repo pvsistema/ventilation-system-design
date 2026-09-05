@@ -139,7 +139,8 @@ export async function adminApi(password: string, body: object) {
     body: JSON.stringify({ ...body, password }),
   });
   const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Ошибка запроса");
+  // Пояснение сервера (detail) важнее кода ошибки: по нему сразу видно причину.
+  if (!res.ok) throw new Error(data.detail || data.error || "Ошибка запроса");
   return data;
 }
 
