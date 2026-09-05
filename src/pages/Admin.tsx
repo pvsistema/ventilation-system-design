@@ -11,8 +11,8 @@ import EmergencyTab from "@/pages/admin/EmergencyTab";
 //   LicensesTab     — вкладка «Лицензии» со списком рабочих мест
 //   LicenseDialogs  — диалоги создания и редактирования лицензии
 import {
-  type License, type OfflineKey, type Seat, type LicenseForm, type MonitoringData,
-  adminApi, toInputDate, emptyForm,
+  type License, type OfflineKey, type OfflineSeat, type Seat, type LicenseForm,
+  type MonitoringData, adminApi, toInputDate, emptyForm,
 } from "@/pages/admin/adminTypes";
 import { invalidateRemoteVersion } from "@/lib/updater";
 import AdminLogin from "@/pages/admin/AdminLogin";
@@ -63,6 +63,13 @@ export default function Admin() {
   const [emgKey, setEmgKey]             = useState("");
   const [emgErr, setEmgErr]             = useState("");
   const [emgLoading, setEmgLoading]     = useState(false);
+  // Сколько ПК разрешено ключу и привязка к конкретному компьютеру.
+  const [emgSeats, setEmgSeats]         = useState("5");
+  const [emgBindFp, setEmgBindFp]       = useState("");
+
+  // Рабочие места, отметившиеся по аварийному ключу (раскрывающийся список)
+  const [okSeatsForId, setOkSeatsForId] = useState<number | null>(null);
+  const [okSeats, setOkSeats]           = useState<OfflineSeat[] | null>(null);
 
   // Реестр выпущенных аварийных ключей
   const [offlineKeys, setOfflineKeys]   = useState<OfflineKey[]>([]);
@@ -225,6 +232,8 @@ export default function Admin() {
         org: emgOrg.trim(),
         days: 365,
         expires_at: emgExpires || undefined,
+        seats: parseInt(emgSeats) || 5,
+        bound_fp: emgBindFp.trim() || undefined,
       });
       setEmgKey(data.key);
       loadOfflineKeys(password);
@@ -233,6 +242,22 @@ export default function Admin() {
     } finally {
       setEmgLoading(false);
     }
+  };
+
+  // Список ПК, отметившихся по аварийному ключу (наполняется квартальной сверкой)
+  const loadOfflineSeats = async (k: OfflineKey) => {
+    if (okSeatsForId === k.id) { setOkSeatsForId(null); setOkSeats(null); return; }
+    const data = await adminApi(password, { action: "list_offline_seats", offline_key_id: k.id });
+    setOkSeats(data.seats || []);
+    setOkSeatsForId(k.id);
+  };
+
+  // Отключить/вернуть отдельный компьютер, не отзывая ключ целиком
+  const blockOfflineSeat = async (s: OfflineSeat) => {
+    await adminApi(password, {
+      action: "block_offline_seat", seat_id: s.id, is_blocked: !s.is_blocked,
+    });
+    setOkSeats(list => list ? list.map(x => x.id === s.id ? { ...x, is_blocked: !x.is_blocked } : x) : null);
   };
 
   const startEditOffline = (k: OfflineKey) => {
@@ -636,6 +661,10 @@ export default function Admin() {
             emgExpires={emgExpires} setEmgExpires={setEmgExpires}
             emgKey={emgKey} emgErr={emgErr} setEmgErr={setEmgErr}
             emgLoading={emgLoading} generateEmergencyKey={generateEmergencyKey}
+            emgSeats={emgSeats} setEmgSeats={setEmgSeats}
+            emgBindFp={emgBindFp} setEmgBindFp={setEmgBindFp}
+            okSeatsForId={okSeatsForId} okSeats={okSeats}
+            loadOfflineSeats={loadOfflineSeats} blockOfflineSeat={blockOfflineSeat}
             offlineKeys={offlineKeys} okLoading={okLoading}
             okEditId={okEditId} setOkEditId={setOkEditId}
             okEditOrg={okEditOrg} setOkEditOrg={setOkEditOrg}

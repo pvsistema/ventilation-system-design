@@ -7,17 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import Icon from "@/components/ui/icon";
 
-interface OfflineKey {
-  id: number;
-  org: string;
-  key: string;
-  seats: number;
-  expires_at: string | null;
-  is_active: boolean;
-  notes: string | null;
-  created_at: string;
-  expired: boolean;
-}
+import type { OfflineKey, OfflineSeat } from "@/pages/admin/adminTypes";
 
 interface EmergencyTabProps {
   emgOrg: string;
@@ -29,6 +19,14 @@ interface EmergencyTabProps {
   setEmgErr: (v: string) => void;
   emgLoading: boolean;
   generateEmergencyKey: () => void;
+  emgSeats: string;
+  setEmgSeats: (v: string) => void;
+  emgBindFp: string;
+  setEmgBindFp: (v: string) => void;
+  okSeatsForId: number | null;
+  okSeats: OfflineSeat[] | null;
+  loadOfflineSeats: (k: OfflineKey) => void;
+  blockOfflineSeat: (s: OfflineSeat) => void;
   offlineKeys: OfflineKey[];
   okLoading: boolean;
   okEditId: number | null;
@@ -58,6 +56,8 @@ export default function EmergencyTab({
   okEditSeats, setOkEditSeats, okEditNotes, setOkEditNotes,
   okShowKeyId, setOkShowKeyId, saveEditOffline, toggleOffline, deleteOffline,
   startEditOffline, loadOfflineKeys, password,
+  emgSeats, setEmgSeats, emgBindFp, setEmgBindFp,
+  okSeatsForId, okSeats, loadOfflineSeats, blockOfflineSeat,
 }: EmergencyTabProps) {
   return (
   <div className="max-w-xl mx-auto">
@@ -68,8 +68,9 @@ export default function EmergencyTab({
       </div>
       <p className="text-[11px] text-gray-400 mb-4">
         Для расчётов без интернета (рудник / ВГСЧ). Ключ подписан криптографически
-        и проверяется программой локально, без связи с сервером. Работает на любом ПК
-        организации до истечения срока. Выдавайте заранее как аварийный запас.
+        и проверяется программой локально, без связи с сервером. Раз в квартал
+        программа сверяется с сервером, если связь есть: так работает отзыв ключа
+        и учёт компьютеров. Без интернета работа не прерывается.
       </p>
 
       <div className="space-y-4">
@@ -80,12 +81,35 @@ export default function EmergencyTab({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
         </div>
 
+        <div className="flex gap-3">
+          <div className="flex-1">
+            <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Действует до</div>
+            <input type="date" value={emgExpires} onChange={e => setEmgExpires(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
+            <div className="text-[10px] text-gray-400 mt-1">
+              Если не указано — 1 год со дня выдачи.
+            </div>
+          </div>
+          <div className="w-28">
+            <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Компьютеров</div>
+            <input type="number" min={1} value={emgSeats} onChange={e => setEmgSeats(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
+            <div className="text-[10px] text-gray-400 mt-1">Лимит ПК</div>
+          </div>
+        </div>
+
         <div>
-          <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">Действует до</div>
-          <input type="date" value={emgExpires} onChange={e => setEmgExpires(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
+          <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">
+            Привязка к компьютеру (необязательно)
+          </div>
+          <input value={emgBindFp} onChange={e => setEmgBindFp(e.target.value.toUpperCase())}
+            placeholder="Код рабочего места, например A3F19C4B"
+            maxLength={32}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono focus:outline-none focus:border-amber-400" />
           <div className="text-[10px] text-gray-400 mt-1">
-            Если не указано — 1 год со дня выдачи. Для продления просто выпустите новый ключ с новой датой.
+            Код виден заказчику в окне «Лицензия», строка «ID …». Если указать — ключ
+            заработает только на этом ПК и его нельзя будет размножить. Пусто — любой
+            компьютер организации в пределах лимита.
           </div>
         </div>
 
@@ -155,7 +179,9 @@ export default function EmergencyTab({
                   placeholder="Заметка (необязательно)"
                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-[12px] focus:outline-none focus:border-amber-400" />
                 <div className="text-[10px] text-amber-600">
-                  Изменение срока в реестре не меняет уже выданный ключ. Для нового срока выпустите новый ключ.
+                  Изменение срока в реестре не меняет уже выданный ключ. Для нового срока
+                  выпустите новый ключ. А вот лимит компьютеров действует сразу — он
+                  проверяется на сервере при квартальной сверке.
                 </div>
                 <div className="flex gap-2">
                   <button onClick={saveEditOffline} disabled={!okEditOrg.trim()}
@@ -181,11 +207,24 @@ export default function EmergencyTab({
                           : <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 text-green-700 font-semibold">Активен</span>}
                     </div>
                     <div className="text-[11px] text-gray-400 mt-0.5">
-                      Действует до: {k.expires_at ? k.expires_at.slice(0, 10) : "—"} · Мест: {k.seats} · Выдан: {k.created_at.slice(0, 10)}
+                      Действует до: {k.expires_at ? k.expires_at.slice(0, 10) : "—"} · Компьютеров: {k.used_seats ?? 0} / {k.seats} · Выдан: {k.created_at.slice(0, 10)}
+                    </div>
+                    {k.bound_fp && (
+                      <div className="text-[11px] text-blue-600 mt-0.5 flex items-center gap-1">
+                        <Icon name="Lock" size={11} />
+                        Только для ПК <span className="font-mono">{k.bound_fp}</span>
+                      </div>
+                    )}
+                    <div className="text-[11px] text-gray-400 mt-0.5">
+                      {k.last_seen_at
+                        ? `Последняя связь: ${k.last_seen_at.slice(0, 10)}`
+                        : "Ни разу не выходил на связь"}
                     </div>
                     {k.notes && <div className="text-[11px] text-gray-500 mt-0.5">{k.notes}</div>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
+                    <button onClick={() => loadOfflineSeats(k)} title="Компьютеры"
+                      className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="MonitorSmartphone" size={14} /></button>
                     <button onClick={() => setOkShowKeyId(okShowKeyId === k.id ? null : k.id)} title="Показать ключ"
                       className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="Eye" size={14} /></button>
                     <button onClick={() => startEditOffline(k)} title="Редактировать"
@@ -196,6 +235,50 @@ export default function EmergencyTab({
                       className="p-1.5 rounded hover:bg-red-50 text-red-400"><Icon name="Trash2" size={14} /></button>
                   </div>
                 </div>
+                {/* Компьютеры, отметившиеся по ключу. Список наполняется
+                    квартальной сверкой — только с тех ПК, где был интернет. */}
+                {okSeatsForId === k.id && (
+                  <div className="mt-2 p-2 rounded border border-gray-200 bg-gray-50">
+                    {!okSeats || okSeats.length === 0 ? (
+                      <div className="text-[11px] text-gray-400 py-2 text-center">
+                        Ни один компьютер ещё не выходил на связь.
+                        Список появится после первой сверки с сервером.
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {okSeats.map(s => (
+                          <div key={s.id}
+                            className={`flex items-start justify-between gap-2 p-2 rounded bg-white border ${s.is_blocked ? "border-red-200 opacity-70" : "border-gray-200"}`}>
+                            <div className="min-w-0">
+                              <div className="text-[12px] text-gray-800 truncate">
+                                {s.hostname || "Компьютер без имени"}
+                                {s.is_blocked && (
+                                  <span className="ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-red-100 text-red-600 font-semibold">
+                                    Отключён
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[10px] text-gray-400">
+                                {s.platform || "—"}
+                                {s.app_version ? ` · версия ${s.app_version}` : ""}
+                                {s.last_ip ? ` · ${s.last_ip}` : ""}
+                              </div>
+                              <div className="text-[10px] text-gray-400">
+                                Первая связь: {s.first_seen_at.slice(0, 10)} ·
+                                Последняя: {s.last_seen_at.slice(0, 10)}
+                              </div>
+                            </div>
+                            <button onClick={() => blockOfflineSeat(s)}
+                              title={s.is_blocked ? "Вернуть доступ" : "Отключить этот ПК"}
+                              className="p-1.5 rounded hover:bg-gray-100 text-gray-500 shrink-0">
+                              <Icon name={s.is_blocked ? "CircleCheck" : "Ban"} size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 {okShowKeyId === k.id && (
                   <div className="mt-2 p-2 rounded border border-amber-200 bg-amber-50">
                     <textarea readOnly value={k.key} rows={3}

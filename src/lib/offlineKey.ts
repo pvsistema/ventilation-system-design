@@ -32,6 +32,32 @@ export interface OfflineKeyInfo {
   seats?: number;
   expired?: boolean;
   reason?: string;      // причина невалидности
+  /**
+   * Код компьютера, к которому привязан ключ (если привязка задана при
+   * выпуске). Ключ с привязкой работает ТОЛЬКО на этом ПК — скопировать его
+   * на соседние машины нельзя.
+   */
+  boundFp?: string;
+  /** Номер ключа в реестре — для квартальной проверки отзыва на сервере. */
+  kid?: number;
+}
+
+/**
+ * Код рабочего места, который сверяется с привязкой внутри ключа.
+ *
+ * Это те же первые 8 символов отпечатка, что показаны человеку в окне
+ * лицензии («ID ...»). Их называют при заказе ключа, и по ним ключ намертво
+ * привязывается к компьютеру.
+ *
+ * Хранится только в памяти и вычисляется из реального железа при каждом
+ * запуске: подменить вместе с ключом нельзя.
+ */
+let _seatCode: string | null = null;
+export function setSeatCode(fingerprint: string): void {
+  _seatCode = fingerprint ? fingerprint.slice(0, 8).toUpperCase() : null;
+}
+export function getSeatCode(): string | null {
+  return _seatCode;
 }
 
 export function b64urlToBytes(s: string): Uint8Array {
@@ -94,7 +120,7 @@ export function verifyOfflineKey(key: string): OfflineKeyInfo {
     if (!ok) return { valid: false, reason: "bad_signature" };
 
     const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as {
-      org?: string; exp?: string; seats?: number;
+      org?: string; exp?: string; seats?: number; fp?: string; kid?: number;
     };
     const exp = payload.exp ? new Date(payload.exp).getTime() : 0;
     if (!exp) return { valid: false, reason: "no_expiry" };
@@ -107,12 +133,33 @@ export function verifyOfflineKey(key: string): OfflineKeyInfo {
         org: payload.org, expiresAt: payload.exp, daysLeft: 0,
       };
     }
+
+    // ПРИВЯЗКА К КОМПЬЮТЕРУ. Если при выпуске ключа указан код рабочего места,
+    // ключ действует только на нём. Это отсекает главную лазейку: раньше один
+    // аварийный ключ можно было разослать на любое число ПК.
+    //
+    // Код места считается из реального железа при запуске (см. setSeatCode).
+    // Пока он ещё не посчитан, проверку не проваливаем — она повторится на
+    // следующем шаге запуска, когда отпечаток уже известен.
+    if (payload.fp) {
+      const mine = getSeatCode();
+      if (mine && mine !== payload.fp.toUpperCase()) {
+        return {
+          valid: false, reason: "wrong_computer",
+          org: payload.org, expiresAt: payload.exp,
+          boundFp: payload.fp.toUpperCase(),
+        };
+      }
+    }
+
     return {
       valid: true,
       org: payload.org,
       expiresAt: payload.exp,
       daysLeft,
       seats: payload.seats,
+      boundFp: payload.fp ? payload.fp.toUpperCase() : undefined,
+      kid: payload.kid,
     };
   } catch {
     return { valid: false, reason: "verify_error" };
@@ -134,5 +181,50 @@ export function loadOfflineKey(): { key: string; info: OfflineKeyInfo } | null {
 }
 
 export function clearOfflineKey(): void {
-  try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
+  try {
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(VERDICT_KEY);
+  } catch { /* ignore */ }
+}
+
+// ── Квартальная сверка аварийного ключа с сервером ───────────────────────────
+// Ключ по-прежнему проверяется локально и без интернета. Но раз в квартал,
+// ЕСЛИ связь есть, программа сверяется с сервером: не отозван ли ключ и не
+// отключено ли это рабочее место. Ответ сохраняется здесь.
+//
+// Режим МЯГКИЙ: нет связи — ничего не происходит, программа работает дальше.
+// Блокировка наступает только по явному ответу сервера «ключ отозван».
+const VERDICT_KEY = "pvs_offline_verdict";
+
+/** Раз в 90 дней (квартал) — если в этот момент есть интернет. */
+export const OFFLINE_RECHECK_MS = 90 * 24 * 3600 * 1000;
+
+export interface OfflineVerdict {
+  /** false — сервер сказал, что ключ больше не действует */
+  valid: boolean;
+  /** revoked | expired | seat_blocked | seats_exhausted */
+  reason?: string;
+  /** Когда сверялись последний раз */
+  checkedAt: number;
+  /** Когда сверяться снова */
+  nextCheckAt: number;
+}
+
+export function loadOfflineVerdict(): OfflineVerdict | null {
+  try {
+    const raw = localStorage.getItem(VERDICT_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as OfflineVerdict;
+  } catch { return null; }
+}
+
+export function saveOfflineVerdict(v: OfflineVerdict): void {
+  try { localStorage.setItem(VERDICT_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+}
+
+/** Пора ли сверяться с сервером (наступил срок или сверки не было ни разу). */
+export function isOfflineRecheckDue(): boolean {
+  const v = loadOfflineVerdict();
+  if (!v) return true;
+  return Date.now() >= v.nextCheckAt;
 }

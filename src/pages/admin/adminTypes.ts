@@ -41,6 +41,25 @@ export interface OfflineKey {
   notes: string | null;
   created_at: string;
   expired: boolean;
+  /** Код компьютера, к которому намертво привязан ключ (пусто — любой ПК) */
+  bound_fp: string | null;
+  /** Сколько ПК реально отметилось по ключу (квартальная сверка) */
+  used_seats: number;
+  /** Когда по ключу последний раз выходили на связь */
+  last_seen_at: string | null;
+}
+
+/** Рабочее место, отметившееся по аварийному ключу. */
+export interface OfflineSeat {
+  id: number;
+  fingerprint: string;
+  hostname: string | null;
+  platform: string | null;
+  app_version: string | null;
+  last_ip: string | null;
+  is_blocked: boolean;
+  first_seen_at: string;
+  last_seen_at: string;
 }
 
 export interface Seat {

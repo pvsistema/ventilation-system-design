@@ -66,6 +66,11 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
   const daysLeft         = license.info?.daysLeft;
   const isOffline        = license.info?.offline;
   const isEmergency      = license.info?.emergency;   // аварийный оффлайн-ключ
+  // Аварийный ключ отозван правообладателем (выяснилось при квартальной сверке)
+  const isRevoked        = license.info?.offlineRevoked;
+  const revokeReason     = license.info?.revokeReason;
+  // Аварийный ключ выпущен для другого компьютера (привязка по коду места)
+  const isWrongComputer  = license.info?.wrongComputer;
   const warnDaysLeft     = (isOffline || isEmergency) && typeof daysLeft === "number" && daysLeft <= 3;
 
   const mi = license.machineInfo;
@@ -157,6 +162,48 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                   к интернету. Повторный перевод даты расценивается как попытка
                   обойти срок лицензии и может привести к блокировке ключа.
                 </span>
+              </div>
+            </div>
+          )}
+
+          {/* Аварийный ключ отозван правообладателем */}
+          {isRevoked && (
+            <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50">
+              <div className="flex items-center gap-2 text-red-800 font-semibold text-[13px]">
+                <Icon name="Ban" size={16} className="text-red-600" />
+                {revokeReason === "seat_blocked"
+                  ? "Это рабочее место отключено"
+                  : revokeReason === "seats_exhausted"
+                    ? "Все места по ключу заняты"
+                    : "Аварийный ключ отозван"}
+              </div>
+              <div className="mt-1.5 text-[12px] text-red-700">
+                {revokeReason === "seat_blocked"
+                  ? "Правообладатель отключил этот компьютер от аварийного ключа."
+                  : revokeReason === "seats_exhausted"
+                    ? "Ключ уже используется на разрешённом числе компьютеров. Для этого ПК нужен отдельный ключ."
+                    : "Правообладатель отозвал аварийный ключ вашей организации."}
+              </div>
+              <div className="mt-1.5 text-[11px] text-red-700">
+                Для продолжения работы обратитесь за новым ключом: пвсистема.рф
+              </div>
+            </div>
+          )}
+
+          {/* Аварийный ключ выпущен для другого компьютера */}
+          {isWrongComputer && (
+            <div className="mb-4 p-3 rounded-lg border border-red-200 bg-red-50">
+              <div className="flex items-center gap-2 text-red-800 font-semibold text-[13px]">
+                <Icon name="MonitorX" size={16} className="text-red-600" />
+                Ключ для другого компьютера
+              </div>
+              <div className="mt-1.5 text-[12px] text-red-700">
+                Этот аварийный ключ выпущен для рабочего места с кодом{" "}
+                <b className="font-mono">{license.info?.boundFp}</b>, а код этого
+                компьютера — <b className="font-mono">{seatId || "—"}</b>.
+              </div>
+              <div className="mt-1.5 text-[11px] text-red-700">
+                Назовите код этого компьютера правообладателю, чтобы получить свой ключ.
               </div>
             </div>
           )}

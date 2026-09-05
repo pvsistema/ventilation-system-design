@@ -8,6 +8,7 @@ import {
   checkOfflineEmergency,
   isCheckDue,
   sendHeartbeat,
+  recheckOfflineKey,
   storageReady,
   type LicenseInfo,
   type MachineInfo,
@@ -103,6 +104,27 @@ export function useLicense(): UseLicenseReturn {
       if (!cached?.licensed && emergency?.licensed) {
         setInfo(emergency);
         setStatus("licensed");
+      }
+
+      // 1в. КВАРТАЛЬНАЯ СВЕРКА АВАРИЙНОГО КЛЮЧА (мягкая).
+      // Раз в 90 дней, если в этот момент есть интернет, программа отмечается
+      // на сервере: не отозван ли ключ и разрешено ли это рабочее место.
+      // Нет связи — ничего не происходит, работа продолжается по подписи.
+      // Идёт фоном: программа уже открыта и ничего не ждёт.
+      if (emergency?.licensed) {
+        recheckOfflineKey(mi.fingerprint, mi).then((verdict) => {
+          if (cancelled || !verdict) return;
+          // Сервер ответил, что ключ больше не действует.
+          setInfo(verdict);
+          setStatus("demo");
+        });
+      }
+
+      // 1г. Аварийный ключ отозван или выпущен для другого компьютера —
+      // показываем причину, а не молчаливый демо-режим.
+      if (!cached?.licensed && (emergency?.offlineRevoked || emergency?.wrongComputer)) {
+        setInfo(emergency);
+        setStatus("demo");
       }
 
       // 1б. Повторная проверка часов — уже с отметкой, поднятой с диска.

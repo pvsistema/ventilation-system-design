@@ -1,7 +1,7 @@
 """
 Административный API для управления лицензиями ПВ-Системы.
 Защищён паролем через заголовок X-Admin-Password.
-Rev: offline-key-2
+Rev: offline-key-3
 
 POST /  body: {action, password, ...params}
   list_licenses    — список всех лицензий с занятыми местами
@@ -17,11 +17,13 @@ POST /  body: {action, password, ...params}
   list_events      — журнал событий {license_id?, event_type?, limit?}
   get_compute_config — текущий расчётный сервер {active, backup_url, autofailover}
   set_compute_config — переключить сервер {active: 'primary'|'backup', backup_url, autofailover}
-  create_offline_key — аварийный оффлайн-ключ {org, days?, seats?, expires_at?, notes?}
-  list_offline_keys  — реестр выпущенных аварийных ключей
+  create_offline_key — аварийный оффлайн-ключ {org, days?, seats?, expires_at?, notes?, bound_fp?}
+  list_offline_keys  — реестр выпущенных аварийных ключей (с учётом занятых мест)
   update_offline_key — изменить {offline_key_id, org, seats?, expires_at?, notes?}
   toggle_offline_key — активировать/отозвать {offline_key_id, is_active}
   delete_offline_key — удалить запись {offline_key_id}
+  list_offline_seats — ПК, отметившиеся по аварийному ключу {offline_key_id}
+  block_offline_seat — отключить/вернуть отдельный ПК {seat_id, is_blocked}
 """
 import json
 import os
@@ -71,13 +73,21 @@ def _decode_priv_key(s: str) -> bytes:
     raise ValueError(f"bad_private_key_format len={len(b64chars)}")
 
 
-def make_offline_key(org: str, expires_iso: str, seats: int) -> str:
+def make_offline_key(org: str, expires_iso: str, seats: int,
+                     bound_fp: str = "", kid: int = 0) -> str:
     """Формирует подписанный аварийный оффлайн-ключ.
 
     Формат: PVSO.<payload_b64url>.<sig_b64url>
-    payload — JSON {org, exp (ISO), seats, iat}. Подпись Ed25519 приватным
-    ключом (секрет OFFLINE_KEY_PRIVATE). Приложение проверяет подпись
-    публичным ключом локально, без интернета.
+    payload — JSON {org, exp (ISO), seats, iat, fp?, kid?}. Подпись Ed25519
+    приватным ключом (секрет OFFLINE_KEY_PRIVATE). Приложение проверяет
+    подпись публичным ключом локально, без интернета.
+
+    fp  — привязка к конкретному компьютеру (хэш отпечатка). Если задан, ключ
+          работает ТОЛЬКО на этом ПК: скопировать его на другие машины нельзя.
+          Пусто — прежнее поведение (любой ПК организации).
+    kid — номер ключа в реестре. Нужен, чтобы рабочее место при квартальной
+          проверке отметилось на сервере и попало в учёт мест, а отзыв ключа
+          реально сработал.
     """
     from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     priv_b64 = os.environ.get("OFFLINE_KEY_PRIVATE", "")
@@ -95,6 +105,12 @@ def make_offline_key(org: str, expires_iso: str, seats: int) -> str:
         "seats": int(seats),
         "iat": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    # Необязательные поля добавляем только когда они заданы: старые ключи
+    # (без них) продолжают проверяться прежним способом и не ломаются.
+    if bound_fp:
+        payload["fp"] = bound_fp
+    if kid:
+        payload["kid"] = int(kid)
     payload_bytes = json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode()
     sig = sk.sign(payload_bytes)
     return f"PVSO.{_b64url(payload_bytes)}.{_b64url(sig)}"
@@ -670,14 +686,38 @@ def handler(event: dict, context) -> dict:
             if days < 1 or days > 3650:
                 return resp(400, {"error": "invalid_days"})
             seats = int(body.get("seats") or 999)
+            # Привязка к конкретному компьютеру: код рабочего места, который
+            # человек называет из окна лицензии. Ключ с привязкой не работает
+            # больше нигде — скопировать его на соседние ПК невозможно.
+            bound_fp = re.sub(r"[^0-9A-Fa-f]", "", (body.get("bound_fp") or ""))[:32].upper()
             # Дата истечения: либо явная (для продления), либо now + days
             exp_in = (body.get("expires_at") or "").strip()
             if exp_in:
                 expires_iso = exp_in if "T" in exp_in else exp_in + "T23:59:59Z"
             else:
                 expires_iso = (datetime.now(timezone.utc) + timedelta(days=days)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            notes = (body.get("notes") or "").strip()
+
+            # Номер ключа в реестре подписывается ВНУТРИ ключа: по нему рабочее
+            # место при квартальной проверке отмечается на сервере, попадает в
+            # учёт мест, и отзыв ключа реально срабатывает. Поэтому сначала
+            # заводим запись (чтобы получить номер), затем подписываем ключ и
+            # дописываем его в ту же строку.
+            new_id = None
             try:
-                key = make_offline_key(org, expires_iso, seats)
+                cur.execute("""
+                    INSERT INTO offline_keys (org, key, seats, expires_at, notes, bound_fp)
+                    VALUES (%s, '', %s, %s, %s, %s)
+                    RETURNING id
+                """, (org, seats, expires_iso, notes or None, bound_fp or None))
+                new_id = cur.fetchone()[0]
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"[admin] offline key reserve failed: {e}")
+
+            try:
+                key = make_offline_key(org, expires_iso, seats, bound_fp, new_id or 0)
             except RuntimeError:
                 return resp(500, {"error": "offline_key_private_not_set"})
             except Exception as e:
@@ -689,38 +729,41 @@ def handler(event: dict, context) -> dict:
                     "detail": str(e)[:200],
                     "secret_len": len(_sec.strip()),
                 })
-            notes = (body.get("notes") or "").strip()
-            new_id = None
-            # Сохраняем выпущенный ключ в реестр (для показа/редактирования в админке)
-            try:
-                cur.execute("""
-                    INSERT INTO offline_keys (org, key, seats, expires_at, notes)
-                    VALUES (%s, %s, %s, %s, %s)
-                    RETURNING id
-                """, (org, key, seats, expires_iso, notes or None))
-                new_id = cur.fetchone()[0]
-                conn.commit()
-            except Exception as e:
-                conn.rollback()
-                print(f"[admin] offline key store failed: {e}")
+
+            if new_id:
+                try:
+                    cur.execute("UPDATE offline_keys SET key = %s WHERE id = %s", (key, new_id))
+                    conn.commit()
+                except Exception as e:
+                    conn.rollback()
+                    print(f"[admin] offline key store failed: {e}")
             # Журналируем факт выдачи (не критично)
             try:
                 cur.execute("""
                     INSERT INTO license_events (event_type, detail)
                     VALUES ('offline_key_issued', %s)
-                """, (f"org={org}; exp={expires_iso}; seats={seats}",))
+                """, (f"org={org}; exp={expires_iso}; seats={seats}"
+                      + (f"; fp={bound_fp}" if bound_fp else ""),))
                 conn.commit()
             except Exception as e:
                 print(f"[admin] offline key log failed: {e}")
-            return resp(200, {"id": new_id, "key": key, "org": org, "expires_at": expires_iso, "seats": seats})
+            return resp(200, {"id": new_id, "key": key, "org": org,
+                              "expires_at": expires_iso, "seats": seats,
+                              "bound_fp": bound_fp or None})
 
         # ── list_offline_keys — реестр выпущенных аварийных ключей ────────────────
         if action == "list_offline_keys":
             cur.execute("""
-                SELECT id, org, key, seats, expires_at, is_active, notes, created_at,
-                       (expires_at IS NOT NULL AND expires_at < NOW()) AS expired
-                FROM offline_keys
-                ORDER BY created_at DESC
+                SELECT o.id, o.org, o.key, o.seats, o.expires_at, o.is_active,
+                       o.notes, o.created_at,
+                       (o.expires_at IS NOT NULL AND o.expires_at < NOW()) AS expired,
+                       o.bound_fp,
+                       (SELECT COUNT(*) FROM offline_key_seats s
+                         WHERE s.offline_key_id = o.id) AS used_seats,
+                       (SELECT MAX(s.last_seen_at) FROM offline_key_seats s
+                         WHERE s.offline_key_id = o.id) AS last_seen_at
+                FROM offline_keys o
+                ORDER BY o.created_at DESC
             """)
             keys = []
             for r in cur.fetchall():
@@ -730,8 +773,47 @@ def handler(event: dict, context) -> dict:
                     "is_active": r[5], "notes": r[6],
                     "created_at": str(r[7]),
                     "expired": bool(r[8]),
+                    "bound_fp": r[9],
+                    "used_seats": int(r[10] or 0),
+                    "last_seen_at": str(r[11]) if r[11] else None,
                 })
             return resp(200, {"keys": keys})
+
+        # ── list_offline_seats — ПК, отметившиеся по конкретному ключу ────────────
+        # Наполняется квартальной проверкой с рабочих мест (если есть интернет).
+        if action == "list_offline_seats":
+            oid = int(body.get("offline_key_id", 0))
+            cur.execute("""
+                SELECT id, fingerprint, hostname, platform, app_version,
+                       last_ip, is_blocked, first_seen_at, last_seen_at
+                FROM offline_key_seats
+                WHERE offline_key_id = %s
+                ORDER BY first_seen_at
+            """, (oid,))
+            seats_rows = []
+            for r in cur.fetchall():
+                seats_rows.append({
+                    "id": r[0], "fingerprint": r[1], "hostname": r[2],
+                    "platform": r[3], "app_version": r[4], "last_ip": r[5],
+                    "is_blocked": bool(r[6]),
+                    "first_seen_at": str(r[7]), "last_seen_at": str(r[8]),
+                })
+            return resp(200, {"seats": seats_rows})
+
+        # ── block_offline_seat — отключить/вернуть отдельный ПК ───────────────────
+        # Срабатывает при следующей квартальной проверке этого места (если есть
+        # связь). Позволяет убрать лишний компьютер, не отзывая ключ целиком.
+        if action == "block_offline_seat":
+            sid = int(body.get("seat_id", 0))
+            blocked = bool(body.get("is_blocked", True))
+            cur.execute(
+                "UPDATE offline_key_seats SET is_blocked = %s WHERE id = %s RETURNING id",
+                (blocked, sid)
+            )
+            if not cur.fetchone():
+                return resp(404, {"error": "not_found"})
+            conn.commit()
+            return resp(200, {"ok": True, "is_blocked": blocked})
 
         # ── update_offline_key — изменить организацию/срок/места/заметку ──────────
         if action == "update_offline_key":

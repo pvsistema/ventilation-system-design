@@ -1,6 +1,10 @@
 import { API_URLS } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
-import { isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey, verifySignedPayload, decodeB64urlText } from "@/lib/offlineKey";
+import {
+  isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey,
+  verifySignedPayload, decodeB64urlText, setSeatCode, getSeatCode,
+  loadOfflineVerdict, saveOfflineVerdict, isOfflineRecheckDue, OFFLINE_RECHECK_MS,
+} from "@/lib/offlineKey";
 import { checkClock, trustServerTime, takePendingClockReport, restorePendingClockReport } from "@/lib/clockGuard";
 const LICENSE_URL = API_URLS.license;
 
@@ -144,6 +148,17 @@ export interface LicenseInfo {
   clockRollback?: boolean;
   /** На сколько суток отведены часы (для сообщения пользователю) */
   clockDaysBack?: number;
+  /**
+   * Аварийный ключ отозван правообладателем либо это рабочее место отключено.
+   * Выясняется при квартальной сверке с сервером (см. recheckOfflineKey).
+   */
+  offlineRevoked?: boolean;
+  /** Причина отзыва: revoked | expired | seat_blocked | seats_exhausted */
+  revokeReason?: string;
+  /** Аварийный ключ выпущен для другого компьютера (привязка по коду места). */
+  wrongComputer?: boolean;
+  /** Код компьютера, для которого выпущен ключ (при wrongComputer). */
+  boundFp?: string;
   /**
    * Подпись лицензии сервером (Ed25519). {payload, sig} в base64url.
    * payload — канонический JSON {v, fp, licensed, key, owner, exp, iat}.
@@ -412,6 +427,8 @@ export async function getMachineInfo(): Promise<MachineInfo> {
         // отпечаток уже был закэширован.
         try { setFingerprintForVerify(await sha256hex(parsed.fingerprint)); }
         catch { /* ignore */ }
+        // Код рабочего места — для проверки привязки аварийного ключа к ПК.
+        setSeatCode(parsed.fingerprint);
         return { fingerprint: parsed.fingerprint, hwFingerprint: parsed.hwFingerprint,
                  legacyHwFingerprint: parsed.legacyHwFingerprint,
                  prevHwFingerprint: parsed.prevHwFingerprint,
@@ -459,6 +476,9 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   // Нужен для проверки, что подписанная лицензия выдана именно этому месту.
   try { setFingerprintForVerify(await sha256hex(fingerprint)); }
   catch { /* ignore */ }
+
+  // Код рабочего места — для проверки привязки аварийного ключа к ПК.
+  setSeatCode(fingerprint);
 
   const platform = detectPlatform();
   const scr = `${window.screen.width}×${window.screen.height}`;
@@ -633,8 +653,26 @@ export function checkOfflineEmergency(): LicenseInfo | null {
   }
   if (!info.valid) {
     if (info.expired) return { licensed: false, emergency: true, offlineExpired: true, daysLeft: 0 };
+    // Ключ выпущен для другого компьютера — работать по нему нельзя.
+    if (info.reason === "wrong_computer") {
+      return { licensed: false, emergency: true, wrongComputer: true, boundFp: info.boundFp };
+    }
     return null;
   }
+
+  // ВЕРДИКТ СЕРВЕРА. Раз в квартал программа сверяется с сервером (когда есть
+  // связь). Если ключ отозвали или это рабочее место отключили — сохранённый
+  // отказ действует и без интернета: иначе отзыв можно было бы обойти, просто
+  // выдернув сетевой кабель.
+  const verdict = loadOfflineVerdict();
+  if (verdict && !verdict.valid) {
+    return {
+      licensed: false, emergency: true,
+      offlineRevoked: true, revokeReason: verdict.reason,
+      owner: info.org,
+    };
+  }
+
   return {
     licensed: true,
     emergency: true,
@@ -642,6 +680,78 @@ export function checkOfflineEmergency(): LicenseInfo | null {
     owner: info.org,
     daysLeft: info.daysLeft,
   };
+}
+
+/**
+ * КВАРТАЛЬНАЯ СВЕРКА АВАРИЙНОГО КЛЮЧА (мягкая).
+ *
+ * Аварийный ключ намеренно работает без интернета — иначе он бесполезен на
+ * руднике. Обратной стороной было то, что выданный ключ нельзя ни отозвать,
+ * ни посчитать, на скольких ПК он используется.
+ *
+ * Теперь раз в 90 дней, ЕСЛИ в этот момент есть связь, программа отмечается
+ * на сервере. Сервер отвечает, действует ли ключ и разрешено ли это рабочее
+ * место. Ответ сохраняется и действует до следующей сверки.
+ *
+ * Мягкость: нет интернета, сервер не ответил, ошибка сети — НИЧЕГО не
+ * происходит, программа продолжает работать по подписи. Блокировка возможна
+ * только по явному ответу сервера.
+ *
+ * Вызывается фоном при запуске и ничего не задерживает.
+ */
+export async function recheckOfflineKey(fingerprint: string,
+                                        machineInfo?: MachineInfo): Promise<LicenseInfo | null> {
+  const loaded = loadOfflineKey();
+  if (!loaded?.info.valid) return null;
+  if (!isOfflineRecheckDue()) return null;
+
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
+  try {
+    const res = await fetch(LICENSE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        action: "offline_check",
+        fingerprint,
+        kid: loaded.info.kid,
+        // Ключи, выпущенные до появления номера, сервер находит по тексту.
+        offline_key: loaded.info.kid ? undefined : loaded.key,
+        hostname:    machineInfo?.hostname,
+        platform:    machineInfo?.platform,
+        app_version: APP_VERSION,
+      }),
+    });
+    const data = await res.json();
+    if (!data?.ok) return null;
+
+    // Сервер ответил — связь есть, значит времени его ответа можно доверять.
+    trustServerTime();
+
+    const now = Date.now();
+    saveOfflineVerdict({
+      valid: data.valid !== false,
+      reason: data.reason,
+      checkedAt: now,
+      nextCheckAt: now + OFFLINE_RECHECK_MS,
+    });
+
+    if (data.valid === false) {
+      return {
+        licensed: false, emergency: true,
+        offlineRevoked: true, revokeReason: data.reason,
+        owner: data.org,
+      };
+    }
+    return null;
+  } catch {
+    // Связи нет — это штатная ситуация на руднике. Ничего не меняем:
+    // программа продолжает работать по подписи ключа.
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export function clearFingerprintCache() {
@@ -740,6 +850,12 @@ export async function activateLicense(
   if (isOfflineKey(key)) {
     const v = verifyOfflineKey(key);
     if (!v.valid) {
+      if (v.reason === "wrong_computer") {
+        throw new Error(
+          `Ключ выпущен для другого компьютера (код ${v.boundFp}). ` +
+          `Код этого рабочего места: ${getSeatCode() ?? "—"}`,
+        );
+      }
       const msgs: Record<string, string> = {
         bad_format:    "Неверный формат аварийного ключа",
         bad_signature: "Аварийный ключ повреждён или поддельный",
@@ -748,7 +864,60 @@ export async function activateLicense(
       };
       throw new Error(msgs[v.reason ?? ""] ?? "Аварийный ключ недействителен");
     }
+
+    // ПРОВЕРКА ОТЗЫВА ПРИ ВВОДЕ. Если в момент активации есть интернет,
+    // сверяемся с сервером сразу: отозванный ключ не должен включаться даже
+    // на один квартал. Нет связи — включаем по подписи, как и раньше, а
+    // сверка произойдёт при первом же выходе в сеть.
     saveOfflineKey(key.trim());
+    try {
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
+      let data: { ok?: boolean; valid?: boolean; reason?: string; org?: string };
+      try {
+        const res = await fetch(LICENSE_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            action: "offline_check",
+            fingerprint,
+            kid: v.kid,
+            offline_key: v.kid ? undefined : key.trim(),
+            hostname:    machineInfo?.hostname,
+            platform:    machineInfo?.platform,
+            app_version: APP_VERSION,
+          }),
+        });
+        data = await res.json();
+      } finally {
+        clearTimeout(timer);
+      }
+      if (data?.ok) {
+        const now = Date.now();
+        saveOfflineVerdict({
+          valid: data.valid !== false,
+          reason: data.reason,
+          checkedAt: now,
+          nextCheckAt: now + OFFLINE_RECHECK_MS,
+        });
+        if (data.valid === false) {
+          clearOfflineKey();
+          const msgs: Record<string, string> = {
+            revoked:          "Аварийный ключ отозван правообладателем",
+            expired:          "Срок аварийного ключа истёк",
+            seat_blocked:     "Это рабочее место отключено правообладателем",
+            seats_exhausted:  "Все рабочие места по этому ключу заняты",
+          };
+          throw new Error(msgs[data.reason ?? ""] ?? "Аварийный ключ недействителен");
+        }
+      }
+    } catch (e) {
+      // Отказ сервера пробрасываем, а обрыв связи — нет: без интернета
+      // аварийный ключ обязан работать, в этом весь его смысл.
+      if (e instanceof Error && e.message && !/fetch|network|abort/i.test(e.message)) throw e;
+    }
+
     const info: LicenseInfo = {
       licensed: true,
       emergency: true,

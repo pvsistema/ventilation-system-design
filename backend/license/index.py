@@ -8,6 +8,8 @@ POST / body: {action, fingerprint, hw_fingerprint?, key?, hostname?, platform?, 
   check    — проверить лицензию по fingerprint; если не найден — искать по hw_fingerprint
   activate — привязать ключ к месту; если hw_fingerprint совпадает — обновить fingerprint
   transfer — перенос лицензии на новый fingerprint (ручная операция)
+  offline_check — мягкая проверка аварийного оффлайн-ключа (раз в квартал,
+                  только при наличии связи): отзыв ключа и учёт рабочих мест
 """
 import json
 import os
@@ -689,6 +691,128 @@ def handler(event: dict, context) -> dict:
         conn.commit()
         conn.close()
         return resp(200, {"ok": True})
+
+    # ── offline_check — мягкая проверка аварийного ключа (раз в квартал) ───────
+    #
+    # ЗАЧЕМ. Аварийный ключ проверяется на компьютере локально, по подписи, и
+    # интернета не требует — так и задумано для рудника и ВГСЧ. Обратная
+    # сторона: выданный ключ нельзя было ни отозвать, ни посчитать, на скольких
+    # ПК он работает.
+    #
+    # Теперь программа раз в квартал, ЕСЛИ связь есть, отмечается здесь. Сервер
+    # отвечает, действует ли ключ и не отключено ли это рабочее место.
+    # Проверка МЯГКАЯ: нет ответа — программа продолжает работать по подписи.
+    # Блокировка наступает только по явному ответу сервера.
+    if action == "offline_check":
+        kid = body.get("kid")
+        try:
+            kid = int(kid)
+        except (TypeError, ValueError):
+            kid = 0
+        key_text = (body.get("offline_key") or "").strip()[:2000]
+
+        # Ключ ищем по номеру в реестре (он подписан внутри ключа), а для
+        # ключей, выпущенных до появления номера, — по самому тексту ключа.
+        if kid:
+            cur.execute("""
+                SELECT id, org, seats, expires_at, is_active
+                FROM offline_keys WHERE id = %s
+            """, (kid,))
+        elif key_text:
+            cur.execute("""
+                SELECT id, org, seats, expires_at, is_active
+                FROM offline_keys WHERE key = %s LIMIT 1
+            """, (key_text,))
+        else:
+            conn.close()
+            return resp(400, {"error": "kid_or_key_required"})
+
+        krow = cur.fetchone()
+        if not krow:
+            # Ключа нет в реестре (запись удалили). Старые ключи, выпущенные до
+            # ведения реестра, тоже сюда попадают — поэтому НЕ блокируем:
+            # программа продолжит работать по подписи до конца срока.
+            conn.commit()
+            conn.close()
+            return resp(200, {"ok": True, "known": False, "valid": True})
+
+        okey_id, org, max_seats, expires_at, is_active = krow
+
+        # Ключ отозван администратором — программа перейдёт в демо-режим.
+        if not is_active:
+            log_event(cur, event_type="offline_key_revoked_hit", fph=fph,
+                      hostname=hostname, platform=platform,
+                      app_version=app_version, ip=ip,
+                      detail=f"org={org}; key_id={okey_id}")
+            conn.commit()
+            conn.close()
+            return resp(200, {"ok": True, "known": True, "valid": False,
+                              "reason": "revoked", "org": org})
+
+        if expires_at and expires_at < datetime.now(timezone.utc):
+            conn.commit()
+            conn.close()
+            return resp(200, {"ok": True, "known": True, "valid": False,
+                              "reason": "expired", "org": org})
+
+        # Учёт рабочих мест. Место, которое уже отмечалось, просто обновляем.
+        cur.execute("""
+            SELECT id, is_blocked FROM offline_key_seats
+            WHERE offline_key_id = %s AND fingerprint = %s
+        """, (okey_id, fph))
+        srow = cur.fetchone()
+
+        if srow:
+            seat_id, blocked = srow
+            if blocked:
+                conn.commit()
+                conn.close()
+                return resp(200, {"ok": True, "known": True, "valid": False,
+                                  "reason": "seat_blocked", "org": org})
+            cur.execute("""
+                UPDATE offline_key_seats
+                SET last_seen_at = NOW(),
+                    hostname     = COALESCE(NULLIF(%s, ''), hostname),
+                    platform     = COALESCE(NULLIF(%s, ''), platform),
+                    app_version  = COALESCE(NULLIF(%s, ''), app_version),
+                    last_ip      = COALESCE(NULLIF(%s, ''), last_ip)
+                WHERE id = %s
+            """, (hostname, platform, app_version, ip, seat_id))
+        else:
+            # Новое место. Если все места по ключу уже заняты — отказываем
+            # именно новому ПК, а ранее работающие продолжают работать.
+            cur.execute("SELECT COUNT(*) FROM offline_key_seats WHERE offline_key_id = %s",
+                        (okey_id,))
+            used = int(cur.fetchone()[0])
+            if max_seats and used >= int(max_seats):
+                log_event(cur, event_type="offline_seats_exhausted", fph=fph,
+                          hostname=hostname, platform=platform,
+                          app_version=app_version, ip=ip,
+                          detail=f"org={org}; key_id={okey_id}; used={used}/{max_seats}")
+                conn.commit()
+                conn.close()
+                return resp(200, {"ok": True, "known": True, "valid": False,
+                                  "reason": "seats_exhausted", "org": org,
+                                  "seats": {"max": int(max_seats), "used": used}})
+            cur.execute("""
+                INSERT INTO offline_key_seats
+                    (offline_key_id, fingerprint, hostname, platform, app_version, last_ip)
+                VALUES (%s, %s, %s, %s, %s, %s)
+                ON CONFLICT (offline_key_id, fingerprint) DO UPDATE
+                    SET last_seen_at = NOW()
+            """, (okey_id, fph, hostname or None, platform or None,
+                  app_version or None, ip or None))
+
+        cur.execute("SELECT COUNT(*) FROM offline_key_seats WHERE offline_key_id = %s",
+                    (okey_id,))
+        used_now = int(cur.fetchone()[0])
+        conn.commit()
+        conn.close()
+        return resp(200, {
+            "ok": True, "known": True, "valid": True, "org": org,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "seats": {"max": int(max_seats or 0), "used": used_now},
+        })
 
     # ── transfer ────────────────────────────────────────────────────────────────
     if action == "transfer":
