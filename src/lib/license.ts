@@ -657,6 +657,11 @@ export function checkOfflineEmergency(): LicenseInfo | null {
     if (info.reason === "wrong_computer") {
       return { licensed: false, emergency: true, wrongComputer: true, boundFp: info.boundFp };
     }
+    // Дата на компьютере раньше даты выпуска ключа — часы отвели назад.
+    // Ловится даже после чистки данных браузера: дата выпуска внутри подписи.
+    if (info.reason === "clock_before_issue") {
+      return { licensed: false, emergency: true, clockRollback: true };
+    }
     return null;
   }
 
@@ -726,10 +731,20 @@ export async function recheckOfflineKey(fingerprint: string,
     const data = await res.json();
     if (!data?.ok) return null;
 
-    // Сервер ответил — связь есть, значит времени его ответа можно доверять.
-    trustServerTime();
+    // ВРЕМЯ БЕРЁМ У СЕРВЕРА, А НЕ У КОМПЬЮТЕРА.
+    //
+    // Раньше здесь стоял trustServerTime() без времени — а без него функция
+    // подставляет часы компьютера. Получалось, что при отведённой назад дате
+    // программа сама записывала эту неверную дату как «подтверждённую
+    // сервером» и тем самым СТИРАЛА улику отката. Теперь отметка ставится по
+    // времени сервера: откат вскрывается при первом же выходе в сеть.
+    const srvNow: number | undefined =
+      typeof data.server_now === "number" ? data.server_now : undefined;
+    trustServerTime(srvNow);
 
-    const now = Date.now();
+    // Отсчёт до следующей сверки ведём тоже от времени сервера — иначе
+    // переводом даты назад можно было бы бесконечно откладывать проверку.
+    const now = srvNow ?? Date.now();
     saveOfflineVerdict({
       valid: data.valid !== false,
       reason: data.reason,

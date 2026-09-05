@@ -710,6 +710,10 @@ def handler(event: dict, context) -> dict:
         except (TypeError, ValueError):
             kid = 0
         key_text = (body.get("offline_key") or "").strip()[:2000]
+        # Точное время сервера в каждом ответе. Программа переставляет по нему
+        # свою отметку времени: тогда откат даты на компьютере обнаруживается
+        # при первом же выходе в сеть, даже если ключ действует.
+        srv_now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
 
         # Ключ ищем по номеру в реестре (он подписан внутри ключа), а для
         # ключей, выпущенных до появления номера, — по самому тексту ключа.
@@ -729,12 +733,28 @@ def handler(event: dict, context) -> dict:
 
         krow = cur.fetchone()
         if not krow:
-            # Ключа нет в реестре (запись удалили). Старые ключи, выпущенные до
-            # ведения реестра, тоже сюда попадают — поэтому НЕ блокируем:
-            # программа продолжит работать по подписи до конца срока.
+            # Ключа нет в реестре. Здесь важно различать два разных случая,
+            # иначе удаление ключа не работает как отзыв.
+            #
+            # 1) Ключ выпущен УЖЕ С НОМЕРОМ (kid), а записи нет — значит её
+            #    удалили из реестра. Это осознанное действие правообладателя,
+            #    равносильное отзыву: блокируем.
+            # 2) Ключ БЕЗ номера — выпущен до появления реестра. Такие ключи
+            #    сервер не знает по определению, блокировать их нельзя:
+            #    у людей отвалилась бы работающая программа.
+            if kid:
+                log_event(cur, event_type="offline_key_deleted_hit", fph=fph,
+                          hostname=hostname, platform=platform,
+                          app_version=app_version, ip=ip,
+                          detail=f"key_id={kid} удалён из реестра")
+                conn.commit()
+                conn.close()
+                return resp(200, {"ok": True, "known": False, "valid": False,
+                                  "reason": "deleted", "server_now": srv_now_ms})
             conn.commit()
             conn.close()
-            return resp(200, {"ok": True, "known": False, "valid": True})
+            return resp(200, {"ok": True, "known": False, "valid": True,
+                              "server_now": srv_now_ms})
 
         okey_id, org, max_seats, expires_at, is_active = krow
 
@@ -747,13 +767,15 @@ def handler(event: dict, context) -> dict:
             conn.commit()
             conn.close()
             return resp(200, {"ok": True, "known": True, "valid": False,
-                              "reason": "revoked", "org": org})
+                              "reason": "revoked", "org": org,
+                              "server_now": srv_now_ms})
 
         if expires_at and expires_at < datetime.now(timezone.utc):
             conn.commit()
             conn.close()
             return resp(200, {"ok": True, "known": True, "valid": False,
-                              "reason": "expired", "org": org})
+                              "reason": "expired", "org": org,
+                              "server_now": srv_now_ms})
 
         # Учёт рабочих мест. Место, которое уже отмечалось, просто обновляем.
         cur.execute("""
@@ -768,7 +790,8 @@ def handler(event: dict, context) -> dict:
                 conn.commit()
                 conn.close()
                 return resp(200, {"ok": True, "known": True, "valid": False,
-                                  "reason": "seat_blocked", "org": org})
+                                  "reason": "seat_blocked", "org": org,
+                                  "server_now": srv_now_ms})
             cur.execute("""
                 UPDATE offline_key_seats
                 SET last_seen_at = NOW(),
@@ -793,7 +816,8 @@ def handler(event: dict, context) -> dict:
                 conn.close()
                 return resp(200, {"ok": True, "known": True, "valid": False,
                                   "reason": "seats_exhausted", "org": org,
-                                  "seats": {"max": int(max_seats), "used": used}})
+                                  "seats": {"max": int(max_seats), "used": used},
+                                  "server_now": srv_now_ms})
             cur.execute("""
                 INSERT INTO offline_key_seats
                     (offline_key_id, fingerprint, hostname, platform, app_version, last_ip)
@@ -812,6 +836,7 @@ def handler(event: dict, context) -> dict:
             "ok": True, "known": True, "valid": True, "org": org,
             "expires_at": expires_at.isoformat() if expires_at else None,
             "seats": {"max": int(max_seats or 0), "used": used_now},
+            "server_now": srv_now_ms,
         })
 
     # ── transfer ────────────────────────────────────────────────────────────────

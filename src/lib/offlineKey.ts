@@ -40,6 +40,8 @@ export interface OfflineKeyInfo {
   boundFp?: string;
   /** Номер ключа в реестре — для квартальной проверки отзыва на сервере. */
   kid?: number;
+  /** Дата выпуска ключа (подписана) — по ней виден откат часов назад. */
+  issuedAt?: string;
 }
 
 /**
@@ -121,11 +123,35 @@ export function verifyOfflineKey(key: string): OfflineKeyInfo {
 
     const payload = JSON.parse(new TextDecoder().decode(payloadBytes)) as {
       org?: string; exp?: string; seats?: number; fp?: string; kid?: number;
+      iat?: string;
     };
     const exp = payload.exp ? new Date(payload.exp).getTime() : 0;
     if (!exp) return { valid: false, reason: "no_expiry" };
 
     const now = Date.now();
+
+    // ЧАСЫ ОТВЕДЕНЫ НАЗАД — ПРОВЕРКА ПО САМОМУ КЛЮЧУ.
+    //
+    // Внутри подписи есть дата выпуска (iat). Ключ физически не мог
+    // существовать раньше, чем был выпущен, поэтому дата на компьютере НИКОГДА
+    // не должна быть раньше неё. Если это так — часы переведены назад.
+    //
+    // Это важнее, чем кажется: отдельная отметка времени хранится на диске, и
+    // её можно стереть вместе с данными браузера. А дату выпуска стереть
+    // нельзя — она защищена той же подписью, что и сам ключ: изменишь её, и
+    // ключ перестанет проходить проверку подлинности.
+    //
+    // Допуск в сутки — на случай неточных часов и часовых поясов.
+    if (payload.iat) {
+      const iat = new Date(payload.iat).getTime();
+      if (iat && now < iat - 24 * 3600 * 1000) {
+        return {
+          valid: false, reason: "clock_before_issue",
+          org: payload.org, expiresAt: payload.exp,
+          issuedAt: payload.iat,
+        };
+      }
+    }
     const daysLeft = Math.floor((exp - now) / (24 * 3600 * 1000));
     if (exp < now) {
       return {
@@ -160,6 +186,7 @@ export function verifyOfflineKey(key: string): OfflineKeyInfo {
       seats: payload.seats,
       boundFp: payload.fp ? payload.fp.toUpperCase() : undefined,
       kid: payload.kid,
+      issuedAt: payload.iat,
     };
   } catch {
     return { valid: false, reason: "verify_error" };
@@ -226,5 +253,11 @@ export function saveOfflineVerdict(v: OfflineVerdict): void {
 export function isOfflineRecheckDue(): boolean {
   const v = loadOfflineVerdict();
   if (!v) return true;
-  return Date.now() >= v.nextCheckAt;
+  const now = Date.now();
+  // Дата на компьютере оказалась РАНЬШЕ последней сверки — часы отвели назад.
+  // Без этой строки откат даты откладывал бы сверку на сколько угодно: срок
+  // следующей проверки навсегда оставался «в будущем», и отзыв ключа не
+  // доходил бы до компьютера. Сверяемся немедленно.
+  if (now < v.checkedAt) return true;
+  return now >= v.nextCheckAt;
 }
