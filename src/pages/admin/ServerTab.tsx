@@ -7,8 +7,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
+import LicenseGuardCard from "@/pages/admin/LicenseGuardCard";
 
 interface ServerTabProps {
+  /** Пароль администратора — нужен для запроса статистики защиты расчётов. */
+  password: string;
   srvActive: "primary" | "backup";
   setSrvActive: (v: "primary" | "backup") => void;
   srvBackupUrl: string;
@@ -26,7 +29,7 @@ interface ServerTabProps {
 export default function ServerTab({
   srvActive, setSrvActive, srvBackupUrl, setSrvBackupUrl,
   srvAutofail, setSrvAutofail, srvCfgLoading, srvCfgSaving,
-  srvCfgOk, srvCfgErr, saveServerCfg, switchServer,
+  srvCfgOk, srvCfgErr, saveServerCfg, switchServer, password,
 }: ServerTabProps) {
   const [pingState, setPingState] = useState<"idle" | "run" | "ok" | "fail">("idle");
   const [pingMsg, setPingMsg] = useState("");
@@ -107,6 +110,9 @@ export default function ServerTab({
 
   return (
   <div className="max-w-xl mx-auto">
+    {/* Защита расчётов: сколько считают с лицензией и без неё */}
+    <LicenseGuardCard password={password} />
+
     {/* Текущий сервер + мгновенное ручное переключение */}
     <div className={`rounded-xl shadow-sm border p-4 mb-5 ${onBackup ? "bg-amber-50 border-amber-300" : "bg-green-50 border-green-300"}`}>
       <div className="flex items-center justify-between gap-3">

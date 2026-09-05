@@ -151,7 +151,53 @@ def check_license(body: Any) -> Tuple[bool, str]:
     return True, "ok"
 
 
-def license_gate(body: Any, cors: dict) -> Optional[dict]:
+# Соединение с базой переживает соседние вызовы функции (контейнер остаётся
+# «тёплым»). Без этого на каждый расчёт тратилось бы время на подключение, а
+# расчёт пожара делает несколько обращений подряд — задержка была бы заметной.
+_conn = None
+
+
+def _bump_counter(func: str, outcome: str) -> None:
+    """
+    Отмечает исход проверки в дневном счётчике — по нему в админ-панели видно,
+    когда можно безопасно включать строгий режим.
+
+    Одна строка на день, функцию и исход: таблица не растёт. Запись
+    НЕОБЯЗАТЕЛЬНАЯ: любая ошибка молча игнорируется. Расчёт для человека
+    важнее статистики и не должен падать из-за недоступной базы.
+    """
+    global _conn
+    dsn = os.environ.get("DATABASE_URL")
+    if not dsn:
+        return
+    sql = ("INSERT INTO compute_license_daily (day, func, outcome, cnt) "
+           "VALUES (CURRENT_DATE, %s, %s, 1) "
+           "ON CONFLICT (day, func, outcome) DO UPDATE "
+           "SET cnt = compute_license_daily.cnt + 1")
+    for attempt in (1, 2):
+        try:
+            import psycopg2
+            if _conn is None or _conn.closed:
+                schema = os.environ.get("MAIN_DB_SCHEMA", "public")
+                _conn = psycopg2.connect(dsn, options=f"-c search_path={schema}",
+                                         connect_timeout=2)
+            cur = _conn.cursor()
+            cur.execute(sql, (func[:40], outcome[:40]))
+            _conn.commit()
+            return
+        except Exception as e:
+            # Сохранённое соединение могло «протухнуть» — пробуем один раз заново.
+            try:
+                if _conn is not None:
+                    _conn.close()
+            except Exception:
+                pass
+            _conn = None
+            if attempt == 2:
+                print(f"[license_guard] счётчик не записан: {e}")
+
+
+def license_gate(body: Any, cors: dict, func: str = "compute") -> Optional[dict]:
     """
     Главная проверка перед расчётом.
 
@@ -165,13 +211,16 @@ def license_gate(body: Any, cors: dict) -> Optional[dict]:
     """
     ok, reason = check_license(body)
     if ok:
+        _bump_counter(func, reason)          # ok | emergency
         return None
 
     mode = (os.environ.get("COMPUTE_LICENSE_MODE") or "soft").strip().lower()
     if mode != "strict":
+        _bump_counter(func, reason)
         print(f"[license_guard] МЯГКИЙ РЕЖИМ: расчёт без лицензии ({reason})")
         return None
 
+    _bump_counter(func, "denied_" + reason)
     print(f"[license_guard] ОТКАЗ: расчёт без действительной лицензии ({reason})")
     return {
         "statusCode": 403,

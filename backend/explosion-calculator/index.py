@@ -215,7 +215,7 @@ def handler(event: dict, context) -> dict:
     body = json.loads(event.get("body") or "{}")
 
     # Расчёт — только по действительной лицензии (см. license_guard).
-    denied = license_gate(body, CORS)
+    denied = license_gate(body, CORS, "explosion")
     if denied:
         return denied
 

@@ -22,6 +22,8 @@ POST /  body: {action, password, ...params}
   update_offline_key — изменить {offline_key_id, org, seats?, expires_at?, notes?}
   toggle_offline_key — активировать/отозвать {offline_key_id, is_active}
   delete_offline_key — удалить запись {offline_key_id}
+  compute_license_stats — расчёты с лицензией и без неё, готовность к строгому
+                          режиму {days?}
   list_offline_seats — ПК, отметившиеся по аварийному ключу {offline_key_id}
   block_offline_seat — отключить/вернуть отдельный ПК {seat_id, is_blocked}
 """
@@ -778,6 +780,73 @@ def handler(event: dict, context) -> dict:
                     "last_seen_at": str(r[11]) if r[11] else None,
                 })
             return resp(200, {"keys": keys})
+
+        # ── compute_license_stats — готовность к строгому режиму ──────────────────
+        # Расчётные серверы работают в мягком режиме: считают всем, но каждый
+        # случай записывают. Здесь видно, когда переход на строгий режим
+        # безопасен — как только расчёты без лицензии сходят на нет, значит у
+        # людей обновилась программа.
+        if action == "compute_license_stats":
+            days = int(body.get("days") or 14)
+            if days < 1 or days > 90:
+                days = 14
+            cur.execute("""
+                SELECT day, func, outcome, cnt
+                FROM compute_license_daily
+                WHERE day >= CURRENT_DATE - %s::int
+                ORDER BY day DESC
+            """, (days,))
+            rows = cur.fetchall()
+
+            # Что считать «с лицензией»: обычная лицензия и аварийный ключ.
+            licensed_kinds = ("ok", "emergency")
+
+            by_day: dict = {}
+            by_func: dict = {}
+            total_ok = 0
+            total_bad = 0
+            reasons: dict = {}
+
+            for day, func, outcome, cnt in rows:
+                d = str(day)
+                cnt = int(cnt)
+                is_ok = outcome in licensed_kinds
+                slot = by_day.setdefault(d, {"licensed": 0, "unlicensed": 0})
+                fslot = by_func.setdefault(func, {"licensed": 0, "unlicensed": 0})
+                if is_ok:
+                    slot["licensed"] += cnt
+                    fslot["licensed"] += cnt
+                    total_ok += cnt
+                else:
+                    slot["unlicensed"] += cnt
+                    fslot["unlicensed"] += cnt
+                    total_bad += cnt
+                    reasons[outcome] = reasons.get(outcome, 0) + cnt
+
+            # Расчёты без лицензии за последние 7 суток — главный признак
+            # готовности: если их нет, строгий режим никого не заденет.
+            cur.execute("""
+                SELECT COALESCE(SUM(cnt), 0)
+                FROM compute_license_daily
+                WHERE day >= CURRENT_DATE - 7
+                  AND outcome NOT IN ('ok', 'emergency')
+            """)
+            last7_bad = int(cur.fetchone()[0])
+
+            total = total_ok + total_bad
+            return resp(200, {
+                "days": days,
+                "total": total,
+                "licensed": total_ok,
+                "unlicensed": total_bad,
+                "unlicensed_pct": round(total_bad * 100.0 / total, 1) if total else 0.0,
+                "last7_unlicensed": last7_bad,
+                "ready_for_strict": last7_bad == 0 and total_ok > 0,
+                "by_day": [{"day": d, **v} for d, v in sorted(by_day.items(), reverse=True)],
+                "by_func": [{"func": f, **v} for f, v in sorted(by_func.items())],
+                "reasons": [{"reason": r, "cnt": c}
+                            for r, c in sorted(reasons.items(), key=lambda x: -x[1])],
+            })
 
         # ── list_offline_seats — ПК, отметившиеся по конкретному ключу ────────────
         # Наполняется квартальной проверкой с рабочих мест (если есть интернет).

@@ -100,7 +100,7 @@ def handler(event: dict, context) -> dict:
 
     # Расчёт — только по действительной лицензии (см. license_guard).
     # Проверяем ПОСЛЕ распаковки: пропуск лежит внутри сжатого тела.
-    denied = license_gate(body, CORS)
+    denied = license_gate(body, CORS, "airflow")
     if denied:
         return denied
 

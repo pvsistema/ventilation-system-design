@@ -659,6 +659,7 @@ export default function Admin() {
             srvCfgOk={srvCfgOk} srvCfgErr={srvCfgErr}
             saveServerCfg={saveServerCfg}
             switchServer={switchServer}
+            password={password}
           />
         )}
 
