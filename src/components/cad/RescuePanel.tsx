@@ -8,6 +8,7 @@ import {
   RescueSegment,
 } from "@/lib/rescueCalculator";
 import { API_URLS } from "@/lib/api-urls";
+import { withLicense } from "@/lib/license";
 
 const RESCUE_URL = API_URLS.rescueCalculator;
 
@@ -750,7 +751,9 @@ export default function RescuePanel({
         const resp = await fetch(RESCUE_URL, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: reqBody,
+          // Пропуск добавляем только в отправку: ключ памяти расчётов
+          // (reqBody) должен зависеть лишь от исходных данных.
+          body: JSON.stringify(withLicense(JSON.parse(reqBody))),
         });
         // HTTP-ошибка (400/500) НЕ бросает исключение в fetch — проверяем явно.
         // Без этой проверки ответ вида {"error": "..."} попадал в res, поле

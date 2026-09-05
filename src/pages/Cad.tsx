@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import { useLicenseContext } from "@/context/LicenseContext";
+import { withLicense } from "@/lib/license";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
@@ -1777,7 +1778,7 @@ export default function CadPage() {
       fetch(WATER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nodes: waterNodes, branches: waterBranches }),
+        body: JSON.stringify(withLicense({ nodes: waterNodes, branches: waterBranches })),
       }).then(r => r.json()).then(data => {
         const nr = new Map<string, WaterNodeResult>();
         const br = new Map<string, WaterBranchResult>();
@@ -4248,6 +4249,15 @@ export default function CadPage() {
       const data = await resp.json();
 
       if (!resp.ok || data.error) {
+        // Сервер отказал из-за лицензии — показываем понятную причину и
+        // открываем окно активации, а не сухой код ошибки.
+        if (resp.status === 403 && data.error === "license_required") {
+          const msg = data.message || "Расчёт доступен только в полной версии";
+          setVcError(msg);
+          addLog("error", msg);
+          setShowLicenseDialog(true);
+          return;
+        }
         const msg = data.error || "Ошибка расчёта";
         setVcError(msg);
         addLog("error", msg);

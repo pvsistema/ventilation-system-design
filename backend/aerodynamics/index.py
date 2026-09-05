@@ -15,6 +15,7 @@ POST: {
                        rLocal, lambda, velocity, dP, power, reynolds}] }
 """
 import json, math
+from license_guard import license_gate
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -183,6 +184,12 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     body = json.loads(event.get("body") or "{}")
+
+    # Расчёт — только по действительной лицензии (см. license_guard).
+    denied = license_gate(body, CORS)
+    if denied:
+        return denied
+
     branches_in = body.get("branches", [])
 
     result = [calc_branch_aero(b) for b in branches_in]

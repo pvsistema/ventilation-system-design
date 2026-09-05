@@ -12,6 +12,7 @@ POST: {
 }
 """
 import json, math
+from license_guard import license_gate
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -212,6 +213,11 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     body = json.loads(event.get("body") or "{}")
+
+    # Расчёт — только по действительной лицензии (см. license_guard).
+    denied = license_gate(body, CORS)
+    if denied:
+        return denied
 
     # ПАКЕТНЫЙ РЕЖИМ. Раньше программа отправляла ОТДЕЛЬНЫЙ запрос на каждое
     # место взрыва: пять очагов на схеме — пять обращений к серверу, и так при

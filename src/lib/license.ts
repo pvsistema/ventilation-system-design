@@ -277,6 +277,55 @@ function verifySignedLicense(info: LicenseInfo, strict = false): boolean | null 
 }
 
 /**
+ * ПРОПУСК НА РАСЧЁТ.
+ *
+ * ЗАЧЕМ. Раньше вся защита жила в интерфейсе: кнопки в демо-режиме не
+ * нажимались, но расчётные серверы считали для любого, кто их попросит.
+ * Достаточно было поправить одну строку в файлах программы — и полный
+ * функционал открывался без ключа.
+ *
+ * Теперь к каждому расчёту прикладывается подписанный документ, и сервер
+ * проверяет его сам. Подделать документ нельзя: подпись ставится приватным
+ * ключом, которого на компьютере нет. Отредактировать программу по-прежнему
+ * можно — но расчёта без ключа всё равно не будет, потому что решает сервер.
+ *
+ * Возвращает пропуск либо null (лицензии нет — сервер откажет).
+ */
+export function licenseTicket(): { payload: string; sig: string } | { key: string } | null {
+  // Аварийный оффлайн-ключ: он сам себе подписанный документ.
+  try {
+    const loaded = loadOfflineKey();
+    if (loaded?.info.valid) {
+      const verdict = loadOfflineVerdict();
+      // Ключ отозван — пропуск не выдаём, даже если подпись цела.
+      if (!verdict || verdict.valid) return { key: loaded.key };
+    }
+  } catch { /* ignore */ }
+
+  // Обычная лицензия: подпись, выданная лицензионным сервисом этому месту.
+  try {
+    const raw = storage.get(STORAGE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw) as LicenseInfo;
+    if (!data.licensed || !data.signed?.payload || !data.signed?.sig) return null;
+    // Отдаём только действительную подпись: просроченную или чужую сервер
+    // всё равно отклонит, а так не создаём ложного ощущения работы.
+    if (verifySignedLicense(data) !== true) return null;
+    return { payload: data.signed.payload, sig: data.signed.sig };
+  } catch { return null; }
+}
+
+/**
+ * Добавляет пропуск в тело расчётного запроса.
+ * Используется всеми расчётами: воздух, взрывы, вода, маршруты ВГСЧ.
+ */
+export function withLicense<T>(body: T): T & { _lic?: unknown } {
+  const lic = licenseTicket();
+  if (!lic) return body as T & { _lic?: unknown };
+  return { ...(body as object), _lic: lic } as T & { _lic?: unknown };
+}
+
+/**
  * Проверяет ответ сервера сразу при получении. Возвращает true, если ответу
  * можно доверять (подпись валидна) ИЛИ подписи в ответе нет (старый сервер /
  * ключ не задан — работаем как раньше, по TLS-доверию). false — только если

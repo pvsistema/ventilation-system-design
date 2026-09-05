@@ -12,6 +12,7 @@ method = "mkr"   — МКР (метод контурных расходов), т
 """
 import json, math, collections, time
 import numpy as np  # noqa
+from license_guard import license_gate
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -96,6 +97,12 @@ def handler(event: dict, context) -> dict:
             "err=", repr(ex),
         )
         return err(400, "Ошибка парсинга JSON")
+
+    # Расчёт — только по действительной лицензии (см. license_guard).
+    # Проверяем ПОСЛЕ распаковки: пропуск лежит внутри сжатого тела.
+    denied = license_gate(body, CORS)
+    if denied:
+        return denied
 
     nodes_in          = body.get("nodes", [])
     branches_in       = body.get("branches", [])

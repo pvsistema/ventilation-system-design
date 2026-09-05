@@ -15,6 +15,7 @@ import {
   type ExplosionResult, type ExplosionMethod, type ExplosionSourceType,
 } from "@/lib/explosionCalculator";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
+import { withLicense } from "@/lib/license";
 
 export interface ExplosionRunParams {
   branches: TopoBranch[];
@@ -79,7 +80,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     const respAll = await fetch(explosionUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ items: expPayload }),
+      body: JSON.stringify(withLicense({ items: expPayload })),
     });
     const dataAll = await respAll.json();
     const arr = Array.isArray(dataAll?.results) ? dataAll.results : [];

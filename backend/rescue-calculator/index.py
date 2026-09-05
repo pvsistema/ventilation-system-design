@@ -19,6 +19,7 @@ POST: {
 }
 """
 import json, math, heapq
+from license_guard import license_gate
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -391,6 +392,12 @@ def handler(event: dict, context) -> dict:
         return {"statusCode": 200, "headers": CORS, "body": ""}
 
     body = json.loads(event.get("body") or "{}")
+
+    # Расчёт — только по действительной лицензии (см. license_guard).
+    denied = license_gate(body, CORS)
+    if denied:
+        return denied
+
     nodes          = body.get("nodes", [])
     branches       = body.get("branches", [])
     start_node_id  = body.get("startNodeId", "")

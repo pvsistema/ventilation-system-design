@@ -7,6 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { API_URLS } from "@/lib/api-urls";
 import { postCompute } from "@/lib/computeServer";
+import { withLicense } from "@/lib/license";
 
 export const AIRFLOW_URL      = API_URLS.airflow;
 export const EXPLOSION_URL    = API_URLS.explosionCalculator;
@@ -63,6 +64,8 @@ export function wasAirflowCached(body: unknown): boolean {
 // чистый текст, который ни один прокси не трогает. Бэкенд первым делом
 // распознаёт конверт и распаковывает.
 export async function postAirflow(body: unknown): Promise<Response> {
+  // Ключ памяти расчётов — по ИСХОДНЫМ данным, без пропуска. Иначе обновление
+  // лицензии меняло бы ключ и заставляло пересчитывать то же самое заново.
   const json = JSON.stringify(body);
 
   // Точно такой же запрос уже считался — отдаём сохранённый ответ.
@@ -75,12 +78,15 @@ export async function postAirflow(body: unknown): Promise<Response> {
     });
   }
 
+  // Пропуск на расчёт: сервер считает только по действительной лицензии.
+  const jsonWithLic = JSON.stringify(withLicense(body as object));
+
   const canGzip = typeof (globalThis as { CompressionStream?: unknown }).CompressionStream !== "undefined";
   // Готовим финальное тело запроса (со сжатием для крупных схем > 512 КБ).
-  let payload = json;
-  if (canGzip && json.length > 512_000) {
+  let payload = jsonWithLic;
+  if (canGzip && jsonWithLic.length > 512_000) {
     try {
-      const stream = new Response(json).body!.pipeThrough(
+      const stream = new Response(jsonWithLic).body!.pipeThrough(
         new CompressionStream("gzip"),
       );
       const gzBuf = await new Response(stream).arrayBuffer();
@@ -93,7 +99,8 @@ export async function postAirflow(body: unknown): Promise<Response> {
       }
       payload = JSON.stringify({ __gzip__: btoa(bin) });
     } catch {
-      payload = json;
+      // Сжать не удалось — шлём несжатое, но обязательно С ПРОПУСКОМ.
+      payload = jsonWithLic;
     }
   }
   // Отправка на активный расчётный сервер с аварийным failover на резерв
