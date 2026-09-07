@@ -110,10 +110,18 @@ def main():
         svg = {"svg": "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'></svg>",
                "width_mm": 100, "height_mm": 100}
 
+        # Проверяем ВСЕ расчётные модули, которые грузятся из backend_functions.
+        # Раньше в списке были только airflow и aerodynamics — и поломка молча
+        # доезжала до пользователя: aerodynamics вызывается встроенным модулем
+        # в обход загрузчика, поэтому не ловит его ошибки вовсе, а расчёты
+        # пожара, взрыва, горноспасателей и водопровода не проверялись совсем.
         checks = [
             ("GET  /", lambda: get("/")),
             ("POST /api/airflow", lambda: post("/api/airflow", net)),
             ("POST /api/aerodynamics", lambda: post("/api/aerodynamics", net)),
+            ("POST /api/water-hydraulics", lambda: post("/api/water-hydraulics", net)),
+            ("POST /api/rescue-calculator", lambda: post("/api/rescue-calculator", net)),
+            ("POST /api/explosion-calculator", lambda: post("/api/explosion-calculator", net)),
             ("POST /api/svg-to-pdf", lambda: post("/api/svg-to-pdf", svg)),
         ]
 

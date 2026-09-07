@@ -202,6 +202,16 @@ def _load_backend_handler(name: str):
         _HANDLER_CACHE[name] = None
         return None
 
+    # Папка модуля должна быть в путях импорта: index.py делает
+    # `from license_guard import license_gate`, а license_guard.py лежит РЯДОМ,
+    # а не в общих библиотеках. При обычном запуске из исходников это работало
+    # случайно (интерпретатор искал по текущей папке), но в собранном server.exe
+    # модуль грузится по абсолютному пути — и соседний файл переставал
+    # находиться. Расчёт падал с 500, а сборка — на дымовом тесте.
+    mod_dir = os.path.dirname(path)
+    if mod_dir not in sys.path:
+        sys.path.insert(0, mod_dir)
+
     # Для .pyc нужен SourcelessFileLoader (иначе spec может не подобрать loader).
     if path.endswith(".pyc"):
         from importlib.machinery import SourcelessFileLoader
