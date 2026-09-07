@@ -419,8 +419,19 @@ export function computeObjSF(
   fixedObjectScale: boolean | undefined,
   scaleLimits: { branchMin: number; branchMax: number } | undefined,
 ): number {
-  if (printMode) return 1;
   const raw = sc / ((xyScale ?? 1) * 0.4);
+  if (printMode) {
+    // В печати/предпросмотре печати НЕЛЬЗЯ игнорировать режим масштабирования:
+    // раньше здесь безусловно возвращалась 1, из-за чего лист всегда выглядел
+    // так, будто включена галочка «Масштаб» (пределы масштабов), даже когда она
+    // выключена — и предпросмотр расходился с экспортом в PNG/SVG.
+    // Теперь логика та же, что в svgExporter.generateSvg:
+    //   fixedObjectScale=true  → объекты фиксированного размера (1);
+    //   fixedObjectScale=false → объекты масштабируются вместе со схемой,
+    //                            с ограничением 0.25…8, чтобы не выродиться
+    //                            в субпиксели и не вырасти в исполинов.
+    return fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, raw));
+  }
   return fixedObjectScale && scaleLimits
     ? Math.min(scaleLimits.branchMax / 100, Math.max(scaleLimits.branchMin / 100, raw))
     : Math.max(raw, 0.25);
@@ -1764,10 +1775,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           }
         }
         if (nlines.length > 0) {
-          // Размер текста масштабируется как objSF, но с отдельными пределами textMin/Max
-          const rawTextSF = printMode ? 1 : sc / (_xyScaleCR * 0.4);
+          // Размер текста масштабируется как objSF, но с отдельными пределами textMin/Max.
+          // В печати — так же, как objSF: при выключенном фиксированном масштабе
+          // подписи растут вместе со схемой (иначе лист расходился бы с экспортом).
+          const rawTextSF = sc / (_xyScaleCR * 0.4);
           const textSF = printMode
-            ? 1
+            ? (fixedObjectScale ? 1 : Math.min(8, Math.max(0.25, rawTextSF)))
             : fixedObjectScale && _sl
               ? Math.min(_sl.textMax / 100, Math.max(_sl.textMin / 100, rawTextSF))
               : Math.max(rawTextSF, 0.25);
