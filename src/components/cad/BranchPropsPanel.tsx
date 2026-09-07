@@ -1,4 +1,5 @@
 import { useState } from "react";
+import Icon from "@/components/ui/icon";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
@@ -23,6 +24,12 @@ interface BranchPropsPanelProps {
   /** Доля, с которой струя считается загрязнённой. */
   pollutionThreshold?: number;
   onUpdate: (patch: Partial<TopoBranch>) => void;
+  /**
+   * Сколько выработок выделено (Ctrl-клик). Больше одной — общие
+   * характеристики (сечение, крепь, тип, горизонт, примечание) применяются
+   * сразу ко всем, поэтому об этом честно предупреждаем в шапке панели.
+   */
+  selectedCount?: number;
   defaultInnerTab?: InnerTab;
   /** Активная вкладка из вертикального меню (topology/fan/waterpipes/conveyor) */
   activeTab?: string;
@@ -101,7 +108,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, onUpdate, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -149,6 +156,24 @@ export default function BranchPropsPanel({ branch, onUpdate, pollutionFraction =
 
   return (
     <div className="flex flex-col h-full" style={{ fontSize: 11 }}>
+
+      {/* Выделено несколько выработок — предупреждаем ДО правки, что общие
+          характеристики уйдут на все, а длина/угол/оборудование останутся у
+          текущей. Иначе человек либо боится трогать поля, либо считает, что
+          изменил все, а изменил одну. */}
+      {selectedCount > 1 && (
+        <div className="flex items-start gap-1.5 px-2 py-1.5 border-b"
+          style={{ background: "var(--c-tint-blue, #eff6ff)",
+                   borderColor: "var(--c-blue-lt, #bfdbfe)",
+                   color: "var(--c-blue, #1d4ed8)" }}>
+          <Icon name="Layers" size={12} className="shrink-0 mt-[1px]" />
+          <div className="text-[10px] leading-snug">
+            <b>Выбрано выработок: {selectedCount}.</b> Сечение, крепь, тип,
+            горизонт и примечание изменятся у всех. Длина, угол и оборудование —
+            только у текущей.
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto">
 

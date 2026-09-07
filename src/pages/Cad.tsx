@@ -2173,6 +2173,45 @@ export default function CadPage() {
     setIsDirty(true);
   };
 
+  /**
+   * Поля, которые ОСМЫСЛЕННО задавать сразу нескольким выработкам.
+   *
+   * Это характеристики, общие для группы: сечение и его форма, крепь и
+   * шероховатость, режим расчёта сопротивления, тип выработки, горизонт,
+   * примечание, признаки утечки и тупика.
+   *
+   * Всё остальное — за пределами списка и правится ПОШТУЧНО, и это намеренно:
+   *   • длина, угол, координаты — у каждой выработки свои; общая правка молча
+   *     исказила бы сеть, а ошибку заметили бы только на расчёте;
+   *   • вентилятор (напор, характеристика, реверс, останов) — оборудование
+   *     стоит в конкретной выработке, размножать его по десятку ветвей нельзя;
+   *   • подписи на схеме (угол, размер), показатели, перемычка, трубы —
+   *     оформление и оснащение отдельного места.
+   */
+  const BULK_EDITABLE_BRANCH_FIELDS = new Set<keyof TopoBranch>([
+    "shape", "diameter", "rectWidth", "rectHeight", "trapTopWidth", "archHeight",
+    "area", "perimeter", "manualSection",
+    "resistanceMode", "alphaCoef", "surfaceId", "surface", "roughness",
+    "manualR", "localXi", "vMax",
+    "type", "mineTypeName", "horizonId", "comment",
+    "isLeakage", "leakageCoeff", "isDead",
+  ]);
+
+  /**
+   * Правка из панели свойств ветви.
+   *
+   * Общие характеристики уходят на ВСЕ выбранные выработки (Ctrl-выделение),
+   * а индивидуальные — только на текущую. Без этого разделения человек либо
+   * правит по одной сотню ветвей вручную, либо случайно затирает у них длины.
+   */
+  const updateBranchFromPanel = (patch: Partial<TopoBranch>) => {
+    if (!selectedBranchId) return;
+    const keys = Object.keys(patch) as (keyof TopoBranch)[];
+    const bulk = keys.every((k) => BULK_EDITABLE_BRANCH_FIELDS.has(k));
+    if (bulk && branchEditCount > 1) { updateSelectedBranches(patch); return; }
+    updateBranch(selectedBranchId, patch);
+  };
+
   // ─── Применение типа выработки к выбранным ветвям ────────────────────
   // Тип из справочника «Типы выработок» задаёт характеристики сечения и
   // аэродинамики: форму, поверхность/крепь, площадь, максимальную скорость
@@ -8786,7 +8825,11 @@ export default function CadPage() {
                 horizons={horizons}
                 pollutionFraction={pollutionFractions.get(selectedBranch.id) ?? 0}
                 pollutionThreshold={pollutionThreshold}
-                onUpdate={(patch) => updateBranch(selectedBranch.id, patch)}
+                // Общие характеристики (сечение, крепь, тип, горизонт,
+                // примечание) уходят на ВСЕ выбранные выработки; длина, угол и
+                // оборудование остаются поштучными. См. updateBranchFromPanel.
+                onUpdate={updateBranchFromPanel}
+                selectedCount={branchEditCount}
                 activeTab={activeSide}
                 defaultInnerTab={fanSymbolBranchId === selectedBranch.id ? "Вентилятор" : undefined}
                 onRemoveFan={selectedBranch.hasFan ? () => {
@@ -9945,12 +9988,21 @@ export default function CadPage() {
                   <FrameGroup title="Примечание">
                     <textarea
                       value={selectedBranch.comment ?? ""}
-                      onChange={(e) => updateBranch(selectedBranch.id, { comment: e.target.value })}
+                      // Примечание — общая пометка (например «ремонт до 15.10»),
+                      // её обычно ставят сразу группе выработок.
+                      onChange={(e) => updateSelectedBranches({ comment: e.target.value })}
                       rows={4}
                       placeholder="Произвольный текст..."
                       className="w-full text-[11px] px-1"
                       style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", resize: "vertical", background: "white", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
                     />
+                    {branchEditCount > 1 && (
+                      <div className="flex items-center gap-1 mt-1 text-[10px]"
+                        style={{ color: "var(--c-blue, #1d4ed8)" }}>
+                        <Icon name="Layers" size={10} />
+                        Запишется сразу в {branchEditCount} выбранных выработок
+                      </div>
+                    )}
                   </FrameGroup>
                 )}
               </div>
