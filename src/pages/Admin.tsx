@@ -39,6 +39,13 @@ export default function Admin() {
   const [loading, setLoading]           = useState(false);
   const [seats, setSeats]               = useState<Seat[] | null>(null);
   const [seatsForId, setSeatsForId]     = useState<number | null>(null);
+  // Когда данные о лицензиях последний раз пришли с сервера. Нужно, чтобы
+  // администратор видел возраст цифр перед глазами: решения об освобождении
+  // мест принимаются именно по этой таблице.
+  const [licSyncAt, setLicSyncAt]       = useState<number | null>(null);
+  // Тикающие часы — чтобы подпись «обновлено N сек назад» старела сама.
+  // Без этого надпись замерла бы на «только что» до следующего обновления.
+  const [nowTick, setNowTick]           = useState(Date.now());
 
   // Создание
   const [showCreate, setShowCreate]     = useState(false);
@@ -121,6 +128,7 @@ export default function Admin() {
     try {
       const data = await adminApi(pwd, { action: "list_licenses" });
       setLicenses(data.licenses);
+      setLicSyncAt(Date.now());
       setAuthed(true);
     } catch (e: unknown) {
       setAuthErr(e instanceof Error ? e.message : "Ошибка");
@@ -321,6 +329,7 @@ export default function Admin() {
     try {
       const data = await adminApi(pwd, { action: "list_licenses" });
       setLicenses(data.licenses);
+      setLicSyncAt(Date.now());
       // Если у лицензии раскрыт список рабочих мест — освежаем и его: иначе
       // счётчик показывал бы новое число, а список под ним — прежние машины.
       if (openSeatsFor) {
@@ -355,6 +364,41 @@ export default function Admin() {
       document.removeEventListener("visibilitychange", tick);
     };
   }, [authed, activeTab, password, seatsForId, refreshLicensesQuiet]);
+
+  /**
+   * Часы для подписи «обновлено N назад» — тикают раз в 5 секунд.
+   *
+   * Считать возраст только в момент загрузки данных нельзя: надпись застыла бы
+   * на «только что» и вводила бы в заблуждение ровно в том случае, ради
+   * которого её и добавляли — когда связь пропала и цифры устарели.
+   */
+  useEffect(() => {
+    if (!authed || activeTab !== "licenses") return;
+    const id = setInterval(() => setNowTick(Date.now()), 5000);
+    return () => clearInterval(id);
+  }, [authed, activeTab]);
+
+  /** Человеческая подпись возраста данных: «только что», «2 мин назад». */
+  const licSyncLabel = useMemo(() => {
+    if (!licSyncAt) return "";
+    const sec = Math.max(0, Math.round((nowTick - licSyncAt) / 1000));
+    if (sec < 10) return "только что";
+    if (sec < 60) return `${sec} сек назад`;
+    const min = Math.round(sec / 60);
+    if (min < 60) return `${min} мин назад`;
+    const h = Math.round(min / 60);
+    return `${h} ч назад`;
+  }, [licSyncAt, nowTick]);
+
+  /**
+   * Данные заметно устарели — связи с сервером нет дольше минуты.
+   *
+   * Обновление идёт каждые 20 секунд, поэтому больше минуты молчания означает,
+   * что запросы не проходят. Об этом честно предупреждаем: решение об
+   * освобождении мест по устаревшей таблице — источник как раз тех обращений,
+   * ради которых всё и затевалось.
+   */
+  const licSyncStale = !!licSyncAt && nowTick - licSyncAt > 60000;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -654,9 +698,24 @@ export default function Admin() {
             </button>
           </div>
           {activeTab === "licenses" && <>
+            {/* Возраст данных. Таблица обновляется сама каждые 20 секунд, но
+                увидеть это невозможно — цифры просто меняются. Подпись
+                показывает, насколько свежее то, что перед глазами, и краснеет,
+                если связь пропала и данные устарели. */}
+            {licSyncAt && (
+              <span
+                className="flex items-center gap-1 text-[11px]"
+                style={{ color: licSyncStale ? "var(--c-amber-lt, #fbbf24)" : "#93c5fd" }}
+                title={licSyncStale
+                  ? "Нет связи с сервером — данные могли устареть. Нажмите «Обновить»."
+                  : `Обновляется автоматически каждые 20 секунд. Последний ответ сервера: ${new Date(licSyncAt).toLocaleTimeString("ru-RU")}`}>
+                <Icon name={licSyncStale ? "CloudOff" : "RefreshCw"} size={11} />
+                {licSyncStale ? `нет связи · ${licSyncLabel}` : `обновлено ${licSyncLabel}`}
+              </span>
+            )}
             <button onClick={() => loadLicenses(password)}
               className="flex items-center gap-1.5 text-[12px] text-blue-200 hover:text-white transition-colors">
-              <Icon name="RefreshCw" size={14} />Обновить
+              <Icon name="RefreshCw" size={14} className={loading ? "animate-spin" : ""} />Обновить
             </button>
             <button onClick={() => setShowCreate(true)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold text-white transition-colors"
