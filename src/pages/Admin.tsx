@@ -308,6 +308,54 @@ export default function Admin() {
     localStorage.removeItem("pvs_admin_pwd");
   }, []);
 
+  /**
+   * Тихое обновление списка лицензий — без индикатора загрузки.
+   *
+   * Отдельно от loadLicenses: тот показывает «загрузку» и уместен при входе и
+   * при нажатии «Обновить». Для фонового обновления мигание неприемлемо —
+   * человек в этот момент читает таблицу или ведёт мышь к кнопке.
+   * Ошибки намеренно молчат: пропавшая на минуту связь не должна выкидывать
+   * администратора на экран входа.
+   */
+  const refreshLicensesQuiet = useCallback(async (pwd: string, openSeatsFor?: number | null) => {
+    try {
+      const data = await adminApi(pwd, { action: "list_licenses" });
+      setLicenses(data.licenses);
+      // Если у лицензии раскрыт список рабочих мест — освежаем и его: иначе
+      // счётчик показывал бы новое число, а список под ним — прежние машины.
+      if (openSeatsFor) {
+        const s = await adminApi(pwd, { action: "list_seats", license_id: openSeatsFor });
+        setSeats(s.seats);
+      }
+    } catch { /* нет связи — покажем прежние данные, повторим на следующем круге */ }
+  }, []);
+
+  /**
+   * Пока открыта вкладка «Лицензии», список сам обновляется раз в 20 секунд.
+   *
+   * ЗАЧЕМ. Число занятых мест меняется без участия администратора: люди
+   * активируются и отключаются сами. Раньше таблица показывала снимок на
+   * момент входа — администратор видел «5 из 5», хотя места уже освободились,
+   * и делал вывод, что программа не работает.
+   *
+   * Обновление идёт ТОЛЬКО на своей вкладке и ТОЛЬКО когда окно на экране:
+   * незачем дёргать сервер, пока панель свёрнута.
+   */
+  useEffect(() => {
+    if (!authed || activeTab !== "licenses") return;
+    const tick = () => {
+      if (document.visibilityState === "visible") refreshLicensesQuiet(password, seatsForId);
+    };
+    const id = setInterval(tick, 20000);
+    // Вернулись к свёрнутому окну — показываем свежие данные сразу, не ожидая
+    // следующего круга: именно в этот момент на таблицу и смотрят.
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [authed, activeTab, password, seatsForId, refreshLicensesQuiet]);
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setAuthErr("");
@@ -420,10 +468,19 @@ export default function Admin() {
     setSeatsForId(id);
   };
 
+  /**
+   * Освободить рабочее место.
+   *
+   * После удаления счётчик занятых мест берём С СЕРВЕРА, а не уменьшаем на
+   * единицу «на глазок». Раньше показывалось предполагаемое число: если в этот
+   * же момент кто-то активировался или места освобождали из двух вкладок,
+   * цифра расходилась с действительностью. Человек видел «1 из 5», звонил и
+   * говорил, что места не освобождаются, хотя на сервере всё было верно.
+   */
   const revokeSeat = async (seatId: number) => {
     await adminApi(password, { action: "revoke_seat", seat_id: seatId });
     setSeats(s => s ? s.filter(x => x.id !== seatId) : null);
-    setLicenses(ls => ls.map(l => l.id === seatsForId ? { ...l, used_seats: Math.max(0, l.used_seats - 1) } : l));
+    await loadLicenses(password);
   };
 
   const loadCurrentVersion = async () => {
