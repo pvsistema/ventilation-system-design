@@ -2129,6 +2129,50 @@ export default function CadPage() {
     setSelectedNodeId(null);
   };
 
+  /**
+   * Ветви, к которым относится правка в панели свойств.
+   *
+   * При выборе нескольких ветвей через Ctrl это ВСЕ выбранные, иначе — текущая.
+   * Раньше поля панели правили только последнюю ветвь: человек выделял десяток
+   * выработок, менял горизонт — и привязывалась одна. Остальные молча
+   * оставались на прежнем горизонте, а расхождение обнаруживалось уже при
+   * расчёте.
+   */
+  const branchEditTargets = (): string[] =>
+    selectedBranchIds.size > 1
+      ? [...selectedBranchIds]
+      : selectedBranchId ? [selectedBranchId] : [];
+
+  /** Сколько ветвей затронет правка в панели свойств (для подписи «выбрано N»). */
+  const branchEditCount = selectedBranchIds.size > 1
+    ? selectedBranchIds.size
+    : selectedBranchId ? 1 : 0;
+
+  /**
+   * У выбранных ветвей РАЗНЫЕ горизонты?
+   *
+   * Тогда в списке нельзя показывать горизонт последней нажатой ветви: человек
+   * решил бы, что все выбранные лежат на нём. Показываем «разные горизонты».
+   */
+  const multiHorizonMixed = useMemo(() => {
+    if (selectedBranchIds.size <= 1) return false;
+    const ids = [...selectedBranchIds];
+    const first = branchesRaw.find((b) => b.id === ids[0])?.horizonId ?? "";
+    return ids.some((id) => (branchesRaw.find((b) => b.id === id)?.horizonId ?? "") !== first);
+  }, [selectedBranchIds, branchesRaw]);
+
+  /** Правка поля сразу у всех выбранных ветвей (см. branchEditTargets). */
+  const updateSelectedBranches = (patch: Partial<TopoBranch>) => {
+    const targets = branchEditTargets();
+    if (targets.length === 0) return;
+    if (targets.length === 1) { updateBranch(targets[0], patch); return; }
+    pushHistory();
+    setBranches((prev) =>
+      prev.map((b) => (targets.includes(b.id) ? { ...b, ...patch } : b)),
+    );
+    setIsDirty(true);
+  };
+
   // ─── Применение типа выработки к выбранным ветвям ────────────────────
   // Тип из справочника «Типы выработок» задаёт характеристики сечения и
   // аэродинамики: форму, поверхность/крепь, площадь, максимальную скорость
@@ -9650,9 +9694,18 @@ export default function CadPage() {
                   <LabeledRow label="Горизонт:" labelWidth={88}>
                     {selectedBranch ? (
                       <select
-                        value={selectedBranch.horizonId}
-                        onChange={(e) => updateBranch(selectedBranch.id, { horizonId: e.target.value })}
+                        // Выбрано несколько ветвей с РАЗНЫМИ горизонтами —
+                        // показываем «разные», а не горизонт последней нажатой:
+                        // иначе список врал бы про остальные выбранные ветви.
+                        value={multiHorizonMixed ? "__mixed__" : selectedBranch.horizonId}
+                        // Привязка применяется ко ВСЕМ выбранным ветвям: при
+                        // Ctrl-выделении человек ждёт, что горизонт сменится у
+                        // всех, а не только у последней нажатой.
+                        onChange={(e) => updateSelectedBranches({ horizonId: e.target.value })}
                         className="cad-input flex-1">
+                        {multiHorizonMixed && (
+                          <option value="__mixed__" disabled>— разные горизонты —</option>
+                        )}
                         <option value="">— без привязки —</option>
                         {horizons.map((h) => (
                           <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
@@ -9670,6 +9723,16 @@ export default function CadPage() {
                       </select>
                     )}
                   </LabeledRow>
+                  {/* Сколько выработок затронет смена горизонта. Без этой
+                      подписи при Ctrl-выделении не видно, что правка уйдёт
+                      сразу на все выбранные ветви. */}
+                  {selectedBranch && branchEditCount > 1 && (
+                    <div className="flex items-center gap-1 pl-[88px] -mt-0.5 mb-1 text-[10px]"
+                      style={{ color: "var(--c-blue, #1d4ed8)" }}>
+                      <Icon name="Layers" size={10} />
+                      Применится сразу к {branchEditCount} выбранным выработкам
+                    </div>
+                  )}
 
                   <div className="pt-1 space-y-0.5">
                     <CadCheckbox
