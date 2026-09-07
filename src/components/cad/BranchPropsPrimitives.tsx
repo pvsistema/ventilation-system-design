@@ -11,9 +11,6 @@ export const BRANCH_TYPES = [
   "Уклон", "Очистной", "Сбойка", "Камера", "Конвейер", "Вент. канал",
 ];
 
-export const PLAST_OPTIONS = ["— не задан —", "Пласт 1", "Пласт 2", "Пласт 3", "Пласт 4"];
-export const PLA_OPTIONS = ["— нет —", "ПЛА-1", "ПЛА-2", "ПЛА-3"];
-export const POLE_OPTIONS = ["— нет —", "Северное", "Южное", "Западное"];
 
 export function numFmt(v: number, d = 2): string {
   if (isNaN(v) || v === undefined) return "—";
