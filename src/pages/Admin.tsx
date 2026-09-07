@@ -43,6 +43,9 @@ export default function Admin() {
   // администратор видел возраст цифр перед глазами: решения об освобождении
   // мест принимаются именно по этой таблице.
   const [licSyncAt, setLicSyncAt]       = useState<number | null>(null);
+  // То же для мониторинга: там данные стареют быстрее — вкладка показывает,
+  // кто на связи прямо сейчас.
+  const [monSyncAt, setMonSyncAt]       = useState<number | null>(null);
   // Тикающие часы — чтобы подпись «обновлено N сек назад» старела сама.
   // Без этого надпись замерла бы на «только что» до следующего обновления.
   const [nowTick, setNowTick]           = useState(Date.now());
@@ -142,13 +145,46 @@ export default function Admin() {
     try {
       const data = await adminApi(pwd, { action: "monitoring_overview" });
       setMonitoring(data);
+      setMonSyncAt(Date.now());
     } catch { /* ignore */ }
     finally { setMonLoading(false); }
+  }, []);
+
+  /** Тихое обновление мониторинга — без индикатора загрузки (см. refreshLicensesQuiet). */
+  const refreshMonitoringQuiet = useCallback(async (pwd: string) => {
+    try {
+      const data = await adminApi(pwd, { action: "monitoring_overview" });
+      setMonitoring(data);
+      setMonSyncAt(Date.now());
+    } catch { /* нет связи — оставим прежние данные, подпись покажет их возраст */ }
   }, []);
 
   useEffect(() => {
     if (activeTab === "monitoring" && authed) loadMonitoring(password);
   }, [activeTab, authed, password, loadMonitoring]);
+
+  /**
+   * Мониторинг обновляется сам раз в 30 секунд, пока открыт.
+   *
+   * Здесь свежесть важнее, чем в лицензиях: вкладка показывает, кто СЕЙЧАС на
+   * связи. Список работающих машин, снятый десять минут назад, — это уже не
+   * мониторинг, а история, но выглядит он точно так же.
+   *
+   * Реже, чем лицензии (30 секунд против 20): сводка тяжелее — сервер считает
+   * онлайн-сессии, нарушения, версии и модули по всем лицензиям сразу.
+   */
+  useEffect(() => {
+    if (!authed || activeTab !== "monitoring") return;
+    const tick = () => {
+      if (document.visibilityState === "visible") refreshMonitoringQuiet(password);
+    };
+    const id = setInterval(tick, 30000);
+    document.addEventListener("visibilitychange", tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener("visibilitychange", tick);
+    };
+  }, [authed, activeTab, password, refreshMonitoringQuiet]);
 
   const loadServerCfg = useCallback(async (pwd: string) => {
     setSrvCfgLoading(true);
@@ -373,32 +409,42 @@ export default function Admin() {
    * которого её и добавляли — когда связь пропала и цифры устарели.
    */
   useEffect(() => {
-    if (!authed || activeTab !== "licenses") return;
+    if (!authed || (activeTab !== "licenses" && activeTab !== "monitoring")) return;
     const id = setInterval(() => setNowTick(Date.now()), 5000);
     return () => clearInterval(id);
   }, [authed, activeTab]);
 
-  /** Человеческая подпись возраста данных: «только что», «2 мин назад». */
-  const licSyncLabel = useMemo(() => {
-    if (!licSyncAt) return "";
-    const sec = Math.max(0, Math.round((nowTick - licSyncAt) / 1000));
-    if (sec < 10) return "только что";
-    if (sec < 60) return `${sec} сек назад`;
-    const min = Math.round(sec / 60);
-    if (min < 60) return `${min} мин назад`;
-    const h = Math.round(min / 60);
-    return `${h} ч назад`;
-  }, [licSyncAt, nowTick]);
-
   /**
-   * Данные заметно устарели — связи с сервером нет дольше минуты.
+   * Возраст данных одной вкладки: подпись и признак «устарело».
    *
-   * Обновление идёт каждые 20 секунд, поэтому больше минуты молчания означает,
-   * что запросы не проходят. Об этом честно предупреждаем: решение об
-   * освобождении мест по устаревшей таблице — источник как раз тех обращений,
-   * ради которых всё и затевалось.
+   * Общая для «Лицензий» и «Мониторинга» — правило свежести должно быть одним,
+   * иначе две вкладки начнут по-разному считать одно и то же и разойдутся при
+   * первой же правке.
+   *
+   * staleAfterMs — сколько молчания сервера считать потерей связи. У каждой
+   * вкладки свой порог: он привязан к тому, как часто она обновляется.
    */
-  const licSyncStale = !!licSyncAt && nowTick - licSyncAt > 60000;
+  const syncInfo = useCallback((at: number | null, staleAfterMs: number) => {
+    if (!at) return { label: "", stale: false };
+    const sec = Math.max(0, Math.round((nowTick - at) / 1000));
+    const label =
+      sec < 10 ? "только что"
+      : sec < 60 ? `${sec} сек назад`
+      : (() => {
+          const min = Math.round(sec / 60);
+          return min < 60 ? `${min} мин назад` : `${Math.round(min / 60)} ч назад`;
+        })();
+    return { label, stale: nowTick - at > staleAfterMs };
+  }, [nowTick]);
+
+  // Лицензии обновляются раз в 20 секунд — больше минуты молчания значит, что связи нет.
+  const licSync = useMemo(() => syncInfo(licSyncAt, 60000), [syncInfo, licSyncAt]);
+  const licSyncLabel = licSync.label;
+  const licSyncStale = licSync.stale;
+
+  // Мониторинг обновляется раз в 30 секунд — порог потери связи 90 секунд
+  // (три пропущенных круга), чтобы одна неудачная попытка не пугала зря.
+  const monSync = useMemo(() => syncInfo(monSyncAt, 90000), [syncInfo, monSyncAt]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -723,12 +769,26 @@ export default function Admin() {
               <Icon name="Plus" size={14} />Создать ключ
             </button>
           </>}
-          {activeTab === "monitoring" && (
+          {activeTab === "monitoring" && <>
+            {/* Возраст сводки. На этой вкладке свежесть критична: она отвечает
+                на вопрос «кто на связи сейчас», а несвежий список выглядит
+                точно так же, как актуальный. */}
+            {monSyncAt && (
+              <span
+                className="flex items-center gap-1 text-[11px]"
+                style={{ color: monSync.stale ? "var(--c-amber-lt, #fbbf24)" : "#93c5fd" }}
+                title={monSync.stale
+                  ? "Нет связи с сервером — данные об онлайн-сессиях устарели. Нажмите «Обновить»."
+                  : `Обновляется автоматически каждые 30 секунд. Последний ответ сервера: ${new Date(monSyncAt).toLocaleTimeString("ru-RU")}`}>
+                <Icon name={monSync.stale ? "CloudOff" : "RefreshCw"} size={11} />
+                {monSync.stale ? `нет связи · ${monSync.label}` : `обновлено ${monSync.label}`}
+              </span>
+            )}
             <button onClick={() => loadMonitoring(password)}
               className="flex items-center gap-1.5 text-[12px] text-blue-200 hover:text-white transition-colors">
               <Icon name="RefreshCw" size={14} className={monLoading ? "animate-spin" : ""} />Обновить
             </button>
-          )}
+          </>}
           <a href="/"
             className="flex items-center gap-1.5 text-[12px] text-blue-300 hover:text-white transition-colors">
             <Icon name="ArrowLeft" size={14} />В приложение
