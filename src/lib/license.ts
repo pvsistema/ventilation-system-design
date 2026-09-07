@@ -754,10 +754,14 @@ export function checkOfflineEmergency(): LicenseInfo | null {
  * Вызывается фоном при запуске и ничего не задерживает.
  */
 export async function recheckOfflineKey(fingerprint: string,
-                                        machineInfo?: MachineInfo): Promise<LicenseInfo | null> {
+                                        machineInfo?: MachineInfo,
+                                        force = false): Promise<LicenseInfo | null> {
   const loaded = loadOfflineKey();
   if (!loaded?.info.valid) return null;
-  if (!isOfflineRecheckDue()) return null;
+  // force — человек сам нажал «Проверить снова». Тогда расписание игнорируем:
+  // кнопку нажимают именно потому, что на стороне правообладателя что-то
+  // изменилось прямо сейчас, и ждать очередной сверки бессмысленно.
+  if (!force && !isOfflineRecheckDue()) return null;
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);

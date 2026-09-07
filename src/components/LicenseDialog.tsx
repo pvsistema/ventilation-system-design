@@ -14,6 +14,23 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
   const [loading, setLoading] = useState(false);
   const [err, setErr]         = useState<string | null>(null);
   const [done, setDone]       = useState(false);
+  // Повторная проверка: "idle" → "run" → "fail" (успех виден по самой лицензии).
+  const [recheckState, setRecheckState] = useState<"idle" | "run" | "fail">("idle");
+
+  /**
+   * «Проверить снова» — спросить сервер прямо сейчас.
+   *
+   * ЗАЧЕМ. Программа обращается к серверу при запуске, а дальше по расписанию.
+   * Поэтому после решения правообладателя (освободили рабочее место, вернули
+   * ключ, продлили срок) человек продолжал видеть прежний отказ и должен был
+   * сам догадаться перезапустить программу.
+   */
+  const handleRecheck = async () => {
+    setRecheckState("run");
+    setErr(null);
+    const ok = await license.recheck();
+    setRecheckState(ok ? "idle" : "fail");
+  };
 
   // Аварийный оффлайн-ключ начинается с "PVSO." — его НЕ форматируем
   // (регистр и символы -._ значимы для подписи).
@@ -324,6 +341,46 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                   </span>
                 ) : isEmergencyInput ? "Включить аварийный режим" : "Активировать лицензию"}
               </button>
+
+              {/* ПОВТОРНАЯ ПРОВЕРКА.
+                  Нужна, когда правообладатель только что освободил рабочее
+                  место, вернул ключ или продлил срок. Без этой кнопки человек
+                  видел прежний отказ и должен был догадаться перезапустить
+                  программу — люди звонили в поддержку, считая, что ничего не
+                  изменилось. */}
+              <div className="mt-3 pt-3 border-t border-gray-100">
+                <div className="text-[11px] text-gray-500 mb-2">
+                  Ключ уже вводили, а место освободили или лицензию продлили?
+                  Проверьте заново — вводить ключ повторно не нужно.
+                </div>
+                <button
+                  onClick={handleRecheck}
+                  disabled={recheckState === "run" || loading}
+                  className="w-full py-2 rounded-lg text-[12px] font-semibold border transition-colors disabled:opacity-40
+                             border-gray-300 text-gray-700 hover:bg-gray-50">
+                  {recheckState === "run" ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <Icon name="Loader2" size={13} className="animate-spin" />
+                      Спрашиваем сервер…
+                    </span>
+                  ) : (
+                    <span className="flex items-center justify-center gap-2">
+                      <Icon name="RefreshCw" size={13} />
+                      Проверить снова
+                    </span>
+                  )}
+                </button>
+                {recheckState === "fail" && (
+                  <div className="mt-2 text-[11px] text-amber-700 flex gap-1.5">
+                    <Icon name="Info" size={12} className="shrink-0 mt-[1px]" />
+                    <span>
+                      {license.error
+                        ?? "Сервер пока не подтверждает лицензию. Если место "
+                         + "только что освободили, попробуйте через минуту."}
+                    </span>
+                  </div>
+                )}
+              </div>
 
               {workplaceRow}
               <div className="mt-1 text-[10px] text-gray-400">

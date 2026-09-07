@@ -24,6 +24,18 @@ export interface UseLicenseReturn {
   machineInfo: MachineInfo | null;
   activate: (key: string) => Promise<void>;
   deactivate: () => void;
+  /**
+   * Спросить сервер заново, прямо сейчас.
+   *
+   * ЗАЧЕМ. Программа обращается к серверу при запуске, а потом по расписанию.
+   * Из-за этого после решения правообладателя (освободили рабочее место, вернули
+   * отозванный ключ, продлили срок) человек продолжал видеть старый отказ и
+   * должен был догадаться перезапустить программу. Люди звонили в поддержку,
+   * считая, что ничего не изменилось.
+   *
+   * Возвращает true, если лицензия поднялась.
+   */
+  recheck: () => Promise<boolean>;
   error: string | null;
 }
 
@@ -275,5 +287,58 @@ export function useLicense(): UseLicenseReturn {
     setStatus("demo");
   }, []);
 
-  return { status, info, fingerprint, machineInfo, activate, deactivate, error };
+  /**
+   * Повторная проверка по нажатию кнопки «Проверить снова».
+   *
+   * Идёт к серверу НАПРЯМУЮ, минуя расписание проверок и сохранённый отказ:
+   * человек нажимает кнопку именно потому, что на стороне правообладателя
+   * что-то изменилось прямо сейчас.
+   */
+  const recheck = useCallback(async (): Promise<boolean> => {
+    setError(null);
+    const mi = machineInfoRef.current ?? await getMachineInfo();
+
+    // Сохранённый аварийный ключ проверяем своим путём: у него отдельная
+    // сверка с сервером (отзыв ключа, отключение места).
+    try {
+      const emergencyVerdict = await recheckOfflineKey(mi.fingerprint, mi, true);
+      if (emergencyVerdict && !emergencyVerdict.licensed) {
+        setInfo(emergencyVerdict);
+        setStatus("demo");
+        return false;
+      }
+    } catch { /* нет связи — пробуем обычную проверку ниже */ }
+
+    try {
+      const res = await checkLicense(mi.fingerprint, mi);
+      if (res.licensed) {
+        setInfo(res);
+        setStatus("licensed");
+        // Часы подтверждены сервером — отметку можно двинуть вперёд.
+        noteTimeMark();
+        return true;
+      }
+      // Сервер по-прежнему не подтверждает лицензию. Показываем причину,
+      // но НЕ стираем сохранённый аварийный ключ: он мог просто не дойти
+      // до сервера из-за связи.
+      const emergency = checkOfflineEmergency();
+      if (emergency?.licensed) {
+        setInfo(emergency);
+        setStatus("licensed");
+        return true;
+      }
+      setInfo(res);
+      setStatus(res.offlineExpired ? "offline_expired"
+        : res.clockRollback ? "clock_rollback" : "demo");
+      return false;
+    } catch (e: unknown) {
+      // Связи нет — это не повод отбирать уже работающую лицензию.
+      setError(e instanceof Error && /fetch|network|abort/i.test(e.message)
+        ? "Нет связи с сервером. Проверьте подключение к интернету."
+        : "Не удалось проверить лицензию. Попробуйте ещё раз.");
+      return false;
+    }
+  }, []);
+
+  return { status, info, fingerprint, machineInfo, activate, deactivate, recheck, error };
 }
