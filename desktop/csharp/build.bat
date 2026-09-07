@@ -47,21 +47,31 @@ REM published server.exe over the freshly built one. With a local number lower
 REM than (or equal to) the published one the app silently runs the OLD core, so
 REM the build you just made never actually starts - it looks like "the build is
 REM broken" while the real cause is a version mismatch. Compare numerically
-REM (1.0.6 < 1.0.51), not as text.
-for /f "usebackq tokens=* delims=" %%p in (`powershell -NoProfile -Command "try{$r=Invoke-RestMethod -TimeoutSec 15 -Uri 'https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16'; if($r.server_version){Write-Output $r.server_version}else{Write-Output ''}}catch{Write-Output ''}"`) do set "PUBLISHED_VERSION=%%p"
-if not "%PUBLISHED_VERSION%"=="" (
-    echo     Core version published in cloud: %PUBLISHED_VERSION%
-    for /f "usebackq tokens=* delims=" %%c in (`powershell -NoProfile -Command "try{if([version]'%SERVER_VERSION%' -gt [version]'%PUBLISHED_VERSION%'){'OK'}else{'LOW'}}catch{'OK'}"`) do set "VER_CMP=%%c"
-    if /i "!VER_CMP!"=="LOW" (
-        echo.
-        echo ERROR: SERVER_VERSION ^(%SERVER_VERSION%^) is NOT greater than the published one ^(%PUBLISHED_VERSION%^).
-        echo        On startup the app would download the published core over this build,
-        echo        run the OLD core and look broken.
-        echo        Fix: write a number greater than %PUBLISHED_VERSION% into desktop\SERVER_VERSION
-        echo        and run the build again.
-        goto :fail
+REM (1.0.6 is LOWER than 1.0.51), not as text.
+REM
+REM NOTE: the PowerShell one-liners are kept in a separate .ps1 file on purpose.
+REM Inline PowerShell inside a .bat needs every > < ^ & | escaped; a single
+REM unescaped ">" is read by cmd as output redirection and kills the whole
+REM script instantly - the console window just blinks and closes.
+set "VERCHECK_PS=%CS_DIR%\check_core_version.ps1"
+set "VER_CMP="
+if exist "%VERCHECK_PS%" (
+    for /f "usebackq tokens=1,2 delims=|" %%a in (`powershell -NoProfile -ExecutionPolicy Bypass -File "%VERCHECK_PS%" "%SERVER_VERSION%"`) do (
+        set "VER_CMP=%%a"
+        set "PUBLISHED_VERSION=%%b"
     )
 )
+if /i "%VER_CMP%"=="LOW" (
+    echo.
+    echo ERROR: SERVER_VERSION ^(%SERVER_VERSION%^) is NOT greater than the published one ^(%PUBLISHED_VERSION%^).
+    echo        On startup the app would download the published core over this build,
+    echo        run the OLD core and look broken.
+    echo        Fix: write a number greater than %PUBLISHED_VERSION% into desktop\SERVER_VERSION
+    echo        and run the build again.
+    goto :fail
+)
+if /i "%VER_CMP%"=="OK" echo     Core version published in cloud: %PUBLISHED_VERSION% - OK
+if "%VER_CMP%"=="" echo     Cloud version check skipped (no network) - continuing
 
 REM Full build log so the reason stays if the window closes
 set "BUILD_LOG=%CS_DIR%\build.log"
@@ -332,18 +342,17 @@ exit /b 0
 
 REM ---------- helper: copy one backend function ----------
 :copyfn
-REM Копируем папку функции ЦЕЛИКОМ, а не только index.py.
-REM Раньше брался один index.py, и в сборку не попадали:
-REM   • license_guard.py — проверка лицензии, лежит копией в каждой расчётной
-REM     функции. Расчёты падали с 500 «No module named license_guard»;
-REM   • svg-to-pdf\fonts\*.ttf — кириллические шрифты. Без них экспорт PDF
-REM     обрывался ошибкой, а в лучшем случае русский текст стал бы
-REM     прямоугольниками — дымовой тест такого не ловит.
-REM Остальные сборщики (build.sh, prepare.bat, prepare.sh) всегда копировали
-REM папку целиком — расхождение было только здесь.
-REM После копирования чистим мусор: кэш интерпретатора и файлы, нужные только
-REM при разработке. Намеренно НЕ используем xcopy /EXCLUDE — он не принимает
-REM путь в кавычках и молча ломается, если в пути к проекту есть пробелы.
+REM Copy the WHOLE function folder, not just index.py.
+REM Previously only index.py was taken, so the build was missing:
+REM   - license_guard.py (license check, shipped as a copy inside every calc
+REM     function). Calculations failed with 500 "No module named license_guard";
+REM   - svg-to-pdf\fonts\*.ttf (Cyrillic fonts). Without them PDF export dies,
+REM     and at best Russian text turns into boxes - the smoke test cannot see it.
+REM The other builders (build.sh, prepare.bat, prepare.sh) always copied the
+REM whole folder; only this file was out of sync.
+REM Junk is removed AFTER copying. We deliberately avoid xcopy /EXCLUDE: it does
+REM not accept a quoted path and breaks silently when the project path contains
+REM spaces.
 if exist "%ROOT%\backend\%~1\index.py" (
     xcopy /E /I /Q /Y "%ROOT%\backend\%~1" "%BF_DST%\%~1\" >nul
     if exist "%BF_DST%\%~1\__pycache__" rmdir /S /Q "%BF_DST%\%~1\__pycache__"
