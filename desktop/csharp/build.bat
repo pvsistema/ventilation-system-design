@@ -309,9 +309,23 @@ exit /b 0
 
 REM ---------- helper: copy one backend function ----------
 :copyfn
+REM Копируем папку функции ЦЕЛИКОМ, а не только index.py.
+REM Раньше брался один index.py, и в сборку не попадали:
+REM   • license_guard.py — проверка лицензии, лежит копией в каждой расчётной
+REM     функции. Расчёты падали с 500 «No module named license_guard»;
+REM   • svg-to-pdf\fonts\*.ttf — кириллические шрифты. Без них экспорт PDF
+REM     обрывался ошибкой, а в лучшем случае русский текст стал бы
+REM     прямоугольниками — дымовой тест такого не ловит.
+REM Остальные сборщики (build.sh, prepare.bat, prepare.sh) всегда копировали
+REM папку целиком — расхождение было только здесь.
+REM После копирования чистим мусор: кэш интерпретатора и файлы, нужные только
+REM при разработке. Намеренно НЕ используем xcopy /EXCLUDE — он не принимает
+REM путь в кавычках и молча ломается, если в пути к проекту есть пробелы.
 if exist "%ROOT%\backend\%~1\index.py" (
-    mkdir "%BF_DST%\%~1" 2>nul
-    copy /Y "%ROOT%\backend\%~1\index.py" "%BF_DST%\%~1\index.py" >nul
+    xcopy /E /I /Q /Y "%ROOT%\backend\%~1" "%BF_DST%\%~1\" >nul
+    if exist "%BF_DST%\%~1\__pycache__" rmdir /S /Q "%BF_DST%\%~1\__pycache__"
+    if exist "%BF_DST%\%~1\tests.json" del /Q "%BF_DST%\%~1\tests.json"
+    if exist "%BF_DST%\%~1\requirements.txt" del /Q "%BF_DST%\%~1\requirements.txt"
     echo     + %~1
 )
 exit /b 0
