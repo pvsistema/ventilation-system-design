@@ -10,7 +10,7 @@
 // того как схема изменится. Человек видит «нужно ещё 43 м» заранее, а не после
 // того, как построил неверный съезд.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type TopoNode, type TopoBranch, surveyXYZ } from "@/lib/topology";
 import {
@@ -63,6 +63,49 @@ export default function RampDialog({
   const [spiralStep, setSpiralStep] = useState("15");
   const [clockwise, setClockwise] = useState(true);
 
+  // ── Перетаскивание окна за заголовок ──────────────────────────────────
+  // Съезд обводят по подложке, и окно почти всегда закрывает именно ту часть
+  // плана, которую нужно видеть. Поэтому окно двигают мышью за шапку.
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const dragRef = useRef<{ dx: number; dy: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement | null>(null);
+  const justDragged = useRef(false);
+
+  useEffect(() => {
+    const onMove = (e: MouseEvent) => {
+      const d = dragRef.current;
+      if (!d) return;
+      const el = boxRef.current;
+      const w = el?.offsetWidth ?? 470;
+      // Не даём утащить окно за край экрана: шапка всегда остаётся кликабельной.
+      const x = Math.min(Math.max(e.clientX - d.dx, 8 - w + 80), window.innerWidth - 80);
+      const y = Math.min(Math.max(e.clientY - d.dy, 0), window.innerHeight - 30);
+      setPos({ x, y });
+    };
+    // После перетаскивания браузер шлёт click на общего предка — оверлей.
+    // Без этой отсечки окно закрывалось бы сразу после переноса.
+    const onUp = () => {
+      if (dragRef.current) justDragged.current = true;
+      dragRef.current = null;
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, []);
+
+  const startDrag = (e: React.MouseEvent) => {
+    if (e.button !== 0) return;
+    const el = boxRef.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    dragRef.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    setPos({ x: r.left, y: r.top });
+    e.preventDefault();
+  };
+
   const z0 = num(z0Text);
   const z1 = num(z1Text);
 
@@ -104,8 +147,8 @@ export default function RampDialog({
     : result?.status === "warn" ? "#fcd34d" : "#fca5a5";
 
   const S = {
-    overlay: { position: "fixed" as const, inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" },
-    dialog: { width: 470, maxHeight: "88vh", overflowY: "auto" as const, background: "#fff", border: "1px solid var(--c-b3, #aaa)", borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "Segoe UI, Arial, sans-serif", fontSize: 12, color: "var(--c-t1, #1a1a1a)" },
+    overlay: { position: "fixed" as const, inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: pos ? "rgba(0,0,0,0.10)" : "rgba(0,0,0,0.55)" },
+    dialog: { ...(pos ? { position: "fixed" as const, left: pos.x, top: pos.y, margin: 0 } : {}), width: 470, maxHeight: "88vh", overflowY: "auto" as const, background: "#fff", border: "1px solid var(--c-b3, #aaa)", borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "Segoe UI, Arial, sans-serif", fontSize: 12, color: "var(--c-t1, #1a1a1a)" },
     header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", background: "linear-gradient(180deg,#dde4ef,#c5cfe0)", borderBottom: "1px solid #9aa8bf", position: "sticky" as const, top: 0, zIndex: 2 },
     headerTitle: { display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 13 },
     closeBtn: { width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", background: "transparent", fontSize: 12, borderRadius: 2 },
@@ -155,15 +198,25 @@ export default function RampDialog({
   );
 
   return (
-    <div style={S.overlay} onClick={onClose}>
-      <div style={S.dialog} onClick={(e) => e.stopPropagation()}>
+    <div
+      style={S.overlay}
+      onClick={() => {
+        if (justDragged.current) { justDragged.current = false; return; }
+        onClose();
+      }}
+    >
+      <div ref={boxRef} style={S.dialog} onClick={(e) => e.stopPropagation()}>
 
-        <div style={S.header}>
+        <div
+          style={{ ...S.header, cursor: "move", userSelect: "none" }}
+          onMouseDown={startDrag}
+          title="Потяните за заголовок, чтобы отодвинуть окно"
+        >
           <div style={S.headerTitle}>
             <Icon name="TrendingDown" size={14} style={{ color: "var(--c-blue, #2563eb)" }} />
             Наклонный съезд
           </div>
-          <button style={S.closeBtn} onClick={onClose} title="Закрыть">✕</button>
+          <button style={S.closeBtn} onMouseDown={(e) => e.stopPropagation()} onClick={onClose} title="Закрыть">✕</button>
         </div>
 
         <div style={S.tabs}>
