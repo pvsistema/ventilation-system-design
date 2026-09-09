@@ -33,6 +33,7 @@ const LicenseDialog          = lazy(() => import("@/components/LicenseDialog"));
 const SettingsDialog         = lazy(() => import("@/components/cad/SettingsDialog"));
 const MultiBranchPropsDialog = lazy(() => import("@/components/cad/MultiBranchPropsDialog"));
 const VentPipeDialog         = lazy(() => import("@/components/cad/VentPipeDialog"));
+const RampDialog             = lazy(() => import("@/components/cad/RampDialog"));
 const HelpDialog             = lazy(() => import("@/components/cad/HelpDialog"));
 import { type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { type UnitsConfig } from "@/lib/unitsConfig";
@@ -165,6 +166,14 @@ export interface CadToolDialogsProps {
   buildVentPipeLine: (branchIds: string[], vpPatch: Partial<TopoBranch>) => void;
   /** Удаление всего става целиком — по любой его ветви */
   deleteVentPipeLine: (branchId: string) => void;
+
+  // Наклонный съезд
+  showRampDialog: boolean;
+  setShowRampDialog: (v: boolean) => void;
+  /** Записать рассчитанные отметки в узлы трассы. */
+  onApplyRampZ: (nodeZ: { id: string; z: number }[]) => void;
+  /** Построить спиральный съезд из готовых точек. */
+  onBuildSpiral: (points: { x: number; y: number; z: number }[]) => void;
 
   // Помощь
   showHelpDialog: boolean;
@@ -412,6 +421,18 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           />
         );
       })()}
+
+      {/* ── Наклонный съезд ─────────────────────────────────────────────── */}
+      {p.showRampDialog && (
+        <RampDialog
+          nodes={p.nodes}
+          branches={p.branchesRaw}
+          selectedBranchIds={[...p.selectedBranchIds]}
+          onApply={p.onApplyRampZ}
+          onBuildSpiral={p.onBuildSpiral}
+          onClose={() => p.setShowRampDialog(false)}
+        />
+      )}
 
       {/* ── Руководство пользователя ────────────────────────────────────── */}
       {p.showHelpDialog && (

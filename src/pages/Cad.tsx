@@ -10,6 +10,7 @@ import {
   surveyXYZ, isNodeMoved,
   type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
 } from "@/lib/topology";
+import { RAMP_WORK_ANGLE, RAMP_LIMIT_ANGLE } from "@/lib/rampBuilder";
 import { CANVAS_THRESHOLD } from "@/lib/canvasRenderer";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { MS_IND_BG_DEFAULT, FAN_IND_BG_DEFAULT } from "@/lib/msIndicatorStyle";
@@ -1160,6 +1161,80 @@ export default function CadPage() {
     setShowMoveSchema(false);
   };
 
+  // ─── Наклонный съезд ────────────────────────────────────────────────
+  // Трасса рисуется по подложке на плане (X и Y), а высотные отметки узлов
+  // раздаёт расчёт: вручную по десяткам узлов их не проставить, и главное —
+  // на глаз не проверить, что уклон нигде не вышел за предел для транспорта.
+  const [showRampDialog, setShowRampDialog] = useState(false);
+
+  // Цвета трассы по уклону считаются НИЖЕ — там, где уже объявлено выделение
+  // ветвей (selectedBranchIds). См. rampSlopeColors.
+
+  /**
+   * Записать рассчитанные отметки в узлы трассы.
+   *
+   * Пишем И в отображаемые координаты (z), И в маркшейдерские (surveyZ):
+   * длина выработки и угол считаются по маркшейдерским, и если обновить
+   * только картинку, сопротивление сети осталось бы от плоской трассы.
+   */
+  const applyRampZ = (nodeZ: { id: string; z: number }[]) => {
+    if (nodeZ.length === 0) return;
+    pushHistory();
+    const zById = new Map(nodeZ.map((n) => [n.id, n.z]));
+    setNodes((prev) => prev.map((n) => {
+      const z = zById.get(n.id);
+      return z === undefined ? n : { ...n, z, surveyZ: z };
+    }));
+    const zs = nodeZ.map((n) => n.z);
+    addLog("ok",
+      `Наклонный съезд построен: узлов ${nodeZ.length}, `
+      + `отметки от ${Math.max(...zs).toFixed(1)} до ${Math.min(...zs).toFixed(1)} м`);
+  };
+
+  /**
+   * Создать спиральный съезд из готовых точек: узлы + соединяющие их выработки.
+   *
+   * Точки приходят уже рассчитанными (lib/rampBuilder), здесь только строится
+   * геометрия схемы. Новые выработки наследуют сечение по умолчанию, как при
+   * обычном построении инструментом «Ветвь».
+   */
+  const buildSpiralRamp = (points: { x: number; y: number; z: number }[]) => {
+    if (points.length < 2) return;
+    pushHistory();
+    const newNodes: TopoNode[] = [];
+    const newBranches: TopoBranch[] = [];
+    const allNodes = [...nodes];
+    const allBranches = [...branchesRaw];
+
+    for (const p of points) {
+      const id = nextNodeId(allNodes);
+      const n = makeNode(id, {
+        x: p.x, y: p.y, z: p.z,
+        surveyX: p.x, surveyY: p.y, surveyZ: p.z,
+        name: "", number: id,
+      });
+      allNodes.push(n);
+      newNodes.push(n);
+    }
+    for (let k = 0; k < newNodes.length - 1; k++) {
+      const id = nextBranchId(allBranches);
+      const b = makeBranch(id, newNodes[k].id, newNodes[k + 1].id, {
+        type: "Наклонный съезд",
+        horizonId: "",
+      });
+      allBranches.push(b);
+      newBranches.push(b);
+    }
+
+    setNodes((prev) => [...prev, ...newNodes]);
+    setBranches((prev) => [...prev, ...newBranches]);
+    setIsDirty(true);
+    addLog("ok",
+      `Спиральный съезд построен: узлов ${newNodes.length}, `
+      + `выработок ${newBranches.length}, отметки `
+      + `${points[0].z.toFixed(1)} → ${points[points.length - 1].z.toFixed(1)} м`);
+  };
+
   // ─── Результат расчёта пожара ───────────────────────────────────────
   const [fireResult, setFireResult] = useState<FireCalculationResult | null>(null);
   const [fireCalcDone, setFireCalcDone] = useState(false);
@@ -2115,6 +2190,40 @@ export default function CadPage() {
 
   // ─── МУЛЬТИВЫБОР ВЕТВЕЙ (Ctrl+клик) ────────────────────────────────
   const [selectedBranchIds, setSelectedBranchIds] = useState<Set<string>>(new Set());
+
+  /**
+   * Цвета выделенной трассы по фактическому уклону — подсветка на схеме, пока
+   * открыт диалог наклонного съезда.
+   *
+   * Считается по УЖЕ построенной геометрии (плановая длина и перепад отметок),
+   * поэтому показывает реальное положение дел: и до построения съезда, и после
+   * него видно, какие именно участки вышли за норму. Зелёный — в пределах
+   * рабочего угла, жёлтый — до предельного, красный — выше предела.
+   */
+  const rampSlopeColors = useMemo(() => {
+    if (!showRampDialog || selectedBranchIds.size === 0) return undefined;
+    const nodeById = new Map(nodes.map((n) => [n.id, n]));
+    const map = new Map<string, string>();
+    for (const id of selectedBranchIds) {
+      const b = branchesRaw.find((x) => x.id === id);
+      if (!b) continue;
+      const a = nodeById.get(b.fromId);
+      const c = nodeById.get(b.toId);
+      if (!a || !c) continue;
+      const p = surveyXYZ(a);
+      const q = surveyXYZ(c);
+      // Уклон считается по ГОРИЗОНТАЛЬНОЙ длине — она и нормируется.
+      const planLen = Math.hypot(q.x - p.x, q.y - p.y);
+      const dz = q.z - p.z;
+      const ang = planLen < 0.001
+        ? (Math.abs(dz) > 0.001 ? 90 : 0)
+        : Math.abs(Math.atan(dz / planLen) * (180 / Math.PI));
+      map.set(id, ang > RAMP_LIMIT_ANGLE ? "#ef4444"
+        : ang > RAMP_WORK_ANGLE ? "#f59e0b" : "#22c55e");
+    }
+    return map.size > 0 ? map : undefined;
+  }, [showRampDialog, selectedBranchIds, nodes, branchesRaw]);
+
   const handleBranchMultiSelect = (id: string) => {
     setSelectedBranchIds((prev) => {
       const next = new Set(prev);
@@ -6714,6 +6823,18 @@ export default function CadPage() {
               sublabel="схемы"
               title="Сдвинуть схему по осям X, Y, Z. Форма схемы и длины выработок не меняются"
               onClick={() => setShowMoveSchema(true)}
+            />
+            <RibbonBigBtn
+              icon="TrendingDown"
+              label="Наклонный"
+              sublabel="съезд"
+              title={
+                "Разложить высотные отметки по нарисованной трассе съезда.\n"
+                + "Обведите съезд по подложке, выделите выработки (Ctrl+клик),\n"
+                + "задайте отметки начала и конца — уклон проверяется по нормам\n"
+                + "подземного транспорта. Здесь же строится спиральный съезд."
+              }
+              onClick={() => setShowRampDialog(true)}
             />
           </RibbonGroup>
           <RibbonGroup label="Сравнение">
@@ -12161,6 +12282,13 @@ export default function CadPage() {
                 return map.size > 0 ? map : undefined;
               })()}
               compareBranchColors={(() => {
+                // ПОДСВЕТКА УКЛОНА. Пока открыт диалог наклонного съезда,
+                // выделенная трасса окрашивается по углу наклона: зелёный —
+                // в пределах рабочего, жёлтый — до предельного, красный —
+                // выше предела. Иначе проверить съезд можно только по числам
+                // в окне, а на схеме не видно, КАКОЙ участок вышел за норму.
+                if (showRampDialog && rampSlopeColors) return rampSlopeColors;
+
                 if (!compareResult || compareResult.branches.length === 0) return undefined;
                 const map = new Map<string, string>();
                 compareResult.branches.forEach(diff => {
@@ -13684,6 +13812,10 @@ export default function CadPage() {
       ventPipeBranchIds={ventPipeBranchIds}
       buildVentPipeLine={buildVentPipeLine}
       deleteVentPipeLine={deleteVentPipeLine}
+      showRampDialog={showRampDialog}
+      setShowRampDialog={setShowRampDialog}
+      onApplyRampZ={applyRampZ}
+      onBuildSpiral={buildSpiralRamp}
       showHelpDialog={showHelpDialog}
       setShowHelpDialog={setShowHelpDialog}
     />
