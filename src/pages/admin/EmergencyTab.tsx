@@ -23,6 +23,9 @@ interface EmergencyTabProps {
   setEmgSeats: (v: string) => void;
   emgBindFp: string;
   setEmgBindFp: (v: string) => void;
+  /** Ключ сам закрепится за первыми ПК, вышедшими на связь. */
+  emgAutobind: boolean;
+  setEmgAutobind: (v: boolean) => void;
   okSeatsForId: number | null;
   okSeats: OfflineSeat[] | null;
   loadOfflineSeats: (k: OfflineKey) => void;
@@ -47,6 +50,10 @@ interface EmergencyTabProps {
   startEditOffline: (k: OfflineKey) => void;
   /** Перевыпустить ключ с привязкой к компьютеру (старый отзывается). */
   reissueOffline: (k: OfflineKey) => void;
+  /** Включить/выключить автопривязку ключа к рабочему месту. */
+  toggleAutobind: (k: OfflineKey) => void;
+  /** Сбросить привязку — компьютер заменили, ключ закрепится заново. */
+  resetBinding: (k: OfflineKey) => void;
   loadOfflineKeys: (pwd: string) => void;
   password: string;
 }
@@ -57,8 +64,9 @@ export default function EmergencyTab({
   okEditId, setOkEditId, okEditOrg, setOkEditOrg, okEditExp, setOkEditExp,
   okEditSeats, setOkEditSeats, okEditNotes, setOkEditNotes,
   okShowKeyId, setOkShowKeyId, saveEditOffline, toggleOffline, deleteOffline,
-  startEditOffline, reissueOffline, loadOfflineKeys, password,
-  emgSeats, setEmgSeats, emgBindFp, setEmgBindFp,
+  startEditOffline, reissueOffline, toggleAutobind, resetBinding,
+  loadOfflineKeys, password,
+  emgSeats, setEmgSeats, emgBindFp, setEmgBindFp, emgAutobind, setEmgAutobind,
   okSeatsForId, okSeats, loadOfflineSeats, blockOfflineSeat,
 }: EmergencyTabProps) {
   return (
@@ -110,9 +118,28 @@ export default function EmergencyTab({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] font-mono focus:outline-none focus:border-amber-400" />
           <div className="text-[10px] text-gray-400 mt-1">
             Код виден заказчику в окне «Лицензия», строка «ID …». Если указать — ключ
-            заработает только на этом ПК и его нельзя будет размножить. Пусто — любой
-            компьютер организации в пределах лимита.
+            заработает только на этом ПК и его нельзя будет размножить.
           </div>
+
+          {/* Автопривязка — для случая, когда код ПК получить неоткуда.
+              На удалённом руднике связи нет и спросить его некому, поэтому
+              раньше ключи выдавали вовсе без привязки: они свободно
+              копировались на любое число машин. */}
+          {!emgBindFp.trim() && (
+            <label className="flex items-start gap-2 mt-2 cursor-pointer select-none">
+              <input type="checkbox" checked={emgAutobind}
+                onChange={e => setEmgAutobind(e.target.checked)}
+                className="mt-0.5" />
+              <span className="text-[11px] text-gray-600">
+                <b className="text-gray-700">Автопривязка</b> — код спрашивать не нужно.
+                <span className="block text-[10px] text-gray-400 mt-0.5">
+                  Ключ закрепится сам за компьютерами, которые первыми выйдут на связь
+                  (в пределах числа мест). Нужно для удалённых рудников, где код ПК
+                  получить неоткуда. Без этого ключ переносим на любую машину.
+                </span>
+              </span>
+            </label>
+          )}
         </div>
 
         {emgErr && <div className="text-[12px] text-red-500">{emgErr}</div>}
@@ -221,6 +248,14 @@ export default function EmergencyTab({
                         Только для ПК <span className="font-mono">{k.bound_fp.slice(0, 8)}</span>
                         {k.bound_fp.length > 8 && <span className="text-blue-400">…</span>}
                       </div>
+                    ) : k.autobind && k.is_active && !k.expired ? (
+                      // Автопривязка: ключ закрепится сам при первой связи.
+                      // Нужна там, где код рабочего места спросить не у кого —
+                      // удалённый рудник без постоянного интернета.
+                      <div className="text-[11px] text-blue-600 mt-0.5 flex items-center gap-1">
+                        <Icon name="ShieldCheck" size={11} />
+                        Автопривязка: закрепится за {k.seats === 1 ? "первым ПК" : `первыми ${k.seats} ПК`}, вышедшим на связь
+                      </div>
                     ) : k.is_active && !k.expired ? (
                       // Ключ без привязки работает на любом компьютере: файл
                       // можно скопировать на сколько угодно машин, и офлайн это
@@ -250,11 +285,33 @@ export default function EmergencyTab({
                       className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="Eye" size={14} /></button>
                     <button onClick={() => startEditOffline(k)} title="Редактировать"
                       className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="Pencil" size={14} /></button>
+                    {/* Автопривязка — для ключей, где код ПК спросить не у кого.
+                        Пока ключ не закреплён, её можно включить и выключить. */}
+                    {!k.bound_fp && k.is_active && !k.expired && (
+                      <button onClick={() => toggleAutobind(k)}
+                        title={k.autobind
+                          ? "Автопривязка включена: ключ закрепится сам при первой связи. Нажмите, чтобы выключить"
+                          : "Включить автопривязку: ключ закрепится за первым ПК, вышедшим на связь"}
+                        className={`p-1.5 rounded hover:bg-blue-50 ${
+                          k.autobind ? "text-blue-600" : "text-gray-400"
+                        }`}>
+                        <Icon name={k.autobind ? "ShieldCheck" : "ShieldOff"} size={14} />
+                      </button>
+                    )}
+                    {/* Сброс привязки — когда компьютер заменили. Ключ при этом
+                        не меняется: передавать людям ничего не нужно. */}
+                    {k.bound_fp && k.is_active && !k.expired && (
+                      <button onClick={() => resetBinding(k)}
+                        title="Сбросить привязку — компьютер заменили. Ключ закрепится заново, новый выдавать не нужно"
+                        className="p-1.5 rounded hover:bg-amber-50 text-amber-500">
+                        <Icon name="RefreshCw" size={14} />
+                      </button>
+                    )}
                     {!k.bound_fp && k.is_active && !k.expired && (
                       <button onClick={() => reissueOffline(k)}
-                        title="Перевыпустить с привязкой к компьютеру"
+                        title="Перевыпустить с привязкой к конкретному компьютеру (нужен код рабочего места)"
                         className="p-1.5 rounded hover:bg-blue-50 text-blue-500">
-                        <Icon name="ShieldCheck" size={14} />
+                        <Icon name="KeyRound" size={14} />
                       </button>
                     )}
                     <button onClick={() => toggleOffline(k)} title={k.is_active ? "Отозвать" : "Активировать"}

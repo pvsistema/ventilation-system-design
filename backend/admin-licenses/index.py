@@ -31,6 +31,9 @@ POST /  body: {action, password, ...params}
                         demo_max_nodes?, demo_max_branches?}
   reissue_offline_key — перевыпуск аварийного ключа с привязкой к ПК
                         {offline_key_id, bound_fp, expires_at?, seats?}
+  set_offline_autobind — вкл/выкл автопривязку ключа к рабочему месту
+                        {offline_key_id, autobind}
+  reset_offline_binding — сбросить привязку (замена компьютера) {offline_key_id}
 """
 import json
 import os
@@ -853,7 +856,20 @@ def handler(event: dict, context) -> dict:
             # Привязка к конкретному компьютеру: код рабочего места, который
             # человек называет из окна лицензии. Ключ с привязкой не работает
             # больше нигде — скопировать его на соседние ПК невозможно.
-            bound_fp = re.sub(r"[^0-9A-Fa-f]", "", (body.get("bound_fp") or ""))[:32].upper()
+            bound_fp = re.sub(r"[^0-9A-Fa-f]", "", (body.get("bound_fp") or ""))[:64].upper()
+
+            # АВТОПРИВЯЗКА. Ключ закрепляется за компьютерами сам — за теми, что
+            # первыми вышли на связь, в пределах числа мест.
+            #
+            # ЗАЧЕМ. Привязка вручную требует кода рабочего места, а на удалённом
+            # руднике его часто некому продиктовать: связи нет, человек на смене.
+            # Раньше из-за этого ключи выдавали вообще без привязки, и они
+            # свободно копировались на любое число машин.
+            #
+            # По умолчанию ВКЛЮЧЕНА: безопасное поведение должно быть поведением
+            # по умолчанию. Если код ПК известен и введён вручную, автопривязка
+            # не нужна — ключ и так закреплён с момента выпуска.
+            autobind = bool(body.get("autobind", True)) and not bound_fp
             # Дата истечения: либо явная (для продления), либо now + days
             exp_in = (body.get("expires_at") or "").strip()
             if exp_in:
@@ -870,10 +886,12 @@ def handler(event: dict, context) -> dict:
             new_id = None
             try:
                 cur.execute("""
-                    INSERT INTO offline_keys (org, key, seats, expires_at, notes, bound_fp)
-                    VALUES (%s, '', %s, %s, %s, %s)
+                    INSERT INTO offline_keys
+                        (org, key, seats, expires_at, notes, bound_fp, autobind)
+                    VALUES (%s, '', %s, %s, %s, %s, %s)
                     RETURNING id
-                """, (org, seats, expires_iso, notes or None, bound_fp or None))
+                """, (org, seats, expires_iso, notes or None,
+                      bound_fp or None, autobind))
                 new_id = cur.fetchone()[0]
                 conn.commit()
             except Exception as e:
@@ -907,13 +925,96 @@ def handler(event: dict, context) -> dict:
                     INSERT INTO license_events (event_type, detail)
                     VALUES ('offline_key_issued', %s)
                 """, (f"org={org}; exp={expires_iso}; seats={seats}"
-                      + (f"; fp={bound_fp}" if bound_fp else ""),))
+                      + (f"; fp={bound_fp}" if bound_fp else "")
+                      + ("; автопривязка" if autobind else ""),))
                 conn.commit()
             except Exception as e:
                 print(f"[admin] offline key log failed: {e}")
             return resp(200, {"id": new_id, "key": key, "org": org,
                               "expires_at": expires_iso, "seats": seats,
-                              "bound_fp": bound_fp or None})
+                              "bound_fp": bound_fp or None,
+                              "autobind": autobind})
+
+        # ── set_offline_autobind — включить/выключить автопривязку ───────────────
+        #
+        # ЗАЧЕМ. Ключ, выданный без привязки, работает на любом компьютере и
+        # свободно копируется. Привязать его вручную можно только зная код
+        # рабочего места, а на удалённом руднике спросить его некому.
+        # Автопривязка закрепляет ключ сама — за теми ПК, что первыми вышли на
+        # связь, в пределах числа мест.
+        if action == "set_offline_autobind":
+            oid = int(body.get("offline_key_id") or 0)
+            on = bool(body.get("autobind", True))
+            if not oid:
+                return resp(400, {"error": "offline_key_id_required"})
+            cur.execute("""
+                UPDATE offline_keys SET autobind = %s WHERE id = %s
+                RETURNING org, bound_fp
+            """, (on, oid))
+            row = cur.fetchone()
+            if not row:
+                return resp(404, {"error": "not_found"})
+            org, bfp = row
+            try:
+                cur.execute("""
+                    INSERT INTO license_events (event_type, detail)
+                    VALUES ('offline_autobind_changed', %s)
+                """, (f"org={org}; key_id={oid}; автопривязка "
+                      + ("включена" if on else "выключена"),))
+            except Exception as e:
+                print(f"[admin] autobind log failed: {e}")
+            conn.commit()
+            return resp(200, {
+                "ok": True, "autobind": on,
+                "already_bound": bool(bfp),
+                "note": ("Ключ уже закреплён за компьютером — автопривязка "
+                         "ни на что не влияет. Чтобы перевесить ключ на другой "
+                         "ПК, сбросьте привязку.") if bfp and on else
+                        ("Ключ закрепится за первым компьютером, который выйдет "
+                         "на связь") if on else
+                        "Ключ будет работать на любом компьютере",
+            })
+
+        # ── reset_offline_binding — сбросить привязку (замена компьютера) ────────
+        #
+        # ЗАЧЕМ. Компьютер сломался, его заменили — ключ остался закреплён за
+        # старым железом и на новом ПК не работает. Раньше выход был один:
+        # перевыпустить ключ и передать его на рудник, остановив работу до
+        # получения. Теперь привязка сбрасывается, и ключ закрепляется заново
+        # при первой же связи с нового компьютера. Сам ключ не меняется —
+        # передавать людям ничего не нужно.
+        if action == "reset_offline_binding":
+            oid = int(body.get("offline_key_id") or 0)
+            if not oid:
+                return resp(400, {"error": "offline_key_id_required"})
+            # Забываем и сами рабочие места: иначе старый ПК остался бы в
+            # реестре и продолжал бы считаться закреплённым.
+            cur.execute("DELETE FROM offline_key_seats WHERE offline_key_id = %s", (oid,))
+            cur.execute("""
+                UPDATE offline_keys
+                SET bound_fp = NULL, autobind = TRUE
+                WHERE id = %s RETURNING org, seats
+            """, (oid,))
+            row = cur.fetchone()
+            if not row:
+                conn.rollback()
+                return resp(404, {"error": "not_found"})
+            org, seats = row
+            try:
+                cur.execute("""
+                    INSERT INTO license_events (event_type, detail)
+                    VALUES ('offline_binding_reset', %s)
+                """, (f"org={org}; key_id={oid}; привязка сброшена, "
+                      f"ключ закрепится заново (мест {seats})",))
+            except Exception as e:
+                print(f"[admin] reset log failed: {e}")
+            conn.commit()
+            return resp(200, {
+                "ok": True, "org": org, "seats": seats,
+                "note": "Привязка сброшена. Ключ закрепится за компьютером, "
+                        "который первым выйдет на связь. Передавать новый ключ "
+                        "не нужно — этот продолжает действовать.",
+            })
 
         # ── list_offline_keys — реестр выпущенных аварийных ключей ────────────────
         if action == "list_offline_keys":
@@ -926,7 +1027,7 @@ def handler(event: dict, context) -> dict:
                          WHERE s.offline_key_id = o.id) AS used_seats,
                        (SELECT MAX(s.last_seen_at) FROM offline_key_seats s
                          WHERE s.offline_key_id = o.id) AS last_seen_at,
-                       o.replaced_by_id, o.revoked_at,
+                       o.replaced_by_id, o.revoked_at, o.autobind,
                        -- Отпечаток уже отметившегося места: подставляется в
                        -- поле привязки при перевыпуске, чтобы код ПК не
                        -- приходилось узнавать у человека по телефону.
@@ -949,9 +1050,10 @@ def handler(event: dict, context) -> dict:
                     "last_seen_at": str(r[11]) if r[11] else None,
                     "replaced_by_id": r[12],
                     "revoked_at": str(r[13]) if r[13] else None,
+                    "autobind": bool(r[14]),
                     # Короткий код места (8 знаков) — ровно то, что человек
                     # видит в окне «Лицензия» и что нужно для привязки.
-                    "seat_fp": (str(r[14])[:8].upper() if r[14] else None),
+                    "seat_fp": (str(r[15])[:8].upper() if r[15] else None),
                 })
             return resp(200, {"keys": keys})
 

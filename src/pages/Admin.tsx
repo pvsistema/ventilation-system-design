@@ -76,6 +76,10 @@ export default function Admin() {
   // Сколько ПК разрешено ключу и привязка к конкретному компьютеру.
   const [emgSeats, setEmgSeats]         = useState("5");
   const [emgBindFp, setEmgBindFp]       = useState("");
+  // Автопривязка включена по умолчанию: ключ без привязки свободно копируется
+  // на любое число машин, а код рабочего места на удалённом руднике спросить
+  // не у кого. Безопасное поведение должно быть поведением по умолчанию.
+  const [emgAutobind, setEmgAutobind]   = useState(true);
 
   // Рабочие места, отметившиеся по аварийному ключу (раскрывающийся список)
   const [okSeatsForId, setOkSeatsForId] = useState<number | null>(null);
@@ -278,6 +282,7 @@ export default function Admin() {
         expires_at: emgExpires || undefined,
         seats: parseInt(emgSeats) || 5,
         bound_fp: emgBindFp.trim() || undefined,
+        autobind: emgAutobind,
       });
       setEmgKey(data.key);
       loadOfflineKeys(password);
@@ -394,6 +399,64 @@ export default function Admin() {
       );
     } catch (e: unknown) {
       alert(`Не удалось перевыпустить ключ: ${e instanceof Error ? e.message : "ошибка запроса"}`);
+    }
+  };
+
+  /**
+   * Автопривязка ключа к рабочему месту.
+   *
+   * ЗАЧЕМ. Привязка вручную требует кода компьютера из окна «Лицензия», а на
+   * удалённом руднике его часто некому продиктовать: связи нет, человек на
+   * смене. Из-за этого ключи выдавались вовсе без привязки и свободно
+   * копировались. Автопривязка закрепляет ключ сама — за теми ПК, что первыми
+   * вышли на связь, в пределах числа мест.
+   */
+  const toggleAutobind = async (k: OfflineKey) => {
+    const next = !k.autobind;
+    if (next && k.seats > 1) {
+      const ok = confirm(
+        `Включить автопривязку для ключа «${k.org}»?\n\n`
+        + `Ключ закрепится за первыми ${k.seats} компьютерами, которые выйдут `
+        + "на связь. Остальные машины работать по нему не смогут.\n\n"
+        + "Код рабочего места спрашивать не нужно.",
+      );
+      if (!ok) return;
+    }
+    try {
+      const r = await adminApi(password, {
+        action: "set_offline_autobind", offline_key_id: k.id, autobind: next,
+      });
+      loadOfflineKeys(password);
+      const note = (r as { note?: string }).note;
+      if (note) alert(note);
+    } catch (e: unknown) {
+      alert(`Не удалось изменить автопривязку: ${e instanceof Error ? e.message : "ошибка запроса"}`);
+    }
+  };
+
+  /**
+   * Сброс привязки — когда компьютер заменили.
+   *
+   * Ключ остаётся тем же: передавать людям новый не нужно, работа не
+   * останавливается. При первой связи с нового ПК ключ закрепится заново.
+   */
+  const resetBinding = async (k: OfflineKey) => {
+    const ok = confirm(
+      `Сбросить привязку ключа «${k.org}»?\n\n`
+      + "Нужно, когда компьютер заменили: сейчас ключ закреплён за старым "
+      + "железом и на новой машине не работает.\n\n"
+      + "Сам ключ не меняется — передавать людям ничего не нужно. Он закрепится "
+      + "заново за компьютером, который первым выйдет на связь.",
+    );
+    if (!ok) return;
+    try {
+      const r = await adminApi(password, {
+        action: "reset_offline_binding", offline_key_id: k.id,
+      });
+      loadOfflineKeys(password);
+      alert((r as { note?: string }).note ?? "Привязка сброшена");
+    } catch (e: unknown) {
+      alert(`Не удалось сбросить привязку: ${e instanceof Error ? e.message : "ошибка запроса"}`);
     }
   };
 
@@ -911,6 +974,7 @@ export default function Admin() {
             emgLoading={emgLoading} generateEmergencyKey={generateEmergencyKey}
             emgSeats={emgSeats} setEmgSeats={setEmgSeats}
             emgBindFp={emgBindFp} setEmgBindFp={setEmgBindFp}
+            emgAutobind={emgAutobind} setEmgAutobind={setEmgAutobind}
             okSeatsForId={okSeatsForId} okSeats={okSeats}
             loadOfflineSeats={loadOfflineSeats} blockOfflineSeat={blockOfflineSeat}
             offlineKeys={offlineKeys} okLoading={okLoading}
@@ -924,6 +988,8 @@ export default function Admin() {
             toggleOffline={toggleOffline} deleteOffline={deleteOffline}
             startEditOffline={startEditOffline}
             reissueOffline={reissueOffline}
+            toggleAutobind={toggleAutobind}
+            resetBinding={resetBinding}
             loadOfflineKeys={loadOfflineKeys} password={password}
           />
         )}

@@ -101,6 +101,8 @@ _settings_expire = 0.0
 # Кэш отозванных аварийных ключей: {kid: True} и их привязок {kid: bound_fp}.
 _revoked_cache: Optional[set] = None
 _bound_cache: Optional[dict] = None
+# Закреплённые рабочие места по каждому ключу: {kid: {отпечатки}}.
+_seats_cache: Optional[dict] = None
 _keys_expire = 0.0
 
 
@@ -188,24 +190,30 @@ def _load_settings() -> dict:
     return result
 
 
-def _load_offline_keys() -> Tuple[set, dict]:
+def _load_offline_keys() -> Tuple[set, dict, dict]:
     """
-    Отозванные аварийные ключи и привязки ключей к компьютерам (с кэшем).
+    Отозванные аварийные ключи, привязки к компьютерам и реестр закреплённых
+    рабочих мест (с кэшем).
 
-    Возвращает (множество отозванных kid, {kid: bound_fp}).
+    Возвращает (множество отозванных kid, {kid: bound_fp}, {kid: {отпечатки}}).
 
     ЗАЧЕМ ЗДЕСЬ. Раньше отзыв аварийного ключа работал только внутри программы:
     она сверялась с сервером и переставала прикладывать пропуск. Но программу
     можно переписать, а подписанный ключ подставить в запрос напрямую — и
     отозванный ключ считал бы до самого срока. Теперь отзыв проверяет сервер.
+
+    Реестр мест нужен для ключей на НЕСКОЛЬКО компьютеров: в bound_fp попадает
+    только один отпечаток, а закрепиться могут несколько. Без реестра у ключа
+    на три места считал бы лишь один ПК.
     """
-    global _revoked_cache, _bound_cache, _keys_expire
+    global _revoked_cache, _bound_cache, _seats_cache, _keys_expire
     now = time.time()
     if _revoked_cache is not None and now < _keys_expire:
-        return _revoked_cache, (_bound_cache or {})
+        return _revoked_cache, (_bound_cache or {}), (_seats_cache or {})
 
     revoked: set = set()
     bound: dict = {}
+    seats: dict = {}
     conn = _get_conn()
     if conn is not None:
         try:
@@ -219,6 +227,14 @@ def _load_offline_keys() -> Tuple[set, dict]:
                     revoked.add(int(kid))
                 if bfp:
                     bound[int(kid)] = str(bfp).strip().upper()
+            # Закреплённые рабочие места. Заблокированные администратором ПК
+            # в реестр не берём — для них ключ должен перестать работать.
+            cur.execute("""
+                SELECT offline_key_id, fingerprint FROM offline_key_seats
+                WHERE is_blocked = FALSE
+            """)
+            for kid, fp in cur.fetchall():
+                seats.setdefault(int(kid), set()).add(str(fp).strip().upper())
             conn.commit()
         except Exception as e:
             print(f"[license_guard] реестр ключей не прочитан: {e}")
@@ -227,13 +243,13 @@ def _load_offline_keys() -> Tuple[set, dict]:
             except Exception:
                 pass
             # Не кэшируем неудачу надолго — попробуем снова через минуту.
-            _revoked_cache, _bound_cache = revoked, bound
+            _revoked_cache, _bound_cache, _seats_cache = revoked, bound, seats
             _keys_expire = now + 60
-            return revoked, bound
+            return revoked, bound, seats
 
-    _revoked_cache, _bound_cache = revoked, bound
+    _revoked_cache, _bound_cache, _seats_cache = revoked, bound, seats
     _keys_expire = now + SETTINGS_TTL_SEC
-    return revoked, bound
+    return revoked, bound, seats
 
 
 def _check_offline_key(key: str, client_fp: str, client_fph: str = "") -> Tuple[bool, str]:
@@ -276,7 +292,8 @@ def _check_offline_key(key: str, client_fp: str, client_fph: str = "") -> Tuple[
 
     # Отзыв и привязка — по реестру на сервере.
     kid = payload.get("kid")
-    revoked, bound = _load_offline_keys()
+    revoked, bound, seats = _load_offline_keys()
+    key_seats: set = set()
     if isinstance(kid, int) or (isinstance(kid, str) and str(kid).isdigit()):
         kid_i = int(kid)
         if kid_i in revoked:
@@ -284,10 +301,20 @@ def _check_offline_key(key: str, client_fp: str, client_fph: str = "") -> Tuple[
         # Привязка: приоритет у реестра (её можно задать после выпуска),
         # запасной вариант — поле внутри самой подписи.
         want_fp = bound.get(kid_i) or (str(payload.get("fp") or "").strip().upper())
+        key_seats = seats.get(kid_i) or set()
     else:
         # Ключ без номера — выпущен до появления реестра. Отозвать его нельзя,
         # но привязку внутри подписи проверяем.
         want_fp = str(payload.get("fp") or "").strip().upper()
+
+    # Компьютер уже закреплён за ключом в реестре мест — пропускаем сразу.
+    #
+    # Это ветка для ключей на НЕСКОЛЬКО мест: в bound_fp попадает лишь один
+    # отпечаток, а закрепиться может несколько ПК. Без неё у ключа на три места
+    # считал бы только один компьютер. Заблокированные места в реестр не
+    # попадают (см. _load_offline_keys), поэтому отключённый ПК сюда не пройдёт.
+    if key_seats and (client_fph or "").strip().upper() in key_seats:
+        return True, "emergency"
 
     if want_fp:
         # Привязка может быть задана двумя видами значения, и оба законны:

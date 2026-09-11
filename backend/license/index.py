@@ -736,12 +736,12 @@ def handler(event: dict, context) -> dict:
         # ключей, выпущенных до появления номера, — по самому тексту ключа.
         if kid:
             cur.execute("""
-                SELECT id, org, seats, expires_at, is_active
+                SELECT id, org, seats, expires_at, is_active, bound_fp, autobind
                 FROM offline_keys WHERE id = %s
             """, (kid,))
         elif key_text:
             cur.execute("""
-                SELECT id, org, seats, expires_at, is_active
+                SELECT id, org, seats, expires_at, is_active, bound_fp, autobind
                 FROM offline_keys WHERE key = %s LIMIT 1
             """, (key_text,))
         else:
@@ -773,7 +773,7 @@ def handler(event: dict, context) -> dict:
             return resp(200, {"ok": True, "known": False, "valid": True,
                               "server_now": srv_now_ms})
 
-        okey_id, org, max_seats, expires_at, is_active = krow
+        okey_id, org, max_seats, expires_at, is_active, bound_fp, autobind = krow
 
         # Ключ отозван администратором — программа перейдёт в демо-режим.
         if not is_active:
@@ -793,6 +793,37 @@ def handler(event: dict, context) -> dict:
             return resp(200, {"ok": True, "known": True, "valid": False,
                               "reason": "expired", "org": org,
                               "server_now": srv_now_ms})
+
+        # ── ПРИВЯЗКА К КОМПЬЮТЕРУ ─────────────────────────────────────────────
+        # Ключ уже закреплён за конкретным ПК — с чужого работать нельзя.
+        # Привязка хранится хэшем отпечатка (как в реестре мест) либо коротким
+        # кодом рабочего места, если администратор вводил его руками.
+        if bound_fp:
+            want = str(bound_fp).strip().upper()
+            mine_hash = fph.upper()
+            mine_code = fingerprint[:8].upper()
+            ok_bind = (mine_hash.startswith(want) or want.startswith(mine_hash)) \
+                if len(want) >= 32 else \
+                (mine_code.startswith(want) or want.startswith(mine_code))
+            # Ключ на НЕСКОЛЬКО мест: в bound_fp попадает только один отпечаток,
+            # поэтому остальные закреплённые ПК опознаём по реестру мест. Без
+            # этого у ключа на 3 места работал бы лишь один компьютер.
+            if not ok_bind:
+                cur.execute("""
+                    SELECT 1 FROM offline_key_seats
+                    WHERE offline_key_id = %s AND fingerprint = %s
+                """, (okey_id, fph))
+                ok_bind = cur.fetchone() is not None
+            if not ok_bind:
+                log_event(cur, event_type="offline_wrong_computer", fph=fph,
+                          hostname=hostname, platform=platform,
+                          app_version=app_version, ip=ip,
+                          detail=f"org={org}; key_id={okey_id}")
+                conn.commit()
+                conn.close()
+                return resp(200, {"ok": True, "known": True, "valid": False,
+                                  "reason": "wrong_computer", "org": org,
+                                  "server_now": srv_now_ms})
 
         # Учёт рабочих мест. Место, которое уже отмечалось, просто обновляем.
         cur.execute("""
@@ -821,7 +852,8 @@ def handler(event: dict, context) -> dict:
         else:
             # Новое место. Если все места по ключу уже заняты — отказываем
             # именно новому ПК, а ранее работающие продолжают работать.
-            cur.execute("SELECT COUNT(*) FROM offline_key_seats WHERE offline_key_id = %s",
+            cur.execute("SELECT COUNT(*) FROM offline_key_seats "
+                        "WHERE offline_key_id = %s AND is_blocked = FALSE",
                         (okey_id,))
             used = int(cur.fetchone()[0])
             if max_seats and used >= int(max_seats):
@@ -837,14 +869,47 @@ def handler(event: dict, context) -> dict:
                                   "server_now": srv_now_ms})
             cur.execute("""
                 INSERT INTO offline_key_seats
-                    (offline_key_id, fingerprint, hostname, platform, app_version, last_ip)
-                VALUES (%s, %s, %s, %s, %s, %s)
+                    (offline_key_id, fingerprint, hostname, platform, app_version,
+                     last_ip, bound_at)
+                VALUES (%s, %s, %s, %s, %s, %s, CASE WHEN %s THEN NOW() END)
                 ON CONFLICT (offline_key_id, fingerprint) DO UPDATE
                     SET last_seen_at = NOW()
             """, (okey_id, fph, hostname or None, platform or None,
-                  app_version or None, ip or None))
+                  app_version or None, ip or None, bool(autobind)))
 
-        cur.execute("SELECT COUNT(*) FROM offline_key_seats WHERE offline_key_id = %s",
+            # ── АВТОПРИВЯЗКА ──────────────────────────────────────────────────
+            # Ключ закрепляется за компьютерами, которые первыми вышли на связь,
+            # — в пределах числа мест. Код рабочего места спрашивать не нужно:
+            # на отдалённом руднике его часто некому продиктовать, и раньше из-за
+            # этого ключи выдавались вовсе без привязки и свободно копировались.
+            #
+            # Когда мест набралось столько, сколько разрешено, ключ «запирается»:
+            # в bound_fp пишется отпечаток — с этого момента расчётные серверы
+            # тоже отсекают чужие ПК, даже если ключ подставлен в запрос напрямую.
+            #
+            # При одном месте (обычный случай) ключ запирается сразу на первом ПК.
+            if autobind and not bound_fp:
+                cur.execute("SELECT COUNT(*) FROM offline_key_seats "
+                        "WHERE offline_key_id = %s AND is_blocked = FALSE",
+                            (okey_id,))
+                seats_now = int(cur.fetchone()[0])
+                if max_seats and seats_now >= int(max_seats):
+                    # Мест больше не осталось — фиксируем привязку.
+                    # При одном месте это отпечаток единственного ПК; при
+                    # нескольких — последнего, а остальные уже в реестре мест и
+                    # продолжают работать (их проверка идёт по offline_key_seats).
+                    cur.execute("""
+                        UPDATE offline_keys SET bound_fp = %s WHERE id = %s
+                          AND bound_fp IS NULL
+                    """, (fph, okey_id))
+                    log_event(cur, event_type="offline_key_autobound", fph=fph,
+                              hostname=hostname, platform=platform,
+                              app_version=app_version, ip=ip,
+                              detail=f"org={org}; key_id={okey_id}; "
+                                     f"закреплён за ПК ({seats_now}/{max_seats})")
+
+        cur.execute("SELECT COUNT(*) FROM offline_key_seats "
+                        "WHERE offline_key_id = %s AND is_blocked = FALSE",
                     (okey_id,))
         used_now = int(cur.fetchone()[0])
         conn.commit()
