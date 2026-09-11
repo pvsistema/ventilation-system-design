@@ -1023,17 +1023,37 @@ def handler(event: dict, context) -> dict:
                        o.notes, o.created_at,
                        (o.expires_at IS NOT NULL AND o.expires_at < NOW()) AS expired,
                        o.bound_fp,
+                       -- Отключённые администратором ПК место не занимают:
+                       -- иначе после блокировки лимит оставался бы выбран, и
+                       -- ключ не смог бы закрепиться за новым компьютером.
                        (SELECT COUNT(*) FROM offline_key_seats s
-                         WHERE s.offline_key_id = o.id) AS used_seats,
+                         WHERE s.offline_key_id = o.id
+                           AND s.is_blocked = FALSE) AS used_seats,
                        (SELECT MAX(s.last_seen_at) FROM offline_key_seats s
-                         WHERE s.offline_key_id = o.id) AS last_seen_at,
+                         WHERE s.offline_key_id = o.id
+                           AND s.is_blocked = FALSE) AS last_seen_at,
                        o.replaced_by_id, o.revoked_at, o.autobind,
                        -- Отпечаток уже отметившегося места: подставляется в
                        -- поле привязки при перевыпуске, чтобы код ПК не
                        -- приходилось узнавать у человека по телефону.
                        (SELECT s.fingerprint FROM offline_key_seats s
                          WHERE s.offline_key_id = o.id
-                         ORDER BY s.last_seen_at DESC LIMIT 1) AS seat_fp
+                           AND s.is_blocked = FALSE
+                         ORDER BY s.last_seen_at DESC LIMIT 1) AS seat_fp,
+                       -- Когда сработала автопривязка и за каким компьютером
+                       -- ключ закрепился. Нужно, чтобы в панели было видно
+                       -- не только «привязан», но и к чему именно: на руднике
+                       -- ПК меняют, и без имени машины непонятно, актуальна ли
+                       -- привязка и не пора ли её сбросить.
+                       (SELECT MIN(s.bound_at) FROM offline_key_seats s
+                         WHERE s.offline_key_id = o.id
+                           AND s.is_blocked = FALSE
+                           AND s.bound_at IS NOT NULL) AS bound_at,
+                       (SELECT s.hostname FROM offline_key_seats s
+                         WHERE s.offline_key_id = o.id
+                           AND s.is_blocked = FALSE
+                           AND s.bound_at IS NOT NULL
+                         ORDER BY s.bound_at ASC LIMIT 1) AS bound_host
                 FROM offline_keys o
                 ORDER BY o.created_at DESC
             """)
@@ -1054,6 +1074,10 @@ def handler(event: dict, context) -> dict:
                     # Короткий код места (8 знаков) — ровно то, что человек
                     # видит в окне «Лицензия» и что нужно для привязки.
                     "seat_fp": (str(r[15])[:8].upper() if r[15] else None),
+                    # Момент срабатывания автопривязки и имя компьютера, за
+                    # которым ключ закрепился.
+                    "bound_at": str(r[16]) if r[16] else None,
+                    "bound_host": r[17],
                 })
             return resp(200, {"keys": keys})
 

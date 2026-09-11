@@ -243,10 +243,22 @@ export default function EmergencyTab({
                       // вручную), либо длинным отпечатком из реестра. Показываем
                       // в обоих случаях только начало — длинная строка развалила
                       // бы карточку, а для опознания хватает первых знаков.
-                      <div className="text-[11px] text-blue-600 mt-0.5 flex items-center gap-1">
-                        <Icon name="Lock" size={11} />
-                        Только для ПК <span className="font-mono">{k.bound_fp.slice(0, 8)}</span>
-                        {k.bound_fp.length > 8 && <span className="text-blue-400">…</span>}
+                      //
+                      // Если ключ закрепился САМ, показываем ещё имя компьютера
+                      // и дату: на руднике машины меняют, и без этого непонятно,
+                      // актуальна ли привязка и не пора ли её сбросить.
+                      <div className="text-[11px] text-blue-600 mt-0.5">
+                        <div className="flex items-center gap-1">
+                          <Icon name={k.bound_at ? "ShieldCheck" : "Lock"} size={11} />
+                          {k.bound_at ? "Закрепился сам за ПК" : "Только для ПК"}{" "}
+                          <span className="font-mono">{k.bound_fp.slice(0, 8)}</span>
+                          {k.bound_fp.length > 8 && <span className="text-blue-400">…</span>}
+                        </div>
+                        {k.bound_at && (
+                          <div className="text-[10px] text-blue-500 ml-[15px]">
+                            {k.bound_host || "компьютер без имени"} · {k.bound_at.slice(0, 10)}
+                          </div>
+                        )}
                       </div>
                     ) : k.autobind && k.is_active && !k.expired ? (
                       // Автопривязка: ключ закрепится сам при первой связи.
