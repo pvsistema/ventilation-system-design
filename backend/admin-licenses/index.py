@@ -26,6 +26,11 @@ POST /  body: {action, password, ...params}
                           режиму {days?}
   list_offline_seats — ПК, отметившиеся по аварийному ключу {offline_key_id}
   block_offline_seat — отключить/вернуть отдельный ПК {seat_id, is_blocked}
+  get_license_mode   — режим проверки расчётов и демо-пределы
+  set_license_mode   — включить/выключить строгий режим {mode: 'soft'|'strict',
+                        demo_max_nodes?, demo_max_branches?}
+  reissue_offline_key — перевыпуск аварийного ключа с привязкой к ПК
+                        {offline_key_id, bound_fp, expires_at?, seats?}
 """
 import json
 import os
@@ -679,6 +684,163 @@ def handler(event: dict, context) -> dict:
                               "backup_url": backup_url,
                               "autofailover": autofailover == "1"})
 
+        # ── get_license_mode — режим проверки расчётов и демо-пределы ────────────
+        #
+        # ЗАЧЕМ. Раньше строгий режим включался переменной окружения в каждой из
+        # пяти расчётных функций: перевести систему — пять заходов в настройки и
+        # передеплой, откатить при беде — столько же. Теперь режим лежит в базе,
+        # расчётные серверы читают его с кэшем в 5 минут, а панель переключает
+        # одной кнопкой.
+        if action == "get_license_mode":
+            cur.execute(
+                "SELECT key, value FROM app_settings WHERE key IN "
+                "('compute_license_mode','compute_demo_max_nodes',"
+                "'compute_demo_max_branches')"
+            )
+            cfg = {r[0]: r[1] for r in cur.fetchall()}
+            return resp(200, {
+                "mode": (cfg.get("compute_license_mode") or "soft"),
+                "demo_max_nodes": int(cfg.get("compute_demo_max_nodes") or 20),
+                "demo_max_branches": int(cfg.get("compute_demo_max_branches") or 30),
+            })
+
+        # ── set_license_mode — включить/выключить строгий режим ──────────────────
+        if action == "set_license_mode":
+            mode = (body.get("mode") or "soft").strip().lower()
+            if mode not in ("soft", "strict"):
+                return resp(400, {"error": "invalid_mode"})
+            pairs = [("compute_license_mode", mode)]
+            # Пределы демо-режима меняются тем же действием — они задают, какую
+            # схему расчётный сервер посчитает без лицензии.
+            if body.get("demo_max_nodes") is not None:
+                n = max(0, min(10000, int(body.get("demo_max_nodes") or 20)))
+                pairs.append(("compute_demo_max_nodes", str(n)))
+            if body.get("demo_max_branches") is not None:
+                b = max(0, min(10000, int(body.get("demo_max_branches") or 30)))
+                pairs.append(("compute_demo_max_branches", str(b)))
+            for k, v in pairs:
+                cur.execute("""
+                    INSERT INTO app_settings (key, value, updated_at)
+                    VALUES (%s, %s, NOW())
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+                """, (k, v))
+            try:
+                cur.execute("""
+                    INSERT INTO license_events (event_type, detail)
+                    VALUES ('compute_mode_changed', %s)
+                """, (f"режим проверки расчётов: {mode}",))
+            except Exception as e:
+                print(f"[admin] mode log failed: {e}")
+            conn.commit()
+            return resp(200, {"ok": True, "mode": mode,
+                              "note": "Расчётные серверы подхватят режим в течение 5 минут"})
+
+        # ── reissue_offline_key — перевыпуск аварийного ключа с привязкой к ПК ───
+        #
+        # ЗАЧЕМ. Выданные ранее ключи не имели привязки к компьютеру: файл с
+        # ключом можно было скопировать на любое число машин, и офлайн это
+        # ничем не ограничивалось. Перевыпуск создаёт новый ключ, намертво
+        # привязанный к коду рабочего места, а старый отзывает — с этого момента
+        # он не проходит даже при подстановке в запрос напрямую.
+        #
+        # Старый ключ отзывается СРАЗУ: пока он действует, смысла в привязке нет.
+        # Поэтому новый ключ нужно передать людям до перевыпуска или сразу после.
+        if action == "reissue_offline_key":
+            old_id = int(body.get("offline_key_id") or 0)
+            if not old_id:
+                return resp(400, {"error": "offline_key_id_required"})
+            bound_fp = re.sub(r"[^0-9A-Fa-f]", "", (body.get("bound_fp") or ""))[:64].upper()
+
+            # Привязка «по реестру»: если код не введён, берём отпечаток
+            # компьютера, который уже выходил на связь по этому ключу.
+            #
+            # ВАЖНО. В реестре хранится ХЭШ отпечатка, а не сам отпечаток:
+            # восстановить из него код рабочего места нельзя (односторонняя
+            # функция). Поэтому привязка записывается хэшем целиком, а
+            # расчётный сервер сверяет её с хэшем, который присылает программа.
+            # Без этого ключ привязался бы к неверному значению и не заработал
+            # бы ни на одном компьютере.
+            if not bound_fp:
+                cur.execute("""
+                    SELECT fingerprint FROM offline_key_seats
+                    WHERE offline_key_id = %s
+                    ORDER BY last_seen_at DESC LIMIT 1
+                """, (old_id,))
+                seat = cur.fetchone()
+                if seat and seat[0]:
+                    bound_fp = str(seat[0]).strip().upper()
+
+            if not bound_fp:
+                return resp(400, {
+                    "error": "bound_fp_required",
+                    "message": "Укажите код рабочего места (строка «ID …» в окне «Лицензия»). "
+                               "По этому ключу ещё ни один компьютер не выходил на связь, "
+                               "поэтому взять код автоматически неоткуда.",
+                })
+
+            cur.execute("""
+                SELECT org, seats, expires_at, notes FROM offline_keys WHERE id = %s
+            """, (old_id,))
+            old = cur.fetchone()
+            if not old:
+                return resp(404, {"error": "not_found"})
+            org, seats, expires_at, notes = old
+
+            # Срок нового ключа: по умолчанию тот же, что у старого.
+            exp_in = (body.get("expires_at") or "").strip()
+            if exp_in:
+                expires_iso = exp_in if "T" in exp_in else exp_in + "T23:59:59Z"
+            elif expires_at:
+                expires_iso = expires_at.strftime("%Y-%m-%dT%H:%M:%SZ")
+            else:
+                expires_iso = (datetime.now(timezone.utc) + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+            # Мест у привязанного ключа по умолчанию одно: он работает на
+            # конкретном компьютере, и прежний запас (999) теряет смысл.
+            new_seats = int(body.get("seats") or 1)
+
+            new_id = None
+            try:
+                cur.execute("""
+                    INSERT INTO offline_keys (org, key, seats, expires_at, notes, bound_fp)
+                    VALUES (%s, '', %s, %s, %s, %s)
+                    RETURNING id
+                """, (org, new_seats, expires_iso,
+                      (notes or "") + f" (перевыпуск ключа #{old_id})", bound_fp))
+                new_id = cur.fetchone()[0]
+                conn.commit()
+            except Exception as e:
+                conn.rollback()
+                print(f"[admin] reissue reserve failed: {e}")
+                return resp(500, {"error": "reserve_failed", "detail": str(e)[:200]})
+
+            try:
+                key = make_offline_key(org, expires_iso, new_seats, bound_fp, new_id)
+            except RuntimeError:
+                return resp(500, {"error": "offline_key_private_not_set"})
+            except Exception as e:
+                print(f"[admin] reissue sign failed: {e}")
+                return resp(500, {"error": "offline_key_sign_failed", "detail": str(e)[:200]})
+
+            cur.execute("UPDATE offline_keys SET key = %s WHERE id = %s", (key, new_id))
+            # Старый ключ отзываем и помечаем, чем он заменён.
+            cur.execute("""
+                UPDATE offline_keys
+                SET is_active = FALSE, revoked_at = NOW(), replaced_by_id = %s
+                WHERE id = %s
+            """, (new_id, old_id))
+            try:
+                cur.execute("""
+                    INSERT INTO license_events (event_type, detail)
+                    VALUES ('offline_key_reissued', %s)
+                """, (f"org={org}; старый #{old_id} отозван; новый #{new_id}; fp={bound_fp}",))
+            except Exception as e:
+                print(f"[admin] reissue log failed: {e}")
+            conn.commit()
+            return resp(200, {"ok": True, "id": new_id, "key": key, "org": org,
+                              "expires_at": expires_iso, "seats": new_seats,
+                              "bound_fp": bound_fp, "revoked_id": old_id})
+
         # ── create_offline_key — аварийный оффлайн-ключ (подпись Ed25519) ────────
         if action == "create_offline_key":
             org = (body.get("org") or "").strip()
@@ -763,7 +925,14 @@ def handler(event: dict, context) -> dict:
                        (SELECT COUNT(*) FROM offline_key_seats s
                          WHERE s.offline_key_id = o.id) AS used_seats,
                        (SELECT MAX(s.last_seen_at) FROM offline_key_seats s
-                         WHERE s.offline_key_id = o.id) AS last_seen_at
+                         WHERE s.offline_key_id = o.id) AS last_seen_at,
+                       o.replaced_by_id, o.revoked_at,
+                       -- Отпечаток уже отметившегося места: подставляется в
+                       -- поле привязки при перевыпуске, чтобы код ПК не
+                       -- приходилось узнавать у человека по телефону.
+                       (SELECT s.fingerprint FROM offline_key_seats s
+                         WHERE s.offline_key_id = o.id
+                         ORDER BY s.last_seen_at DESC LIMIT 1) AS seat_fp
                 FROM offline_keys o
                 ORDER BY o.created_at DESC
             """)
@@ -778,6 +947,11 @@ def handler(event: dict, context) -> dict:
                     "bound_fp": r[9],
                     "used_seats": int(r[10] or 0),
                     "last_seen_at": str(r[11]) if r[11] else None,
+                    "replaced_by_id": r[12],
+                    "revoked_at": str(r[13]) if r[13] else None,
+                    # Короткий код места (8 знаков) — ровно то, что человек
+                    # видит в окне «Лицензия» и что нужно для привязки.
+                    "seat_fp": (str(r[14])[:8].upper() if r[14] else None),
                 })
             return resp(200, {"keys": keys})
 
@@ -908,17 +1082,23 @@ def handler(event: dict, context) -> dict:
             return resp(200, {"ok": True})
 
         # ── toggle_offline_key — пометить активным/отозванным ─────────────────────
+        # Отметка времени отзыва нужна не для красоты: расчётные серверы теперь
+        # сами проверяют отзыв, и в журнале должно быть видно, с какого момента
+        # ключ перестал работать.
         if action == "toggle_offline_key":
             oid = int(body.get("offline_key_id", 0))
             is_active = bool(body.get("is_active", True))
-            cur.execute(
-                "UPDATE offline_keys SET is_active = %s WHERE id = %s RETURNING id",
-                (is_active, oid)
-            )
+            cur.execute("""
+                UPDATE offline_keys
+                SET is_active = %s,
+                    revoked_at = CASE WHEN %s THEN NULL ELSE NOW() END
+                WHERE id = %s RETURNING id
+            """, (is_active, is_active, oid))
             if not cur.fetchone():
                 return resp(404, {"error": "not_found"})
             conn.commit()
-            return resp(200, {"ok": True, "is_active": is_active})
+            return resp(200, {"ok": True, "is_active": is_active,
+                              "note": "Расчётные серверы подхватят отзыв в течение 5 минут"})
 
         # ── delete_offline_key — удалить запись из реестра ────────────────────────
         if action == "delete_offline_key":

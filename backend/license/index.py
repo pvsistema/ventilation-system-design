@@ -614,14 +614,31 @@ def handler(event: dict, context) -> dict:
     # Лёгкий пинг «я жива»: обновляет last_seen_at, версию, IP и активные модули.
     # Программа шлёт его периодически (напр. раз в 2–5 мин), пока открыта.
     if action == "heartbeat":
-        cur.execute("""
-            SELECT s.id, s.license_id, l.key, l.is_active, l.expires_at
-            FROM license_seats s
-            JOIN licenses l ON l.id = s.license_id
-            WHERE s.fingerprint = %s
-            ORDER BY s.last_seen_at DESC LIMIT 1
-        """, (fph,))
-        srow = cur.fetchone()
+        # Ищем место СНАЧАЛА по железу, потом по точному отпечатку.
+        #
+        # Раньше поиск шёл только по fingerprint. После переноса места на новый
+        # отпечаток (смена браузера, миграция формулы) сигнал переставал
+        # находить своё место и возвращал seat_not_found до следующей полной
+        # проверки: в мониторинге человек «пропадал» с экрана, хотя работал.
+        srow = None
+        if hw_fph:
+            cur.execute("""
+                SELECT s.id, s.license_id, l.key, l.is_active, l.expires_at
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.hw_fingerprint = %s
+                ORDER BY s.last_seen_at DESC LIMIT 1
+            """, (hw_fph,))
+            srow = cur.fetchone()
+        if not srow:
+            cur.execute("""
+                SELECT s.id, s.license_id, l.key, l.is_active, l.expires_at
+                FROM license_seats s
+                JOIN licenses l ON l.id = s.license_id
+                WHERE s.fingerprint = %s
+                ORDER BY s.last_seen_at DESC LIMIT 1
+            """, (fph,))
+            srow = cur.fetchone()
         if not srow:
             conn.close()
             return resp(200, {"ok": False, "reason": "seat_not_found"})

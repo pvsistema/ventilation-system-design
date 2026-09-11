@@ -45,6 +45,8 @@ interface EmergencyTabProps {
   toggleOffline: (k: OfflineKey) => void;
   deleteOffline: (k: OfflineKey) => void;
   startEditOffline: (k: OfflineKey) => void;
+  /** Перевыпустить ключ с привязкой к компьютеру (старый отзывается). */
+  reissueOffline: (k: OfflineKey) => void;
   loadOfflineKeys: (pwd: string) => void;
   password: string;
 }
@@ -55,7 +57,7 @@ export default function EmergencyTab({
   okEditId, setOkEditId, okEditOrg, setOkEditOrg, okEditExp, setOkEditExp,
   okEditSeats, setOkEditSeats, okEditNotes, setOkEditNotes,
   okShowKeyId, setOkShowKeyId, saveEditOffline, toggleOffline, deleteOffline,
-  startEditOffline, loadOfflineKeys, password,
+  startEditOffline, reissueOffline, loadOfflineKeys, password,
   emgSeats, setEmgSeats, emgBindFp, setEmgBindFp,
   okSeatsForId, okSeats, loadOfflineSeats, blockOfflineSeat,
 }: EmergencyTabProps) {
@@ -209,10 +211,29 @@ export default function EmergencyTab({
                     <div className="text-[11px] text-gray-400 mt-0.5">
                       Действует до: {k.expires_at ? k.expires_at.slice(0, 10) : "—"} · Компьютеров: {k.used_seats ?? 0} / {k.seats} · Выдан: {k.created_at.slice(0, 10)}
                     </div>
-                    {k.bound_fp && (
+                    {k.bound_fp ? (
+                      // Привязка хранится либо коротким кодом места (введён
+                      // вручную), либо длинным отпечатком из реестра. Показываем
+                      // в обоих случаях только начало — длинная строка развалила
+                      // бы карточку, а для опознания хватает первых знаков.
                       <div className="text-[11px] text-blue-600 mt-0.5 flex items-center gap-1">
                         <Icon name="Lock" size={11} />
-                        Только для ПК <span className="font-mono">{k.bound_fp}</span>
+                        Только для ПК <span className="font-mono">{k.bound_fp.slice(0, 8)}</span>
+                        {k.bound_fp.length > 8 && <span className="text-blue-400">…</span>}
+                      </div>
+                    ) : k.is_active && !k.expired ? (
+                      // Ключ без привязки работает на любом компьютере: файл
+                      // можно скопировать на сколько угодно машин, и офлайн это
+                      // ничем не ограничено. Показываем это прямо, а не прячем.
+                      <div className="text-[11px] text-amber-600 mt-0.5 flex items-center gap-1">
+                        <Icon name="LockOpen" size={11} />
+                        Без привязки к ПК — ключ переносим на любой компьютер
+                      </div>
+                    ) : null}
+                    {k.replaced_by_id && (
+                      <div className="text-[11px] text-gray-500 mt-0.5 flex items-center gap-1">
+                        <Icon name="ArrowRight" size={11} />
+                        Заменён ключом #{k.replaced_by_id}
                       </div>
                     )}
                     <div className="text-[11px] text-gray-400 mt-0.5">
@@ -229,6 +250,13 @@ export default function EmergencyTab({
                       className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="Eye" size={14} /></button>
                     <button onClick={() => startEditOffline(k)} title="Редактировать"
                       className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name="Pencil" size={14} /></button>
+                    {!k.bound_fp && k.is_active && !k.expired && (
+                      <button onClick={() => reissueOffline(k)}
+                        title="Перевыпустить с привязкой к компьютеру"
+                        className="p-1.5 rounded hover:bg-blue-50 text-blue-500">
+                        <Icon name="ShieldCheck" size={14} />
+                      </button>
+                    )}
                     <button onClick={() => toggleOffline(k)} title={k.is_active ? "Отозвать" : "Активировать"}
                       className="p-1.5 rounded hover:bg-gray-100 text-gray-500"><Icon name={k.is_active ? "Ban" : "CircleCheck"} size={14} /></button>
                     <button onClick={() => deleteOffline(k)} title="Удалить"

@@ -47,7 +47,11 @@ const CACHE_TTL_MS     = 14 * 24 * 60 * 60 * 1000; // 14 суток
 // v3 — в браузере к отпечатку добавлен скрытый номер установки: без него
 // разные ПК с одинаковым монитором давали один отпечаток и подхватывали
 // чужое рабочее место без ввода ключа.
-const FP_VERSION = 3;
+// v4 — в отпечаток добавлена подпись видеоподсистемы (модель видеокарты), а
+// сам номер установки продублирован в хранилища, переживающие чистку данных
+// браузера. Раньше очистка данных давала «новый компьютер», и он съедал ещё
+// одно место в лимите лицензии.
+const FP_VERSION = 4;
 
 const IS_DESKTOP = !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
 
@@ -291,14 +295,31 @@ function verifySignedLicense(info: LicenseInfo, strict = false): boolean | null 
  *
  * Возвращает пропуск либо null (лицензии нет — сервер откажет).
  */
-export function licenseTicket(): { payload: string; sig: string } | { key: string } | null {
+export function licenseTicket():
+  { payload: string; sig: string } | { key: string; fp: string; fph: string } | null {
   // Аварийный оффлайн-ключ: он сам себе подписанный документ.
   try {
     const loaded = loadOfflineKey();
     if (loaded?.info.valid) {
       const verdict = loadOfflineVerdict();
       // Ключ отозван — пропуск не выдаём, даже если подпись цела.
-      if (!verdict || verdict.valid) return { key: loaded.key };
+      //
+      // Вместе с ключом прикладываем ДВА значения:
+      //   fp   — код рабочего места (первые знаки отпечатка), тот самый, что
+      //          человек видит в окне «Лицензия» и называет при заказе ключа;
+      //   fph  — хэш отпечатка, каким его знает сервер (sha256). Именно он
+      //          хранится в реестре рабочих мест, и по нему сервер может
+      //          привязать ключ к компьютеру, который уже выходил на связь,
+      //          не спрашивая код у человека.
+      // Привязку теперь проверяет САМ расчётный сервер, а не только программа:
+      // скопированный на другую машину ключ отсекается там.
+      if (!verdict || verdict.valid) {
+        return {
+          key: loaded.key,
+          fp: getSeatCode() ?? "",
+          fph: getFpHashForVerify() ?? "",
+        };
+      }
     }
   } catch { /* ignore */ }
 
@@ -384,7 +405,39 @@ function getHwComponents(): string[] {
     `${screen.width}x${screen.height}x${screen.colorDepth}`,
     Intl.DateTimeFormat().resolvedOptions().timeZone,
     detectOsFamily(),
+    // Отпечаток видеоподсистемы: название видеокарты и драйвера, как их
+    // сообщает WebGL. Одинаково во всех браузерах на одном ПК и НЕ зависит от
+    // хранилища — переживает чистку данных браузера. Заметно различает
+    // компьютеры, у которых совпали монитор, часовой пояс и ОС.
+    getGpuSignature(),
   ];
+}
+
+/**
+ * Подпись видеоподсистемы (WebGL renderer).
+ *
+ * ЗАЧЕМ. Скрытый номер установки живёт в хранилище браузера, и чистка данных
+ * его стирает: компьютер выглядел новым и занимал ещё одно рабочее место.
+ * Модель видеокарты стереть нельзя — она определяется железом и драйвером.
+ *
+ * Возвращает пустую строку, если WebGL недоступен (старый браузер, режим
+ * защиты от слежки). Тогда отпечаток считается как раньше — без этой части,
+ * чтобы никого не отсечь.
+ */
+function getGpuSignature(): string {
+  try {
+    const canvas = document.createElement("canvas");
+    const gl = (canvas.getContext("webgl") ?? canvas.getContext("experimental-webgl")) as
+      WebGLRenderingContext | null;
+    if (!gl) return "";
+    const dbg = gl.getExtension("WEBGL_debug_renderer_info");
+    if (!dbg) return "";
+    const renderer = String(gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) ?? "");
+    const vendor = String(gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) ?? "");
+    return renderer || vendor ? `gpu:${vendor}|${renderer}` : "";
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -400,13 +453,52 @@ function getHwComponents(): string[] {
  * В десктопной версии не используется: там берётся настоящий номер системы.
  */
 function getInstallId(): string {
+  // Ищем номер во ВСЕХ местах, где он мог сохраниться. Раньше он лежал только
+  // в localStorage: чистка данных браузера стирала его, компьютер выглядел
+  // новым и занимал ещё одно рабочее место в лимите лицензии.
+  //
+  // Теперь номер дублируется в трёх независимых хранилищах. Обычная чистка
+  // («Удалить файлы cookie и данные сайтов») редко забирает все сразу, и
+  // номер восстанавливается из уцелевшего.
+  const readAll = (): string => {
+    try {
+      const fromLocal = storage.get(INSTALL_ID_KEY);
+      if (fromLocal) return fromLocal;
+    } catch { /* ignore */ }
+    try {
+      const fromSession = sessionStorage.getItem(INSTALL_ID_KEY);
+      if (fromSession) return fromSession;
+    } catch { /* ignore */ }
+    try {
+      // Долгоживущая запись (10 лет). Отдельный механизм хранения: чистится
+      // не тем же действием, что данные сайта.
+      const m = document.cookie.match(new RegExp(`(?:^|; )${INSTALL_ID_KEY}=([^;]*)`));
+      if (m && m[1]) return decodeURIComponent(m[1]);
+    } catch { /* ignore */ }
+    return "";
+  };
+
+  const writeAll = (id: string): void => {
+    try { storage.set(INSTALL_ID_KEY, id); } catch { /* ignore */ }
+    try { sessionStorage.setItem(INSTALL_ID_KEY, id); } catch { /* ignore */ }
+    try {
+      const tenYears = 10 * 365 * 24 * 3600;
+      document.cookie =
+        `${INSTALL_ID_KEY}=${encodeURIComponent(id)}; max-age=${tenYears}; path=/; SameSite=Lax`;
+    } catch { /* ignore */ }
+  };
+
   try {
-    const existing = storage.get(INSTALL_ID_KEY);
-    if (existing) return existing;
+    const existing = readAll();
+    if (existing) {
+      // Нашли в одном месте — восстанавливаем в остальных.
+      writeAll(existing);
+      return existing;
+    }
     const bytes = new Uint8Array(16);
     crypto.getRandomValues(bytes);
     const id = Array.from(bytes).map(b => b.toString(16).padStart(2, "0")).join("");
-    storage.set(INSTALL_ID_KEY, id);
+    writeAll(id);
     return id;
   } catch {
     return "";
@@ -509,14 +601,24 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     ? undefined
     : await sha256hex(getLegacyHwComponents().join("||"));
 
-  // Отпечаток по ПРЕДЫДУЩЕЙ формуле (без номера установки). Нужен ровно один
-  // раз: чтобы уже работающие люди после обновления не вводили ключ заново.
-  // Сервер по нему находит место и намертво закрепляет его за этой установкой,
-  // после чего такой перенос для места больше не выполняется — иначе чужой ПК
-  // с тем же монитором снова подхватил бы место.
+  // Отпечаток по ПРЕДЫДУЩЕЙ формуле (v3: без подписи видеокарты). Нужен ровно
+  // один раз: чтобы уже работающие люди после обновления не вводили ключ
+  // заново. Сервер по нему находит место и намертво закрепляет его за этой
+  // установкой, после чего такой перенос больше не выполняется — иначе чужой
+  // ПК с тем же монитором снова подхватил бы место.
+  //
+  // ВАЖНО: состав v3 записан здесь ЯВНО, а не вызовом getHwComponents().
+  // Раньше сюда подставлялся текущий состав, и при каждом изменении формулы
+  // «предыдущий» отпечаток менялся вместе с новым — перенос переставал
+  // работать ровно тогда, когда был нужен.
   const prevHwFingerprint = machineId
     ? undefined
-    : await sha256hex(getHwComponents().join("||"));
+    : await sha256hex([
+        `${screen.width}x${screen.height}x${screen.colorDepth}`,
+        Intl.DateTimeFormat().resolvedOptions().timeZone,
+        detectOsFamily(),
+        `iid:${getInstallId()}`,
+      ].join("||"));
 
   // Привязка к рабочему месту — ТОЛЬКО по железу: fingerprint = hwFingerprint.
   const fingerprint = hwFingerprint;
@@ -1098,6 +1200,10 @@ export async function sendHeartbeat(
       body: JSON.stringify({
         action: "heartbeat",
         fingerprint,
+        // Отпечаток железа нужен серверу, чтобы найти место даже после
+        // переноса на новый отпечаток: иначе сигнал возвращал seat_not_found
+        // и человек пропадал из мониторинга, продолжая работать.
+        hw_fingerprint: machineInfo?.hwFingerprint,
         hostname:    machineInfo?.hostname,
         platform:    machineInfo?.platform,
         app_version: APP_VERSION,

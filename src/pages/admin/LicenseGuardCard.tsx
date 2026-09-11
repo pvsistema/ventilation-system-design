@@ -51,6 +51,10 @@ const REASON_NAMES: Record<string, string> = {
   ticket_too_old:   "Лицензия давно не обновлялась",
   bad_format:       "Неверный формат ключа",
   no_expiry:        "В ключе не указан срок",
+  revoked:          "Аварийный ключ отозван",
+  wrong_computer:   "Аварийный ключ с другого компьютера",
+  fp_required:      "Аварийный ключ без кода рабочего места",
+  demo:             "Демо-схема (пропущена по квоте)",
 };
 
 function reasonLabel(r: string): string {
@@ -66,18 +70,56 @@ export default function LicenseGuardCard({ password }: { password: string }) {
   const [loading, setLoading] = useState(false);
   const [err, setErr]         = useState("");
 
+  // Режим проверки расчётов. Раньше он задавался переменной окружения в каждой
+  // из пяти расчётных функций: чтобы включить строгий режим, требовалось пять
+  // раз зайти в настройки и передеплоить, а откатить при беде — столько же.
+  // Теперь режим хранится в базе, а серверы читают его сами.
+  const [mode, setMode]       = useState<"soft" | "strict">("soft");
+  const [demoNodes, setDemoNodes] = useState(20);
+  const [modeSaving, setModeSaving] = useState(false);
+  const [modeNote, setModeNote]     = useState("");
+
   const load = useCallback(async () => {
     setLoading(true);
     setErr("");
     try {
       const data = await adminApi(password, { action: "compute_license_stats", days: 14 });
       setStats(data as Stats);
+      try {
+        const m = await adminApi(password, { action: "get_license_mode" });
+        setMode((m as { mode?: string }).mode === "strict" ? "strict" : "soft");
+        setDemoNodes(Number((m as { demo_max_nodes?: number }).demo_max_nodes) || 20);
+      } catch { /* режим не прочитался — покажем мягкий по умолчанию */ }
     } catch (e: unknown) {
       setErr(e instanceof Error ? e.message : "Не удалось загрузить статистику");
     } finally {
       setLoading(false);
     }
   }, [password]);
+
+  /** Переключение строгого режима. Откат — той же кнопкой, без передеплоя. */
+  const switchMode = async (next: "soft" | "strict") => {
+    if (next === "strict" && stats && !stats.ready_for_strict) {
+      const ok = confirm(
+        `За последнюю неделю расчётов без лицензии: ${stats.last7_unlicensed}.\n\n`
+        + "Если включить строгий режим сейчас, у этих людей работа остановится "
+        + "(кроме демо-схем до " + demoNodes + " узлов).\n\nВсё равно включить?",
+      );
+      if (!ok) return;
+    }
+    setModeSaving(true);
+    setModeNote("");
+    try {
+      const r = await adminApi(password, { action: "set_license_mode", mode: next });
+      setMode(next);
+      setModeNote((r as { note?: string }).note
+        ?? "Расчётные серверы подхватят режим в течение 5 минут");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : "Не удалось переключить режим");
+    } finally {
+      setModeSaving(false);
+    }
+  };
 
   useEffect(() => { load(); }, [load]);
 
@@ -274,27 +316,46 @@ export default function LicenseGuardCard({ password }: { password: string }) {
             </div>
           )}
 
-          {/* Как переключить режим */}
-          <div className="p-3 rounded-lg border border-gray-200 bg-gray-50">
-            <div className="text-[11px] font-semibold text-gray-600 mb-1.5">
-              Как включить строгий режим
+          {/* Переключатель режима */}
+          <div className={`p-3 rounded-lg border ${
+            mode === "strict" ? "border-green-200 bg-green-50" : "border-gray-200 bg-gray-50"
+          }`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <Icon name={mode === "strict" ? "Lock" : "LockOpen"} size={14}
+                  className={mode === "strict" ? "text-green-600" : "text-gray-400"} />
+                <span className={`text-[12px] font-semibold ${
+                  mode === "strict" ? "text-green-800" : "text-gray-600"
+                }`}>
+                  {mode === "strict" ? "Строгий режим включён" : "Мягкий режим"}
+                </span>
+              </div>
+              <button
+                onClick={() => switchMode(mode === "strict" ? "soft" : "strict")}
+                disabled={modeSaving}
+                className={`px-3 py-1.5 rounded text-[11px] font-semibold border transition-colors disabled:opacity-50 ${
+                  mode === "strict"
+                    ? "border-gray-300 bg-white text-gray-700 hover:bg-gray-50"
+                    : "border-green-600 bg-green-600 text-white hover:bg-green-700"
+                }`}>
+                {modeSaving ? "Сохраняем…"
+                  : mode === "strict" ? "Вернуть мягкий" : "Включить строгий"}
+              </button>
             </div>
             <div className="text-[11px] text-gray-500 leading-relaxed">
-              Откройте <b>Ядро → Функции</b>, выберите расчётную функцию и в её
-              настройках задайте переменную{" "}
-              <code className="px-1 py-0.5 rounded bg-white border border-gray-200 text-[10px]">
-                COMPUTE_LICENSE_MODE
-              </code>{" "}
-              со значением{" "}
-              <code className="px-1 py-0.5 rounded bg-white border border-gray-200 text-[10px]">
-                strict
-              </code>. Повторите для всех пяти расчётов: воздухораспределение,
-              аэродинамика, взрывы, маршруты ВГСЧ, водоснабжение. Чтобы вернуть
-              мягкий режим, поставьте значение{" "}
-              <code className="px-1 py-0.5 rounded bg-white border border-gray-200 text-[10px]">
-                soft
-              </code>.
+              {mode === "strict"
+                ? `Расчёт без действительной лицензии не выполняется. Исключение — `
+                  + `демо-схемы до ${demoNodes} узлов: витрина на сайте продолжает работать. `
+                  + `Аварийные расчёты (взрыв, маршруты ВГСЧ) в демо закрыты.`
+                : "Расчёт выполняется всем, случаи без лицензии только записываются. "
+                  + "Нужен на время перехода, пока у людей не обновится программа."}
             </div>
+            {modeNote && (
+              <div className="mt-2 flex items-start gap-1.5 text-[11px] text-blue-700">
+                <Icon name="Info" size={12} className="shrink-0 mt-[1px]" />
+                <span>{modeNote}</span>
+              </div>
+            )}
           </div>
         </>
       )}
