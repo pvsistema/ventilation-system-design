@@ -16,6 +16,7 @@ import {
 } from "@/lib/approverTemplate";
 import { DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
+import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
 import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, hitBranchLabelCanvas, velocityColor as velocityColorFn, flowQColor as flowQColorFn } from "@/components/cad/CanvasLayerExports";
@@ -2439,11 +2440,15 @@ export default function TopoCanvas(props: Props) {
                   if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
                   if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
                   if (ic.branchResistance) dataLines.push(`R=${fmtR(b.resistance * 1000, uRes)}`);
+                  if (ic.branchResistanceSum) dataLines.push(`Rсум=${fmtR(branchTotalR(b) * 1000, uRes)}`);
                   if (ic.branchAlpha) dataLines.push(`α=${(b.alphaCoef ?? 0).toFixed(0)}·10⁻⁴`);
                   if (ic.branchVMax) dataLines.push(`Vmax=${uVel.fromBase(b.vMax ?? 0).toFixed(uVel.decimals)}${uVel.symbol}`);
                   if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(b.velocity).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
                   if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
                   if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
+                  if (ic.branchExtraFan && b.hasFan) dataLines.push(`ДопН=${uPres.fromBase(branchExtraPressure(b)).toFixed(uPres.decimals)}${uPres.symbol}`);
+                  if (ic.branchHeight && branchSectionHeight(b) > 0) dataLines.push(`Высота=${uLen.fromBase(branchSectionHeight(b)).toFixed(2)}${uLen.symbol}`);
+                  if (ic.branchPeople && branchPeopleCount(b) > 0) dataLines.push(`Людей=${branchPeopleCount(b)}`);
                   // Показатели вентилятора в подписи ветви БОЛЬШЕ НЕ выводим —
                   // они рисуются отдельной подписью у значка вентилятора (см.
                   // блок «Индикаторы вентилятора на схеме» ниже).

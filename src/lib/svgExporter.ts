@@ -14,6 +14,7 @@ import { type SchemaSymbol } from "@/pages/Cad";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
+import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -576,11 +577,15 @@ export function generateSvg(opts: SvgExportOptions): string {
         if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
         if (ic.branchSection && b.area > 0) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
         if (ic.branchResistance && b.resistance > 0) dataLines.push(`R=${uRes.fromBase(b.resistance * 1000).toFixed(uRes.decimals)}${uRes.symbol}`);
+        if (ic.branchResistanceSum && branchTotalR(b) > 0) dataLines.push(`Rсум=${uRes.fromBase(branchTotalR(b) * 1000).toFixed(uRes.decimals)}${uRes.symbol}`);
         if (ic.branchAlpha) dataLines.push(`α=${(b.alphaCoef ?? 0).toFixed(0)}·10⁻⁴`);
         if (ic.branchVMax) dataLines.push(`Vmax=${uVel.fromBase(b.vMax ?? 0).toFixed(uVel.decimals)}${uVel.symbol}`);
         if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? " ⚠" : ""}`);
         if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
         if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP ?? 0).toFixed(uPres.decimals)}${uPres.symbol}`);
+        if (ic.branchExtraFan && b.hasFan) dataLines.push(`ДопН=${uPres.fromBase(branchExtraPressure(b)).toFixed(uPres.decimals)}${uPres.symbol}`);
+        if (ic.branchHeight && branchSectionHeight(b) > 0) dataLines.push(`Высота=${uLen.fromBase(branchSectionHeight(b)).toFixed(2)}${uLen.symbol}`);
+        if (ic.branchPeople && branchPeopleCount(b) > 0) dataLines.push(`Людей=${branchPeopleCount(b)}`);
       } else if (!isDead && !ic && hasCalc) {
         // Fallback без конфигурации (как в canvasRenderer): показываем Q и V.
         const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";

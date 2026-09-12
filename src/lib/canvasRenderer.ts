@@ -8,6 +8,7 @@ import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project
 import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
+import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "./branchLabelExtras";
 
 export const CANVAS_THRESHOLD = 400;
 
@@ -1259,11 +1260,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
         if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
         if (ic.branchResistance) dataLines.push(`R=${fmtR(b.resistance * 1000, uRes)}`);
+        if (ic.branchResistanceSum) dataLines.push(`Rсум=${fmtR(branchTotalR(b) * 1000, uRes)}`);
         if (ic.branchAlpha) dataLines.push(`α=${(b.alphaCoef ?? 0).toFixed(0)}·10⁻⁴`);
         if (ic.branchVMax) dataLines.push(`Vmax=${uVel.fromBase(b.vMax ?? 0).toFixed(uVel.decimals)}${uVel.symbol}`);
         if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
         if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
         if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
+        if (ic.branchExtraFan && b.hasFan) dataLines.push(`ДопН=${uPres.fromBase(branchExtraPressure(b)).toFixed(uPres.decimals)}${uPres.symbol}`);
+        if (ic.branchHeight && branchSectionHeight(b) > 0) dataLines.push(`Высота=${uLen.fromBase(branchSectionHeight(b)).toFixed(2)}${uLen.symbol}`);
+        if (ic.branchPeople && branchPeopleCount(b) > 0) dataLines.push(`Людей=${branchPeopleCount(b)}`);
         // Показатели вентилятора (расход, напор, мощность, КПД) в подписи ветви
         // БОЛЬШЕ НЕ выводим: они рисуются отдельной подписью у самого значка
         // вентилятора (см. drawSymbolsToCanvas). Раньше они попадали сюда — в
