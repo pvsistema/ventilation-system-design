@@ -84,6 +84,10 @@ export interface CadToolDialogsProps {
   positions: Position[];
   showPositions: boolean;
   scaleLimitsEnabled: boolean;
+  /** Ширина ветви по площади сечения (режим из «Пределов масштабов»). */
+  widthBySectionOn: boolean;
+  scaleBranchMin: number;
+  scaleBranchMax: number;
   scalePositionMin: number;
   scalePositionMax: number;
   positionGostMm: number;
@@ -228,6 +232,8 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           positions={p.positions}
           showPositions={p.showPositions}
           fixedObjectScale={p.scaleLimitsEnabled}
+          widthBySection={p.widthBySectionOn}
+          widthLimits={{ min: p.scaleBranchMin, max: p.scaleBranchMax }}
           scalePositionMin={p.scalePositionMin}
           scalePositionMax={p.scalePositionMax}
           positionGostMm={p.positionGostMm}

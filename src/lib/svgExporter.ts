@@ -15,6 +15,7 @@ import { type TextBlock } from "@/pages/cad/cadTypes";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
+import { medianSection, widthBySection as widthBySectionFn } from "@/lib/branchWidthBySection";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -88,6 +89,13 @@ export interface SvgExportOptions {
   pollutionThreshold?: number;
   /** Масштаб по осям XY — для нормализации objSF при реальных координатах */
   xyScale?: number;
+  /**
+   * Ширина ветви зависит от площади её сечения. Передаётся из схемы, чтобы
+   * печать и экспорт выглядели так же, как экран.
+   */
+  widthBySection?: boolean;
+  /** Пределы ширины при widthBySection, % от базовой (30…300). */
+  widthLimits?: { min: number; max: number };
 }
 
 // ── Цвет ветви ────────────────────────────────────────────────────────────────
@@ -165,7 +173,20 @@ export function generateSvg(opts: SvgExportOptions): string {
     textBlocks = [],
     paperWidthMm,
     xyScale,
+    widthBySection = false,
+    widthLimits,
   } = opts;
+
+  // Толщина линии выработки. При включённом режиме зависит от площади сечения:
+  // схема на листе выглядит как фактическая модель, а ошибки в сечении видно.
+  // Ручная толщина ветви (lineWidth) в приоритете — её режим не перебивает.
+  const _secMedian = widthBySection ? medianSection(branches) : 0;
+  const branchW = (b: TopoBranch): number => {
+    const base = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    if (!widthBySection || (b.lineWidth && b.lineWidth > 0)) return base;
+    return widthBySectionFn(base, b.area ?? 0, _secMedian,
+      widthLimits?.min ?? 30, widthLimits?.max ?? 300);
+  };
 
   // Проекция схемы. При активном слое печати ниже пересчитываем её так,
   // чтобы схема была вписана в рамку и отцентрована по листу (как в
@@ -319,7 +340,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const from = projMap.get(b.fromId);
       const to   = projMap.get(b.toId);
       if (!from || !to) continue;
-      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const bw = branchW(b);
       const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
       const w = (bw + bb * 2) * objSF;
       const dash = b.isLeakage ? `stroke-dasharray="6 4"` : "";
@@ -336,7 +357,7 @@ export function generateSvg(opts: SvgExportOptions): string {
     if (!from || !to) continue;
 
     const color = getBranchColor(b, opts);
-    const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    const bw = branchW(b);
     const w = thinLines ? 1 : bw * objSF;
     const dash = b.isLeakage ? `stroke-dasharray="6 4"` : "";
     const opacity = b.isDead ? 0.35 : 1;
@@ -354,7 +375,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const from = projMap.get(b.fromId);
       const to   = projMap.get(b.toId);
       if (!from || !to) continue;
-      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const bw = branchW(b);
       const outerW = thinLines ? 3 : (bw + 4) * objSF;
       parts.push(`<line x1="${n(from.sx)}" y1="${n(from.sy)}" x2="${n(to.sx)}" y2="${n(to.sy)}" stroke="${esc(outerColor)}" stroke-width="${n(outerW)}"/>`);
     }
@@ -370,7 +391,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const from = projMap.get(b.fromId);
       const to   = projMap.get(b.toId);
       if (!from || !to) continue;
-      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const bw = branchW(b);
       const innerW = thinLines ? 1 : bw * objSF;
       parts.push(`<line x1="${n(from.sx)}" y1="${n(from.sy)}" x2="${n(to.sx)}" y2="${n(to.sy)}" stroke="${esc(innerColor)}" stroke-width="${n(innerW)}"/>`);
     }
@@ -416,7 +437,7 @@ export function generateSvg(opts: SvgExportOptions): string {
     const segLen = Math.hypot(dx, dy);
 
     // Ширина ветви в пикселях SVG
-    const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    const bw = branchW(b);
     const w = (thinLines ? 1 : bw) * objSF;
 
     // Размеры и шаг относительно ширины ветви.
@@ -484,7 +505,7 @@ export function generateSvg(opts: SvgExportOptions): string {
 
     const adjBranches = branches.filter(b => b.fromId === nd.id || b.toId === nd.id);
     const adjAvgW = adjBranches.length > 0
-      ? adjBranches.reduce((s, b) => s + (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth), 0) / adjBranches.length
+      ? adjBranches.reduce((s, b) => s + branchW(b), 0) / adjBranches.length
       : branchWidth;
     const branchPx = thinLines ? 1 : adjAvgW * objSF;
     const r = Math.min(10 * objSF, Math.max(1.5, branchPx * 0.55));
@@ -604,7 +625,7 @@ export function generateSvg(opts: SvgExportOptions): string {
       const anchorX = midX + lox;
       const anchorY = midY + loy;
 
-      const bw = (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth) * objSF;
+      const bw = branchW(b) * objSF;
       const textSc = Math.max(0.6, bw * 0.28) * (b.labelSize ?? 1);
       const lh = 11 * textSc;
       const bh = allLines.length * lh + 4 * textSc;

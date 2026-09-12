@@ -1475,6 +1475,14 @@ export default function CadPage() {
   const [scaleTextMax, setScaleTextMax] = useState(150);
   const [scaleBranchMin, setScaleBranchMin] = useState(80);
   const [scaleBranchMax, setScaleBranchMax] = useState(150);
+  // Толщина ветвей по площади сечения.
+  //
+  // ЗАЧЕМ. Обычно все выработки на схеме одной толщины: ствол 30 м² и
+  // вентсбойка 2 м² неотличимы. Из-за этого не видно фактической модели, а
+  // ошибка ввода сечения (2.0 вместо 20) всплывает только на расчёте.
+  // С включённой настройкой ширина линии идёт от сечения — схема сразу
+  // читается как план горных работ, а промахи видно глазом.
+  const [widthBySectionOn, setWidthBySectionOn] = useState(false);
   // Пределы масштаба маркеров «Позиции ПЛА» (в % от нормального размера), как у ветвей/текста.
   const [scalePositionMin, setScalePositionMin] = useState(80);
   const [scalePositionMax, setScalePositionMax] = useState(150);
@@ -3084,6 +3092,9 @@ export default function CadPage() {
     positions,
     textBlocks,
     scaleLimitsEnabled,
+    widthBySectionOn,
+    scaleBranchMin,
+    scaleBranchMax,
     scalePositionMin,
     scalePositionMax,
     positionGostMm,
@@ -3653,6 +3664,9 @@ export default function CadPage() {
     if (data.zScale !== undefined) setZScale(data.zScale as number);
     if (data.xyScale !== undefined) setXyScale(data.xyScale as number);
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
+    if (data.widthBySectionOn !== undefined) setWidthBySectionOn(data.widthBySectionOn as boolean);
+    if (data.scaleBranchMin !== undefined) setScaleBranchMin(data.scaleBranchMin as number);
+    if (data.scaleBranchMax !== undefined) setScaleBranchMax(data.scaleBranchMax as number);
     if (data.scalePositionMin !== undefined) setScalePositionMin(data.scalePositionMin as number);
     if (data.scalePositionMax !== undefined) setScalePositionMax(data.scalePositionMax as number);
     if (data.positionGostMm !== undefined) setPositionGostMm(data.positionGostMm as number);
@@ -11729,10 +11743,11 @@ export default function CadPage() {
               fixedObjectScale={scaleLimitsEnabled}
               canvasThreshold={canvasThreshold}
               nodeLodThresholds={nodeLodThresholds}
-              scaleLimits={scaleLimitsEnabled ? {
+              scaleLimits={(scaleLimitsEnabled || widthBySectionOn) ? {
                 textMin: scaleTextMin, textMax: scaleTextMax,
                 branchMin: scaleBranchMin, branchMax: scaleBranchMax,
               } : undefined}
+              widthBySection={widthBySectionOn}
               bulkheadScale={bulkheadScale}
               fanScale={fanScale}
               colorByHorizon={colorMode === "horizon"}
@@ -13755,6 +13770,9 @@ export default function CadPage() {
       positions={positions}
       showPositions={showPositions}
       scaleLimitsEnabled={scaleLimitsEnabled}
+      widthBySectionOn={widthBySectionOn}
+      scaleBranchMin={scaleBranchMin}
+      scaleBranchMax={scaleBranchMax}
       scalePositionMin={scalePositionMin}
       scalePositionMax={scalePositionMax}
       positionGostMm={positionGostMm}
@@ -13845,6 +13863,8 @@ export default function CadPage() {
       setScaleBranchMin={setScaleBranchMin}
       scaleBranchMax={scaleBranchMax}
       setScaleBranchMax={setScaleBranchMax}
+      widthBySectionOn={widthBySectionOn}
+      setWidthBySectionOn={setWidthBySectionOn}
       scalePositionMin={scalePositionMin}
       setScalePositionMin={setScalePositionMin}
       scalePositionMax={scalePositionMax}

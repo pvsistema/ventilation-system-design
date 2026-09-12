@@ -52,6 +52,8 @@ interface Props {
   positions?: Position[];
   showPositions?: boolean;
   fixedObjectScale?: boolean;
+  /** Ширина ветви по площади сечения — предпросмотр должен совпадать с экраном. */
+  widthBySection?: boolean;
   /** Диапазон масштаба позиций ПЛА в % при фиксированном масштабе */
   scalePositionMin?: number;
   scalePositionMax?: number;
@@ -89,6 +91,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   positions = [],
   showPositions = true,
   fixedObjectScale = false,
+  widthBySection = false,
   scalePositionMin = 80,
   scalePositionMax = 150,
   positionGostMm = 13,
@@ -279,6 +282,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
         colorMode, sectionColors, posInnerColors, posOuterColors,
         printMode: true,
         fixedObjectScale,
+        widthBySection,
         xyScale,
       });
     } catch (err) {

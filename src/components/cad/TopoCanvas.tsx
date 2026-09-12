@@ -17,6 +17,7 @@ import {
 import { DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
+import { medianSection, widthBySection as widthBySectionFn } from "@/lib/branchWidthBySection";
 import CanvasLayer from "@/components/cad/CanvasLayer";
 import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
 import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, hitBranchLabelCanvas, velocityColor as velocityColorFn, flowQColor as flowQColorFn } from "@/components/cad/CanvasLayerExports";
@@ -54,6 +55,7 @@ export default function TopoCanvas(props: Props) {
     onNodeAdd, onNodeMove, onNodeDragStart, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", animSpeed = 1, workPlane,
     horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, canvasThreshold = CANVAS_THRESHOLD, scaleLimits,
+    widthBySection = false,
     bulkheadScale = 150,
     fanScale = 450,
     colorByHorizon = false, showFlowArrows = false, pollutionThreshold,
@@ -838,6 +840,25 @@ export default function TopoCanvas(props: Props) {
   // с геометрией схемы. Выше опорного — коэффициент 1 (не раздуваем).
   const _indZoomRef = _xySF * 0.4;
   const _indZoomSF = view.scale < _indZoomRef ? view.scale / _indZoomRef : 1;
+
+  // ─── ТОЛЩИНА ВЕТВИ ПО СЕЧЕНИЮ ───────────────────────────────────────────
+  // Эталон — медиана сечений схемы. Считаем один раз на список ветвей, а не
+  // на каждую отрисовку: на схеме в тысячи выработок это заметно.
+  const _sectionMedian = useMemo(
+    () => (widthBySection ? medianSection(branches) : 0),
+    [widthBySection, branches],
+  );
+  /**
+   * Ширина линии выработки до масштабирования зумом.
+   * Ручная толщина ветви (lineWidth) в приоритете: если человек задал её сам,
+   * режим «по сечению» её не перебивает.
+   */
+  const branchDisplayWidth = useCallback((b: TopoBranch): number => {
+    const base = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    if (!widthBySection || (b.lineWidth && b.lineWidth > 0)) return base;
+    return widthBySectionFn(base, b.area ?? 0, _sectionMedian,
+      scaleLimits?.branchMin ?? 30, scaleLimits?.branchMax ?? 300);
+  }, [widthBySection, branchWidth, _sectionMedian, scaleLimits]);
 
   // Радиус попадания в узел — пропорционален реальному размеру, минимум 8px
   const hitNodeR = (sx: number, sy: number, pn: typeof projNodes, extraR = 0) => {
@@ -1664,6 +1685,7 @@ export default function TopoCanvas(props: Props) {
           thinLines={thinLines}
           fixedObjectScale={fixedObjectScale}
           scaleLimits={scaleLimits}
+          widthBySection={widthBySection}
           colorByHorizon={colorByHorizon}
           showFlowArrows={showFlowArrows}
           flowDisplay={flowDisplay}
@@ -1909,7 +1931,7 @@ export default function TopoCanvas(props: Props) {
                 if (!from || !to) return null;
                 const col = compareBranchColors.get(b.id);
                 if (!col) return null;
-                const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+                const bw = branchDisplayWidth(b);
                 const w = (thinLines ? 1 : bw) * objSF;
                 return (
                   <g key={`cmp-${b.id}`}>
@@ -1932,7 +1954,7 @@ export default function TopoCanvas(props: Props) {
             if (!from || !to) return null;
             const col = posOuterColors.get(b.id);
             if (!col) return null;
-            const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+            const bw = branchDisplayWidth(b);
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
             const w = (thinLines ? 1 : bw) * objSF;
             const borderW = (thinLines || !lodBorder) ? 0 : Math.max(0, bb) * objSF;
@@ -1950,7 +1972,7 @@ export default function TopoCanvas(props: Props) {
             const from = projNodesMap.get(b.fromId);
             const to   = projNodesMap.get(b.toId);
             if (!from || !to) return null;
-            const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+            const bw = branchDisplayWidth(b);
             const w = (thinLines ? 1 : bw) * objSF;
             return (
               <line key={`hl-${b.id}`}
@@ -1969,7 +1991,7 @@ export default function TopoCanvas(props: Props) {
             if (!from || !to) return null;
             const isSel = selectedBranchId === b.id || (selectedBranchIds?.has(b.id) ?? false);
             const isLeakage = b.isLeakage ?? false;
-            const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+            const bw = branchDisplayWidth(b);
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
             const baseW = isSel ? bw + 1 : bw;
             const w = thinLines ? 1 : Math.max(baseW * objSF, 1.0);
@@ -2064,7 +2086,7 @@ export default function TopoCanvas(props: Props) {
             : canvasTheme.branchFill;
 
           // ─── ТОЛЩИНА ЛИНИИ ───────────────────────────────────────
-          const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+          const bw = branchDisplayWidth(b);
           const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
           const baseW = isSel ? bw + 1 : bw;
           // Минимум 1px чтобы ветви оставались читаемыми при любом масштабе
@@ -2593,7 +2615,7 @@ export default function TopoCanvas(props: Props) {
                 const syA = reversed ? to.sy : from.sy;
                 const sxB = reversed ? from.sx : to.sx;
                 const syB = reversed ? from.sy : to.sy;
-                const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+                const bw = branchDisplayWidth(b);
                 const w = thinLines ? 1 : Math.max(bw * objSF, 1.0);
                 const { color: fireCol, fromT, toT } = fireSeg;
                 const fsx = sxA + (sxB - sxA) * fromT;

@@ -33,6 +33,8 @@ export interface CadModalsProps {
   scaleTextMax: number; setScaleTextMax: (v: number) => void;
   scaleBranchMin: number; setScaleBranchMin: (v: number) => void;
   scaleBranchMax: number; setScaleBranchMax: (v: number) => void;
+  /** Ширина ветви зависит от площади её сечения (см. branchWidthBySection.ts). */
+  widthBySectionOn: boolean; setWidthBySectionOn: (v: boolean) => void;
   scalePositionMin: number; setScalePositionMin: (v: number) => void;
   scalePositionMax: number; setScalePositionMax: (v: number) => void;
   positionGostMm: number; setPositionGostMm: (v: number) => void;
@@ -172,10 +174,42 @@ export default function CadModals(p: CadModalsProps) {
                       </td>
                     </tr>
 
-                    {/* Строка 2: Толщина ветви */}
+                    {/* Строка 2: Толщина ветви + режим «по сечению».
+                        Галочка стоит здесь, а не отдельной настройкой: она
+                        управляет ровно тем же — шириной линии выработки, и
+                        пределы ниже действуют на неё же. */}
                     <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
-                        Толщина ветви
+                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "top" }}>
+                        <div>Толщина ветви</div>
+                        <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer select-none">
+                          <input type="checkbox" checked={p.widthBySectionOn}
+                            onChange={e => {
+                              const on = e.target.checked;
+                              p.setWidthBySectionOn(on);
+                              // Разброс сечений на руднике — десятки раз, а
+                              // прежние пределы (80–150%) рассчитаны на ручную
+                              // подгонку толщины. В них разница между стволом и
+                              // сбойкой почти незаметна, и смысл режима теряется.
+                              // При первом включении раздвигаем их до рабочих,
+                              // но только если они остались стандартными —
+                              // осознанно выставленные числа не трогаем.
+                              if (on && p.scaleBranchMin === 80 && p.scaleBranchMax === 150) {
+                                p.setScaleBranchMin(30);
+                                p.setScaleBranchMax(300);
+                              }
+                            }}
+                            className="mt-0.5" />
+                          <span className="text-[11px]">
+                            <span className="text-gray-700">Масштаб выработок по сечению</span>
+                            <span className="block text-[11px] text-gray-500">
+                              Ширина линии зависит от площади сечения: схема выглядит как
+                              фактическая модель, а ошибки в сечении (2 вместо 20) сразу
+                              видно. Выключено — все выработки одной толщины.
+                              Пределы справа задают, насколько тонкой и толстой может
+                              стать линия.
+                            </span>
+                          </span>
+                        </label>
                       </td>
                       <td className="py-2 px-3 text-center">
                         <div className="flex items-center justify-center gap-1">
@@ -282,6 +316,7 @@ export default function CadModals(p: CadModalsProps) {
                   onClick={() => {
                     p.setScaleTextMin(80); p.setScaleTextMax(150);
                     p.setScaleBranchMin(80); p.setScaleBranchMax(150);
+                    p.setWidthBySectionOn(false);
                     p.setScalePositionMin(80); p.setScalePositionMax(150);
                     p.setPositionGostMm(13);
                     p.setBulkheadScale(150); p.setFanScale(450);

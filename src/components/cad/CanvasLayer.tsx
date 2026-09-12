@@ -73,6 +73,8 @@ interface CanvasLayerProps {
     textMin: number; textMax: number;
     branchMin: number; branchMax: number;
   };
+  /** Ширина ветви зависит от площади её сечения. */
+  widthBySection?: boolean;
   pollutedBranchIds?: Set<string>;
   xyScale?: number;
   /** Пороги авто-скрытия узлов при отдалении (настройка «Видимость узлов») */
@@ -229,6 +231,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         reversedBranchIds: p.reversedBranchIds,
         fixedObjectScale: p.fixedObjectScale,
         scaleLimits: p.scaleLimits,
+        widthBySection: p.widthBySection,
         pollutedBranchIds: p.pollutedBranchIds,
         xyScale: p.xyScale,
         nodeLodThresholds: p.nodeLodThresholds,
@@ -354,7 +357,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.hoverBranchId,
     props.projNodesMap, props.view, props.width, props.height,
     props.branchWidth, props.thinLines, props.branches,
-    props.fixedObjectScale, props.scaleLimits, props.xyScale,
+    props.fixedObjectScale, props.scaleLimits, props.widthBySection, props.xyScale,
     props.buildFromNodeId, props.buildToPos,
   ]);
 

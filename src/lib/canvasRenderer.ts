@@ -9,6 +9,7 @@ import { type InfoDisplayConfig } from "./infoConfig";
 import { type UnitsConfig, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "./branchLabelExtras";
+import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
 
 export const CANVAS_THRESHOLD = 400;
 
@@ -221,6 +222,12 @@ export interface CanvasRenderOptions {
     textMin: number; textMax: number;
     branchMin: number; branchMax: number;
   };
+  /**
+   * Ширина ветви зависит от площади её сечения.
+   * Иначе ствол 30 м² и вентсбойка 2 м² на схеме неотличимы: не видно
+   * фактической модели, а ошибка ввода сечения ничем себя не выдаёт.
+   */
+  widthBySection?: boolean;
   /** Масштаб по осям XY — нужен для нормализации objSF при реальных координатах */
   xyScale?: number;
   /** ID ветвей, загрязнённых воздухом (pollutesAir + все ниже по потоку) — стрелки синие */
@@ -586,7 +593,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     velColorMin = 0, velColorMax = 15, velColorHue = "blue",
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     nodeLodThresholds,
-    fixedObjectScale = false, scaleLimits, pollutedBranchIds, reversedBranchIds,
+    fixedObjectScale = false, scaleLimits, widthBySection = false,
+    pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
     rescuePathNodeIds, rescueNodeLetters,
     rescuePathBranchIds, rescuePathBranchDirs,
@@ -619,6 +627,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   const _xyScaleCR = xyScale ?? 1;
   const _sl = scaleLimits;
   const objSF = computeObjSF(sc, xyScale, printMode, fixedObjectScale, _sl);
+  // Эталон для режима «толщина по сечению» — медиана сечений схемы.
+  // Медиана, а не среднее: одна ошибочная ветвь в 500 м² не должна
+  // перекашивать всю схему, ведь именно такие ошибки мы и ищем.
+  const _sectionMedian = widthBySection ? medianSection(branches) : 0;
   // LOD: в режиме печати все элементы видны; иначе — только при достаточном масштабе.
   // Используем objSF-скорректированный sc для LOD чтобы учесть минимальный размер объектов.
   const lodChevrons = printMode || sc >= 0.25;
@@ -776,7 +788,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : colorMode === "none" ? defaultBranchColor
       : Q > 0    ? velocityColor(V)
       : defaultBranchColor;
-    const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    const bwBase = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    // Ручная толщина ветви в приоритете: заданную вручную режим не перебивает.
+    const bw = (widthBySection && !(b.lineWidth && b.lineWidth > 0))
+      ? widthBySectionFn(bwBase, b.area ?? 0, _sectionMedian,
+          scaleLimits?.branchMin ?? 30, scaleLimits?.branchMax ?? 300)
+      : bwBase;
     const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
     const baseW = isSel ? bw + 1 : bw;
     // Минимальная абсолютная толщина ветви в px экрана — чтобы при малом масштабе

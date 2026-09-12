@@ -77,6 +77,14 @@ export interface Props {
     textMin: number; textMax: number;
     branchMin: number; branchMax: number;
   };
+  /**
+   * Ширина ветви зависит от площади её сечения.
+   *
+   * Иначе ствол 30 м² и вентсбойка 2 м² выглядят одинаково: не видно
+   * фактической модели, а ошибка ввода сечения ничем себя не выдаёт.
+   * Пределы берутся из scaleLimits.branchMin/branchMax.
+   */
+  widthBySection?: boolean;
   /** Масштаб перемычек в % от ширины ветви (150 = 1.5× ширины ветви). */
   bulkheadScale?: number;
   /** Масштаб вентиляторов в % от ширины ветви (450 = 4.5× ширины ветви). */

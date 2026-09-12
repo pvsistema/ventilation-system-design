@@ -61,6 +61,10 @@ interface PrintDialogProps {
   positions?: Position[];
   showPositions?: boolean;
   fixedObjectScale?: boolean;
+  /** Ширина ветви по площади сечения — чтобы лист совпадал с экраном. */
+  widthBySection?: boolean;
+  /** Пределы ширины при widthBySection, % от базовой. */
+  widthLimits?: { min: number; max: number };
   scalePositionMin?: number;
   scalePositionMax?: number;
   positionGostMm?: number;
@@ -90,6 +94,8 @@ export default function PrintDialog({
   positions = [],
   showPositions = true,
   fixedObjectScale = false,
+  widthBySection = false,
+  widthLimits,
   scalePositionMin = 80,
   scalePositionMax = 150,
   positionGostMm = 13,
@@ -1025,7 +1031,7 @@ export default function PrintDialog({
         thinLines, colorByHorizon,
         showFlowArrows, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
-        printMode: true, fixedObjectScale, xyScale,
+        printMode: true, fixedObjectScale, xyScale, widthBySection,
         colorMode, sectionColors, posInnerColors, posOuterColors,
       });
 
@@ -1080,7 +1086,7 @@ export default function PrintDialog({
         thinLines, colorByHorizon,
         showFlowArrows, flowDisplay,
         animOffset: 0, infoConfig, unitsConfig,
-        printMode: true, fixedObjectScale, xyScale,
+        printMode: true, fixedObjectScale, xyScale, widthBySection,
         colorMode, sectionColors, posInnerColors, posOuterColors,
       });
       ctx.restore();
@@ -1275,7 +1281,7 @@ body{background:white;font-family:Arial,sans-serif}
           canvasW, canvasH,
           paperWidthMm: paper.w,
           title: projectName,
-          fixedObjectScale, xyScale,
+          fixedObjectScale, xyScale, widthBySection, widthLimits,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
           showFlowArrows, textBlocks,
@@ -1332,7 +1338,7 @@ body{background:white;font-family:Arial,sans-serif}
         canvasH: Math.round(paper.h * 3.78),
         paperWidthMm: paper.w,
         title: projectName,
-        fixedObjectScale, xyScale,
+        fixedObjectScale, xyScale, widthBySection, widthLimits,
         pollutedBranchIds,
         schemaSymbols: schemaSymbols ?? [],
         showFlowArrows, textBlocks,
@@ -1362,7 +1368,7 @@ body{background:white;font-family:Arial,sans-serif}
           canvasH: Math.round(paper.h * 3.78),
           paperWidthMm: paper.w,
           title: projectName,
-          fixedObjectScale, xyScale,
+          fixedObjectScale, xyScale, widthBySection, widthLimits,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
           showFlowArrows, textBlocks,
@@ -1710,6 +1716,7 @@ body{background:white;font-family:Arial,sans-serif}
                         positions={positions}
                         showPositions={showPositions}
                         fixedObjectScale={fixedObjectScale}
+                        widthBySection={widthBySection}
                         scalePositionMin={scalePositionMin}
                         scalePositionMax={scalePositionMax}
                         positionGostMm={positionGostMm}
