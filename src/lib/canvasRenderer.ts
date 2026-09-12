@@ -963,26 +963,22 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   ctx.setLineDash([]);
 
   // ── ПРОХОД 2: fill + декор ветвей слоя ────────────────────────────────────
-  // БЕЛЫЕ ветви (defaultBranchColor — нет цвета позиции ПЛА / нулевой расход /
-  // colorMode="none") рисуем ПЕРВЫМИ, окрашенные — ПОВЕРХ них. Иначе белые концы
-  // (round-cap) соседних ветвей перекрывают окраску (позиции ПЛА, расход воздуха)
-  // в общих узлах. Порядок стабильный (не меняем z-order внутри каждой категории).
-  // Раньше здесь была полноценная сортировка массива с обращением к словарю
-  // параметров на КАЖДОЕ сравнение: на схеме в 14 тысяч ветвей это сотни тысяч
-  // обращений каждый кадр — самая дорогая операция при панораме и зуме.
-  // Простое разделение на две корзины даёт тот же порядок (белые, затем
-  // окрашенные, внутри каждой категории порядок сохраняется), но за один
-  // проход и без сравнений.
-  let group2 = group;
-  {
-    const white: SortedBranch[] = [];
-    const colored: SortedBranch[] = [];
-    for (const e of group) {
-      (bParamsMap.get(e.b.id)?.color === defaultBranchColor ? white : colored).push(e);
-    }
-    if (colored.length > 0 && white.length > 0) group2 = white.concat(colored);
-  }
-  for (const { b } of group2) {
+  //
+  // ПОРЯДОК ВНУТРИ СЛОЯ НЕ МЕНЯЕМ — рисуем ровно так же, как в SVG-режиме.
+  //
+  // Раньше здесь ветви переставлялись: сначала белые, затем окрашенные. Смысл
+  // был в том, чтобы круглые торцы белых выработок не перекрывали окраску в
+  // общих узлах. Но перестановка ЛОМАЛА порядок глубины внутри горизонта: на
+  // пересечениях выработка, которая по 3D должна лежать ниже, оказывалась
+  // сверху. На схеме это выглядело как «ветви отображаются некорректно», а
+  // выделенная ветвь показывалась кусками — часть её перекрывали соседние.
+  // В SVG-режиме такой перестановки нет, поэтому там всё рисовалось верно.
+  //
+  // Проблему с торцами решает не порядок, а отдельный подпроход ниже: после
+  // всех заливок слоя окрашенные ветви дорисовывают свои КОНЦЫ поверх белых
+  // (см. «ПОДПРОХОД: концы окрашенных ветвей»). Так и глубина сохраняется,
+  // и окраска в узлах не теряется.
+  for (const { b } of group) {
     const p = bParamsMap.get(b.id);
     if (!p) continue;
     const { isSel, isDead, isLeakage, Q, V, overV,
@@ -1375,6 +1371,49 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     }
 
     void ux; void uy;
+  }
+
+  // ── ПОДПРОХОД: концы окрашенных ветвей ────────────────────────────────────
+  //
+  // ЗАЧЕМ. Линии рисуются круглыми торцами, поэтому в общем узле торец ветви,
+  // нарисованной позже, ложится поверх соседней. Если рядом сходятся белая и
+  // окрашенная выработки (позиция ПЛА, расход воздуха, цвет горизонта), белый
+  // торец мог «съесть» окраску — цветная ветвь выглядела оборванной у узла.
+  //
+  // Раньше это лечили перестановкой: белые рисовали первыми, окрашенные после.
+  // Но перестановка ломала порядок глубины внутри горизонта — на пересечениях
+  // выработки ложились не тем слоем, и выделенная ветвь показывалась кусками.
+  //
+  // Теперь порядок не трогаем: окрашенные ветви просто дорисовывают короткие
+  // отрезки у своих концов поверх белых. Глубина сохраняется, окраска в узлах
+  // не теряется. Работы немного — только концы, и только у цветных ветвей.
+  ctx.globalAlpha = 1;
+  ctx.setLineDash([]);
+  for (const { b } of group) {
+    const p = bParamsMap.get(b.id);
+    if (!p || p.color === defaultBranchColor) continue;
+    if (p.isLeakage) continue;                 // штриховая линия — торцов нет
+    const { w } = p;
+    // Направление считаем ГЕОМЕТРИЧЕСКИ (от узла к узлу), а не по потоку:
+    // ux/uy в параметрах развёрнуты по направлению воздуха (при реверсе они
+    // смотрят в обратную сторону), и «пятачок» ушёл бы мимо конца ветви.
+    const gdx = p.toSx - p.fromSx, gdy = p.toSy - p.fromSy;
+    const segLen = Math.hypot(gdx, gdy);
+    if (segLen < 1) continue;
+    const ux = gdx / segLen, uy = gdy / segLen;
+    // Длина «пятачка» у конца: половина толщины линии — ровно столько занимает
+    // круглый торец соседней ветви. Ограничиваем четвертью длины, чтобы на
+    // коротких сбойках не перерисовывать линию целиком.
+    const capLen = Math.min(w * 0.5 + 0.5, segLen * 0.25);
+    if (capLen <= 0.2) continue;
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = w;
+    ctx.beginPath();
+    ctx.moveTo(p.fromSx, p.fromSy);
+    ctx.lineTo(p.fromSx + ux * capLen, p.fromSy + uy * capLen);
+    ctx.moveTo(p.toSx, p.toSy);
+    ctx.lineTo(p.toSx - ux * capLen, p.toSy - uy * capLen);
+    ctx.stroke();
   }
 
   // ── ПРОХОД 2b: трубопроводы поверх основных линий группы ──────────────────
@@ -1952,6 +1991,15 @@ export interface OverlayRenderOptions {
   /** Масштабный коэффициент объектов — тот же, что в основном рендере */
   objSF: number;
   /**
+   * Ширина ветви по площади сечения — ДОЛЖНА совпадать с основным рендером.
+   * Без этого подсветка выделения рисуется базовой толщиной и на широкой
+   * выработке выглядит узкой полоской внутри неё, а на узкой — вылезает за
+   * края. Именно так выглядел «не выделяется вся ветвь» в режиме Canvas.
+   */
+  widthBySection?: boolean;
+  /** Пределы ширины при widthBySection (%, из «Пределов масштабов»). */
+  scaleLimits?: { branchMin: number; branchMax: number };
+  /**
    * Линия построения новой выработки: тянется от выбранного узла к курсору.
    * Раньше рисовалась отдельным SVG-слоем, который React пересоздавал на
    * каждое движение мыши. Теперь это две линии на уже существующем холсте.
@@ -1965,10 +2013,22 @@ export function renderOverlay(opts: OverlayRenderOptions) {
     ctx, width, height, projNodesMap, branches,
     selectedBranchId, selectedBranchIds, selectedNodeId, selectedNodeIds,
     hoverBranchId, branchWidth, thinLines, objSF,
+    widthBySection = false, scaleLimits,
     buildFromNodeId, buildToPos,
   } = opts;
 
   ctx.clearRect(0, 0, width, height);
+
+  // Ширина ветви — ровно та же формула, что в основном рендере. Иначе подсветка
+  // не совпадёт с самой выработкой: на широком стволе останется узкая полоска,
+  // на тонкой сбойке вылезет за края.
+  const _ovMedian = widthBySection ? medianSection(branches) : 0;
+  const ovBranchW = (b: TopoBranch): number => {
+    const base = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+    if (!widthBySection || b.isVentPipeBranch) return base;
+    return widthBySectionFn(base, b.area ?? 0, _ovMedian,
+      scaleLimits?.branchMin ?? 30, scaleLimits?.branchMax ?? 300);
+  };
 
   // ── Линия построения новой выработки (от узла к курсору) ──
   // Рисуем ПЕРВОЙ, чтобы выделение оставалось поверх неё.
@@ -2006,7 +2066,7 @@ export function renderOverlay(opts: OverlayRenderOptions) {
     const from = b ? projNodesMap.get(b.fromId) : undefined;
     const to   = b ? projNodesMap.get(b.toId)   : undefined;
     if (b && from && to) {
-      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const bw = ovBranchW(b);
       const w  = thinLines ? 1 : Math.max(bw * objSF, 1.0);
       ctx.strokeStyle = "#f59e0b";
       ctx.lineWidth = w + 8;
@@ -2034,7 +2094,7 @@ export function renderOverlay(opts: OverlayRenderOptions) {
       if (mxX < -64 || mnX > width + 64 || mxY < -64 || mnY > height + 64) continue;
 
       const isMulti = selectedBranchIds.has(id);
-      const bw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
+      const bw = ovBranchW(b);
       const w  = thinLines ? 1 : Math.max((bw + 1) * objSF, 1.0);
       // Тёмная обводка под цветом — чтобы выделение читалось на любом фоне.
       ctx.strokeStyle = "#1f2937";

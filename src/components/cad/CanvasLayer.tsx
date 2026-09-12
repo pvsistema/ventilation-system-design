@@ -281,6 +281,10 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         branchWidth: p.branchWidth,
         thinLines: p.thinLines,
         objSF: computeObjSF(p.view.scale, p.xyScale, false, p.fixedObjectScale, p.scaleLimits),
+        // Те же параметры ширины, что у основного рендера: иначе подсветка
+        // выделения не совпадёт с самой выработкой.
+        widthBySection: p.widthBySection,
+        scaleLimits: p.scaleLimits,
         buildFromNodeId: p.buildFromNodeId,
         buildToPos: p.buildToPos,
       });
