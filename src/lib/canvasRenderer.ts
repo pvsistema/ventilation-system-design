@@ -789,8 +789,11 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       : Q > 0    ? velocityColor(V)
       : defaultBranchColor;
     const bwBase = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-    // Ручная толщина ветви в приоритете: заданную вручную режим не перебивает.
-    const bw = (widthBySection && !(b.lineWidth && b.lineWidth > 0))
+    // ВАЖНО: lineWidth есть у каждой ветви и по умолчанию равен 7 (makeBranch),
+    // то есть это НЕ признак ручной настройки. Если считать его таковым, режим
+    // «по сечению» не сработает ни на одной ветви — ширина не изменится вовсе.
+    // Не трогаем только линию вентстава: её толщина выведена от ветви-хозяина.
+    const bw = (widthBySection && !b.isVentPipeBranch)
       ? widthBySectionFn(bwBase, b.area ?? 0, _sectionMedian,
           scaleLimits?.branchMin ?? 30, scaleLimits?.branchMax ?? 300)
       : bwBase;

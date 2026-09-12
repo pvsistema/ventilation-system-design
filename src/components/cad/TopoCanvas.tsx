@@ -850,12 +850,20 @@ export default function TopoCanvas(props: Props) {
   );
   /**
    * Ширина линии выработки до масштабирования зумом.
-   * Ручная толщина ветви (lineWidth) в приоритете: если человек задал её сам,
-   * режим «по сечению» её не перебивает.
+   *
+   * ВАЖНО про lineWidth. Поле есть у КАЖДОЙ ветви и по умолчанию равно 7
+   * (см. makeBranch в topology.ts) — это не «ручная настройка человека», а
+   * заводское значение. Поэтому считать его признаком ручной толщины нельзя:
+   * при таком условии режим «по сечению» не срабатывал вообще ни на одной
+   * ветви, и ширина визуально не менялась.
+   *
+   * Режим применяется ко всем обычным выработкам. Не трогаем только линию
+   * вентстава: её толщина намеренно выведена от ветви-хозяина и к сечению
+   * выработки отношения не имеет.
    */
   const branchDisplayWidth = useCallback((b: TopoBranch): number => {
     const base = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-    if (!widthBySection || (b.lineWidth && b.lineWidth > 0)) return base;
+    if (!widthBySection || b.isVentPipeBranch) return base;
     return widthBySectionFn(base, b.area ?? 0, _sectionMedian,
       scaleLimits?.branchMin ?? 30, scaleLimits?.branchMax ?? 300);
   }, [widthBySection, branchWidth, _sectionMedian, scaleLimits]);

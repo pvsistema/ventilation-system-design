@@ -183,7 +183,10 @@ export function generateSvg(opts: SvgExportOptions): string {
   const _secMedian = widthBySection ? medianSection(branches) : 0;
   const branchW = (b: TopoBranch): number => {
     const base = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
-    if (!widthBySection || (b.lineWidth && b.lineWidth > 0)) return base;
+    // lineWidth есть у каждой ветви и по умолчанию равен 7 (makeBranch) — это
+    // не «ручная настройка», поэтому признаком её считать нельзя: иначе режим
+    // не сработает ни на одной выработке. Исключаем только линию вентстава.
+    if (!widthBySection || b.isVentPipeBranch) return base;
     return widthBySectionFn(base, b.area ?? 0, _secMedian,
       widthLimits?.min ?? 30, widthLimits?.max ?? 300);
   };
