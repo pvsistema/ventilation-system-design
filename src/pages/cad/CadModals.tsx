@@ -100,44 +100,29 @@ export default function CadModals(p: CadModalsProps) {
       {p.scaleSettingsOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
           onClick={() => p.setScaleSettingsOpen(false)}>
+          {/* Боковое меню разделов убрано.
+              Из шести пунктов работал только «Пределы масштабов» — остальные
+              («Схема», «Единицы измерения», «Координатная сетка», «Размеры
+              объектов», «Цвета и шрифты») были нерабочими надписями: клик по
+              ним ничего не открывал. Пустые пункты создают ложное ожидание
+              настроек, которых нет, поэтому окно оставлено одностраничным. */}
           <div className="bg-white shadow-2xl border border-gray-300 flex"
-            style={{ minWidth: 600, fontFamily: "Segoe UI, Tahoma, sans-serif", borderRadius: 0 }}
+            style={{ minWidth: 560, fontFamily: "Segoe UI, Tahoma, sans-serif", borderRadius: 0 }}
             onClick={e => e.stopPropagation()}>
-            {/* Левая панель (дерево) */}
-            <div className="border-r border-gray-300" style={{ width: 180, background: "var(--c-s2, #f5f5f5)" }}>
-              <div className="px-3 py-2 border-b border-gray-300 text-[12px] font-semibold text-gray-700" style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
-                Настройки технологической схемы
-              </div>
-              <div className="py-1">
-                {["Схема", "Единицы измерения", "Координатная сетка", "Размеры объектов", "Пределы масштабов", "Цвета и шрифты"].map((item, i) => (
-                  <div key={i}
-                    className="px-3 py-1 text-[12px] cursor-pointer"
-                    style={{
-                      background: item === "Пределы масштабов" ? "#0078d7" : "transparent",
-                      color: item === "Пределы масштабов" ? "white" : "var(--c-t1, #222)",
-                      paddingLeft: i > 0 ? 24 : 12,
-                    }}>
-                    {item}
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Правая панель (содержимое) */}
             <div className="flex flex-col" style={{ flex: 1 }}>
               {/* Заголовок */}
               <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300"
                 style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
-                <span className="text-[12px] font-semibold text-gray-800">Настройки технологической схемы</span>
+                <span className="text-[12px] font-semibold text-gray-800">Пределы масштабов</span>
                 <button onClick={() => p.setScaleSettingsOpen(false)}
                   className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white text-gray-600">
                   <Icon name="X" size={12} />
                 </button>
               </div>
 
+              {/* Подзаголовок внутри убран: после удаления бокового меню он
+                  повторял бы заголовок окна слово в слово. */}
               <div className="px-6 py-4 flex-1">
-                <div className="text-[14px] font-semibold text-gray-800 mb-4">Пределы масштабов</div>
-
                 {/* Таблица */}
                 <table className="text-[12px] w-full mb-4" style={{ borderCollapse: "collapse" }}>
                   <thead>
