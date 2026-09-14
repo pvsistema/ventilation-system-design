@@ -2,11 +2,23 @@
 // Каталог вентиляторов с реальными Q–H характеристиками
 // Аппроксимация: H(Q) = H0 + a·Q + b·Q²
 // Источники: VEZA, Systemair, Korf, Ровен
+//
+// Сам расчёт (рабочая точка, КПД, мощность, скоринг) живёт в общем ядре
+// подбора — lib/selection/core.ts. Здесь остаётся каталог и тонкие обёртки,
+// чтобы прежние вызовы из интерфейса продолжали работать без правок.
 // ─────────────────────────────────────────────────────────────────────────────
+import {
+  curveHead, curveEfficiency, curvePower,
+  findOperatingPoint as findPoint, scoreOperatingPoint, networkResistance,
+  executionAllowed, vfdSpeedRatio, vfdPower,
+  type OperatingPointBase, type EquipmentOptions, type Execution,
+} from "@/lib/selection/core";
 
 export type FanType = "axial" | "centrifugal_forward" | "centrifugal_backward" | "roof" | "duct";
 
-export interface FanModel {
+// Поля vfd / execution / stages описаны в ядре подбора (EquipmentOptions):
+// они общие для вентиляторов и насосов и участвуют в отборе моделей.
+export interface FanModel extends EquipmentOptions {
   id: string;
   brand: string;
   model: string;
@@ -44,6 +56,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_vkmsq_100",
     brand: "VENTS", model: "ВКМС 100",
     type: "duct",
+    vfd: false, execution: "general",
     H0: 280, a: 0.15, b: -0.0008,
     Qmin: 50, Qmax: 350, Qopt: 200,
     etaMax: 0.62,
@@ -55,6 +68,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_vkmsq_125",
     brand: "VENTS", model: "ВКМС 125",
     type: "duct",
+    vfd: false, execution: "general",
     H0: 350, a: 0.12, b: -0.0005,
     Qmin: 80, Qmax: 480, Qopt: 280,
     etaMax: 0.65,
@@ -66,6 +80,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_vkmsq_160",
     brand: "VENTS", model: "ВКМС 160",
     type: "duct",
+    vfd: false, execution: "general",
     H0: 420, a: 0.08, b: -0.00025,
     Qmin: 150, Qmax: 750, Qopt: 450,
     etaMax: 0.68,
@@ -77,6 +92,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_vkmsq_200",
     brand: "VENTS", model: "ВКМС 200",
     type: "duct",
+    vfd: false, execution: "general",
     H0: 510, a: 0.05, b: -0.00012,
     Qmin: 250, Qmax: 1200, Qopt: 700,
     etaMax: 0.71,
@@ -88,6 +104,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_vkmsq_250",
     brand: "VENTS", model: "ВКМС 250",
     type: "duct",
+    vfd: false, execution: "general",
     H0: 640, a: 0.04, b: -0.00006,
     Qmin: 400, Qmax: 1900, Qopt: 1100,
     etaMax: 0.73,
@@ -99,6 +116,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_vkmsq_315",
     brand: "VENTS", model: "ВКМС 315",
     type: "duct",
+    vfd: false, execution: "general",
     H0: 780, a: 0.025, b: -0.00003,
     Qmin: 600, Qmax: 2800, Qopt: 1700,
     etaMax: 0.75,
@@ -112,6 +130,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "veza_vrn_4",
     brand: "VEZA", model: "ВРН №4 (лопатки назад)",
     type: "centrifugal_backward",
+    vfd: true, execution: "general",
     H0: 850, a: 0.06, b: -0.00008,
     Qmin: 800, Qmax: 4500, Qopt: 2700,
     etaMax: 0.78,
@@ -123,6 +142,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "veza_vrn_5",
     brand: "VEZA", model: "ВРН №5 (лопатки назад)",
     type: "centrifugal_backward",
+    vfd: true, execution: "general",
     H0: 1100, a: 0.04, b: -0.000035,
     Qmin: 1500, Qmax: 7500, Qopt: 4500,
     etaMax: 0.80,
@@ -134,6 +154,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "veza_vrn_6_3",
     brand: "VEZA", model: "ВРН №6.3 (лопатки назад)",
     type: "centrifugal_backward",
+    vfd: true, execution: "general",
     H0: 1450, a: 0.025, b: -0.000015,
     Qmin: 2500, Qmax: 12000, Qopt: 7200,
     etaMax: 0.82,
@@ -147,6 +168,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "korf_radial_2",
     brand: "Korf", model: "VR-280-127 №2",
     type: "centrifugal_forward",
+    vfd: false, execution: "general",
     H0: 380, a: 0.18, b: -0.0006,
     Qmin: 200, Qmax: 1400, Qopt: 800,
     etaMax: 0.58,
@@ -158,6 +180,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "korf_radial_3",
     brand: "Korf", model: "VR-280-127 №3",
     type: "centrifugal_forward",
+    vfd: true, execution: "general",
     H0: 580, a: 0.10, b: -0.00018,
     Qmin: 400, Qmax: 2400, Qopt: 1400,
     etaMax: 0.62,
@@ -171,6 +194,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_om_300",
     brand: "VENTS", model: "ОВ 300",
     type: "axial",
+    vfd: false, execution: "general",
     H0: 180, a: 0.04, b: -0.00004,
     Qmin: 800, Qmax: 3500, Qopt: 2200,
     etaMax: 0.55,
@@ -182,6 +206,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "vents_om_400",
     brand: "VENTS", model: "ОВ 400",
     type: "axial",
+    vfd: false, execution: "general",
     H0: 240, a: 0.025, b: -0.000018,
     Qmin: 1500, Qmax: 6500, Qopt: 4000,
     etaMax: 0.58,
@@ -195,6 +220,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "rovin_kvm_3",
     brand: "Ровен", model: "КРОМ-3",
     type: "roof",
+    vfd: false, execution: "general",
     H0: 320, a: 0.05, b: -0.00007,
     Qmin: 600, Qmax: 3200, Qopt: 1900,
     etaMax: 0.62,
@@ -206,6 +232,7 @@ export const FAN_CATALOG: FanModel[] = [
     id: "rovin_kvm_5",
     brand: "Ровен", model: "КРОМ-5",
     type: "roof",
+    vfd: true, execution: "heat_resistant",
     H0: 480, a: 0.025, b: -0.000018,
     Qmin: 1500, Qmax: 7500, Qopt: 4500,
     etaMax: 0.68,
@@ -216,73 +243,42 @@ export const FAN_CATALOG: FanModel[] = [
 ];
 
 // ─── Расчёт характеристик ───────────────────────────────────────────────────
+//
+// Формулы вынесены в общее ядро подбора (lib/selection/core.ts): тот же
+// алгоритм применялся здесь и в pumps.ts двумя почти дословными копиями.
+// Функции ниже сохранены как тонкие обёртки — внешний код (FanSelector,
+// Index, схема) продолжает работать без изменений.
 
 // Напор вентилятора при заданном расходе: H(Q)
 export function fanPressure(fan: FanModel, Q: number): number {
-  return Math.max(0, fan.H0 + fan.a * Q + fan.b * Q * Q);
+  return curveHead(fan, Q);
 }
 
 // КПД при расходе (упрощённо — парабола вокруг Qopt)
 export function fanEfficiency(fan: FanModel, Q: number): number {
-  if (Q <= 0 || Q > fan.Qmax * 1.1) return 0;
-  // η(Q) = ηmax * (1 - 0.5·((Q-Qopt)/Qopt)²)
-  const ratio = (Q - fan.Qopt) / fan.Qopt;
-  const eta = fan.etaMax * Math.max(0.1, 1 - 0.6 * ratio * ratio);
-  return Math.min(fan.etaMax, eta);
+  return curveEfficiency(fan, Q);
 }
 
 // Потребляемая мощность на валу при работе в точке Q
 export function fanPower(fan: FanModel, Q: number): number {
-  const H = fanPressure(fan, Q);
-  const eta = fanEfficiency(fan, Q);
-  if (eta < 0.05) return fan.power;
-  // P = Q·H / (3600·η·1000) кВт
-  return (Q * H) / (3600 * eta * 1000);
+  return curvePower(fan, Q, "fan");
 }
 
 // ─── Поиск рабочей точки: пересечение кривых вентилятора и сети ─────────────
 // Сеть: H_сети(Q) = S·Q²,  где S — приведённое сопротивление сети
 // Решаем: H_fan(Q) = S·Q²
 
-export interface OperatingPoint {
-  Q: number;        // м³/ч
-  H: number;        // Па
-  eta: number;      // КПД
-  power: number;    // кВт (на валу)
-  found: boolean;
-  inOptimalZone: boolean; // близко ли к Qopt (±20%)
-  marginQ: number;  // запас по расходу %
-  marginH: number;  // запас по напору %
-}
+/** Рабочая точка вентилятора. Совпадает с OperatingPointBase из ядра. */
+export type OperatingPoint = OperatingPointBase;
 
 export function findOperatingPoint(fan: FanModel, networkS: number, requiredQ: number, requiredH: number): OperatingPoint {
-  // S = ΔP_сети / Q² (Q в м³/ч → ΔP в Па)
-  // Бинарный поиск по Q
-  let lo = 0, hi = fan.Qmax * 1.2;
-  for (let i = 0; i < 60; i++) {
-    const mid = (lo + hi) / 2;
-    const Hfan = fanPressure(fan, mid);
-    const Hnet = networkS * mid * mid;
-    if (Hfan > Hnet) lo = mid; else hi = mid;
-  }
-  const Q = (lo + hi) / 2;
-  const H = fanPressure(fan, Q);
-  const eta = fanEfficiency(fan, Q);
-  const power = fanPower(fan, Q);
-  const found = Q >= fan.Qmin * 0.7 && Q <= fan.Qmax * 1.05 && H > 0;
-  const inOptimalZone = Math.abs(Q - fan.Qopt) / fan.Qopt < 0.25;
-  const marginQ = ((Q - requiredQ) / requiredQ) * 100;
-  const marginH = ((H - requiredH) / requiredH) * 100;
-
-  return {
-    Q: Math.round(Q),
-    H: Math.round(H),
-    eta: Math.round(eta * 100) / 100,
-    power: Math.round(power * 1000) / 1000,
-    found, inOptimalZone,
-    marginQ: Math.round(marginQ),
-    marginH: Math.round(marginH),
-  };
+  // Напор в Па округляется до целых, мощность — до тысячных кВт:
+  // канальные вентиляторы потребляют десятые доли киловатта.
+  return findPoint(fan, "fan", {
+    networkS, requiredQ, requiredH,
+    headDecimals: 0,
+    powerDecimals: 3,
+  });
 }
 
 // ─── Подбор подходящих вентиляторов под систему ─────────────────────────────
@@ -292,38 +288,58 @@ export interface FanSelection {
   point: OperatingPoint;
   score: number;     // 0..100, чем выше — тем лучше
   warnings: string[];
+  /**
+   * Работа с пониженными частотником оборотами — только у моделей с ЧРП,
+   * и только когда подача избыточна и её есть смысл убирать.
+   */
+  vfd?: {
+    /** Доля от номинальных оборотов, 0..1. */
+    speedRatio: number;
+    /** Мощность на пониженных оборотах, кВт (P ~ n³). */
+    power: number;
+  };
 }
 
-export function selectFans(requiredQ: number, requiredH: number, fanType?: FanType): FanSelection[] {
-  // S системы: H = S·Q²  →  S = H / Q²
-  const S = requiredH / (requiredQ * requiredQ);
+/** Дополнительные условия отбора. Все необязательны. */
+export interface FanSelectOptions {
+  /** Требуемое исполнение: модели другого исполнения отсеиваются. */
+  execution?: Execution;
+  /** Оставить только модели с частотным регулированием. */
+  vfdOnly?: boolean;
+}
 
-  const candidates = FAN_CATALOG.filter((f) => !fanType || f.type === fanType);
+export function selectFans(
+  requiredQ: number,
+  requiredH: number,
+  fanType?: FanType,
+  options: FanSelectOptions = {},
+): FanSelection[] {
+  // S системы: H = S·Q²  →  S = H / Q²
+  const S = networkResistance(requiredQ, requiredH);
+
+  // Исполнение — жёсткий фильтр, а не штраф: вентилятор общепромышленного
+  // исполнения в газовой шахте не поставить ни при какой рабочей точке.
+  const candidates = FAN_CATALOG.filter((f) =>
+    (!fanType || f.type === fanType) &&
+    executionAllowed(f, options.execution) &&
+    (!options.vfdOnly || f.vfd === true)
+  );
 
   return candidates.map((fan) => {
     const point = findOperatingPoint(fan, S, requiredQ, requiredH);
-    const warnings: string[] = [];
+    const { score, warnings } = scoreOperatingPoint(fan, point, "Расход");
 
-    let score = 0;
-    if (!point.found) {
-      score = 0;
-      warnings.push("Рабочая точка вне диапазона");
-    } else {
-      // Базовый скор — насколько подходит расход
-      score = 60;
-      // Бонус за работу в оптимальной зоне
-      if (point.inOptimalZone) score += 20;
-      // Бонус за достаточный запас (10–25%)
-      if (point.marginQ >= 5 && point.marginQ <= 30) score += 10;
-      else if (point.marginQ < 0) { score -= 30; warnings.push(`Расход ниже требуемого на ${Math.abs(point.marginQ)}%`); }
-      else if (point.marginQ > 50) { score -= 20; warnings.push(`Большой избыток расхода (+${point.marginQ}%)`); }
-      // Бонус за КПД
-      score += point.eta * 25;
-      // Штраф за низкий КПД в рабочей точке
-      if (point.eta < fan.etaMax * 0.8) warnings.push(`КПД ниже оптимума (${Math.round(point.eta * 100)}% vs ${Math.round(fan.etaMax * 100)}%)`);
+    // Избыток подачи у машины с ЧРП: показываем, на каких оборотах она сядет
+    // на требуемый расход и сколько при этом будет потреблять.
+    const selection: FanSelection = { fan, point, score, warnings };
+    if (fan.vfd && point.found && point.Q > requiredQ) {
+      const speedRatio = vfdSpeedRatio(point.Q, requiredQ);
+      selection.vfd = {
+        speedRatio: Math.round(speedRatio * 100) / 100,
+        power: Math.round(vfdPower(point.power, speedRatio) * 1000) / 1000,
+      };
     }
-
-    return { fan, point, score: Math.max(0, Math.min(100, Math.round(score))), warnings };
+    return selection;
   }).sort((a, b) => b.score - a.score);
 }
 
