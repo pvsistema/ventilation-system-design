@@ -260,9 +260,14 @@ export default function FireControlDialog({
         {/* Низ окна */}
         <div className="px-4 py-2 flex items-center justify-between"
           style={{ background: "var(--c-s3, #f6f8fc)", borderTop: "1px solid #e0e4ee" }}>
+          {/* Сводка отбора: сколько рычагов вообще есть на схеме и сколько
+              из них дошло до перебора. Без неё короткий список вариантов
+              неотличим от сбоя программы. */}
           <span className="text-[10px] text-gray-400">
             {report
-              ? `Рассмотрено действий: ${report.candidatesCount} · расчётов сети: ${report.evaluations}`
+              ? `Рычаги: вентиляторов ${report.stats.fansUsed} из ${report.stats.fansTotal}, `
+                + `дверей ${report.stats.doorsUsed} из ${report.stats.doorsTotal} `
+                + `· действий ${report.candidatesCount} · расчётов сети ${report.evaluations}`
               : "Подбор не гарантирует наилучшего из всех мыслимых режимов"}
           </span>
           <button onClick={onClose}
@@ -291,7 +296,45 @@ function ReportView({
   onPreview?: (variant: VariantResult) => void;
   onExportPla?: (variant: VariantResult) => void;
 }) {
-  const { base, variants, allSaved, bestPeopleAtRisk, cancelled, note } = report;
+  const { base, variants, allSaved, bestPeopleAtRisk, cancelled, note, dataError } = report;
+
+  // Нет рабочих мест или выходов — подбор не работал. Это отдельный исход:
+  // не успех и не «людей не вывести», а нехватка исходных данных.
+  if (dataError) {
+    return (
+      <div>
+        <div className="px-4 py-3 flex items-start gap-2.5"
+          style={{ background: "var(--c-tint-amber, #fff4e5)", borderBottom: "1px solid #f0d9b5" }}>
+          <Icon name="TriangleAlert" size={18} className="mt-0.5 flex-shrink-0"
+            style={{ color: "var(--c-amber, #8a5a00)" }} />
+          <div className="flex-1">
+            <div className="text-[12px] font-semibold" style={{ color: "var(--c-amber, #8a5a00)" }}>
+              Подбор невозможен: не с чем сравнивать варианты
+            </div>
+            <div className="text-[11px] text-gray-700 pt-1 leading-snug">{dataError}</div>
+            <div className="text-[11px] text-gray-600 pt-2 leading-snug">
+              Подбор сравнивает режимы по тому, сколько людей не успевает выйти.
+              Пока на схеме не отмечены рабочие места с численностью и выходы
+              на поверхность, этот показатель равен нулю у любого режима —
+              и все варианты выглядят одинаково хорошими.
+            </div>
+            <div className="text-[10px] text-gray-500 pt-2 leading-snug">
+              Как задать: выберите узел на схеме → вкладка «Аварии» → назначение
+              «Рабочее место» с числом людей, а для устьев — «Выход на поверхность».
+            </div>
+          </div>
+        </div>
+        {/* Скорость воздуха считается и без данных о людях — показываем её:
+            превышения сами по себе повод не утвердить режим. */}
+        <div className="px-4 py-2 flex items-center gap-5 text-[11px] flex-wrap"
+          style={{ background: "var(--c-s3, #f6f8fc)", borderBottom: "1px solid #e0e4ee" }}>
+          <span className="text-gray-500 font-medium">Исходный режим:</span>
+          <Metric label="превышений скорости" value={base.velocityViolations} warn={base.velocityViolations > 0} />
+          <span className="text-gray-600">опрокинутых струй: <b>{base.reversedBranches}</b></span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div>

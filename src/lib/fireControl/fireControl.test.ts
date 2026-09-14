@@ -204,4 +204,60 @@ describe("ядро подбора аварийного режима", () => {
                 "из", branches.length, "ветвей");
     expect(report.base.velocityViolations).toBe(branches.length);
   }, 60000);
+
+  // ── Регрессия: главный баг, из-за которого подбор «ничего не находил» ──
+  // На схеме без рабочих мест и выходов calcEvacuationRisk возвращает ошибку,
+  // а подбор молча превращал её в «0 человек в зоне риска». В итоге любой
+  // режим выглядел идеальным, варианты не отбирались, и окно бодро писало
+  // «все успевают выйти» — на схеме, где про людей не сказано ни слова.
+  it("нет рабочих мест — честно сообщает, а не рапортует об успехе", async () => {
+    const noPeople = nodes.map(n => ({ ...n, peopleNodeType: "none" as const, peopleCount: 0 }));
+    const solveIteration = async (brs: TopoBranch[]) =>
+      new Map(brs.map(b => [b.id, b.flow ?? 20]));
+    const report = await searchFireControl(
+      {
+        branches, nodes: noPeople, symbols,
+        fireParams: {
+          ambientTemp: 15, thermalDepMethod: "normative", smokeVisThreshold: 50,
+          baseNodeTemps: {}, totalDepByBranch: new Map(branches.map(b => [b.id, 10])),
+          solveIteration, log: () => {}, yieldToUI: async () => {},
+        },
+      },
+      { branches, nodes: noPeople, symbols },
+      { maxActions: 2 },
+    );
+    console.log("dataError:", report.dataError);
+    console.log("все спасены:", report.allSaved, "| расчётов:", report.evaluations);
+    // Нехватка данных обязана дойти до окна отдельным признаком…
+    expect(report.dataError).toBeTruthy();
+    // …и НИ В КОЕМ случае не выглядеть успехом.
+    expect(report.allSaved).toBe(false);
+    // Перебирать десятки режимов без критерия сравнения бессмысленно:
+    // останавливаемся сразу после исходного расчёта.
+    expect(report.evaluations).toBe(1);
+  }, 60000);
+
+  // Сводка отбора: по ней видно, почему рычагов мало — их нет на схеме
+  // или они просто далеко от очага.
+  it("сводка отбора считает вентиляторы и двери", async () => {
+    const solveIteration = async (brs: TopoBranch[]) =>
+      new Map(brs.map(b => [b.id, b.flow ?? 20]));
+    const report = await searchFireControl(
+      {
+        branches, nodes, symbols,
+        fireParams: {
+          ambientTemp: 15, thermalDepMethod: "normative", smokeVisThreshold: 50,
+          baseNodeTemps: {}, totalDepByBranch: new Map(branches.map(b => [b.id, 10])),
+          solveIteration, log: () => {}, yieldToUI: async () => {},
+        },
+      },
+      { branches, nodes, symbols },
+      { maxActions: 1 },
+    );
+    console.log("сводка:", JSON.stringify(report.stats));
+    expect(report.stats.fansTotal).toBe(1);
+    expect(report.stats.fansUsed).toBe(1);
+    expect(report.stats.doorsTotal).toBe(2);
+    expect(report.stats.hasFireSeat).toBe(true);
+  }, 60000);
 });

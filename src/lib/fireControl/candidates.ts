@@ -107,7 +107,30 @@ function branchesWithinReach(
  * обороты. Такие «варианты» только раздували бы перебор и путали человека
  * в списке рекомендаций.
  */
-export function collectActions(input: CandidateInput): FireAction[] {
+/**
+ * Почему кандидатов получилось столько, сколько получилось.
+ *
+ * Без этой сводки пустой или короткий список выглядит сбоем программы:
+ * «подбор ничего не нашёл» одинаково читается и когда на схеме нет ни одного
+ * вентилятора, и когда все они далеко от очага. Разница важна — в первом
+ * случае чинить нечего, во втором достаточно увеличить глубину отбора.
+ */
+export interface CandidateStats {
+  /** Вентиляторов на схеме всего. */
+  fansTotal: number;
+  /** Из них попало в отбор (ГВУ/ВВУ — всегда, ВМП — только рядом). */
+  fansUsed: number;
+  /** Управляемых дверей и регуляторов на схеме всего. */
+  doorsTotal: number;
+  /** Из них попало в отбор (только в зоне влияния). */
+  doorsUsed: number;
+  /** Ветвей в зоне влияния очага и людей. */
+  branchesInZone: number;
+  /** Задан ли на схеме очаг пожара. */
+  hasFireSeat: boolean;
+}
+
+export function collectActions(input: CandidateInput, stats?: CandidateStats): FireAction[] {
   const { branches, nodes, symbols, reach = 4 } = input;
   const actions: FireAction[] = [];
 
@@ -143,6 +166,13 @@ export function collectActions(input: CandidateInput): FireAction[] {
     ? branchesWithinReach(branches, hotNodes, reach)
     : new Set(branches.map(b => b.id));
 
+  if (stats) {
+    stats.branchesInZone = inZone.size;
+    stats.hasFireSeat = branches.some(b => b.hasFire);
+    stats.fansTotal = branches.filter(b => b.hasFan).length;
+    stats.doorsTotal = symbols.filter(s => s.branchId && isControllableDoor(s)).length;
+  }
+
   // ── Вентиляторы ──────────────────────────────────────────────────────────
   for (const b of branches) {
     if (!b.hasFan) continue;
@@ -152,6 +182,7 @@ export function collectActions(input: CandidateInput): FireAction[] {
     const isMain = b.fanType === "ГВУ" || b.fanType === "ВВУ";
     if (!isMain && !inZone.has(b.id)) continue;
     if (b.fanStopped) continue; // остановленным управлять нечем
+    if (stats) stats.fansUsed++;
 
     const where = b.fanName || branchLabel(b);
 
@@ -190,6 +221,7 @@ export function collectActions(input: CandidateInput): FireAction[] {
 
     const b = branchById.get(s.branchId);
     if (!b) continue;
+    if (stats) stats.doorsUsed++;
 
     const area = b.area ?? 0;
     const now = currentWindowArea(s, area);

@@ -20,7 +20,7 @@
 // поле allSaved и число оставшихся в зоне риска: молчать о том, что людей
 // не вывести имеющимися рычагами, нельзя.
 // ─────────────────────────────────────────────────────────────────────────────
-import { collectActions, conflicts, type CandidateInput } from "./candidates";
+import { collectActions, conflicts, type CandidateInput, type CandidateStats } from "./candidates";
 import {
   evaluateVariant, compareVariants,
   type EvaluateContext, type VariantResult,
@@ -65,6 +65,15 @@ export interface SearchReport {
   cancelled: boolean;
   /** Пояснение для показа в окне. */
   note: string;
+  /**
+   * Подбор не мог оценить вывод людей: на схеме нет рабочих мест с людьми
+   * или выходов на поверхность. Главный показатель (сколько людей не успевает
+   * выйти) при этом не считается, и сравнивать варианты не по чему —
+   * поэтому окно обязано показать это как ошибку, а не как «все спасены».
+   */
+  dataError?: string;
+  /** Что нашлось на схеме и что попало в отбор — для пояснения в окне. */
+  stats: CandidateStats;
 }
 
 /** Ключ набора действий — чтобы не считать одну комбинацию дважды. */
@@ -92,7 +101,11 @@ export async function searchFireControl(
     onProgress, isCancelled,
   } = options;
 
-  const candidates = collectActions({ ...candidateInput, reach });
+  const stats: CandidateStats = {
+    fansTotal: 0, fansUsed: 0, doorsTotal: 0, doorsUsed: 0,
+    branchesInZone: 0, hasFireSeat: false,
+  };
+  const candidates = collectActions({ ...candidateInput, reach }, stats);
 
   // Оценка объёма работы — для шкалы прогресса. Точное число заранее
   // неизвестно (слои обрываются по BEAM и по лимиту), поэтому берём
@@ -132,21 +145,55 @@ export async function searchFireControl(
       variants: better.slice(0, topN),
       candidatesCount: candidates.length,
       evaluations,
-      allSaved: bestRisk === 0,
+      // «Все спасены» — только когда людей вообще было по кому считать.
+      // Нет рабочих мест или выходов — это не успех, а нехватка данных.
+      allSaved: !base.dataError && bestRisk === 0,
       bestPeopleAtRisk: Number.isFinite(bestRisk) ? bestRisk : base.peopleAtRisk,
       cancelled,
       note,
+      dataError: base.dataError,
+      stats,
     };
   };
 
   if (candidates.length === 0) {
-    return finish(
-      "На схеме нет управляемых элементов рядом с очагом и людьми: "
-      + "ни вентиляторов, ни дверей с регулируемым сечением.",
-    );
+    // Причины у пустого списка разные, и лечатся они по-разному. Поэтому
+    // говорим не «ничего не найдено», а что именно есть на схеме и что
+    // отсеялось — иначе пользователю остаётся только гадать.
+    const parts: string[] = [];
+    if (stats.fansTotal === 0 && stats.doorsTotal === 0) {
+      parts.push("на схеме нет ни вентиляторов, ни управляемых дверей и регуляторов");
+    } else {
+      parts.push(
+        `на схеме есть вентиляторов: ${stats.fansTotal} (в отбор попало ${stats.fansUsed}), `
+        + `дверей и регуляторов: ${stats.doorsTotal} (в отбор попало ${stats.doorsUsed})`,
+      );
+      if (stats.fansUsed === 0 && stats.doorsUsed === 0) {
+        parts.push(
+          `все они дальше ${reach} ветвей от очага и рабочих мест `
+          + `(в зоне влияния ${stats.branchesInZone} выработок) — увеличьте «Глубину отбора рычагов»`,
+        );
+      } else {
+        // Элементы рядом есть, но переключать в них нечего: двери уже
+        // закрыты, вентиляторы остановлены и т. п.
+        parts.push("но менять в них нечего: двери уже в нужном положении, вентиляторы остановлены");
+      }
+    }
+    if (!stats.hasFireSeat) parts.push("очаг пожара на схеме не задан");
+    return finish(`Подбирать нечего: ${parts.join("; ")}.`);
   }
   if (base.failed) {
     return finish("Не удалось рассчитать исходный режим — проверьте параметры очага и сети.");
+  }
+  // Оценивать вывод людей не по чему: главный критерий отбора не работает,
+  // и все варианты оказались бы неотличимы друг от друга. Перебирать десятки
+  // режимов ради заведомо одинакового результата — только тратить время
+  // пользователя, поэтому останавливаемся сразу и говорим, чего не хватает.
+  if (base.dataError) {
+    return finish(
+      `${base.dataError} Без этих данных подбор не может сравнить варианты: `
+      + "главный показатель — сколько людей не успевает выйти — не считается.",
+    );
   }
 
   // ── Слои 1..maxActions ───────────────────────────────────────────────────
@@ -198,12 +245,26 @@ export async function searchFireControl(
 
   const finished = finish("");
   if (finished.variants.length === 0) {
+    // Исходный режим уже безупречен — трогать нечего.
+    if (base.peopleAtRisk === 0 && base.velocityViolations === 0) {
+      return {
+        ...finished,
+        note: "В исходном режиме все успевают выйти, превышений скорости нет — менять режим не требуется.",
+      };
+    }
+    // Иначе недостатки есть, но рычаги их не устраняют. Сказать об этом
+    // прямо: «менять не требуется» здесь было бы неправдой, а именно на
+    // такой вывод человек и опирается, утверждая план ликвидации аварий.
+    const problems: string[] = [];
+    if (base.peopleAtRisk > 0) problems.push(`людей в зоне риска — ${base.peopleAtRisk}`);
+    if (base.velocityViolations > 0) {
+      problems.push(`выработок с превышением скорости — ${base.velocityViolations}`);
+    }
     return {
       ...finished,
-      note: base.peopleAtRisk > 0
-        ? `Ни один вариант не улучшает исходный режим. Людей в зоне риска остаётся ${base.peopleAtRisk} — `
-          + "требуется пункт переключения или изменение схемы проветривания."
-        : "В исходном режиме все успевают выйти — менять режим не требуется.",
+      note: `Ни один из рассмотренных вариантов (${candidates.length} действий) не улучшает `
+        + `исходный режим: ${problems.join(", ")}. `
+        + "Требуется пункт переключения или изменение схемы проветривания.",
     };
   }
   if (!finished.allSaved) {
