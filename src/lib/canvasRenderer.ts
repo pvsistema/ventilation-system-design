@@ -11,7 +11,24 @@ import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics"
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "./branchLabelExtras";
 import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
 
-export const CANVAS_THRESHOLD = 400;
+/**
+ * Порог переключения SVG → Canvas по числу видимых ветвей.
+ *
+ * ЗНАЧЕНИЕ 0 = Canvas ВСЕГДА, SVG-отрисовка схемы отключена.
+ *
+ * ПОЧЕМУ. SVG создаёт живой DOM-узел на каждую ветвь, узел и подпись: схема на
+ * 400 выработок — это уже несколько тысяч элементов, и браузер пересобирает их
+ * при каждом панорамировании и зуме. Canvas рисует тот же кадр одним проходом
+ * по холсту, а попадание курсора считает математикой (hitNodeCanvas и соседние).
+ * Быстродействие для программы важнее детальности SVG, поэтому основным режимом
+ * оставлен Canvas.
+ *
+ * Сам SVG-слой из кода НЕ удалён и продолжает работать там, где он незаменим:
+ * рамка и штамп слоя печати, редактирование подложки горизонта и интерактивные
+ * значки УО поверх холста. Чтобы вернуть прежнее поведение, достаточно поставить
+ * здесь 400 — вся ветка отрисовки на месте.
+ */
+export const CANVAS_THRESHOLD = 0;
 
 export type FlowDisplayMode = "off" | "flow" | "chevrons" | "both";
 

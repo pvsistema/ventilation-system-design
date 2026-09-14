@@ -1658,7 +1658,21 @@ export default function TopoCanvas(props: Props) {
         </svg>
       )}
 
-      {/* ── Canvas-рендерер (большие схемы > CANVAS_THRESHOLD ветвей) ──
+      {/* ── Рабочая плоскость построения (3D) ПОВЕРХ canvas ──────────────
+          Единственное, чего нет в отрисовке на холсте. Без неё построение
+          узла в наклонном виде идёт вслепую: не видно, в какой плоскости
+          окажется точка. Слой лёгкий (один полупрозрачный четырёхугольник),
+          показывается только при активном инструменте построения и сквозной
+          для мыши — щелчки уходят на схему. */}
+      {useCanvas && is3D && (tool === "node" || tool === "branch") && (
+        <svg
+          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 2 }}
+          width={size.w} height={size.h}>
+          {renderWorkPlane()}
+        </svg>
+      )}
+
+      {/* ── Canvas-рендерер схемы (основной и единственный режим) ──────
           Обёрнут в CanvasErrorBoundary: если рендер упадёт из-за непредвиденной
           ошибки (например, некорректные данные маршрута горноспасателей),
           пользователь увидит понятное сообщение вместо чёрного экрана всего приложения. */}
@@ -1745,7 +1759,11 @@ export default function TopoCanvas(props: Props) {
           здесь был отдельный SVG-слой, который React пересоздавал на каждое
           движение мыши. */}
 
-      {/* ── SVG-рендерер (малые и средние схемы ≤ CANVAS_THRESHOLD ветвей) ── */}
+      {/* ── SVG-рендерер схемы (ОТКЛЮЧЁН, CANVAS_THRESHOLD = 0) ────────────
+          Ветка сохранена целиком и не удалена: сам этот <svg> продолжает
+          работать как контейнер для слоёв, которым нужен настоящий DOM —
+          редактирование подложки горизонта и ручки рамки печати. Вернуть
+          прежнюю отрисовку схемы в SVG можно, подняв CANVAS_THRESHOLD. */}
       <svg ref={svgCallbackRef} width={size.w} height={size.h}
         style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined,
           // ВАЖНО: без top/left абсолютный SVG встаёт на своё «место в потоке» —

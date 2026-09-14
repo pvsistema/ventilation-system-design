@@ -70,7 +70,10 @@ export interface Props {
   thinLines?: boolean;
   /** Фиксированный размер объектов: ветви/узлы/текст не масштабируются при зуме. */
   fixedObjectScale?: boolean;
-  /** Порог автопереключения SVG↔Canvas по числу видимых ветвей. По умолчанию CANVAS_THRESHOLD (800). */
+  /**
+   * Порог переключения SVG→Canvas по числу видимых ветвей.
+   * По умолчанию CANVAS_THRESHOLD = 0, то есть схема ВСЕГДА рисуется на холсте.
+   */
   canvasThreshold?: number;
   /** Пределы масштабов объектов (активны при fixedObjectScale=true). */
   scaleLimits?: {

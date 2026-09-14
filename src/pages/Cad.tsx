@@ -1427,25 +1427,23 @@ export default function CadPage() {
   // Пределы масштабов (как в АэроСеть)
   const [scaleSettingsOpen, setScaleSettingsOpen] = useState(false);
   const [scaleLimitsEnabled, setScaleLimitsEnabled] = useState(false);
-  // Порог переключения SVG↔Canvas по числу видимых ветвей (настраивается вручную).
-  const [canvasThreshold, setCanvasThreshold] = useState<number>(() => {
-    const raw = localStorage.getItem("vent-cad/canvas-threshold");
-    const n = raw ? parseInt(raw, 10) : NaN;
-    // Порог снижен с 800 до 400: на схемах средней величины быстрая отрисовка
-    // заметно отзывчивее. Старое значение 800 хранится на устройстве, поэтому
-    // разово переносим именно ЕГО — осознанно выставленные вручную числа
-    // (например 1500) не трогаем, иначе настройка пользователя пропала бы.
-    if (n === 800 && localStorage.getItem("vent-cad/canvas-threshold-migrated") !== "1") {
-      try { localStorage.setItem("vent-cad/canvas-threshold-migrated", "1"); } catch { /* ignore */ }
-      return CANVAS_THRESHOLD;
-    }
-    return Number.isFinite(n) && n >= 100 ? n : CANVAS_THRESHOLD;
-  });
+  // Режим отрисовки схемы: ВСЕГДА Canvas (см. CANVAS_THRESHOLD = 0).
+  //
+  // Прежде здесь жил настраиваемый порог: до N ветвей схема рисовалась в SVG,
+  // свыше — на холсте. От переключения отказались ради быстродействия: SVG
+  // держит отдельный DOM-элемент на каждую выработку и подпись, и на средних
+  // схемах браузер заметно проседал при панорамировании.
+  //
+  // Значение больше не хранится и не настраивается, а сохранённый на устройстве
+  // старый порог удаляем: иначе у тех, кто уже пользовался программой, схема
+  // так и осталась бы на медленном SVG.
+  const canvasThreshold = CANVAS_THRESHOLD;
   useEffect(() => {
-    try { localStorage.setItem("vent-cad/canvas-threshold", String(canvasThreshold)); } catch { /* ignore */ }
-  }, [canvasThreshold]);
-  // Свёрнут ли блок «Порог SVG→Canvas» (по умолчанию — свёрнут)
-  const [thresholdOpen, setThresholdOpen] = useState(false);
+    try {
+      localStorage.removeItem("vent-cad/canvas-threshold");
+      localStorage.removeItem("vent-cad/canvas-threshold-migrated");
+    } catch { /* ignore */ }
+  }, []);
 
   // ─── Пороги авто-скрытия узлов при отдалении (режим Canvas) ────────────────
   // На крупных схемах отрисовка кружков и номеров для тысяч узлов тормозит
@@ -13753,37 +13751,9 @@ export default function CadPage() {
                 <div className="flex justify-between text-[10px] text-gray-400">
                   <span>0.1×</span><span>10×</span><span>20×</span>
                 </div>
-                {/* Порог SVG ↔ Canvas (сворачиваемый, по умолчанию свёрнут) */}
-                <div className="border-t border-gray-300 mt-2 pt-2">
-                  <button onClick={() => setThresholdOpen((v) => !v)}
-                    className="w-full flex items-center gap-1 text-[11px] font-semibold hover:opacity-80"
-                    style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
-                    <Icon name={thresholdOpen ? "ChevronDown" : "ChevronRight"} size={12} />
-                    <span>Порог SVG→Canvas: {canvasThreshold}</span>
-                  </button>
-                  {thresholdOpen && (
-                    <div className="mt-2">
-                      <div className="flex items-center justify-end mb-1">
-                        <button onClick={() => setCanvasThreshold(CANVAS_THRESHOLD)}
-                          className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200">
-                          Сброс
-                        </button>
-                      </div>
-                      <input type="range" min="200" max="2000" step="50"
-                        value={canvasThreshold}
-                        onChange={(e) => setCanvasThreshold(parseInt(e.target.value, 10))}
-                        className="w-full"
-                        style={{ accentColor: "#7c3aed" }} />
-                      <div className="flex justify-between text-[10px] text-gray-400">
-                        <span>200</span><span>1000</span><span>2000</span>
-                      </div>
-                      <div className="text-[10px] mt-1" style={{ color: branches.length > canvasThreshold ? "var(--c-purple, #7c3aed)" : "var(--c-green, #16a34a)" }}>
-                        Ветвей: {branches.length} · режим:{" "}
-                        <b>{branches.length > canvasThreshold ? "Canvas (быстрый)" : "SVG (детальный)"}</b>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                {/* Настройка «Порог SVG→Canvas» убрана: схема всегда рисуется
+                    быстрым способом (см. CANVAS_THRESHOLD в canvasRenderer.ts),
+                    и выбирать между режимами больше не требуется. */}
                 {/* Скрытие узлов при отдалении (сворачиваемый, по умолчанию свёрнут) */}
                 <div className="border-t border-gray-300 mt-2 pt-2">
                   <button onClick={() => setNodeLodOpen((v) => !v)}
