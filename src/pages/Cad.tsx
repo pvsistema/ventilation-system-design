@@ -14018,6 +14018,8 @@ export default function CadPage() {
       scalePositionMax={scalePositionMax}
       positionGostMm={positionGostMm}
       xyScale={xyScale}
+      bulkheadScale={bulkheadScale}
+      fanScale={fanScale}
       printDialogOpenExport={printDialogOpenExport}
       setPrintDialogOpenExport={setPrintDialogOpenExport}
       showRenumberDialog={showRenumberDialog}

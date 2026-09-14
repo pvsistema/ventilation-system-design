@@ -95,6 +95,10 @@ export interface CadToolDialogsProps {
   scalePositionMax: number;
   positionGostMm: number;
   xyScale: number;
+  /** Размер перемычек/замерных станций, % от ширины ветви. */
+  bulkheadScale: number;
+  /** Размер вентиляторов/насосов/вентилей, % от ширины ветви. */
+  fanScale: number;
   printDialogOpenExport: boolean;
   setPrintDialogOpenExport: (v: boolean) => void;
 
@@ -254,6 +258,8 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           scalePositionMax={p.scalePositionMax}
           positionGostMm={p.positionGostMm}
           xyScale={p.xyScale}
+          bulkheadScale={p.bulkheadScale}
+          fanScale={p.fanScale}
           initialOpenExport={p.printDialogOpenExport}
           onExportDialogOpened={() => p.setPrintDialogOpenExport(false)}
         />

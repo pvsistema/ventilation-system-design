@@ -16,6 +16,10 @@ import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
 import { medianSection, widthBySection as widthBySectionFn } from "@/lib/branchWidthBySection";
+import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
+import {
+  makeSymbolSizing, symbolSizeOnBranch, indicatorFontSize, indicatorOffsetSF,
+} from "@/lib/symbolSizing";
 
 export interface SvgExportOptions {
   nodes: TopoNode[];
@@ -96,6 +100,10 @@ export interface SvgExportOptions {
   widthBySection?: boolean;
   /** Пределы ширины при widthBySection, % от базовой (30…300). */
   widthLimits?: { min: number; max: number };
+  /** Размер перемычек/замерных станций, % от ширины ветви (как в рабочей области). */
+  bulkheadScale?: number;
+  /** Размер вентиляторов/насосов/вентилей, % от ширины ветви. */
+  fanScale?: number;
 }
 
 // ── Цвет ветви ────────────────────────────────────────────────────────────────
@@ -175,6 +183,8 @@ export function generateSvg(opts: SvgExportOptions): string {
     xyScale,
     widthBySection = false,
     widthLimits,
+    bulkheadScale = 150,
+    fanScale = 450,
   } = opts;
 
   // Толщина линии выработки. При включённом режиме зависит от площади сечения:
@@ -667,6 +677,15 @@ export function generateSvg(opts: SvgExportOptions): string {
   // Справочник строим один раз — он нужен и символам, и выноскам ниже.
   const brById = new Map(branches.map(b => [b.id, b]));
 
+  // Масштабирование УО — теми же формулами, что и в рабочей области:
+  // от РЕАЛЬНОЙ ширины ветви на листе (objSF — тот же, с которым выше
+  // нарисованы сами выработки) и процентов «Перемычки»/«Вентиляторы».
+  // Раньше замерные станции и вентиляторы считались от константы 32·ss,
+  // не зависящей от схемы, и в экспорте выходили несоразмерно крупными.
+  const symSizing = makeSymbolSizing({
+    objSF, viewScale: proj.scale, xyScale, bulkheadScale, fanScale, thinLines,
+  });
+
   if (schemaSymbols.length > 0) {
     parts.push(`<g id="schema-symbols">`);
 
@@ -710,7 +729,11 @@ export function generateSvg(opts: SvgExportOptions): string {
       const sc = sym.scale ?? 1;
       // symScale: при scale<0.4 уменьшать, иначе ~1
       const ss = proj.scale < 0.4 ? proj.scale / 0.4 : 1;
-      const SZ = Math.max(4, 32 * sc * ss);
+      const symBrExp = sym.branchId ? brById.get(sym.branchId) ?? null : null;
+      // Ширина выработки-хозяина (для нити става — ширина самой выработки).
+      const hostW = symbolHostWidth(symBrExp, brById, branchWidth);
+      const szOnBranch = hasBranchPts ? symbolSizeOnBranch(sym.typeId, sc, hostW, symSizing) : null;
+      const SZ = szOnBranch ?? Math.max(4, 32 * sc * ss);
       const brAngle = hasBranchPts ? Math.atan2(tsy2 - fsy, tsx2 - fsx) : 0;
       const angDeg = brAngle * 180 / Math.PI;
 
@@ -775,12 +798,15 @@ export function generateSvg(opts: SvgExportOptions): string {
           const brLenMs = Math.hypot(brDxMs, brDyMs);
           const perpXms = brLenMs > 0 ? -brDyMs / brLenMs : 0;
           const perpYms = brLenMs > 0 ?  brDxMs / brLenMs : 0;
-          const fsMs = Math.max(6, (sym.msIndFontSize ?? 9) * sc * ss);
-          const lhMs = fsMs + 3;
-          const boxWMs = Math.max(...msLines.map(l => l.length)) * fsMs * 0.52 + 10;
-          const boxHMs = msLines.length * lhMs + 6;
-          const bxMs = px + perpXms * (16 + boxWMs / 2) + (sym.msIndOffsetX ?? 0);
-          const byMs = py + perpYms * (16 + boxHMs / 2) + (sym.msIndOffsetY ?? 0);
+          // Кегль — от ширины ветви, как подписи выработок и как на экране.
+          const indSFms = indicatorOffsetSF(symSizing);
+          const fsMs = indicatorFontSize(hostW, sym.msIndFontSize, symSizing);
+          const lhMs = fsMs + 3 * symSizing.indZoomSF;
+          const boxWMs = Math.max(...msLines.map(l => l.length)) * fsMs * 0.52 + 10 * symSizing.indZoomSF;
+          const boxHMs = msLines.length * lhMs + 6 * symSizing.indZoomSF;
+          const gapMs = 16 * indSFms;
+          const bxMs = px + perpXms * (gapMs + boxWMs / 2) + (sym.msIndOffsetX ?? 0) * indSFms;
+          const byMs = py + perpYms * (gapMs + boxHMs / 2) + (sym.msIndOffsetY ?? 0) * indSFms;
           // Подложка под индикаторами — та же, что на экране и на печати.
           const bgMs = msIndBg(sym.msIndBgColor);
           const fgMs = msIndTextColor(bgMs);
@@ -789,7 +815,7 @@ export function generateSvg(opts: SvgExportOptions): string {
             parts.push(`<rect x="${n(bxMs - boxWMs/2)}" y="${n(byMs - boxHMs/2)}" width="${n(boxWMs)}" height="${n(boxHMs)}" rx="${n(Math.min(4, boxHMs/3), 1)}" fill="${bgMs}" stroke="white" stroke-width="1.2"/>`);
           }
           msLines.forEach((line, i) => {
-            const tyMs = byMs - boxHMs/2 + i * lhMs + 3;
+            const tyMs = byMs - boxHMs/2 + i * lhMs + 3 * symSizing.indZoomSF;
             const fwMs = i === 0 && sym.msIndNumber ? "700" : "400";
             // Белая обводка текста нужна только без плашки.
             const strokeAttr = bgMs ? "" : ` stroke="white" stroke-width="2" paint-order="stroke"`;
@@ -895,15 +921,18 @@ export function generateSvg(opts: SvgExportOptions): string {
               const brLen2 = Math.hypot(brDx2, brDy2);
               const perpX = brLen2 > 0 ? -brDy2 / brLen2 : 0;
               const perpY = brLen2 > 0 ?  brDx2 / brLen2 : 0;
-              const fs2 = Math.max(6, 9 * sc * ss);
-              const lh2 = fs2 + 3;
-              const boxW2 = Math.max(...indLines.map(l => l.length)) * fs2 * 0.52 + 10;
-              const boxH2 = indLines.length * lh2 + 6;
-              const bx = px + perpX * (16 + boxW2 / 2) + (sym.indOffsetX ?? 0);
-              const by = py + perpY * (16 + boxH2 / 2) + (sym.indOffsetY ?? 0);
+              // Кегль — от ширины ветви, как подписи выработок и как на экране.
+              const indSF2 = indicatorOffsetSF(symSizing);
+              const fs2 = indicatorFontSize(hostW, sym.indFontSize, symSizing);
+              const lh2 = fs2 + 3 * symSizing.indZoomSF;
+              const boxW2 = Math.max(...indLines.map(l => l.length)) * fs2 * 0.52 + 10 * symSizing.indZoomSF;
+              const boxH2 = indLines.length * lh2 + 6 * symSizing.indZoomSF;
+              const gap2 = 16 * indSF2;
+              const bx = px + perpX * (gap2 + boxW2 / 2) + (sym.indOffsetX ?? 0) * indSF2;
+              const by = py + perpY * (gap2 + boxH2 / 2) + (sym.indOffsetY ?? 0) * indSF2;
               parts.push(`<line x1="${n(px)}" y1="${n(py)}" x2="${n(bx)}" y2="${n(by - boxH2/2)}" stroke="#555555" stroke-width="0.4" stroke-dasharray="2 3"/>`);
               indLines.forEach((line, i) => {
-                const ty2 = by - boxH2/2 + i * lh2 + 3;
+                const ty2 = by - boxH2/2 + i * lh2 + 3 * symSizing.indZoomSF;
                 const fw2 = i === 0 && sym.indDescription ? "600" : "400";
                 parts.push(`<text x="${n(bx)}" y="${n(ty2)}" text-anchor="middle" dominant-baseline="auto" font-size="${n(fs2, 1)}" font-weight="${fw2}" stroke="white" stroke-width="2" paint-order="stroke" fill="#1a2a4a">${esc(line)}</text>`);
               });
@@ -981,12 +1010,15 @@ export function generateSvg(opts: SvgExportOptions): string {
             const brLenF = Math.hypot(brDxF, brDyF);
             const perpXF = brLenF > 0 ? -brDyF / brLenF : 0;
             const perpYF = brLenF > 0 ?  brDxF / brLenF : 0;
-            const fsF = Math.max(6, (sym.fanIndFontSize ?? 9) * sc * ss);
-            const lhF = fsF + 3;
-            const boxWF = Math.max(...fanLines.map(l => l.length)) * fsF * 0.52 + 10;
-            const boxHF = fanLines.length * lhF + 6;
-            const bxF = px + perpXF * (16 + boxWF / 2) + (sym.fanIndOffsetX ?? 0);
-            const byF = py + perpYF * (16 + boxHF / 2) + (sym.fanIndOffsetY ?? 0);
+            // Кегль — от ширины ветви, как подписи выработок и как на экране.
+            const indSFf = indicatorOffsetSF(symSizing);
+            const fsF = indicatorFontSize(hostW, sym.fanIndFontSize, symSizing);
+            const lhF = fsF + 3 * symSizing.indZoomSF;
+            const boxWF = Math.max(...fanLines.map(l => l.length)) * fsF * 0.52 + 10 * symSizing.indZoomSF;
+            const boxHF = fanLines.length * lhF + 6 * symSizing.indZoomSF;
+            const gapF = 16 * indSFf;
+            const bxF = px + perpXF * (gapF + boxWF / 2) + (sym.fanIndOffsetX ?? 0) * indSFf;
+            const byF = py + perpYF * (gapF + boxHF / 2) + (sym.fanIndOffsetY ?? 0) * indSFf;
             const bgF = fanIndBg(sym.fanIndBgColor);
             const fgF = msIndTextColor(bgF);
             parts.push(`<line x1="${n(px)}" y1="${n(py)}" x2="${n(bxF)}" y2="${n(byF - boxHF/2)}" stroke="${bgF ?? "#555555"}" stroke-width="0.4" stroke-dasharray="2 3"/>`);
@@ -994,7 +1026,7 @@ export function generateSvg(opts: SvgExportOptions): string {
               parts.push(`<rect x="${n(bxF - boxWF/2)}" y="${n(byF - boxHF/2)}" width="${n(boxWF)}" height="${n(boxHF)}" rx="${n(Math.min(4, boxHF/3), 1)}" fill="${bgF}" stroke="white" stroke-width="1.2"/>`);
             }
             fanLines.forEach((line, i) => {
-              const tyF = byF - boxHF/2 + i * lhF + 3;
+              const tyF = byF - boxHF/2 + i * lhF + 3 * symSizing.indZoomSF;
               // Белая обводка текста нужна только там, где нет плашки
               const strokeAttrF = bgF ? "" : ` stroke="white" stroke-width="2" paint-order="stroke"`;
               parts.push(`<text x="${n(bxF)}" y="${n(tyF)}" text-anchor="middle" dominant-baseline="auto" font-family="Segoe UI,Arial,sans-serif" font-size="${n(fsF, 1)}"${strokeAttrF} fill="${fgF}">${esc(line)}</text>`);

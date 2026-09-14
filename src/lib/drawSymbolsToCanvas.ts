@@ -3,11 +3,16 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
+import {
+  type SymbolSizing, makeSymbolSizing, symbolSizeOnBranch,
+  indicatorFontSize, indicatorOffsetSF,
+} from "@/lib/symbolSizing";
 
 // Кэш SVG-иконок, преобразованных в Image (по svgContent)
 const svgImageCache = new Map<string, HTMLImageElement>();
@@ -41,7 +46,15 @@ export async function drawSymbolsToCanvas(
   unitsConfig: UnitsConfig = DEFAULT_UNITS_CONFIG,
   defaultBranchWidth: number = 7,
   infoConfig?: InfoDisplayConfig,
+  /** Масштабирование УО — то же, что в рабочей области (см. symbolSizing). */
+  sizing?: SymbolSizing,
 ): Promise<void> {
+  // Если контекст не передан (старые вызовы) — считаем objSF по «сырому»
+  // view.scale: поведение как раньше, но формулы уже общие.
+  const sz: SymbolSizing = sizing ?? makeSymbolSizing({ objSF: viewScale, viewScale });
+  // Справочник ветвей — иначе на схеме в тысячи УО каждый символ ищет свою
+  // ветвь перебором всего массива (и так несколько раз).
+  const branchById = new Map(branches.map(b => [b.id, b]));
   for (const sym of symbols) {
     const isBulkheadSym = BULKHEAD_SYMBOL_IDS.has(sym.typeId);
     const lt = LEGEND_TYPES.find(l => l.id === sym.typeId);
@@ -76,20 +89,18 @@ export async function drawSymbolsToCanvas(
     const py = basePy + (sym.offsetY ?? 0);
     const sc = sym.scale ?? 1;
     const ss = symScale(viewScale);
-    const brForSym2 = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+    const brForSym2 = sym.branchId ? branchById.get(sym.branchId) ?? null : null;
     const isMeasureStationSym = sym.typeId === "measure_station";
-    let SZ: number;
     const isHeaterSym = HEATER_SYMBOL_IDS.has(sym.typeId);
-    if ((isBulkheadSym || isMeasureStationSym || isHeaterSym) && hasBranchPts) {
-      const bkBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
-      SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
-    } else if (SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
-      // Устье ствола — ровно того же размера, что и узел этой ветви.
-      const mBw = (brForSym2?.lineWidth && brForSym2.lineWidth > 0) ? brForSym2.lineWidth : defaultBranchWidth;
-      SZ = shaftMouthSize(Math.max(mBw * viewScale, 1.0), sc);
-    } else {
-      SZ = Math.max(4, 32 * sc * ss);
-    }
+    // Ширина выработки-хозяина: для нити вентрубопровода берётся ширина самой
+    // выработки, иначе значок на ставе выходит крошечным (см. symbolHostWidth).
+    const hostW = symbolHostWidth(brForSym2, branchById, defaultBranchWidth);
+    // Размер УО считаем ТЕМИ ЖЕ формулами, что и рабочая область: от реальной
+    // ширины ветви на листе и процентов «Перемычки»/«Вентиляторы». Раньше здесь
+    // стоял множитель от «сырого» viewScale — на листе он в разы больше
+    // экранного, и замерные станции с вентиляторами печатались гигантскими.
+    const szOnBranch = hasBranchPts ? symbolSizeOnBranch(sym.typeId, sc, hostW, sz) : null;
+    const SZ: number = szOnBranch ?? Math.max(4, 32 * sc * ss);
     const HX = px - SZ / 2;
     const HY = py - SZ / 2 - 4;
 
@@ -279,7 +290,7 @@ export async function drawSymbolsToCanvas(
 
     // ── Индикаторы замерной станции ───────────────────────────────────
     if (isMeasureStation && hasBranchPts) {
-      const brMs = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+      const brMs = brForSym2;
       const msLines: string[] = [];
       if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
       if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
@@ -296,18 +307,22 @@ export async function drawSymbolsToCanvas(
         msLines.push(`v=${v.toFixed(2)} м/с`);
       }
       if (msLines.length > 0) {
-        // Масштабируем синхронно с УО замерной станции (SZ), а не по ss.
-        const fsMs = Math.max(6, Math.round(SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9)));
-        const lhMs = fsMs + 3;
-        const boxHMs = msLines.length * lhMs + 6;
+        // Кегль — от ширины ветви, как подписи выработок и как на экране.
+        // Раньше он считался от SZ самого знака, и вместе с раздутым на листе
+        // значком замерной станции разрасталась и её зелёная плашка.
+        const indSFms = indicatorOffsetSF(sz);
+        const fsMs = indicatorFontSize(hostW, sym.msIndFontSize, sz);
+        const lhMs = fsMs + 3 * sz.indZoomSF;
+        const boxHMs = msLines.length * lhMs + 6 * sz.indZoomSF;
         const brDxMs = tsx2 - fsx, brDyMs = tsy2 - fsy;
         const brLenMs = Math.hypot(brDxMs, brDyMs);
         const perpXms = brLenMs > 0 ? -brDyMs / brLenMs : 0;
         const perpYms = brLenMs > 0 ?  brDxMs / brLenMs : 0;
         const maxLen = Math.max(...msLines.map(l => l.length));
-        const boxWMs = maxLen * fsMs * 0.52 + 10;
-        const bxMs = px + perpXms * (16 + boxWMs / 2) + (sym.msIndOffsetX ?? 0);
-        const byMs = py + perpYms * (16 + boxHMs / 2) + (sym.msIndOffsetY ?? 0);
+        const boxWMs = maxLen * fsMs * 0.52 + 10 * sz.indZoomSF;
+        const gapMs = 16 * indSFms;
+        const bxMs = px + perpXms * (gapMs + boxWMs / 2) + (sym.msIndOffsetX ?? 0) * indSFms;
+        const byMs = py + perpYms * (gapMs + boxHMs / 2) + (sym.msIndOffsetY ?? 0) * indSFms;
 
         // Подложка под индикаторами — на печати ЗС так же теряется среди
         // выработок, как и на экране, поэтому плашка нужна и здесь.
@@ -335,7 +350,7 @@ export async function drawSymbolsToCanvas(
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         msLines.forEach((line, i) => {
-          const tyMs = byMs - boxHMs / 2 + i * lhMs + 3;
+          const tyMs = byMs - boxHMs / 2 + i * lhMs + 3 * sz.indZoomSF;
           const fw = i === 0 && sym.msIndNumber ? "700" : "400";
           ctx.font = `${fw} ${fsMs}px "Segoe UI", sans-serif`;
           // Обводка нужна только без подложки: на плашке она размывает буквы.
@@ -357,7 +372,7 @@ export async function drawSymbolsToCanvas(
     // оборудованию относятся. Теперь рисуем их отдельной подписью прямо у
     // значка вентилятора — как это сделано у замерной станции.
     if (FAN_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
-      const brFan = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+      const brFan = brForSym2;
       const icFan = (brFan?.indicators ?? {}) as Record<string, boolean>;
       const uPresF = getUnit(unitsConfig, "pressure");
       const uFlowF = getUnit(unitsConfig, "flow");
@@ -383,23 +398,26 @@ export async function drawSymbolsToCanvas(
           fanLines.push(`ηв=${((brFan.fanEfficiency ?? 0) * 100).toFixed(0)}%`);
       }
       if (fanLines.length > 0) {
-        // Размер задаётся в параметрах вентилятора (поле «Размер»), по
-        // умолчанию 9 — как у замерных станций.
-        const fsF = Math.max(6, Math.round(SZ * 0.34 * (((sym as { fanIndFontSize?: number }).fanIndFontSize ?? 9) / 9)));
-        const lhF = fsF + 3;
-        const boxHF = fanLines.length * lhF + 6;
+        // Кегль — от ширины ветви (как подписи выработок и как на экране), а не
+        // от SZ значка: иначе синяя плашка вентилятора раздувалась на листе
+        // вместе с самим значком.
+        const indSFf = indicatorOffsetSF(sz);
+        const fsF = indicatorFontSize(hostW, (sym as { fanIndFontSize?: number }).fanIndFontSize, sz);
+        const lhF = fsF + 3 * sz.indZoomSF;
+        const boxHF = fanLines.length * lhF + 6 * sz.indZoomSF;
         const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
         const brLenF = Math.hypot(brDxF, brDyF);
         // Смещаем подпись перпендикулярно ветви — чтобы не легла на выработку.
         const perpXf = brLenF > 0 ? -brDyF / brLenF : 0;
         const perpYf = brLenF > 0 ?  brDxF / brLenF : 0;
         const maxLenF = Math.max(...fanLines.map(l => l.length));
-        const boxWF = maxLenF * fsF * 0.52 + 10;
+        const boxWF = maxLenF * fsF * 0.52 + 10 * sz.indZoomSF;
         // Смещение подписи, заданное перетаскиванием мышью (см. TopoCanvas).
         const fanOffX = (sym as { fanIndOffsetX?: number }).fanIndOffsetX ?? 0;
         const fanOffY = (sym as { fanIndOffsetY?: number }).fanIndOffsetY ?? 0;
-        const bxF = px + perpXf * (16 + boxWF / 2) + fanOffX;
-        const byF = py + perpYf * (16 + boxHF / 2) + fanOffY;
+        const gapF = 16 * indSFf;
+        const bxF = px + perpXf * (gapF + boxWF / 2) + fanOffX * indSFf;
+        const byF = py + perpYf * (gapF + boxHF / 2) + fanOffY * indSFf;
 
         // Подложка под подписью — как на экране (по умолчанию синяя).
         const bgF = fanIndBg((sym as { fanIndBgColor?: string }).fanIndBgColor);
@@ -426,7 +444,7 @@ export async function drawSymbolsToCanvas(
         ctx.textAlign = "center";
         ctx.textBaseline = "top";
         fanLines.forEach((line, i) => {
-          const tyF = byF - boxHF / 2 + i * lhF + 3;
+          const tyF = byF - boxHF / 2 + i * lhF + 3 * sz.indZoomSF;
           ctx.font = `400 ${fsF}px "Segoe UI", sans-serif`;
           // Обводка только без плашки: на фоне она размывает буквы.
           if (!bgF) {
@@ -442,7 +460,7 @@ export async function drawSymbolsToCanvas(
 
     // ── Индикаторы перемычки ──────────────────────────────────────────
     if (isBulkhead && sym.branchId && hasBranchPts) {
-      drawBulkheadIndicators(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2, sc, ss, unitsConfig, branches);
+      drawBulkheadIndicators(ctx, sym, px, py, fsx, fsy, tsx2, tsy2, unitsConfig, brForSym2, hostW, sz);
     }
   }
 }
@@ -578,13 +596,13 @@ function drawBulkheadOnCanvas(
 function drawBulkheadIndicators(
   ctx: CanvasRenderingContext2D,
   sym: SchemaSymbol,
-  px: number, py: number, SZ: number,
+  px: number, py: number,
   fsx: number, fsy: number, tsx2: number, tsy2: number,
-  sc: number, ss: number,
   unitsConfig: UnitsConfig,
-  branches: TopoBranch[],
+  br: TopoBranch | null,
+  hostW: number,
+  sz: SymbolSizing,
 ) {
-  const br = branches.find(b => b.id === sym.branchId);
   if (!br) return;
   const lines: string[] = [];
   const uRes  = getUnit(unitsConfig, "resistance");
@@ -601,19 +619,20 @@ function drawBulkheadIndicators(
     lines.push(`Q=${uFlow.fromBase(Math.abs(br.flow)).toFixed(uFlow.decimals)} ${uFlow.symbol}`);
   if (!lines.length) return;
 
-  // Масштабируем индикатор синхронно с УО перемычки (его размер SZ уже
-  // масштабируется по ширине ветви и зуму), а не по ss (обратный рост при зуме).
-  const fSize = Math.max(6, Math.round(SZ * 0.55));
-  const lineH = fSize + 3;
-  const boxH  = lines.length * lineH + 6;
+  // Кегль — от ширины ветви, как подписи выработок и как в рабочей области.
+  const indSF = indicatorOffsetSF(sz);
+  const fSize = indicatorFontSize(hostW, sym.indFontSize, sz);
+  const lineH = fSize + 3 * sz.indZoomSF;
+  const boxH  = lines.length * lineH + 6 * sz.indZoomSF;
   const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
   const brLen = Math.hypot(brDx, brDy);
   const perpX = brLen > 0 ? -brDy / brLen : 0;
   const perpY = brLen > 0 ?  brDx / brLen : 0;
   const maxLen = Math.max(...lines.map(l => l.length));
-  const boxW  = maxLen * fSize * 0.52 + 10;
-  const bx = px + perpX * (16 + boxW / 2) + (sym.indOffsetX ?? 0);
-  const by = py + perpY * (16 + boxH / 2) + (sym.indOffsetY ?? 0);
+  const boxW  = maxLen * fSize * 0.52 + 10 * sz.indZoomSF;
+  const gap   = 16 * indSF;
+  const bx = px + perpX * (gap + boxW / 2) + (sym.indOffsetX ?? 0) * indSF;
+  const by = py + perpY * (gap + boxH / 2) + (sym.indOffsetY ?? 0) * indSF;
 
   // Выноска
   ctx.save();
@@ -627,7 +646,7 @@ function drawBulkheadIndicators(
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   lines.forEach((line, i) => {
-    const ty = by - boxH/2 + i * lineH + 3;
+    const ty = by - boxH/2 + i * lineH + 3 * sz.indZoomSF;
     ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
     ctx.strokeText(line, bx, ty);
     ctx.fillStyle = "#1a2a4a";

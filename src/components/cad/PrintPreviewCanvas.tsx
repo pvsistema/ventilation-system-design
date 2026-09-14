@@ -6,7 +6,8 @@ import {
   type TopoNode, type TopoBranch, type Horizon, type ProjOptions,
   project3D,
 } from "@/lib/topology";
-import { renderCanvas, type ProjNode, type FlowDisplayMode } from "@/lib/canvasRenderer";
+import { renderCanvas, computeObjSF, type ProjNode, type FlowDisplayMode } from "@/lib/canvasRenderer";
+import { makeSymbolSizing } from "@/lib/symbolSizing";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -60,6 +61,10 @@ interface Props {
   /** Глобальный ГОСТ-диаметр маркера позиции, мм (эталон 13) */
   positionGostMm?: number;
   xyScale?: number;
+  /** Размер перемычек/замерных станций, % от ширины ветви (как в рабочей области). */
+  bulkheadScale?: number;
+  /** Размер вентиляторов/насосов/вентилей, % от ширины ветви. */
+  fanScale?: number;
   /** Множитель супер-сэмплинга canvas (обычно = зум предпросмотра),
    *  чтобы схема оставалась чёткой при CSS transform: scale(). */
   superSample?: number;
@@ -96,6 +101,8 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   scalePositionMax = 150,
   positionGostMm = 13,
   xyScale,
+  bulkheadScale = 150,
+  fanScale = 450,
   superSample = 1,
   tileView,
 }, ref) {
@@ -326,6 +333,13 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           width={width}
           height={height}
           defaultBranchWidth={branchWidth}
+          // Тот же objSF, с которым renderCanvas рисует сами ветви, — иначе
+          // значки и подписи на листе живут отдельной жизнью от выработок.
+          sizing={makeSymbolSizing({
+            objSF: computeObjSF(activeView.scale, xyScale, true, fixedObjectScale, undefined),
+            viewScale: activeView.scale,
+            xyScale, bulkheadScale, fanScale, thinLines,
+          })}
         />
       )}
 

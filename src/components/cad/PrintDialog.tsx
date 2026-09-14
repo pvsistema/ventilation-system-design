@@ -3,7 +3,8 @@ import Icon from "@/components/ui/icon";
 import { API_URLS } from "@/lib/api-urls";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "@/lib/topology";
-import { renderCanvas, ensureFireCraneIcons, type FlowDisplayMode } from "@/lib/canvasRenderer";
+import { renderCanvas, computeObjSF, ensureFireCraneIcons, type FlowDisplayMode } from "@/lib/canvasRenderer";
+import { makeSymbolSizing } from "@/lib/symbolSizing";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -69,6 +70,10 @@ interface PrintDialogProps {
   scalePositionMax?: number;
   positionGostMm?: number;
   xyScale?: number;
+  /** Размер перемычек/замерных станций, % от ширины ветви (как в рабочей области). */
+  bulkheadScale?: number;
+  /** Размер вентиляторов/насосов/вентилей, % от ширины ветви. */
+  fanScale?: number;
   initialOpenExport?: boolean;
   onExportDialogOpened?: () => void;
 }
@@ -100,11 +105,24 @@ export default function PrintDialog({
   scalePositionMax = 150,
   positionGostMm = 13,
   xyScale,
+  bulkheadScale = 150,
+  fanScale = 450,
   initialOpenExport = false,
   onExportDialogOpened,
 }: PrintDialogProps) {
   // Ref на живой canvas предпросмотра — для кнопки "Подобрать масштаб" и экспорта
   const previewRef = useRef<PrintPreviewCanvasHandle>(null);
+
+  // Контекст масштабирования УО для листа. Берёт ТОТ ЖЕ objSF, с которым
+  // renderCanvas рисует ветви, — значки и подписи получаются такими же, как
+  // в рабочей области. Раньше их размер считался от «сырого» view.scale,
+  // который при подгонке схемы под лист (и тем более под 300 DPI) в разы
+  // больше экранного: замерные станции и вентиляторы печатались гигантскими.
+  const symSizingFor = useCallback((scale: number) => makeSymbolSizing({
+    objSF: computeObjSF(scale, xyScale, true, fixedObjectScale, undefined),
+    viewScale: scale,
+    xyScale, bulkheadScale, fanScale, thinLines,
+  }), [xyScale, fixedObjectScale, bulkheadScale, fanScale, thinLines]);
 
   // Загрязнённые ветви: доля грязного воздуха в струе (смешение по расходам
   // в узлах) достигла порога. Печать использует тот же расчёт, что и схема.
@@ -1036,7 +1054,7 @@ export default function PrintDialog({
       });
 
       if (schemaSymbols.length > 0) {
-        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig, 7, infoConfig ?? undefined);
+        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig, 7, infoConfig ?? undefined, symSizingFor(scaledSc));
       }
 
       // Позиции ПЛА — поверх схемы, но ПОД рамкой печати (как в предпросмотре).
@@ -1095,7 +1113,7 @@ export default function PrintDialog({
         ctx.beginPath();
         ctx.rect(marginLeftPx, marginTopPx, workW, workH);
         ctx.clip();
-        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig, 7, infoConfig ?? undefined);
+        await drawSymbolsToCanvas(ctx, schemaSymbols, branches, projNodesMap, scaledSc, unitsConfig, 7, infoConfig ?? undefined, symSizingFor(scaledSc));
         ctx.restore();
       }
       // Позиции ПЛА — поверх схемы (как в предпросмотре), в пределах рабочей области.
@@ -1114,7 +1132,7 @@ export default function PrintDialog({
       branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
       colorMode, sectionColors, posInnerColors, posOuterColors, fixedObjectScale, xyScale,
       hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect,
-      drawPositionsToCanvas]);
+      drawPositionsToCanvas, symSizingFor]);
 
 
   // ─── Печать ──────────────────────────────────────────────────────────
@@ -1282,6 +1300,7 @@ body{background:white;font-family:Arial,sans-serif}
           paperWidthMm: paper.w,
           title: projectName,
           fixedObjectScale, xyScale, widthBySection, widthLimits,
+          bulkheadScale, fanScale,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
           showFlowArrows, textBlocks,
@@ -1339,6 +1358,7 @@ body{background:white;font-family:Arial,sans-serif}
         paperWidthMm: paper.w,
         title: projectName,
         fixedObjectScale, xyScale, widthBySection, widthLimits,
+        bulkheadScale, fanScale,
         pollutedBranchIds,
         schemaSymbols: schemaSymbols ?? [],
         showFlowArrows, textBlocks,
@@ -1369,6 +1389,7 @@ body{background:white;font-family:Arial,sans-serif}
           paperWidthMm: paper.w,
           title: projectName,
           fixedObjectScale, xyScale, widthBySection, widthLimits,
+          bulkheadScale, fanScale,
           pollutedBranchIds,
           schemaSymbols: schemaSymbols ?? [],
           showFlowArrows, textBlocks,
@@ -1721,6 +1742,8 @@ body{background:white;font-family:Arial,sans-serif}
                         scalePositionMax={scalePositionMax}
                         positionGostMm={positionGostMm}
                         xyScale={xyScale}
+                        bulkheadScale={bulkheadScale}
+                        fanScale={fanScale}
                         superSample={viewZoom}
                         tileView={tileView}
                       />

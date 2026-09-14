@@ -2,10 +2,15 @@
 // Содержит ту же логику что в TopoCanvas, но без интерактивности.
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { type TopoBranch } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
+import {
+  type SymbolSizing, makeSymbolSizing, symbolSizeOnBranch,
+  indicatorFontSize, indicatorOffsetSF,
+} from "@/lib/symbolSizing";
 
 interface Props {
   symbols: SchemaSymbol[];
@@ -16,13 +21,21 @@ interface Props {
   width: number;
   height: number;
   defaultBranchWidth?: number;
+  /** Масштабирование УО — то же, что в рабочей области (см. symbolSizing).
+   *  Без него значки замерных станций и вентиляторов на листе раздувались:
+   *  их размер считался от «сырого» view.scale, который при подгонке схемы
+   *  под лист в разы больше экранного. */
+  sizing?: SymbolSizing;
 }
 
 export default function SchemaSymbolsOverlay({
   symbols, branches, projNodesMap,
   viewScale, unitsConfig = DEFAULT_UNITS_CONFIG,
   width, height, defaultBranchWidth = 7,
+  sizing,
 }: Props) {
+  const sz: SymbolSizing = sizing ?? makeSymbolSizing({ objSF: viewScale, viewScale });
+  const branchById = new Map(branches.map(b => [b.id, b]));
   return (
     <svg
       style={{ position: "absolute", inset: 0, pointerEvents: "none", overflow: "visible" }}
@@ -40,7 +53,7 @@ export default function SchemaSymbolsOverlay({
         let fsx = 0, fsy = 0, tsx2 = 0, tsy2 = 0, hasBranchPts = false;
 
         if (sym.branchId) {
-          const br = branches.find(b => b.id === sym.branchId);
+          const br = branchById.get(sym.branchId);
           const fN = br ? projNodesMap.get(br.fromId) : null;
           const tN = br ? projNodesMap.get(br.toId) : null;
           if (fN && tN) {
@@ -70,22 +83,15 @@ export default function SchemaSymbolsOverlay({
           const k = (viewScale - 0.4) / 0.4;
           symScaleFactor = 1 + 2 * (k / (k + 2));
         }
-        const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
+        const brForSym = sym.branchId ? branchById.get(sym.branchId) ?? null : null;
         const isMeasureStationSym2 = sym.typeId === "measure_station";
         const isEmergencyExitSym = sym.typeId === "emergency_exit";
-        let SZ: number;
         const isHeaterSym = HEATER_SYMBOL_IDS.has(sym.typeId);
-        const isShaftMouthSym = SHAFT_MOUTH_SYMBOL_IDS.has(sym.typeId);
-        if ((isBulkheadSym || isMeasureStationSym2 || isEmergencyExitSym || isHeaterSym) && hasBranchPts) {
-          const bkBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
-          SZ = Math.max(6, (bkBw * viewScale * 2.0 / 0.85) * sc);
-        } else if (isShaftMouthSym && hasBranchPts) {
-          // Устье ствола — ровно того же размера, что и узел этой ветви.
-          const mBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
-          SZ = shaftMouthSize(Math.max(mBw * viewScale, 1.0), sc);
-        } else {
-          SZ = Math.max(4, 32 * sc * symScaleFactor);
-        }
+        // Ширина выработки-хозяина (для нити става — ширина самой выработки).
+        const hostW = symbolHostWidth(brForSym, branchById, defaultBranchWidth);
+        // Размер УО считается теми же формулами, что и в рабочей области.
+        const szOnBranch = hasBranchPts ? symbolSizeOnBranch(sym.typeId, sc, hostW, sz) : null;
+        const SZ: number = szOnBranch ?? Math.max(4, 32 * sc * symScaleFactor);
         const HX = px - SZ / 2;
         const HY = py - SZ / 2 - 4;
         const isFanStopped = sym.typeId === "fan" && (brForSym?.fanStopped ?? false);
@@ -170,9 +176,8 @@ export default function SchemaSymbolsOverlay({
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brAngle = Math.atan2(brDy, brDx) * 180 / Math.PI;
           // После rotate(brAngle): ось X — вдоль ветви, ось Y — поперёк
-          // Ширина символа = точно ширина ветви на экране
-          const eeBw = (brForSym?.lineWidth && brForSym.lineWidth > 0) ? brForSym.lineWidth : defaultBranchWidth;
-          const halfH = Math.max(1.2, (eeBw * viewScale / 2) * sc);  // поперёк ветви
+          // Ширина символа = точно ширина ветви на листе (как в рабочей области).
+          const halfH = Math.max(1.2, (Math.max(hostW * sz.objSF, 1.0) / 2) * sc);  // поперёк ветви
           const totalLen = halfH * 5.2;                  // длиннее вдоль ветви
           // 4 полосы вдоль ветви: жёлтая, чёрная, жёлтая, чёрная.
           // Чёрные чуть длиннее жёлтых (как в Аэросети).
@@ -342,18 +347,21 @@ export default function SchemaSymbolsOverlay({
           }
           if (!lines.length) return null;
 
-          // Масштабируем синхронно с УО замерной станции (SZ), а не по symScaleFactor,
-          // чтобы при уменьшении схемы индикатор уменьшался вместе с УО.
-          const fSize = Math.max(6, Math.round(SZ * 0.55 * ((sym.msIndFontSize ?? 9) / 9)));
-          const lineH = fSize + 3;
-          const boxW  = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
-          const boxH  = lines.length * lineH + 6;
+          // Кегль — от ширины ветви, как подписи выработок и как на экране.
+          // Раньше считался от SZ знака: вместе с раздутой на листе замерной
+          // станцией разрасталась и её зелёная плашка.
+          const indSF = indicatorOffsetSF(sz);
+          const fSize = indicatorFontSize(hostW, sym.msIndFontSize, sz);
+          const lineH = fSize + 3 * sz.indZoomSF;
+          const boxW  = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * sz.indZoomSF;
+          const boxH  = lines.length * lineH + 6 * sz.indZoomSF;
           const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
           const brLen = Math.hypot(brDx, brDy);
           const perpX = brLen > 0 ? -brDy / brLen : 0;
           const perpY = brLen > 0 ?  brDx / brLen : 0;
-          const bx = px + perpX * (16 + boxW / 2) + (sym.msIndOffsetX ?? 0);
-          const by = py + perpY * (16 + boxH / 2) + (sym.msIndOffsetY ?? 0);
+          const msGap = 16 * indSF;
+          const bx = px + perpX * (msGap + boxW / 2) + (sym.msIndOffsetX ?? 0) * indSF;
+          const by = py + perpY * (msGap + boxH / 2) + (sym.msIndOffsetY ?? 0) * indSF;
 
           // Подложка под индикаторами — чтобы ЗС не терялась на схеме.
           const msBg = msIndBg(sym.msIndBgColor);
@@ -365,7 +373,8 @@ export default function SchemaSymbolsOverlay({
                 stroke={msBg ?? "#8899bb"} strokeWidth={0.7} strokeDasharray="3 2" />
               {msBg && (
                 <rect x={bx - boxW / 2} y={by - boxH / 2} width={boxW} height={boxH}
-                  rx={Math.min(4, boxH / 3)} fill={msBg} stroke="white" strokeWidth={1.2} />
+                  rx={Math.min(4 * sz.indZoomSF, boxH / 3)} fill={msBg} stroke="white"
+                  strokeWidth={Math.max(0.5, 1.2 * sz.indZoomSF)} />
               )}
               {lines.map((line, i) => (
                 <text key={i}
@@ -386,7 +395,7 @@ export default function SchemaSymbolsOverlay({
         // Индикаторы перемычки
         const renderBulkheadIndicators = () => {
           if (!BULKHEAD_SYMBOL_IDS.has(sym.typeId) || !sym.branchId) return null;
-          const br = branches.find(b => b.id === sym.branchId);
+          const br = brForSym;
           if (!br) return null;
           const lines: string[] = [];
           const uRes  = getUnit(unitsConfig, "resistance");
@@ -403,19 +412,20 @@ export default function SchemaSymbolsOverlay({
             lines.push(`Q=${uFlow.fromBase(Math.abs(br.flow)).toFixed(uFlow.decimals)} ${uFlow.symbol}`);
           if (!lines.length) return null;
 
-          // Масштабируем синхронно с УО перемычки (SZ), а не по symScale,
-          // чтобы при уменьшении схемы индикатор уменьшался вместе с УО.
-          const fSize = Math.max(6, Math.round(SZ * 0.55 * ((sym.indFontSize ?? 9) / 9)));
-          const lineH = fSize + 3;
-          const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10;
-          const boxH = lines.length * lineH + 6;
+          // Кегль — от ширины ветви, как подписи выработок и как на экране.
+          const indSF = indicatorOffsetSF(sz);
+          const fSize = indicatorFontSize(hostW, sym.indFontSize, sz);
+          const lineH = fSize + 3 * sz.indZoomSF;
+          const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * sz.indZoomSF;
+          const boxH = lines.length * lineH + 6 * sz.indZoomSF;
 
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;
           const brLen = Math.hypot(brDx, brDy);
           const perpX = brLen > 0 ? -brDy / brLen : 0;
           const perpY = brLen > 0 ?  brDx / brLen : 0;
-          const bx = px + perpX * (16 + boxW / 2) + (sym.indOffsetX ?? 0);
-          const by = py + perpY * (16 + boxH / 2) + (sym.indOffsetY ?? 0);
+          const indGap = 16 * indSF;
+          const bx = px + perpX * (indGap + boxW / 2) + (sym.indOffsetX ?? 0) * indSF;
+          const by = py + perpY * (indGap + boxH / 2) + (sym.indOffsetY ?? 0) * indSF;
 
           return (
             <g>
