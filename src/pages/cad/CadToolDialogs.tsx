@@ -18,6 +18,8 @@ import React, { lazy, Suspense } from "react";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions } from "@/components/cad/MoveSchemaDialog";
 import type { FireStabilityFact } from "@/lib/fireStability";
+import type { EvaluateContext } from "@/lib/fireControl/evaluate";
+import type { FireAction } from "@/lib/fireControl/actions";
 
 const LegendDialog           = lazy(() => import("@/components/cad/LegendDialog"));
 const PrintDialog            = lazy(() => import("@/components/cad/PrintDialog"));
@@ -28,6 +30,7 @@ const DepressogramDialog     = lazy(() => import("@/components/cad/DepressogramD
 const FireStabilityDialog    = lazy(() => import("@/components/cad/FireStabilityDialog"));
 const WaterFireCheckDialog   = lazy(() => import("@/components/cad/WaterFireCheckDialog"));
 const EvacRiskDialog         = lazy(() => import("@/components/cad/EvacRiskDialog"));
+const FireControlDialog      = lazy(() => import("@/components/cad/FireControlDialog"));
 const VdsDialog              = lazy(() => import("@/components/cad/VdsDialog"));
 const LicenseDialog          = lazy(() => import("@/components/LicenseDialog"));
 const SettingsDialog         = lazy(() => import("@/components/cad/SettingsDialog"));
@@ -134,6 +137,13 @@ export interface CadToolDialogsProps {
   // Зона поражения по людям
   showEvacRisk: boolean;
   setShowEvacRisk: (v: boolean) => void;
+  // Подбор режима проветривания при пожаре
+  showFireControl: boolean;
+  setShowFireControl: (v: boolean) => void;
+  /** Контекст расчёта пожара для перебора вариантов (собирается в CadPage). */
+  buildFireControlContext: () => EvaluateContext;
+  /** Внести действия выбранного варианта в проект. */
+  applyFireControlActions: (actions: FireAction[]) => void;
   // ВДС (воздушно-депрессионная съёмка)
   showVds: boolean;
   setShowVds: (v: boolean) => void;
@@ -347,6 +357,24 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           nodes={p.nodes}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
           onClose={() => p.setShowEvacRisk(false)}
+        />
+      )}
+
+      {/* ── Подбор режима проветривания при пожаре ──────────────────────── */}
+      {p.showFireControl && (
+        <FireControlDialog
+          branches={p.branches}
+          nodes={p.nodes}
+          symbols={p.schemaSymbols}
+          buildContext={p.buildFireControlContext}
+          solved={!!p.solveResult}
+          hasFire={p.branches.some(b => b.hasFire)}
+          onApply={actions => {
+            p.applyFireControlActions(actions);
+            p.setShowFireControl(false);
+          }}
+          onHighlightBranches={p.setDepressogramHighlight}
+          onClose={() => p.setShowFireControl(false)}
         />
       )}
 

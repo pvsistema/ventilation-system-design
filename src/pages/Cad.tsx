@@ -47,6 +47,9 @@ import { exportVent2Cdf3 } from "@/lib/vent2Cdf3Export";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
+import { bulkheadROfBranch, buildBulkheadRMap } from "@/lib/bulkheadResistance";
+import { type EvaluateContext } from "@/lib/fireControl/evaluate";
+import { applyActions, describeActions, type FireAction } from "@/lib/fireControl/actions";
 import { checkSchema } from "@/lib/schemaCheck";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
@@ -1379,6 +1382,8 @@ export default function CadPage() {
   const [showWaterCheck, setShowWaterCheck] = useState(false);
   // Диалог «Зона поражения» (вывод людей при пожаре)
   const [showEvacRisk, setShowEvacRisk] = useState(false);
+  // Диалог «Подбор режима» (управляющие действия при пожаре)
+  const [showFireControl, setShowFireControl] = useState(false);
   // Диалог «ВДС» (воздушно-депрессионная съёмка)
   const [showVds, setShowVds] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
@@ -1666,63 +1671,13 @@ export default function CadPage() {
   // Перемычка чаще задаётся символом на схеме (bk*) и её R сворачивается
   // в общий R ветви, а не в b.bulkheadR. Здесь считаем R перемычки отдельно
   // (та же логика, что в buildBranchPayload), чтобы выгрузить в jumpers/bulkheads.
-  const bulkheadRByBranch = useMemo(() => {
-    const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
-    const map = new Map<string, number>();
-    for (const b of branches) {
-      const bkSyms = schemaSymbols.filter(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
-      const rho = 353.0 / (273.0 + 20); // плотность при 20°C — достаточно для окна перемычки
-      const rSyms = bkSyms.reduce((sum, s) => {
-        const mode = s.bkResMode ?? "project";
-        let r = 0;
-        if (mode === "manual") {
-          r = (s.bkManualR ?? 0);
-        } else if (mode === "survey") {
-          const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
-          r = q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
-        } else {
-          const sw = s.bkWindowArea ?? 0;
-          const branchArea = b.area ?? 0;
-          const isFullyOpen = (OPEN_DOOR_IDS.has(s.typeId) && sw <= 0.001)
-            || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-          if (isFullyOpen) {
-            r = 0;
-          } else if (sw > 0.001) {
-            r = windowBulkheadRkMurg(sw, branchArea, s.typeId);
-          } else {
-            const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
-            const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
-              : (s.bkAirPerm ?? bkEntry?.airPermeability ?? b.bulkheadAirPerm ?? 0);
-            const rRef = bkEntry?.rMkyurg ?? 0;
-            r = kAir > 0
-              ? solidBulkheadRkMurg(kAir, branchArea)
-              : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
-          }
-        }
-        return sum + r;
-      }, 0);
-      // Перемычка задана через вкладку ветви (без символа на схеме)
-      const rBranch = (b.hasBulkhead && bkSyms.length === 0) ? (() => {
-        const mode = b.bulkheadResMode ?? "project";
-        if (mode === "manual") return (b.bulkheadManualR ?? 0);
-        if (mode === "survey") {
-          const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
-          return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
-        }
-        const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId);
-        const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
-        if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
-          return rSolid(b.bulkheadCustomAirPerm!);
-        if ((b.bulkheadAirPerm ?? 0) > 0)
-          return rSolid(b.bulkheadAirPerm);
-        return b.bulkheadR ?? 0;
-      })() : 0;
-      const total = rSyms + rBranch;
-      if (total > 0 || bkSyms.length > 0 || b.hasBulkhead) map.set(b.id, total);
-    }
-    return map;
-  }, [branches, schemaSymbols, mineBulkheads]);
+  // Сама логика живёт в lib/bulkheadResistance.ts — той же функцией считает
+  // payload для решателя и подбор режима при пожаре, поэтому панель свойств,
+  // расчёт и рекомендация не могут разойтись в числах.
+  const bulkheadRByBranch = useMemo(
+    () => buildBulkheadRMap(branches, schemaSymbols, mineBulkheads),
+    [branches, schemaSymbols, mineBulkheads],
+  );
 
   // ОБЩАЯ депрессия ветви (Па) = R_общее·Q²·9,81 − H вентилятора, где
   // R_общее = выработка + перемычка/окно + окно ГВУ. Поле b.dP содержит
@@ -3858,11 +3813,14 @@ export default function CadPage() {
   // Формирует payload ветвей для запроса к backend/airflow.
   // Единая точка подготовки данных — используется в расчёте вентиляции и пожара.
   // ─────────────────────────────────────────────────────────────────────────
+  // symbolsList — значки схемы, по которым считается сопротивление перемычек
+  // и дверей. Обычно это текущие значки проекта, но подбор режима при пожаре
+  // передаёт сюда ИЗМЕНЁННУЮ копию (с закрытой дверью), не трогая проект:
+  // без этого параметра закрытая в варианте дверь не повлияла бы на расчёт.
   const buildBranchPayload = (
     branchesList: typeof branches,
-    surfaceTempVal: number,
+    symbolsList: SchemaSymbol[] = schemaSymbols,
   ) => {
-    const nodesMap = new Map(nodes.map(n => [n.id, n]));
     const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
     const curve_map = new Map(branchesList.map(b => {
       const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
@@ -3875,65 +3833,10 @@ export default function CadPage() {
 
     return branchesList.map(b => {
       const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
-      const fromNode = nodesMap.get(b.fromId);
-      const toNode   = nodesMap.get(b.toId);
-      const tFrom = fromNode ? (fromNode.atmosphereLink ? surfaceTempVal : (fromNode.airTemp ?? surfaceTempVal)) : surfaceTempVal;
-      const tTo   = toNode   ? (toNode.atmosphereLink   ? surfaceTempVal : (toNode.airTemp   ?? surfaceTempVal)) : surfaceTempVal;
-      const tAvg  = (tFrom + tTo) / 2;
-      const rho   = 353.0 / (273.0 + Math.max(-30, Math.min(100, tAvg)));
-      const bkSyms = schemaSymbols.filter(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
-      const rBulkheads = bkSyms.reduce((sum, s) => {
-        const mode = s.bkResMode ?? "project";
-        let r = 0;
-        if (mode === "manual") {
-          r = (s.bkManualR ?? 0); // кМюрг = Па·с²/м⁶, коэффициент = 1
-        } else if (mode === "survey") {
-          const q = s.bkSurveyQ ?? 0; const dp = s.bkSurveyDP ?? 0;
-          r = q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
-        } else {
-          const sw = s.bkWindowArea ?? 0;
-          const branchArea = b.area ?? 0;
-          const isFullyOpen = (OPEN_DOOR_IDS.has(s.typeId) && sw <= 0.001)
-            || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-          if (isFullyOpen) {
-            r = 0;
-          } else if (sw > 0.001) {
-            // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-            r = windowBulkheadRkMurg(sw, branchArea, s.typeId);
-          } else {
-            const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
-            const kAir = s.bkManualAirPerm ? (s.bkCustomAirPerm ?? 0)
-              : (s.bkAirPerm ?? bkEntry?.airPermeability ?? b.bulkheadAirPerm ?? 0);
-            const rRef = bkEntry?.rMkyurg ?? 0;
-            // Глухая: R=1/A²/1000; парус — калиброванная формула.
-            r = kAir > 0
-              ? solidBulkheadRkMurg(kAir, branchArea)
-              : (s.bkBulkheadR ?? rRef ?? b.bulkheadR ?? 0);
-          }
-        }
-        return sum + r;
-      }, 0);
-      // Перемычка задана через вкладку ветви (без символа на схеме)
-      const rBranchBulkhead = (b.hasBulkhead && bkSyms.length === 0) ? (() => {
-        const mode = b.bulkheadResMode ?? "project";
-        if (mode === "manual") return (b.bulkheadManualR ?? 0); // кМюрг = Па·с²/м⁶
-        if (mode === "survey") {
-          const q = b.bulkheadSurveyQ ?? 0; const dp = b.bulkheadSurveyDP ?? 0;
-          return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
-        }
-        // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-        const winA = b.bulkheadWindowArea ?? 0;
-        if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId);
-        // Глухая: R=1/A²/1000; парус — калиброванная формула.
-        const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
-        if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0)
-          return rSolid(b.bulkheadCustomAirPerm!);
-        if ((b.bulkheadAirPerm ?? 0) > 0)
-          return rSolid(b.bulkheadAirPerm);
-        return b.bulkheadR ?? 0;
-      })() : 0;
-      const fanCrossingR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
-        ? (b.fanCrossingR ?? 0) / 1000 : 0; // Мюрг → кМюрг
+      // Сопротивление вентсооружений ветви — общей функцией (см.
+      // lib/bulkheadResistance.ts), той же, что считает карту для панели
+      // свойств и аварийных расчётов.
+      const { total: rBulkheadsTotal } = bulkheadROfBranch(b, symbolsList, bulkheadsMap);
 
       // R вентиляционного окна ГВУ «Внутри перемычки»: диафрагма (окно вентсооружения).
       // R = ρ/(2·μ²·ΔS²) [Па·с²/м⁶ = кМюрг в системе расчёта], μ=0.8 — коэф. расхода окна.
@@ -3952,7 +3855,7 @@ export default function CadPage() {
         id: b.id,
         fromId: b.fromId,
         toId: b.toId,
-        R: b.resistance + rBulkheads + rBranchBulkhead + fanWindowR, // fanCrossingR Python добавляет сам в get_R
+        R: b.resistance + rBulkheadsTotal + fanWindowR, // fanCrossingR Python добавляет сам в get_R
         area: b.area,
         angle: b.angle ?? 0,
         hasFan: b.hasFan,
@@ -4002,10 +3905,13 @@ export default function CadPage() {
   // и возвращает Map<branchId, Q> — расходы после пересчёта.
   // Используется исключительно внутри обработчика кнопки «Расчёт пожара».
   // ─────────────────────────────────────────────────────────────────────────
+  // symbolsOverride — значки схемы для расчёта варианта подбора (с закрытой
+  // дверью). Без него дверь, закрытая «на бумаге», не меняла бы сеть.
   const solveFireIteration = async (
     branchesWithFire: typeof branches,
     surfaceTempVal: number,
     hotNodeTemps?: Record<string, number>,
+    symbolsOverride?: SchemaSymbol[],
   ): Promise<Map<string, number>> => {
     const reqBody = {
       method: calcMode,
@@ -4041,7 +3947,7 @@ export default function CadPage() {
       useHumidity,
       surfacePressure,
       mineAirTemp,
-      branches: buildBranchPayload(branchesWithFire, surfaceTempVal),
+      branches: buildBranchPayload(branchesWithFire, symbolsOverride ?? schemaSymbols),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
       // Тёплый старт: текущие расходы ветвей — стартовое приближение решателя.
       // При пожаре сеть меняется локально, поэтому расчёт сходится за единицы
@@ -4058,6 +3964,76 @@ export default function CadPage() {
     const flowMap = new Map<string, number>();
     (data.branches as { id: string; Q: number }[]).forEach(rb => flowMap.set(rb.id, rb.Q));
     return flowMap;
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ПОДБОР РЕЖИМА ПРИ ПОЖАРЕ: контекст расчёта для перебора вариантов.
+  //
+  // Собирает ровно те же параметры, что уходят в кнопку «Расчёт пожара», —
+  // это принципиально: рекомендация обязана обещать то, что пользователь
+  // увидит, применив вариант и пересчитав вручную.
+  //
+  // rebuild пересчитывает сопротивления после изменения дверей. Без него
+  // закрытая в варианте дверь не дошла бы ни до решателя, ни до карты общей
+  // депрессии, и подбор считал бы её открытой.
+  // ─────────────────────────────────────────────────────────────────────────
+  // Значки схемы текущего проверяемого варианта (см. rebuild ниже).
+  const fireControlSymbolsRef = useRef<SchemaSymbol[]>([]);
+
+  const buildFireControlContext = (): EvaluateContext => ({
+    branches,
+    nodes,
+    symbols: schemaSymbols,
+    fireParams: {
+      ambientTemp: surfaceTemp,
+      thermalDepMethod,
+      smokeVisThreshold,
+      baseNodeTemps,
+      totalDepByBranch,
+      // Значки варианта прокидываются в решатель — иначе изменение двери
+      // не повлияет на расчёт сети.
+      solveIteration: (brs, temp, hotTemps) => solveFireIteration(brs, temp, hotTemps, fireControlSymbolsRef.current),
+      // Журнал при подборе молчит: это десятки расчётов, и каждый писал бы
+      // в него свои итерации, погребая под собой всё остальное.
+      log: () => {},
+      yieldToUI: () => new Promise(r => setTimeout(r, 0)),
+    },
+    rebuild: (brs, syms) => {
+      // Запоминаем значки варианта для solveIteration выше: runFireMode
+      // прокинуть их не может — он о значках схемы ничего не знает.
+      fireControlSymbolsRef.current = syms;
+      const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
+      const totalDep = new Map<string, number>();
+      for (const b of brs) {
+        const { total: bkR } = bulkheadROfBranch(b, syms, bulkheadsMap);
+        const fanCrossingKmu = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
+          ? (b.fanCrossingR ?? 0) / 1000 : 0;
+        const totalR = b.resistance + bkR + fanCrossingKmu;
+        const Q = b.flow ?? 0;
+        const fanH = b.hasFan ? (b.fanPressure ?? 0) : 0;
+        totalDep.set(b.id, totalR * Math.abs(Q) * Q * G_ACCEL - fanH);
+      }
+      return { branches: brs, totalDepByBranch: totalDep };
+    },
+  });
+
+  // Внести действия выбранного варианта в проект.
+  // Применяются ТОЙ ЖЕ функцией, которой они проверялись при подборе, —
+  // так внесённое изменение гарантированно совпадает с проверенным.
+  const applyFireControlActions = (actions: FireAction[]) => {
+    if (actions.length === 0) return;
+    pushHistory();
+    const applied = applyActions(branches, schemaSymbols, actions);
+    const patchById = new Map(applied.branches.map(b => [b.id, b]));
+    setBranches(prev => prev.map(b => {
+      const next = patchById.get(b.id);
+      return next
+        ? { ...b, fanReverse: next.fanReverse, fanStopped: next.fanStopped, fanRpm: next.fanRpm }
+        : b;
+    }));
+    setSchemaSymbols(applied.symbols);
+    addLog("info", `🔥 Применён подобранный режим: ${describeActions(actions)}`);
+    addLog("warn", "Выполните «Расчёт сети» (F9), затем «Расчёт пожара» — чтобы увидеть новый режим на схеме.");
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -4092,7 +4068,7 @@ export default function CadPage() {
       useHumidity,
       surfacePressure,
       mineAirTemp,
-      branches: buildBranchPayload(baseBranches, surfaceTempVal),
+      branches: buildBranchPayload(baseBranches),
       options: { tolerance: solverTolerance, maxIter: solverMaxIter, alpha: solverAlpha },
       // Тёплый старт для каждого сценария: расходы базовой сети как приближение.
       normalFlows: Object.fromEntries(
@@ -4435,7 +4411,7 @@ export default function CadPage() {
           mineAirTemp,
           useHumidity,
           surfacePressure,
-          branches: buildBranchPayload(branches, surfaceTemp),
+          branches: buildBranchPayload(branches),
           options: {
             tolerance: solverTolerance,
             maxIter: solverMaxIter,
@@ -6817,6 +6793,13 @@ export default function CadPage() {
               sublabel="поражения"
               title="Вывод людей при пожаре: кто попадает в зону задымления, успевают ли выйти по самоспасателю, кому нужен пункт переключения"
               onClick={() => setShowEvacRisk(true)}
+            />
+            <RibbonBigBtn
+              icon="Lightbulb"
+              label="Подбор"
+              sublabel="режима"
+              title="Подбор управляющих действий при пожаре: реверс и остановка вентиляторов, закрытие дверей — перебор с проверкой каждого варианта полным расчётом пожарного режима"
+              onClick={() => setShowFireControl(true)}
             />
             <RibbonBigBtn
               icon="Gauge"
@@ -13808,6 +13791,10 @@ export default function CadPage() {
       setShowWaterCheck={setShowWaterCheck}
       showEvacRisk={showEvacRisk}
       setShowEvacRisk={setShowEvacRisk}
+      showFireControl={showFireControl}
+      setShowFireControl={setShowFireControl}
+      buildFireControlContext={buildFireControlContext}
+      applyFireControlActions={applyFireControlActions}
       showVds={showVds}
       setShowVds={setShowVds}
       solveResult={solveResult}
