@@ -662,12 +662,20 @@ export async function parseErp(
       if (br && br.length > 0) leaderT = Math.min(1, Math.max(0, offset / br.length));
     }
 
+    // В поле Name у АэроСети лежит НОМЕР позиции, а весь текст — в Description.
+    // Наша выгрузка пишет туда название и мероприятия, разделённые пустой
+    // строкой (см. erpExport). Разбираем обратно: первый абзац — название,
+    // остальное — мероприятия. Чужой файл с одним абзацем от этого не страдает:
+    // мероприятия просто окажутся пустыми.
+    const descr = (f["PlanPosition.Description"] ?? "").replace(/\r/g, "");
+    const split = descr.indexOf("\n\n");
+    const posName = split >= 0 ? descr.slice(0, split).trim() : descr;
+    const posComment = split >= 0 ? descr.slice(split + 2).trim() : "";
+
     positions.push({
       id: n.getAttribute("id") ?? "",
       number: Math.round(num(f["PlanPosition.Name"], positions.length + 1)),
-      // В поле Name у АэроСети лежит НОМЕР позиции, а текстовое описание —
-      // в Description. Поэтому название берём из описания, иначе оно пустое.
-      name: f["PlanPosition.Description"] ?? "",
+      name: posName,
       accidentType: accidentTypeName(f["Position.AccidentType"]),
       // Реверсивность закодирована ЧИСЛОМ ГРАНИЦ маркера: у реверсивной
       // позиции граница двойная (BorderCount=2). Отдельного признака в
@@ -685,7 +693,7 @@ export async function parseErp(
       branchIds,
       leaderBranchId,
       leaderT: +leaderT.toFixed(3),
-      comment: f["PlanPosition.Description"] ?? "",
+      comment: posComment,
     });
   });
   if (positions.length > 0) {

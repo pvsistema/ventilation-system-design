@@ -18,7 +18,7 @@ import React, { lazy, Suspense } from "react";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions } from "@/components/cad/MoveSchemaDialog";
 import type { FireStabilityFact } from "@/lib/fireStability";
-import type { EvaluateContext } from "@/lib/fireControl/evaluate";
+import type { EvaluateContext, VariantResult } from "@/lib/fireControl/evaluate";
 import type { FireAction } from "@/lib/fireControl/actions";
 
 const LegendDialog           = lazy(() => import("@/components/cad/LegendDialog"));
@@ -144,6 +144,12 @@ export interface CadToolDialogsProps {
   buildFireControlContext: () => EvaluateContext;
   /** Внести действия выбранного варианта в проект. */
   applyFireControlActions: (actions: FireAction[]) => void;
+  /** Показать вариант на схеме, не меняя проект. */
+  previewFireControlVariant: (v: VariantResult) => void;
+  /** Создать позицию ПЛА с мероприятиями варианта. */
+  exportFireControlToPla: (v: VariantResult) => void;
+  /** Идёт предпросмотр варианта — окно подбора спрятано, но не закрыто. */
+  fireControlPreviewActive: boolean;
   // ВДС (воздушно-депрессионная съёмка)
   showVds: boolean;
   setShowVds: (v: boolean) => void;
@@ -374,6 +380,9 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
             p.setShowFireControl(false);
           }}
           onHighlightBranches={p.setDepressogramHighlight}
+          onPreview={p.previewFireControlVariant}
+          onExportPla={p.exportFireControlToPla}
+          hidden={p.fireControlPreviewActive}
           onClose={() => p.setShowFireControl(false)}
         />
       )}

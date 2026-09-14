@@ -38,6 +38,15 @@ interface Props {
   onApply: (actions: FireAction[]) => void;
   /** Подсветить ветви с превышением скорости. */
   onHighlightBranches?: (ids: string[]) => void;
+  /**
+   * Показать вариант на схеме, ничего не меняя в проекте: расходы и задымление
+   * варианта уже посчитаны при подборе, и их незачем получать заново.
+   */
+  onPreview?: (variant: VariantResult) => void;
+  /** Выгрузить рекомендации варианта в позицию ПЛА. */
+  onExportPla?: (variant: VariantResult) => void;
+  /** Окно спрятано (идёт предпросмотр на схеме) — результат подбора сохраняется. */
+  hidden?: boolean;
   onClose: () => void;
 }
 
@@ -50,7 +59,7 @@ interface Progress {
 
 export default function FireControlDialog({
   branches, nodes, symbols, buildContext, solved, hasFire,
-  onApply, onHighlightBranches, onClose,
+  onApply, onHighlightBranches, onPreview, onExportPla, hidden, onClose,
 }: Props) {
   const [maxActions, setMaxActions] = useState(2);
   const [reach, setReach] = useState(4);
@@ -114,8 +123,10 @@ export default function FireControlDialog({
   const canSearch = solved && hasFire && !searching;
 
   return (
+    // Во время предпросмотра окно не размонтируется, а прячется: иначе
+    // результат подбора (минуты расчётов) пропал бы вместе с ним.
     <div className="fixed inset-0 z-[200] flex items-start justify-center pt-12"
-      style={{ background: "rgba(0,0,0,0.35)" }}
+      style={{ background: "rgba(0,0,0,0.35)", display: hidden ? "none" : undefined }}
       onMouseDown={e => {
         // Во время поиска клик по фону не закрывает окно: расчёт идёт минуты,
         // и случайно потерять его обиднее, чем лишний раз нажать «Закрыть».
@@ -235,6 +246,8 @@ export default function FireControlDialog({
                 onToggle={i => setExpanded(prev => prev === i ? null : i)}
                 onApply={onApply}
                 onHighlightBranches={onHighlightBranches}
+                onPreview={onPreview}
+                onExportPla={onExportPla}
               />
             : !searching && (
               <div className="px-4 py-8 text-center text-[11px] text-gray-400">
@@ -268,13 +281,15 @@ export default function FireControlDialog({
 // ─────────────────────────────────────────────────────────────────────────────
 
 function ReportView({
-  report, expanded, onToggle, onApply, onHighlightBranches,
+  report, expanded, onToggle, onApply, onHighlightBranches, onPreview, onExportPla,
 }: {
   report: SearchReport;
   expanded: number | null;
   onToggle: (i: number) => void;
   onApply: (actions: FireAction[]) => void;
   onHighlightBranches?: (ids: string[]) => void;
+  onPreview?: (variant: VariantResult) => void;
+  onExportPla?: (variant: VariantResult) => void;
 }) {
   const { base, variants, allSaved, bestPeopleAtRisk, cancelled, note } = report;
 
@@ -333,6 +348,8 @@ function ReportView({
               onToggle={() => onToggle(i)}
               onApply={() => onApply(v.actions)}
               onHighlight={() => onHighlightBranches?.(v.violationBranchIds)}
+              onPreview={onPreview ? () => onPreview(v) : undefined}
+              onExportPla={onExportPla ? () => onExportPla(v) : undefined}
             />
           ))}
         </div>
@@ -355,7 +372,7 @@ function Metric({ label, value, danger, warn }: {
 }
 
 function VariantRow({
-  variant, base, index, open, onToggle, onApply, onHighlight,
+  variant, base, index, open, onToggle, onApply, onHighlight, onPreview, onExportPla,
 }: {
   variant: VariantResult;
   base: VariantResult;
@@ -364,6 +381,8 @@ function VariantRow({
   onToggle: () => void;
   onApply: () => void;
   onHighlight: () => void;
+  onPreview?: () => void;
+  onExportPla?: () => void;
 }) {
   const saved = base.peopleAtRisk - variant.peopleAtRisk;
 
@@ -428,7 +447,19 @@ function VariantRow({
             </div>
           )}
 
-          <div className="pl-7 pt-2.5">
+          <div className="pl-7 pt-2.5 flex items-center gap-2 flex-wrap">
+            {/* Предпросмотр ничего не меняет в проекте: показывает расходы и
+                задымление уже посчитанного варианта. Смотреть режим до того,
+                как он внесён, безопаснее, чем откатывать применённый. */}
+            {onPreview && !variant.failed && (
+              <button onClick={onPreview}
+                className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1.5"
+                style={{ borderColor: "#c8d4e8", background: "#fff", color: "var(--c-t2, #374151)" }}
+                title="Показать расходы и задымление этого варианта на схеме, не меняя проект">
+                <Icon name="Eye" size={12} />
+                Показать на схеме
+              </button>
+            )}
             <button onClick={onApply}
               className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1.5"
               style={{ borderColor: "#c8d4e8", background: "#eef4ff", color: "var(--c-blue, #1d4ed8)" }}
@@ -436,6 +467,17 @@ function VariantRow({
               <Icon name="Check" size={12} />
               Применить к схеме
             </button>
+            {/* Действия варианта — это и есть текст мероприятий позиции ПЛА.
+                Переписывать их в план вручную — лишний шанс ошибиться. */}
+            {onExportPla && (
+              <button onClick={onExportPla}
+                className="text-[11px] px-2.5 py-1 rounded border flex items-center gap-1.5"
+                style={{ borderColor: "#ddd0f0", background: "#f5f3ff", color: "var(--c-purple, #7c3aed)" }}
+                title="Создать позицию ПЛА с мероприятиями этого варианта и привязать её к очагу пожара">
+                <Icon name="MapPin" size={12} />
+                В позицию ПЛА
+              </button>
+            )}
           </div>
         </div>
       )}

@@ -55,13 +55,22 @@ const OY_ANGLE = 2.61799387799149;   // 150° в радианах
 const OY_DIST = 1;
 const OZ_DIST = 7.5;
 
-/** Экранирование текста для XML-атрибутов. */
+/**
+ * Экранирование текста для XML-атрибутов.
+ *
+ * Переводы строк экранируются числовой ссылкой намеренно: по правилам XML
+ * разбор атрибута заменяет сырой перенос строки на пробел, и многострочный
+ * текст (мероприятия позиции ПЛА) слипся бы в одну строку. &#10; переживает
+ * разбор и возвращается настоящим переносом.
+ */
 function esc(v: string): string {
   return String(v ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+    .replace(/"/g, "&quot;")
+    .replace(/\r/g, "")
+    .replace(/\n/g, "&#10;");
 }
 
 /** Число в вид, понятный АэроСети (точка-разделитель, без экспоненты). */
@@ -289,7 +298,12 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
     return `<node id="${guidFrom("pos:" + p.id)}" itemCode="1001" x="${n(sc.ex)}" y="${n(sc.ey)}" z="${n(p.z, 2)}" scale="1" rotationAngle="0" document="">`
       + `<customFields><fields>`
       + `<field name="PlanPosition.Name" value="${esc(String(p.number))}" />`
-      + `<field name="PlanPosition.Description" value="${esc(p.name ?? "")}" />`
+      // Описание — единственное текстовое поле позиции в формате АэроСети,
+      // поэтому мероприятия уходят туда же, следом за названием. Иначе
+      // подобранный режим терялся бы при передаче плана в чужую программу.
+      + `<field name="PlanPosition.Description" value="${esc(
+          [p.name ?? "", p.comment ?? ""].filter(s => s.trim()).join("\n\n"),
+        )}" />`
       + `<field name="PlanPosition.Radius" value="${n(radiusPx)}" />`
       + `<field name="PlanPosition.BackgroundColor" value="${hexToWinColor(p.color)}" />`
       + `<field name="PlanPosition.BorderColor" value="${hexToWinColor(p.borderColor)}" />`

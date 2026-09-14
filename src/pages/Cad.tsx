@@ -5,7 +5,7 @@ import { withLicense } from "@/lib/license";
 import TopoCanvas, { type CadTool } from "@/components/cad/TopoCanvas";
 import {
   type TopoNode, type TopoBranch, type Horizon,
-  OVERVIEW_HORIZON_ID, recalcAll, makeNode, makeBranch,
+  OVERVIEW_HORIZON_ID, recalcAll, recalcBranchAero, makeNode, makeBranch,
   project3D, unprojectToPlane, calcBranchLength,
   surveyXYZ, isNodeMoved,
   type SectionKind, sectionKind, SECTION_KIND_COLORS, SECTION_KIND_LABELS,
@@ -48,7 +48,7 @@ import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { bulkheadROfBranch, buildBulkheadRMap } from "@/lib/bulkheadResistance";
-import { type EvaluateContext } from "@/lib/fireControl/evaluate";
+import { type EvaluateContext, type VariantResult } from "@/lib/fireControl/evaluate";
 import { applyActions, describeActions, type FireAction } from "@/lib/fireControl/actions";
 import { checkSchema } from "@/lib/schemaCheck";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
@@ -2989,6 +2989,68 @@ export default function CadPage() {
   const [depressogramPickMode, setDepressogramPickMode] = useState<boolean>(false);
   const [depressogramManualBranches, setDepressogramManualBranches] = useState<Set<string>>(new Set());
 
+  // ─── Предпросмотр подобранного варианта на схеме ──────────────────────────
+  // Вариант уже посчитан при подборе: расходы и задымление лежат в VariantResult.
+  // Показываем их НЕ трогая проект — пользователь видит режим до того, как
+  // согласился его внести, и может вернуться к списку одной кнопкой.
+  const [fireControlPreview, setFireControlPreview] = useState<{
+    title: string;
+    actions: FireAction[];
+    /** branchId → расход варианта, м³/с */
+    flows: Map<string, number>;
+    /** branchId → плотность дыма, м⁻¹ */
+    smoke: Map<string, number>;
+    /** Ветви с превышением допустимой скорости */
+    violations: string[];
+    peopleAtRisk: number;
+    peopleInSmoke: number;
+  } | null>(null);
+  // Что показывать в предпросмотре: расходы или задымление.
+  const [fireControlPreviewMode, setFireControlPreviewMode] =
+    useState<"flow" | "smoke">("flow");
+
+  // Ветви схемы с расходами варианта. Схема сама по себе не меняется: подмена
+  // живёт только в том, что уходит на холст, поэтому панели свойств, расчёты
+  // и сохранение проекта продолжают видеть настоящие данные.
+  //
+  // recalcBranchAero пересчитывает по расходу скорость и депрессию — тем же
+  // кодом, что и обычная правка. Иначе на схеме стоял бы новый расход рядом со
+  // старой скоростью, и подписи противоречили бы друг другу.
+  const previewBranches = useMemo(() => {
+    if (!fireControlPreview) return branches;
+    const { flows, smoke } = fireControlPreview;
+    return branches.map(b => {
+      const q = flows.get(b.id);
+      if (q === undefined) return b;
+      return recalcBranchAero({
+        ...b,
+        flow: q,
+        fireComputedSmokeDens: smoke.get(b.id) ?? 0,
+      });
+    });
+  }, [branches, fireControlPreview]);
+
+  // Задымление варианта: ветвь заливается целиком — расчёт варианта даёт
+  // установившуюся плотность дыма, а не фронт на конкретной минуте.
+  const previewSmokeColors = useMemo(() => {
+    if (!fireControlPreview || fireControlPreviewMode !== "smoke") return undefined;
+    const map = new Map<string, { color: string; fromT: number; toT: number }>();
+    for (const [id, dens] of fireControlPreview.smoke) {
+      if (!(dens > 0.01)) continue;
+      // Пороги — те же, по которым расчёт пожара присваивает уровень
+      // опасности (см. calcHazardLevel в fireCalculator).
+      const color = dens > 2 ? "#1f2937" : dens > 0.5 ? "#4b5563" : "#9ca3af";
+      map.set(id, { color, fromT: 0, toT: 1 });
+    }
+    return map.size > 0 ? map : undefined;
+  }, [fireControlPreview, fireControlPreviewMode]);
+
+  /** Закрыть предпросмотр и вернуться к списку вариантов. */
+  const closeFireControlPreview = () => {
+    setFireControlPreview(null);
+    setDepressogramHighlight([]);
+  };
+
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
   // Ссылка на актуальную функцию сохранения — для вызова из window (баннер обновления)
@@ -3397,6 +3459,8 @@ export default function CadPage() {
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
     setVcSolving(false);
     setVcError(null);
+    // Предпросмотр варианта относится к прежней схеме — см. сброс проекта.
+    setFireControlPreview(null);
 
     // Временные буферы и состояния
     setBranchParamBuffer(null);
@@ -3709,6 +3773,9 @@ export default function CadPage() {
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
     setVcSolving(false);
     setVcError(null);
+    // Предпросмотр подобранного варианта — расходы ИСЧЕЗНУВШЕЙ схемы. Оставить
+    // его включённым значило бы показать новый проект чужими цифрами.
+    setFireControlPreview(null);
 
     // ── Временные буферы ──
     setBranchParamBuffer(null);
@@ -4034,6 +4101,107 @@ export default function CadPage() {
     setSchemaSymbols(applied.symbols);
     addLog("info", `🔥 Применён подобранный режим: ${describeActions(actions)}`);
     addLog("warn", "Выполните «Расчёт сети» (F9), затем «Расчёт пожара» — чтобы увидеть новый режим на схеме.");
+  };
+
+  // Показать вариант на схеме, ничего не меняя в проекте.
+  // Расходы и задымление берутся ИЗ САМОГО ВАРИАНТА: они уже посчитаны при
+  // подборе тем же расчётом пожара, и пересчитывать их заново незачем.
+  const previewFireControlVariant = (v: VariantResult) => {
+    setFireControlPreview({
+      title: v.title,
+      actions: v.actions,
+      flows: v.flows,
+      smoke: v.smokeByBranch,
+      violations: v.violationBranchIds,
+      peopleAtRisk: v.peopleAtRisk,
+      peopleInSmoke: v.peopleInSmoke,
+    });
+    setFireControlPreviewMode("flow");
+    setDepressogramHighlight([]);
+    addLog("info", `👁 Предпросмотр варианта: ${v.title}. Проект не изменён.`);
+  };
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // ВЫГРУЗКА РЕКОМЕНДАЦИЙ В ПОЗИЦИЮ ПЛА.
+  //
+  // Подобранный вариант — это готовый текст мероприятий позиции плана
+  // ликвидации аварий: пронумерованные действия с исполнимыми формулировками
+  // и временем на каждое. Переписывать их в план руками — лишний шанс
+  // ошибиться в номере вентилятора или перепутать «закрыть» с «открыть».
+  //
+  // Позиция создаётся НОВАЯ и привязывается к очагу пожара: так она встаёт на
+  // схеме там, где авария, а не в случайном месте. Всё, что ушло в позицию,
+  // берётся из варианта — здесь ничего не досчитывается.
+  // ─────────────────────────────────────────────────────────────────────────
+  const exportFireControlToPla = (v: VariantResult) => {
+    const fireBranch = branches.find(b => b.hasFire) ?? null;
+    const branchTitle = (b: TopoBranch) =>
+      b.type?.trim() || `выработка ${b.id.replace(/^B/, "")}`;
+
+    // Текст мероприятий. Заголовок отвечает на вопрос «зачем это делать»,
+    // дальше — шаги по порядку, в конце — чем режим подтверждён.
+    const lines: string[] = [];
+    lines.push(`Режим проветривания подобран расчётом${fireBranch ? ` при пожаре в: ${branchTitle(fireBranch)}` : ""}.`);
+    lines.push("");
+    lines.push("Мероприятия:");
+    v.actions.forEach((a, i) => lines.push(`${i + 1}. ${a.label} (~${a.effortMin} мин)`));
+    lines.push("");
+    lines.push(`Итог расчёта: не успевают выйти — ${v.peopleAtRisk}, в зоне задымления — ${v.peopleInSmoke}, требуется пункт переключения — ${v.peopleNeedSwitch}.`);
+    lines.push(`Опрокинутых струй: ${v.reversedBranches}. Общее время на исполнение: ~${v.effortMin} мин.`);
+    if (v.velocityViolations > 0) {
+      lines.push(`ВНИМАНИЕ: в ${v.velocityViolations} выработках скорость воздуха выше допустимой — режим требует обоснования.`);
+    }
+    const text = lines.join("\n");
+
+    // Выработки позиции: те, где выполняются действия, плюс сама аварийная.
+    const branchIds = Array.from(new Set([
+      ...(fireBranch ? [fireBranch.id] : []),
+      ...v.actions.map(a => a.branchId).filter(Boolean),
+    ]));
+
+    // Место маркера: рядом с узлом очага. Без координат позиция легла бы
+    // в начало координат, и её пришлось бы искать по всей схеме.
+    const anchorNode = fireBranch
+      ? (nodes.find(n => n.id === fireBranch.fromId) ?? nodes.find(n => n.id === fireBranch.toId) ?? null)
+      : null;
+    const OFFSET = 50;
+
+    const nextNumber = positions.reduce((m, p) => Math.max(m, p.number), 0) + 1;
+    const pos = makePosition({
+      number: nextNumber,
+      name: v.actions.length > 0 ? v.title : "Режим без изменений",
+      scenario: fireBranch ? `Пожар: ${branchTitle(fireBranch)}` : "Пожар",
+      accidentType: "Пожар",
+      // Реверс вентилятора в мероприятиях — это реверсивная позиция плана.
+      positionType: v.actions.some(a => a.kind === "fan_reverse") ? "reverse" : "normal",
+      ventMode: "Аварийный режим",
+      comment: text,
+      branchIds,
+      leaderBranchId: fireBranch?.id ?? null,
+      leaderT: fireBranch?.fireT ?? 0.5,
+      x: anchorNode ? anchorNode.x + OFFSET : 0,
+      y: anchorNode ? anchorNode.y + OFFSET : 0,
+      z: anchorNode ? anchorNode.z : 0,
+      placed: !!anchorNode,
+      // Тот же текст — отдельным файлом позиции: его можно выгрузить и
+      // вставить в документ плана, не переписывая с экрана.
+      attachedFile: `Мероприятия поз. ${nextNumber}.txt`,
+      attachedFileMime: "text/plain",
+      attachedFileData: "data:text/plain;charset=utf-8;base64,"
+        + btoa(String.fromCharCode(...new TextEncoder().encode(text))),
+    });
+
+    pushHistory();
+    setPositions(prev => [...prev, pos]);
+    setSelectedPositionId(pos.id);
+    setActiveSide("positions");
+    setShowPositions(true);
+    setShowFireControl(false);
+    closeFireControlPreview();
+    addLog("info", `📍 Создана позиция ПЛА №${nextNumber}: ${pos.name}`);
+    if (!anchorNode) {
+      addLog("warn", "Очаг пожара не найден — позиция создана без привязки к месту. Разместите её на схеме вручную.");
+    }
   };
 
   // ─────────────────────────────────────────────────────────────────────────
@@ -4680,6 +4848,13 @@ export default function CadPage() {
   };
 
   const handleSolve = () => {
+    // Идёт предпросмотр подобранного варианта — на схеме показан НЕ проект.
+    // Расчёт лёг бы поверх чужих цифр, и понять, где чьи расходы, стало бы
+    // невозможно. Поэтому сначала выходим из предпросмотра.
+    if (fireControlPreview) {
+      closeFireControlPreview();
+      addLog("info", "Предпросмотр варианта закрыт: расчёт выполняется по данным проекта.");
+    }
     // Перед расчётом проверяем сеть на изолированные ветви: подсети без выхода
     // на поверхность (нет пути к атмосферному узлу) не дают корректно рассчитать
     // воздухораспределение. Предупреждаем и открываем вкладку «Изолир.».
@@ -11698,9 +11873,12 @@ export default function CadPage() {
               };
               reader.readAsText(file);
             }}>
+            {/* На время предпросмотра подобранного варианта холст получает
+                ветви с ЕГО расходами (previewBranches). Сам проект при этом
+                не меняется — панели и сохранение видят настоящие данные. */}
             <TopoCanvas
               nodes={nodes}
-              branches={branches}
+              branches={previewBranches}
               selectedNodeId={selectedNodeId}
               selectedBranchId={selectedBranchId}
               tool={tool}
@@ -12051,6 +12229,10 @@ export default function CadPage() {
                 setPositionPlaceMode(false);
               }}
               branchFireColors={(() => {
+                // Предпросмотр варианта главнее обычной картины задымления:
+                // человек явно попросил показать ДРУГОЙ режим, и смешивать
+                // его с дымом текущего расчёта нельзя.
+                if (fireControlPreview) return previewSmokeColors;
                 if (!showSmoke || !fireCalcDone || !fireResult) return undefined;
                 const map = new Map<string, { color: string; fromT: number; toT: number }>();
 
@@ -12249,7 +12431,14 @@ export default function CadPage() {
 
                 return map.size > 0 ? map : undefined;
               })()}
-              reversedBranchIds={fireCalcDone && fireResult && showSmoke ? fireResult.reversedBranches : undefined}
+              reversedBranchIds={
+                // Опрокинутые струи — из последнего расчёта пожара. В
+                // предпросмотре другого варианта они не к месту: направление
+                // потоков там своё.
+                fireControlPreview ? undefined
+                : fireCalcDone && fireResult && showSmoke ? fireResult.reversedBranches
+                : undefined
+              }
               branchBindMode={posBranchBindMode}
               branchPositionColors={(() => {
                 if (!posBranchBindMode || !selectedPositionId) return undefined;
@@ -12508,6 +12697,94 @@ export default function CadPage() {
                 }
               }}
             />
+
+            {/* ── Предпросмотр подобранного варианта ─────────────────────
+                Пока плашка видна, на схеме показан НЕ проект, а вариант.
+                Сказать об этом обязательно и крупно: иначе человек примет
+                чужие расходы за свои и будет принимать по ним решения. */}
+            {fireControlPreview && (
+              <div style={{
+                position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
+                zIndex: 30, background: "rgba(17,24,39,0.92)", borderRadius: 10,
+                padding: "9px 13px", color: "white", fontSize: 11,
+                border: "1px solid rgba(96,165,250,0.5)",
+                boxShadow: "0 4px 24px rgba(0,0,0,0.45)", maxWidth: 560,
+              }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <Icon name="Eye" size={14} style={{ color: "#93c5fd", flexShrink: 0 }} />
+                  <span style={{ fontWeight: 700, color: "#93c5fd" }}>Предпросмотр варианта</span>
+                  <span style={{ color: "var(--c-t4, #d1d5db)", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+                    title={fireControlPreview.title}>
+                    {fireControlPreview.title}
+                  </span>
+                </div>
+                <div style={{ color: "#9ca3af", fontSize: 10, paddingTop: 3 }}>
+                  Схема показывает расходы этого варианта. Проект не изменён.
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 14, paddingTop: 6, flexWrap: "wrap" }}>
+                  <span style={{ color: "var(--c-t4, #d1d5db)" }}>
+                    не успевают выйти:{" "}
+                    <b style={{ color: fireControlPreview.peopleAtRisk > 0 ? "#fca5a5" : "#86efac" }}>
+                      {fireControlPreview.peopleAtRisk}
+                    </b>
+                  </span>
+                  <span style={{ color: "var(--c-t4, #d1d5db)" }}>
+                    в зоне задымления: <b style={{ color: "#fcd34d" }}>{fireControlPreview.peopleInSmoke}</b>
+                  </span>
+                  <span style={{ color: "var(--c-t4, #d1d5db)" }}>
+                    превышений скорости: <b style={{ color: fireControlPreview.violations.length > 0 ? "#fcd34d" : "#86efac" }}>
+                      {fireControlPreview.violations.length}
+                    </b>
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, paddingTop: 8, flexWrap: "wrap" }}>
+                  {/* Расходы и задымление — две разные картины одного варианта,
+                      и показывать их одновременно нельзя: заливка дымом
+                      перекрывает цвет по скорости воздуха. */}
+                  {(["flow", "smoke"] as const).map(m => (
+                    <button key={m}
+                      onClick={() => setFireControlPreviewMode(m)}
+                      style={{
+                        fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                        border: "1px solid " + (fireControlPreviewMode === m ? "#60a5fa" : "rgba(255,255,255,0.2)"),
+                        background: fireControlPreviewMode === m ? "rgba(96,165,250,0.25)" : "transparent",
+                        color: fireControlPreviewMode === m ? "#bfdbfe" : "var(--c-t4, #d1d5db)",
+                      }}>
+                      {m === "flow" ? "Расходы" : "Задымление"}
+                    </button>
+                  ))}
+                  {fireControlPreview.violations.length > 0 && (
+                    <button
+                      onClick={() => setDepressogramHighlight(fireControlPreview.violations)}
+                      style={{
+                        fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                        border: "1px solid rgba(252,211,77,0.5)", background: "transparent", color: "#fcd34d",
+                      }}>
+                      Подсветить превышения
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      applyFireControlActions(fireControlPreview.actions);
+                      closeFireControlPreview();
+                      setShowFireControl(false);
+                    }}
+                    style={{
+                      fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                      border: "1px solid rgba(134,239,172,0.5)", background: "rgba(34,197,94,0.18)", color: "#bbf7d0",
+                    }}>
+                    Применить к схеме
+                  </button>
+                  <button onClick={closeFireControlPreview}
+                    style={{
+                      fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                      border: "1px solid rgba(255,255,255,0.25)", background: "transparent", color: "var(--c-t4, #d1d5db)",
+                    }}>
+                    Вернуться к списку
+                  </button>
+                </div>
+              </div>
+            )}
 
             {/* ── Легенда зон взрыва с радиусами ────────────────────── */}
             {showExplosionZones && explosionCalcDone && explosionResult && (
@@ -13795,6 +14072,9 @@ export default function CadPage() {
       setShowFireControl={setShowFireControl}
       buildFireControlContext={buildFireControlContext}
       applyFireControlActions={applyFireControlActions}
+      previewFireControlVariant={previewFireControlVariant}
+      exportFireControlToPla={exportFireControlToPla}
+      fireControlPreviewActive={!!fireControlPreview}
       showVds={showVds}
       setShowVds={setShowVds}
       solveResult={solveResult}

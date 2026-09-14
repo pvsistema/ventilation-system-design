@@ -320,6 +320,20 @@ export default function PositionsPanel({
             </select>
           </Row>
 
+          {/* Мероприятия позиции — тот самый текст, который уходит в план
+              ликвидации аварий. Подбор режима при пожаре заполняет его сам,
+              но править руками должно быть можно: расчёт не знает местных
+              особенностей вроде «ключ от ляды у горного мастера». */}
+          <GroupHeader>Мероприятия</GroupHeader>
+          <div className="px-2 py-1">
+            <textarea
+              value={selected.comment ?? ""}
+              onChange={(e) => upd({ comment: e.target.value })}
+              placeholder="Действия по позиции: что и в каком порядке выполнить"
+              rows={selected.comment ? 8 : 3}
+              style={{ ...inputStyle, width: "100%", resize: "vertical", lineHeight: 1.45, fontFamily: "inherit" }} />
+          </div>
+
           <GroupHeader>Прикреплённый файл</GroupHeader>
           <div className="px-2 py-1 flex flex-col gap-1">
             {selected.attachedFile ? (
