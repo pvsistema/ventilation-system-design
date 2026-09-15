@@ -196,6 +196,8 @@ export interface ExplosibilityResult {
   marginToNoseO2: number;
   /** Пошаговый ход расчёта — для протокола */
   steps: CalcStep[];
+  /** Отметка о верификации: чем подтверждено совпадение с рисунком приложения */
+  verification: FigureVerification;
   /** Предупреждения (выход за область рисунков, некорректная проба и т.п.) */
   warnings: string[];
 }
@@ -324,6 +326,142 @@ export function figureByPCO(pCO: number): { no: number; pCO: number; exact: bool
   return { no: best + 1, pCO: grid[best], exact: Math.abs(pCO - grid[best]) < 0.005 };
 }
 
+// ─── Верификация методики ────────────────────────────────────────────────────
+
+/**
+ * Допуск сверки расчёта с оцифрованным рисунком, %.
+ * 0,15 % — толщина линии на растре рисунка приложения: точнее снять границу
+ * треугольника с графика физически невозможно.
+ */
+export const FIGURE_TOLERANCE = 0.15;
+
+/** Результат сверки одной контрольной точки рисунка. */
+export interface CheckpointDelta {
+  /** Доля метана, для которой снята точка */
+  pCH4: number;
+  /** Предельный кислород, снятый с рисунка, % */
+  expected: number;
+  /** Предельный кислород, полученный расчётом, % */
+  computed: number;
+  /** Расхождение, % */
+  delta: number;
+}
+
+/**
+ * Отметка о верификации: чем подтверждено, что расчётный треугольник
+ * отвечает нормативному рисунку приложения.
+ */
+export interface FigureVerification {
+  /** Номер рисунка приложения, по которому выполнена сверка */
+  figureNo: number;
+  /** Значение P_CO этого рисунка */
+  figurePCO: number;
+  /**
+   * "direct"   — для этого рисунка есть оцифрованные контрольные точки;
+   * "indirect" — контрольных точек по рисунку нет, подтверждение перенесено
+   *              с проверенных рисунков (правило построения общее);
+   * "failed"   — расхождение вышло за допуск: методику применять нельзя.
+   */
+  status: "direct" | "indirect" | "failed";
+  /** Точки, по которым выполнена сверка */
+  checkpoints: CheckpointDelta[];
+  /** Наибольшее расхождение по сверенным точкам, % */
+  maxDelta: number;
+  /** Допуск сверки, % */
+  tolerance: number;
+  /** Вершины треугольника лежат на линии свежего воздуха */
+  airLineOk: boolean;
+  /** Ссылка на источник — норматив и рисунок */
+  reference: string;
+  /** Готовая формулировка для строки протокола */
+  note: string;
+}
+
+/**
+ * Сверка расчётного треугольника с оцифрованным рисунком приложения.
+ *
+ * Надзор вправе спросить, на каком основании графическое построение нормы
+ * заменено счётом. Ответ даёт эта функция: она заново, в момент расчёта,
+ * сопоставляет расчётные вершины с точками, снятыми с растров рисунков
+ * (FIGURE_CHECKPOINTS), и возвращает расхождение с допуском. Если расхождение
+ * выйдет за допуск — статус "failed", и протокол это покажет, а не умолчит.
+ */
+export function verifyFigure(pCO: number, pCH4: number): FigureVerification {
+  const fig = figureByPCO(pCO);
+
+  const measure = (list: typeof FIGURE_CHECKPOINTS): CheckpointDelta[] =>
+    list.map(cp => {
+      const computed = buildTriangle(cp.pCO, cp.pCH4).nose.y;
+      return {
+        pCH4: cp.pCH4,
+        expected: cp.noseO2,
+        computed: r(computed, 2),
+        delta: r(Math.abs(computed - cp.noseO2), 3),
+      };
+    });
+
+  const own = FIGURE_CHECKPOINTS.filter(cp => cp.figure === fig.no);
+  const direct = own.length > 0;
+  const checkpoints = measure(direct ? own : FIGURE_CHECKPOINTS);
+  const maxDelta = checkpoints.reduce((m, c) => Math.max(m, c.delta), 0);
+
+  // Самопроверка геометрии: обе вершины на линии свежего воздуха.
+  const t = buildTriangle(pCO, pCH4);
+  const onAir = (p: TriPoint) =>
+    !Number.isFinite(p.x) || Math.abs(p.y - O2_FRESH * (1 - p.x / 100)) < 1e-6;
+  const airLineOk = onAir(t.low) && onAir(t.high);
+
+  const status: FigureVerification["status"] =
+    maxDelta > FIGURE_TOLERANCE || !airLineOk ? "failed" : direct ? "direct" : "indirect";
+
+  const reference =
+    `рис. ${fig.no} Приложения № 11 к ФНП (приказ Ростехнадзора от 11.12.2020 № 520), P_CO = ${ru(fig.pCO, 1)}`;
+
+  const pts = checkpoints
+    .map(c => `P_CH₄ = ${ru(c.pCH4, 1)}: рисунок ${ru(c.expected)} % / расчёт ${ru(c.computed)} %`)
+    .join("; ");
+
+  let note: string;
+  if (status === "failed") {
+    note =
+      `НЕ ПОДТВЕРЖДЕНО. Расхождение с оцифровкой рисунка ${ru(maxDelta, 3)} % превышает допуск ` +
+      `${ru(FIGURE_TOLERANCE, 2)} %${airLineOk ? "" : " (либо нарушена линия свежего воздуха)"}. ` +
+      `Результат расчёта применять нельзя, требуется построение по рисунку приложения.`;
+  } else if (direct) {
+    note =
+      `Подтверждено сверкой с оцифрованным ${reference}: ${pts}. ` +
+      `Наибольшее расхождение ${ru(maxDelta, 3)} % при допуске ${ru(FIGURE_TOLERANCE, 2)} % ` +
+      `(толщина линии на растре рисунка). Вершины лежат на линии свежего воздуха O₂ = 20,9·(1 − C_г/100).`;
+  } else {
+    note =
+      `Контрольные точки по ${reference} не снимались. Треугольник построен тем же правилом ` +
+      `Ле-Шателье по долям P формул (2)–(4), которое сверено с оцифрованными рисунками 1–3 ` +
+      `приложения: ${pts}; наибольшее расхождение ${ru(maxDelta, 3)} % при допуске ` +
+      `${ru(FIGURE_TOLERANCE, 2)} %. Вершины лежат на линии свежего воздуха.`;
+  }
+
+  return {
+    figureNo: fig.no,
+    figurePCO: fig.pCO,
+    status,
+    checkpoints,
+    maxDelta,
+    tolerance: FIGURE_TOLERANCE,
+    airLineOk,
+    reference,
+    note,
+  };
+}
+
+/** Короткая отметка о верификации — для таблиц и бейджей. */
+export function verificationLabel(v: FigureVerification): string {
+  switch (v.status) {
+    case "direct":   return `Подтверждено, рис. ${v.figureNo} (Δ ${ru(v.maxDelta, 3)} %)`;
+    case "indirect": return `Подтверждено косвенно, рис. ${v.figureNo} (Δ ${ru(v.maxDelta, 3)} %)`;
+    case "failed":   return `НЕ подтверждено, рис. ${v.figureNo} (Δ ${ru(v.maxDelta, 3)} %)`;
+  }
+}
+
 // ─── Основной расчёт ─────────────────────────────────────────────────────────
 
 /**
@@ -405,6 +543,21 @@ export function calcExplosibility(sample: GasSample): ExplosibilityResult {
     );
   }
 
+  // ── Верификация: сверка расчёта с оцифрованным рисунком приложения ──
+  const verification = verifyFigure(pCO, pCH4);
+  steps.push({
+    title: "Верификация методики",
+    expression: verification.note,
+    value: verificationLabel(verification),
+  });
+  if (verification.status === "failed") {
+    warnings.push(
+      `Сверка расчётного треугольника с рисунком ${verification.figureNo} приложения НЕ ПРОЙДЕНА ` +
+      `(расхождение ${ru(verification.maxDelta, 3)} % при допуске ${ru(verification.tolerance, 2)} %). ` +
+      `Проверьте таблицу пределов взрываемости GAS_LIMITS — результат расчёта применять нельзя.`,
+    );
+  }
+
   // ── Построение треугольника и нанесение точки ──
   const triangle = buildTriangle(pCO, pCH4);
   const point: TriPoint = { x: cg, y: o2 };
@@ -472,7 +625,7 @@ export function calcExplosibility(sample: GasSample): ExplosibilityResult {
     inside, state, verdict,
     marginToLel: Number.isFinite(triangle.lel) ? r(triangle.lel - cg, 2) : NaN,
     marginToNoseO2: r(o2 - triangle.nose.y, 2),
-    steps, warnings,
+    steps, verification, warnings,
   };
 }
 

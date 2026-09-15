@@ -11,7 +11,7 @@ import { useState, useMemo } from "react";
 import Icon from "@/components/ui/icon";
 import TrianglePlot from "@/components/cad/explosibility/TrianglePlot";
 import {
-  calcExplosibility, stateLabel, stateColor, ru,
+  calcExplosibility, stateLabel, stateColor, verificationLabel, ru,
   SAMPLE_PRESETS,
   type GasSample, type ExplosibilityResult,
 } from "@/lib/explosibility";
@@ -226,6 +226,23 @@ export default function ExplosibilityDialog({ projectName = "Подземный 
                   Треугольник взрываемости — рис. {result.figureNo} приложения
                 </div>
                 <TrianglePlot result={result} width={560} height={400} />
+                {/* Отметка о верификации — чтобы при проверке надзором было
+                    видно, чем подтверждено совпадение с рисунком приложения. */}
+                <div className="px-3 py-2 text-[10.5px] flex items-start gap-2"
+                  style={{
+                    borderTop: "1px solid #e0e4ee",
+                    background: result.verification.status === "failed" ? "var(--c-tint-red, #fef2f2)" : "#fbfcfe",
+                    color: result.verification.status === "failed" ? "var(--c-red, #b91c1c)" : "#5b6472",
+                  }}
+                  title={result.verification.note}>
+                  <Icon
+                    name={result.verification.status === "failed" ? "TriangleAlert" : "BadgeCheck"}
+                    size={13} className="mt-px shrink-0" />
+                  <span>
+                    <span className="font-semibold">{verificationLabel(result.verification)}</span>
+                    {" — "}{result.verification.reference}
+                  </span>
+                </div>
               </div>
 
               {/* Ключевые показатели */}

@@ -9,7 +9,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import * as XLSX from "xlsx";
 import {
-  ru, stateLabel,
+  ru, stateLabel, verificationLabel,
   type ExplosibilityResult,
 } from "./explosibility";
 
@@ -144,6 +144,9 @@ function buildProtocolSheet(res: ExplosibilityResult, m: ExplosibilityReportMeta
   // Треугольник
   wide("4. ТРЕУГОЛЬНИК ВЗРЫВАЕМОСТИ");
   push("Рисунок приложения", `№ ${res.figureNo} (P_CO = ${ru(res.figurePCO, 1)})`);
+  push("Источник треугольника", res.verification.reference);
+  push("Отметка о верификации", verificationLabel(res.verification));
+  push("Чем подтверждена методика", res.verification.note);
   push("Треугольник на рисунке", `P_CH₄ = ${ru(res.pCH4, 2)}`);
   push("Нижний предел взрываемости смеси, %", Number.isFinite(res.triangle.lel) ? ru(res.triangle.lel) : "—");
   push("Верхний предел взрываемости смеси, %", Number.isFinite(res.triangle.uel) ? ru(res.triangle.uel) : "—");
@@ -198,6 +201,7 @@ const TABLE_HEADERS = [
   "ВПВ смеси, %",
   "O₂ предельн., %",
   "Состояние атмосферы",
+  "Верификация по рисунку",
 ];
 
 function buildSamplesSheet(list: ExplosibilityResult[]): XLSX.WorkSheet {
@@ -221,11 +225,14 @@ function buildSamplesSheet(list: ExplosibilityResult[]): XLSX.WorkSheet {
       Number.isFinite(res.triangle.uel) ? ru(res.triangle.uel) : "",
       ru(res.triangle.nose.y),
       stateLabel(res.state),
+      verificationLabel(res.verification),
     ]);
   });
 
   const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = TABLE_HEADERS.map((h, i) => ({ wch: i === 2 ? 26 : i === 17 ? 32 : Math.max(8, h.length + 1) }));
+  ws["!cols"] = TABLE_HEADERS.map((h, i) => ({
+    wch: i === 2 ? 26 : i === 17 ? 32 : i === 18 ? 38 : Math.max(8, h.length + 1),
+  }));
   ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: TABLE_HEADERS.length - 1 } }];
   applyStyle(ws, 0, 0, titleStyle());
   for (let c = 0; c < TABLE_HEADERS.length; c++) applyStyle(ws, 2, c, headerStyle());

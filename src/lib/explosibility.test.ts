@@ -11,6 +11,7 @@ import { describe, it, expect } from "vitest";
 import {
   calcExplosibility, buildTriangle, figureByPCO, pointInTriangle,
   explosiveOnDilution, FIGURE_CHECKPOINTS, GAS_LIMITS, O2_FRESH,
+  verifyFigure, verificationLabel, FIGURE_TOLERANCE,
 } from "@/lib/explosibility";
 
 describe("взрывоопасность рудничной атмосферы (Приложение № 11)", () => {
@@ -141,6 +142,46 @@ describe("взрывоопасность рудничной атмосферы (
     const r = calcExplosibility({ ch4: 1.2, co: 0.8, h2: 0.3, o2: 12.5 });
     const formulas = r.steps.map(s => s.formula).filter(Boolean);
     expect(formulas).toEqual(["(1)", "(2)", "(3)", "(4)", "(5)"]);
+  });
+
+  // ── Отметка о верификации ─────────────────────────────────────────────
+  it("для рисунка с контрольными точками верификация прямая", () => {
+    // P_CO = 0 → рис. 1, по нему точки оцифрованы
+    const v = verifyFigure(0, 1);
+    expect(v.status).toBe("direct");
+    expect(v.figureNo).toBe(1);
+    expect(v.checkpoints.length).toBeGreaterThan(0);
+    expect(v.maxDelta).toBeLessThan(FIGURE_TOLERANCE);
+    expect(v.airLineOk).toBe(true);
+  });
+
+  it("для рисунка без контрольных точек верификация косвенная", () => {
+    // P_CO = 0,5 → рис. 6, точек по нему в FIGURE_CHECKPOINTS нет
+    const v = verifyFigure(0.5, 0.3);
+    expect(v.status).toBe("indirect");
+    expect(v.figureNo).toBe(6);
+    expect(v.note).toContain("не снимались");
+  });
+
+  it("отметка о верификации ссылается на норматив и номер рисунка", () => {
+    const r = calcExplosibility({ ch4: 1.2, co: 0.8, h2: 0.3, o2: 12.5 });
+    expect(r.verification.reference).toContain(`рис. ${r.figureNo}`);
+    expect(r.verification.reference).toContain("Приложения № 11");
+    expect(r.verification.reference).toContain("520");
+  });
+
+  it("верификация попадает отдельным шагом в ход расчёта", () => {
+    const r = calcExplosibility({ ch4: 7, co: 0, h2: 0, o2: 19 });
+    const step = r.steps.find(s => s.title === "Верификация методики");
+    expect(step).toBeDefined();
+    expect(step!.expression).toContain("Подтверждено");
+    expect(verificationLabel(r.verification)).toContain(`рис. ${r.figureNo}`);
+  });
+
+  it("исправная методика не даёт предупреждения о непройденной сверке", () => {
+    const r = calcExplosibility({ ch4: 7, co: 0, h2: 0, o2: 19 });
+    expect(r.verification.status).not.toBe("failed");
+    expect(r.warnings.some(w => w.includes("НЕ ПРОЙДЕНА"))).toBe(false);
   });
 
   it("несовпадение P_CO с шагом рисунков отмечается предупреждением", () => {
