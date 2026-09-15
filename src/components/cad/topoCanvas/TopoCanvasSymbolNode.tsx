@@ -58,6 +58,13 @@ export interface SymbolNodeDeps {
   onSymbolFanIndOffset?: Props["onSymbolFanIndOffset"];
   onSymbolDragStart?: Props["onSymbolDragStart"];
   onMouseDownCanvas: (e: React.MouseEvent<HTMLCanvasElement>) => void;
+  /**
+   * Сообщает наверх, какой значок сейчас тащат (null — перетаскивание
+   * закончилось). Пока значок тащат, тяжёлый оверлей УО не перерисовывается —
+   * иначе на каждое движение мыши пересобирается вся схема символов вместе с
+   * «перекрывателями» ветвей, и значок отстаёт от курсора.
+   */
+  setDraggingSymbolId?: (id: string | null) => void;
 }
 
 export function renderSymbolNode(
@@ -75,7 +82,7 @@ export function renderSymbolNode(
     ovMinX, ovMaxX, ovMinY, ovMaxY,
     onSelectSymbol, onSymbolMove, onSymbolMoveAlongBranch, onSymbolOffset,
     onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart,
-    onMouseDownCanvas,
+    onMouseDownCanvas, setDraggingSymbolId,
   } = d;
 
   const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
@@ -218,7 +225,8 @@ export function renderSymbolNode(
           const svgEl = (e.currentTarget as SVGElement).closest("svg")!;
           const onMove = (me: MouseEvent) => {
             if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
-            if (!didDrag) onSymbolDragStart?.(sym.id);
+            // Начало перетаскивания: гасим тяжёлый оверлей УО, пока тащим.
+            if (!didDrag) { onSymbolDragStart?.(sym.id); setDraggingSymbolId?.(sym.id); }
             didDrag = true;
             me.preventDefault();
             const dx = me.clientX - startX, dy = me.clientY - startY;
@@ -235,6 +243,7 @@ export function renderSymbolNode(
           const onUp = (ue: MouseEvent) => {
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
+            setDraggingSymbolId?.(null);
             if (!didDrag) handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
           };
           window.addEventListener("mousemove", onMove);
@@ -243,7 +252,8 @@ export function renderSymbolNode(
           const origX = sym.x, origY = sym.y;
           const onMove = (me: MouseEvent) => {
             if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
-            if (!didDrag) onSymbolDragStart?.(sym.id);
+            // Начало перетаскивания: гасим тяжёлый оверлей УО, пока тащим.
+            if (!didDrag) { onSymbolDragStart?.(sym.id); setDraggingSymbolId?.(sym.id); }
             didDrag = true;
             me.preventDefault();
             onSymbolMove?.(sym.id, origX + (me.clientX - startX) / view.scale, origY - (me.clientY - startY) / view.scale);
@@ -251,6 +261,7 @@ export function renderSymbolNode(
           const onUp = (ue: MouseEvent) => {
             window.removeEventListener("mousemove", onMove);
             window.removeEventListener("mouseup", onUp);
+            setDraggingSymbolId?.(null);
             if (!didDrag) handleSymbolClick(sym.id, ue.ctrlKey || ue.metaKey);
           };
           window.addEventListener("mousemove", onMove);

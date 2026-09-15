@@ -79,6 +79,10 @@ export interface SymbolsOverlayDeps {
   onSymbolMsIndOffset?: Props["onSymbolMsIndOffset"];
   onSymbolFanIndOffset?: Props["onSymbolFanIndOffset"];
   onSymbolDragStart?: Props["onSymbolDragStart"];
+  /** id значка, который сейчас тащат мышью (null — не тащат). */
+  draggingSymbolId?: string | null;
+  /** Установить/снять признак перетаскивания значка. */
+  setDraggingSymbolId?: (id: string | null) => void;
   onMouseDown: (e: React.MouseEvent<SVGSVGElement>) => void;
   onMouseMove: (e: React.MouseEvent<SVGSVGElement>) => void;
   onMouseUp: () => void;
@@ -107,6 +111,7 @@ export default function TopoCanvasSymbolsOverlay(deps: SymbolsOverlayDeps) {
     infoConfig, unitsConfig, branchFireColors, xyScale,
     onSelectSymbol, onSymbolMove, onSymbolMoveAlongBranch, onSymbolOffset,
     onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart,
+    draggingSymbolId, setDraggingSymbolId,
     onMouseDownCanvas, onMouseMoveCanvas, onMouseUpCanvas, onWheelCanvas,
     onContextMenuCanvas, onDoubleClickCanvas,
   } = deps;
@@ -159,8 +164,24 @@ export default function TopoCanvasSymbolsOverlay(deps: SymbolsOverlayDeps) {
         ovMinX, ovMaxX, ovMinY, ovMaxY,
         onSelectSymbol, onSymbolMove, onSymbolMoveAlongBranch, onSymbolOffset,
         onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart,
-        onMouseDownCanvas,
+        onMouseDownCanvas, setDraggingSymbolId,
       });
+
+      // ── ПЕРЕТАСКИВАНИЕ ЗНАЧКА: рисуем только его ────────────────────────
+      // Пока значок тащат мышью, пересобирать весь оверлей нельзя: на каждое
+      // движение мыши заново строятся ВСЕ символы схемы и «перекрыватели» —
+      // сотни SVG-линий с clipPath на каждый слой горизонта. Из-за этого
+      // значок заметно отставал от курсора.
+      //
+      // Поступаем так же, как с панорамой и зумом выше: гасим тяжёлый оверлей.
+      // Но в отличие от них оставляем ОДИН элемент — тот, который тащат, иначе
+      // значок пропадал бы из виду на всё время перетаскивания. Остальные
+      // символы вернутся сразу после отпускания кнопки.
+      if (draggingSymbolId) {
+        const dragged = schemaSymbolsSorted.find(s => s.id === draggingSymbolId);
+        if (!dragged) return null;
+        return <>{renderOneOv(dragged as SymbolItem)}</>;
+      }
 
       // Стрелки направления воздуха — вынесены в TopoCanvasFlowArrows.
       // Отрисовщик создаётся заново на каждый проход: он помнит, для каких

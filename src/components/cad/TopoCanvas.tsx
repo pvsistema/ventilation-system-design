@@ -4001,6 +4001,7 @@ export default function TopoCanvas(props: Props) {
         onSymbolIndOffset={onSymbolIndOffset} onSymbolMsIndOffset={onSymbolMsIndOffset}
         onSymbolFanIndOffset={onSymbolFanIndOffset}
         onSymbolDragStart={onSymbolDragStart}
+        draggingSymbolId={draggingSymbolId} setDraggingSymbolId={setDraggingSymbolId}
         onMouseDown={onMouseDown} onMouseMove={onMouseMove} onMouseUp={onMouseUp} onWheel={onWheel}
         onMouseDownCanvas={onMouseDownCanvas} onMouseMoveCanvas={onMouseMoveCanvas}
         onMouseUpCanvas={onMouseUpCanvas} onWheelCanvas={onWheelCanvas}
