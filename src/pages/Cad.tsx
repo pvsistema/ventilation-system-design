@@ -63,7 +63,6 @@ import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, getNormativeMouthDistance, setNormativeMouthDistance, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
-import { checkApplicability } from "@/lib/fireApplicability";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import PanelErrorBoundary from "@/components/cad/PanelErrorBoundary";
@@ -6058,23 +6057,6 @@ export default function CadPage() {
                 // Сам расчёт живёт в отдельном модуле (см. lib/fireModeRun.ts):
                 // формулы и пороги перенесены дословно, здесь остаётся только
                 // применение результата к схеме.
-                // Проверка исходных данных очага на область применимости.
-                // Расчёт не меняет — только предупреждает, если данные выходят
-                // за границы, на которых методика проверялась (самая частая
-                // причина — в поле расхода записана скорость с анемометра).
-                branches.filter(b => b.hasFire).forEach(b => {
-                  checkApplicability({
-                    area_m2: b.area,
-                    flow_m3s: b.flow,
-                    length_m: b.length,
-                    fireTime_min: getNormativeFireTime(),
-                    power_MW: b.fireHeatRelease,
-                  }).forEach(n => {
-                    addLog(n.level === "error" ? "error" : n.level === "warning" ? "warn" : "info",
-                      `Выработка ${b.type?.trim() || b.id}: ${n.title}. ${n.text}`);
-                  });
-                });
-
                 const { flows: currentFlows, originalFlows, result } = await runFireMode({
                   branches, nodes,
                   ambientTemp: AMBIENT_TEMP,
