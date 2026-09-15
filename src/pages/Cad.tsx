@@ -1386,6 +1386,8 @@ export default function CadPage() {
   const [showFireControl, setShowFireControl] = useState(false);
   // Диалог «ВДС» (воздушно-депрессионная съёмка)
   const [showVds, setShowVds] = useState(false);
+  // Диалог «Взрывоопасность» (рудничная атмосфера по Приложению № 11)
+  const [showExplosibility, setShowExplosibility] = useState(false);
   const [showLogPanel, setShowLogPanel] = useState(false);
   const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
   const logIdRef = useRef(0);
@@ -7008,6 +7010,15 @@ export default function CadPage() {
               sublabel=""
               title="Воздушно-депрессионная съёмка: эквивалентное отверстие шахты и другие расчёты по схеме"
               onClick={() => setShowVds(true)}
+            />
+            <RibbonBigBtn
+              icon="TriangleAlert"
+              label="Взрыво-"
+              sublabel="опасность"
+              /* Перенос слова оставлен намеренно: подпись в две строки держит
+                 высоту кнопки вровень с соседними. */
+              title="Взрывоопасность рудничной атмосферы по составу пробы: Приложение № 11 к ФНП (приказ Ростехнадзора от 11.12.2020 № 520) — формулы (1)–(5), треугольники взрываемости рис. 1–6, протокол расчёта"
+              onClick={() => setShowExplosibility(true)}
             />
           </RibbonGroup>
         )}
@@ -14088,6 +14099,8 @@ export default function CadPage() {
       fireControlPreviewActive={!!fireControlPreview}
       showVds={showVds}
       setShowVds={setShowVds}
+      showExplosibility={showExplosibility}
+      setShowExplosibility={setShowExplosibility}
       solveResult={solveResult}
       computeFireStabilityFacts={computeFireStabilityFacts}
       showLicenseDialog={showLicenseDialog}

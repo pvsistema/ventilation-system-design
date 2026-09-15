@@ -32,6 +32,7 @@ const WaterFireCheckDialog   = lazy(() => import("@/components/cad/WaterFireChec
 const EvacRiskDialog         = lazy(() => import("@/components/cad/EvacRiskDialog"));
 const FireControlDialog      = lazy(() => import("@/components/cad/FireControlDialog"));
 const VdsDialog              = lazy(() => import("@/components/cad/VdsDialog"));
+const ExplosibilityDialog    = lazy(() => import("@/components/cad/ExplosibilityDialog"));
 const LicenseDialog          = lazy(() => import("@/components/LicenseDialog"));
 const SettingsDialog         = lazy(() => import("@/components/cad/SettingsDialog"));
 const MultiBranchPropsDialog = lazy(() => import("@/components/cad/MultiBranchPropsDialog"));
@@ -157,6 +158,9 @@ export interface CadToolDialogsProps {
   // ВДС (воздушно-депрессионная съёмка)
   showVds: boolean;
   setShowVds: (v: boolean) => void;
+  // Взрывоопасность рудничной атмосферы (Приложение № 11)
+  showExplosibility: boolean;
+  setShowExplosibility: (v: boolean) => void;
   solveResult: SolveResult | null;
   computeFireStabilityFacts: (
     ambientTemp: number,
@@ -400,6 +404,14 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           nodes={p.nodes}
           solved={!!p.solveResult}
           onClose={() => p.setShowVds(false)}
+        />
+      )}
+
+      {/* ── Взрывоопасность рудничной атмосферы (Приложение № 11) ───────── */}
+      {p.showExplosibility && (
+        <ExplosibilityDialog
+          projectName={p.projectFileName.replace(/\.vproj$/, "")}
+          onClose={() => p.setShowExplosibility(false)}
         />
       )}
 
