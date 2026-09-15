@@ -184,6 +184,119 @@ export function getCombustible(id: string): CombustibleProps {
   return COMBUSTIBLES.find(c => c.id === id) ?? COMBUSTIBLES[COMBUSTIBLES.length - 1];
 }
 
+// ─── Типовые очаги пожара (пресеты) ──────────────────────────────────────────
+//
+// ЗАЧЕМ. Свойства очага задаются десятком полей, и по умолчанию там стоит
+// техника: 1200 кг резины, 400 кг дизеля, 200 кг масла — очаг 8,5 МВт. Для
+// лабораторной модели (гофра Ø160, деревянная крепь) это абсурд на три порядка,
+// а сбрасывать поля вручную долго и легко забыть.
+//
+// Пресет подставляет согласованный набор полей одним действием.
+
+export interface FirePreset {
+  id: string;
+  name: string;
+  /** Пояснение: для какого объекта пресет */
+  hint: string;
+  /** Ожидаемый порядок мощности — для подсказки в интерфейсе */
+  powerHint: string;
+  /** Поля очага, которые подставляются в ветвь */
+  fields: Partial<FireMaterialProps> & { fireCombustible: string };
+  /** Расчёт ведётся для лабораторной модели (меняет набор проверок) */
+  labModel?: boolean;
+}
+
+export const FIRE_PRESETS: FirePreset[] = [
+  {
+    id: "vehicle_std",
+    name: "Самоходная техника",
+    hint: "Погрузочно-доставочная машина: резина, дизель, гидравлическое масло",
+    powerHint: "единицы–десятки МВт",
+    fields: {
+      fireCombustible: "vehicle",
+      fireVehicleMassRubber: 1200,
+      fireVehicleMassDiesel: 400,
+      fireVehicleMassOil: 200,
+    },
+  },
+  {
+    id: "belt_std",
+    name: "Конвейерная лента",
+    hint: "Лента шириной 1,2 м по длине выработки",
+    powerHint: "единицы МВт",
+    fields: {
+      fireCombustible: "conveyor",
+      fireBeltBurnRate: "0.0125",
+      fireBeltDensity: "1100",
+      fireBeltWidth: "1.2",
+      fireBeltThickness: "0.016",
+      fireBeltFlameSpeed: "0.013",
+    },
+  },
+  {
+    id: "cable_std",
+    name: "Кабельная линия",
+    hint: "Силовой кабель по борту выработки",
+    powerHint: "сотни кВт",
+    fields: {
+      fireCombustible: "cable",
+      fireCableHeatValue: "25",
+      fireCableBurnRate: "0.007",
+      fireCableDensity: "900",
+      fireCableWidth: "0.05",
+      fireCableThick: "0.05",
+    },
+  },
+  {
+    id: "timber_std",
+    name: "Деревянная крепь",
+    hint: "Крепь на участке выработки",
+    powerHint: "единицы МВт",
+    fields: {
+      fireCombustible: "timber",
+      fireWoodHeatValue: "13.8",
+      fireWoodBurnRate: "0.027",
+      fireWoodDensity: "500",
+      fireWoodWidth: "8.9",
+      fireWoodThick: "0.08",
+      fireWoodFlameSpeed: "0.024",
+      fireWoodCalcTime: "10",
+    },
+  },
+  {
+    // ── Пресет под лабораторный опыт ────────────────────────────────────────
+    // Модель рудника: алюминиевая гофра Ø160 мм (S = 0,0201 м²), деревянная
+    // крепь на участке 0,3 м, всасывающее проветривание. Замеры дали очаг
+    // порядка 10–15 кВт (обратный расчёт по падению расхода 2,71 → 2,18 м/с).
+    //
+    // Ширина «крепи» здесь — ширина горящей полосы щепы внутри гофры, а не
+    // сечение выработки: горит тонкий слой по стенке, а не массив крепи.
+    // Мощность в этой модели равна ψ·(L·B)·Q_н = 0,027·(0,3·0,1)·13,8 ≈ 11 кВт,
+    // что совпадает с обратным расчётом по замеренному падению расхода
+    // 2,71 → 2,18 м/с (10–15 кВт).
+    id: "lab_timber",
+    name: "Лабораторная модель — деревянная крепь",
+    hint: "Модель рудника: гофра Ø160 мм, участок крепи 0,3 м, очаг порядка 10 кВт",
+    powerHint: "единицы–десятки кВт",
+    labModel: true,
+    fields: {
+      fireCombustible: "timber",
+      fireWoodHeatValue: "13.8",   // МДж/кг — как у натурной крепи
+      fireWoodBurnRate: "0.027",   // кг/(м²·с) — справочная скорость выгорания
+      fireWoodDensity: "500",
+      fireWoodLength: "0.3",       // м — длина горящего участка
+      fireWoodWidth: "0.1",        // м — ширина горящей полосы щепы
+      fireWoodThick: "0.01",       // м — толщина щепы
+      fireWoodFlameSpeed: "0.024",
+      fireWoodCalcTime: "5",       // мин — длительность опыта
+    },
+  },
+];
+
+export function getFirePreset(id: string): FirePreset | undefined {
+  return FIRE_PRESETS.find(p => p.id === id);
+}
+
 // ─── Мощность очага пожара из свойств горючего материала ──────────────────────
 // Единый источник мощности (МВт) для ОЧАГА ПОЖАРА: считаем ровно так же, как во
 // вкладке «Пожарная нагрузка», чтобы температура продуктов совпадала.
@@ -526,6 +639,79 @@ export interface FireCalculationResult {
 }
 
 // ─── Физические формулы ───────────────────────────────────────────────────────
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ОГРАНИЧЕНИЕ МОЩНОСТИ ПО КИСЛОРОДУ (вентиляционно-ограниченный пожар).
+//
+// Пожар не может выделить больше тепла, чем позволяет пришедший кислород.
+// На каждый килограмм воздуха при полном сгорании выделяется примерно
+// 3,0 МДж — величина слабо зависит от вида топлива (принцип Хагглунда,
+// общепринятый в расчётах пожаров). Отсюда предел мощности:
+//
+//     P_max = 3,0 [МДж/кг] · ρ · Q [кг/с]
+//
+// ЗАЧЕМ. Раньше от разгона обратной связи «расход↓ → T↑ → тяга↑ → расход↓»
+// защищал искусственный приём: расход для температуры принудительно держался
+// не ниже половины штатного. Это подменяло данные. Теперь ограничение
+// физическое: при падении расхода пожар переходит в вентиляционно-
+// ограниченный режим, мощность падает вместе с расходом, и температура
+// сама перестаёт расти — расходимости нет без искажения исходных величин.
+//
+// Побочный, но важный эффект: в таком режиме горение неполное, выходCO
+// растёт в разы. Это учитывается отдельно (oxygenDeficitCoFactor).
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Тепловыделение на 1 кг воздуха при полном сгорании, МДж/кг. */
+export const HEAT_PER_KG_AIR_MJ = 3.0;
+
+/**
+ * Предельная мощность очага по доступному кислороду, МВт.
+ * Возвращает null, если расход не задан (ограничение не применяется).
+ */
+export function oxygenLimitedPower_MW(airFlow_m3s: number): number | null {
+  const Q = Math.abs(Number(airFlow_m3s));
+  if (!(Q > 0)) return null;
+  // ρ = 1.25 кг/м³ — та же плотность, что в calcFireTemp, иначе ограничение
+  // и температура считались бы по разным допущениям.
+  const massAir = 1.25 * Q;
+  return HEAT_PER_KG_AIR_MJ * massAir;
+}
+
+/**
+ * Урезает мощность очага до физически возможной при данном расходе воздуха.
+ * Если кислорода хватает — мощность возвращается без изменений.
+ */
+export function limitPowerByOxygen(
+  heatRelease_MW: number,
+  airFlow_m3s: number,
+): { power_MW: number; limited: boolean; limit_MW: number | null } {
+  const P = Number(heatRelease_MW);
+  const lim = oxygenLimitedPower_MW(airFlow_m3s);
+  if (!Number.isFinite(P) || P <= 0 || lim == null) {
+    return { power_MW: Number.isFinite(P) ? P : 0, limited: false, limit_MW: lim };
+  }
+  if (P <= lim) return { power_MW: P, limited: false, limit_MW: lim };
+  return { power_MW: lim, limited: true, limit_MW: lim };
+}
+
+/**
+ * Во сколько раз вырастает выход CO при нехватке кислорода.
+ *
+ * Справочные значения coYield в COMBUSTIBLES получены для хорошо
+ * проветриваемого горения. Когда воздуха не хватает (эквивалентное отношение
+ * φ = P_треб / P_возможная > 1), горение неполное и выход CO растёт в разы.
+ * Множитель ограничен четырьмя — верх наблюдаемого диапазона.
+ */
+export function oxygenDeficitCoFactor(
+  requiredPower_MW: number,
+  airFlow_m3s: number,
+): number {
+  const lim = oxygenLimitedPower_MW(airFlow_m3s);
+  const P = Number(requiredPower_MW);
+  if (lim == null || !(lim > 0) || !Number.isFinite(P) || P <= lim) return 1;
+  const phi = P / lim;
+  return Math.min(4, phi);
+}
 
 export function calcFireTemp(
   heatRelease_MW: number,
