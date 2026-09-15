@@ -22,7 +22,7 @@ import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import { searchFireControl, type SearchReport } from "@/lib/fireControl/search";
 import type { EvaluateContext } from "@/lib/fireControl/evaluate";
 import type { VariantResult } from "@/lib/fireControl/evaluate";
-import type { FireAction } from "@/lib/fireControl/actions";
+import { toRdCommand, type FireAction } from "@/lib/fireControl/actions";
 
 interface Props {
   branches: TopoBranch[];
@@ -370,6 +370,9 @@ function ReportView({
         style={{ background: "var(--c-s3, #f6f8fc)", borderBottom: "1px solid #e0e4ee" }}>
         <span className="text-gray-500 font-medium">Без изменений режима:</span>
         <Metric label="не успевают выйти" value={base.peopleAtRisk} danger={base.peopleAtRisk > 0} />
+        {/* РД п.25: люди за очагом выходят только в самоспасателях через дым —
+            это принципиально более тяжёлый сценарий, чем выход по свежей струе. */}
+        <Metric label="за очагом" value={base.peopleAfterFire} warn={base.peopleAfterFire > 0} />
         <Metric label="в зоне задымления" value={base.peopleInSmoke} warn={base.peopleInSmoke > 0} />
         <Metric label="превышений скорости" value={base.velocityViolations} warn={base.velocityViolations > 0} />
       </div>
@@ -458,23 +461,93 @@ function VariantRow({
 
       {open && (
         <div className="px-4 pb-3" style={{ background: "#fbfcfe" }}>
-          {/* Действия по шагам — это и есть команда для аварийного плана. */}
-          <div className="pl-7 pt-1 space-y-1">
-            {variant.actions.map((a, i) => (
-              <div key={i} className="text-[11px] text-gray-700 flex items-start gap-2">
-                <span className="text-gray-400 tabular-nums">{i + 1}.</span>
-                <span className="flex-1">{a.label}</span>
-                <span className="text-[10px] text-gray-400 whitespace-nowrap">~{a.effortMin} мин</span>
-              </div>
-            ))}
+          {/* Действия по шагам — это и есть команда для аварийного плана.
+              Под каждым — нормативная формулировка РД п.40 и ответственные
+              по п.31: именно в таком виде строку переносят в оперативную
+              часть, и переписывать её вручную незачем. */}
+          <div className="pl-7 pt-1 space-y-1.5">
+            {variant.actions.map((a, i) => {
+              const cmd = toRdCommand(a, a.objectName ?? "", a.isMainFan ?? false);
+              return (
+                <div key={i} className="text-[11px] text-gray-700">
+                  <div className="flex items-start gap-2">
+                    <span className="text-gray-400 tabular-nums">{i + 1}.</span>
+                    <span className="flex-1">{a.label}</span>
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap">~{a.effortMin} мин</span>
+                  </div>
+                  <div className="pl-5 text-[10px] text-gray-500 leading-snug">
+                    {/* Красная черта — требование п.40 к тексту о работе ВГП
+                        в изменённом режиме. Показываем ровно так, как в плане. */}
+                    <span style={cmd.underlineRed
+                      ? { textDecoration: "underline", textDecorationColor: "var(--c-red, #dc2626)", textDecorationThickness: "1.5px" }
+                      : undefined}>
+                      «{cmd.text}»
+                    </span>
+                    <span className="text-gray-400">
+                      {" "}· отв.: {cmd.responsible} · исп.: {cmd.executor}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
 
           <div className="pl-7 pt-2 flex items-center gap-5 text-[11px] flex-wrap">
+            <Metric label="за очагом" value={variant.peopleAfterFire} warn={variant.peopleAfterFire > 0} />
             <Metric label="в зоне задымления" value={variant.peopleInSmoke} warn={variant.peopleInSmoke > 0} />
             <Metric label="нужен ПВП" value={variant.peopleNeedSwitch} warn={variant.peopleNeedSwitch > 0} />
             <Metric label="превышений скорости" value={variant.velocityViolations} warn={variant.velocityViolations > 0} />
             <span className="text-gray-600">опрокинутых струй: <b>{variant.reversedBranches}</b></span>
           </div>
+
+          {/* ── Мероприятия по выводу людей (РД п.25) ────────────────────
+              Формулировки разные по сторонам от очага — это готовый текст
+              для графы «Пути и время выхода людей» оперативной части ПЛА. */}
+          {variant.evacActions.length > 0 && (
+            <div className="pl-7 pt-2.5">
+              <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide pb-1">
+                Вывод людей (РД-15-11-2007, п.25)
+              </div>
+              <div className="space-y-1">
+                {variant.evacActions.map((ea, i) => (
+                  <div key={i} className="text-[11px] leading-snug flex items-start gap-2">
+                    <span
+                      className="px-1 rounded text-[9px] font-semibold flex-shrink-0 mt-0.5"
+                      style={ea.zone === "after"
+                        ? { background: "#fee2e2", color: "var(--c-red, #b91c1c)" }
+                        : { background: "#dcfce7", color: "var(--c-green, #15803d)" }}>
+                      {ea.zone === "after" ? "за очагом" : "до очага"}
+                    </span>
+                    <span className="flex-1 text-gray-700">
+                      <b>{ea.place}</b> ({ea.people} чел.): {ea.text}
+                    </span>
+                    <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                      {ea.timeMin.toFixed(0)} мин
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* ── Соответствие РД п.29/п.30 ────────────────────────────────
+              Числами это не выражается: режим может выигрывать по людям и
+              при этом противоречить предписанию документа — тогда его не
+              утвердят. Поэтому замечания показываются отдельным блоком. */}
+          {variant.rdNotes.length > 0 && (
+            <div className="pl-7 pt-2.5 space-y-1">
+              {variant.rdNotes.map((n, i) => {
+                const bad = n.kind === "required" || n.kind === "violation";
+                return (
+                  <div key={i} className="text-[10px] flex items-start gap-1.5 leading-snug"
+                    style={{ color: bad ? "var(--c-red, #b91c1c)" : "var(--c-t3, #6b7280)" }}>
+                    <Icon name={bad ? "TriangleAlert" : "Info"} size={12} className="mt-0.5 flex-shrink-0" />
+                    <span><b>{n.clause}.</b> {n.text}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {/* Превышение допустимой скорости — причина, по которой режим могут
               не утвердить в плане ликвидации аварий. Молчать об этом нельзя. */}

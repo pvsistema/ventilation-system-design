@@ -25,6 +25,7 @@ import {
   evaluateVariant, compareVariants,
   type EvaluateContext, type VariantResult,
 } from "./evaluate";
+import { hasRdProblem } from "./rdRules";
 import type { FireAction } from "./actions";
 
 /** Сколько лучших веток проносим в следующий слой. */
@@ -228,11 +229,14 @@ export async function searchFireControl(
     if (layerResults.length === 0) break;
     if (evaluations >= MAX_EVALUATIONS) break;
 
-    // Все успевают выйти — углубляться незачем: добавление действий
-    // только удлинит команду, не улучшив исход.
+    // Идеальный исход — углубляться незачем: добавление действий только
+    // удлинит команду, не улучшив результат. «Идеальный» теперь включает и
+    // требование РД п.25: никого не осталось за очагом, то есть никому не
+    // придётся выходить через дым в самоспасателе.
     layerResults.sort(compareVariants);
-    if (layerResults[0] && layerResults[0].peopleAtRisk === 0
-        && layerResults[0].velocityViolations === 0) {
+    const top = layerResults[0];
+    if (top && top.peopleAtRisk === 0 && top.velocityViolations === 0
+        && top.peopleAfterFire === 0 && !hasRdProblem(top.rdNotes)) {
       break;
     }
 
@@ -246,10 +250,12 @@ export async function searchFireControl(
   const finished = finish("");
   if (finished.variants.length === 0) {
     // Исходный режим уже безупречен — трогать нечего.
-    if (base.peopleAtRisk === 0 && base.velocityViolations === 0) {
+    if (base.peopleAtRisk === 0 && base.velocityViolations === 0
+        && base.peopleAfterFire === 0 && !hasRdProblem(base.rdNotes)) {
       return {
         ...finished,
-        note: "В исходном режиме все успевают выйти, превышений скорости нет — менять режим не требуется.",
+        note: "В исходном режиме все успевают выйти навстречу свежей струе, "
+          + "превышений скорости нет — менять режим не требуется.",
       };
     }
     // Иначе недостатки есть, но рычаги их не устраняют. Сказать об этом
@@ -257,8 +263,14 @@ export async function searchFireControl(
     // такой вывод человек и опирается, утверждая план ликвидации аварий.
     const problems: string[] = [];
     if (base.peopleAtRisk > 0) problems.push(`людей в зоне риска — ${base.peopleAtRisk}`);
+    if (base.peopleAfterFire > 0) {
+      problems.push(`людей за очагом (выход только в самоспасателях) — ${base.peopleAfterFire}`);
+    }
     if (base.velocityViolations > 0) {
       problems.push(`выработок с превышением скорости — ${base.velocityViolations}`);
+    }
+    if (hasRdProblem(base.rdNotes)) {
+      problems.push("есть расхождение с предписаниями РД-15-11-2007 п.30");
     }
     return {
       ...finished,
@@ -272,6 +284,17 @@ export async function searchFireControl(
       ...finished,
       note: `Полностью вывести людей не удаётся ни одним вариантом: в зоне риска остаётся `
         + `${finished.bestPeopleAtRisk}. Требуется пункт переключения.`,
+    };
+  }
+  // Все успевают выйти, но часть людей идёт через дым в самоспасателях.
+  // По РД это допустимо, однако умолчать нельзя: такой режим тяжелее
+  // и требует исправных самоспасателей и пунктов переключения на маршруте.
+  const best = finished.variants[0];
+  if (best && best.peopleAfterFire > 0) {
+    return {
+      ...finished,
+      note: `Все успевают выйти, но ${best.peopleAfterFire} чел. остаются ЗА ОЧАГОМ — `
+        + "их выводят в изолирующих самоспасателях кратчайшим путём на свежую струю (РД п.25).",
     };
   }
   return finished;

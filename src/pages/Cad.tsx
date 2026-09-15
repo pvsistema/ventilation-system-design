@@ -49,7 +49,7 @@ import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/
 import { BULKHEAD_CATALOG, airPermToR, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { bulkheadROfBranch, buildBulkheadRMap } from "@/lib/bulkheadResistance";
 import { type EvaluateContext, type VariantResult } from "@/lib/fireControl/evaluate";
-import { applyActions, describeActions, type FireAction } from "@/lib/fireControl/actions";
+import { applyActions, describeActions, toRdCommand, type FireAction } from "@/lib/fireControl/actions";
 import { checkSchema } from "@/lib/schemaCheck";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
@@ -4141,13 +4141,41 @@ export default function CadPage() {
     const lines: string[] = [];
     lines.push(`Режим проветривания подобран расчётом${fireBranch ? ` при пожаре в: ${branchTitle(fireBranch)}` : ""}.`);
     lines.push("");
-    lines.push("Мероприятия:");
-    v.actions.forEach((a, i) => lines.push(`${i + 1}. ${a.label} (~${a.effortMin} мин)`));
+    lines.push("Мероприятия по установлению вентиляционного режима (РД-15-11-2007, п.40):");
+    v.actions.forEach((a, i) => {
+      const cmd = toRdCommand(a, a.objectName ?? "", a.isMainFan ?? false);
+      lines.push(`${i + 1}. «${cmd.text}»${cmd.underlineRed ? " [подчеркнуть красной чертой]" : ""}`);
+      lines.push(`   Ответственные: ${cmd.responsible}. Исполнители: ${cmd.executor}. (~${a.effortMin} мин)`);
+    });
+
+    // ── Вывод людей: главная графа оперативной части (Приложение 1, гр.3) ──
+    // Формулировки разные по сторонам от очага — это требование п.25, а не
+    // оформление: «до очага» выводят навстречу свежей струе, «за очагом» —
+    // только в изолирующих самоспасателях.
+    if (v.evacActions.length > 0) {
+      lines.push("");
+      lines.push("Пути и время выхода людей (РД-15-11-2007, п.25):");
+      v.evacActions.forEach((ea, i) => {
+        const zoneTag = ea.zone === "after" ? "ЗА ОЧАГОМ" : "до очага";
+        lines.push(`${i + 1}. ${ea.place} — ${ea.people} чел. [${zoneTag}], ${ea.timeMin.toFixed(0)} мин.`);
+        lines.push(`   ${ea.text}`);
+      });
+    }
+
     lines.push("");
-    lines.push(`Итог расчёта: не успевают выйти — ${v.peopleAtRisk}, в зоне задымления — ${v.peopleInSmoke}, требуется пункт переключения — ${v.peopleNeedSwitch}.`);
+    lines.push(`Итог расчёта: не успевают выйти — ${v.peopleAtRisk}, за очагом — ${v.peopleAfterFire}, в зоне задымления — ${v.peopleInSmoke}, требуется пункт переключения — ${v.peopleNeedSwitch}.`);
     lines.push(`Опрокинутых струй: ${v.reversedBranches}. Общее время на исполнение: ~${v.effortMin} мин.`);
     if (v.velocityViolations > 0) {
       lines.push(`ВНИМАНИЕ: в ${v.velocityViolations} выработках скорость воздуха выше допустимой — режим требует обоснования.`);
+    }
+    // Замечания по соответствию РД — основание утвердить режим или нет.
+    if (v.rdNotes.length > 0) {
+      lines.push("");
+      lines.push("Соответствие РД-15-11-2007:");
+      v.rdNotes.forEach(n => {
+        const mark = (n.kind === "required" || n.kind === "violation") ? "ВНИМАНИЕ" : "Справочно";
+        lines.push(`— ${mark} (${n.clause}): ${n.text}`);
+      });
     }
     const text = lines.join("\n");
 

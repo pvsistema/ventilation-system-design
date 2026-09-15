@@ -2,6 +2,9 @@ import { describe, it, expect } from "vitest";
 import { searchFireControl } from "@/lib/fireControl/search";
 import { collectActions, conflicts } from "@/lib/fireControl/candidates";
 import { applyActions } from "@/lib/fireControl/actions";
+import { computeFireZones } from "@/lib/fireZones";
+import { checkRdRules, hasRdProblem } from "@/lib/fireControl/rdRules";
+import { calcEvacuationRisk } from "@/lib/evacuationRisk";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 
@@ -260,4 +263,112 @@ describe("ядро подбора аварийного режима", () => {
     expect(report.stats.doorsTotal).toBe(2);
     expect(report.stats.hasFireSeat).toBe(true);
   }, 60000);
+
+  // ── РД-15-11-2007, п.25: «до очага» и «за очагом» ──────────────────────
+  // Струя идёт n0→n1→n2→n3→n4 (все расходы положительные, from→to).
+  // Очаг в b2 (n2→n3). Значит n3 и n4 — ЗА очагом, n1 и n2 — ДО очага.
+  it("п.25: зоны до/за очагом определяются по ходу струи", () => {
+    const z = computeFireZones(branches);
+    expect(z.hasFire).toBe(true);
+    expect(z.nodeZone.get("n2")).toBe("before");
+    expect(z.nodeZone.get("n1")).toBe("before");
+    expect(z.nodeZone.get("n3")).toBe("after");
+    expect(z.nodeZone.get("n4")).toBe("after");
+    // Сама ветвь очага всегда задымлена
+    expect(z.branchZone.get("b2")).toBe("after");
+  });
+
+  // Ключевое свойство: зона зависит от РЕЖИМА. Развернём струю — и люди,
+  // бывшие за очагом, окажутся до очага.
+  it("п.25: реверс струи переносит людей из-за очага в зону до очага", () => {
+    const reversed = new Map(branches.map(b => [b.id, -(b.flow ?? 20)]));
+    const z = computeFireZones(branches, reversed);
+    expect(z.nodeZone.get("n4")).toBe("before");
+    expect(z.nodeZone.get("n1")).toBe("after");
+  });
+
+  // Люди за очагом выводятся в самоспасателях — расчёт обязан это отражать.
+  it("п.25: расчёт эвакуации помечает людей за очагом", () => {
+    const r = calcEvacuationRisk(nodes, branches);
+    expect(r.error).toBeNull();
+    console.log("за очагом:", r.peopleAfterFire, "| до очага:", r.peopleBeforeFire);
+    expect(r.peopleAfterFire).toBe(12);
+    const row = r.rows.find(x => x.nodeId === "n4");
+    expect(row?.zone).toBe("after");
+    // Мероприятие по РД: именно «в изолирующих самоспасателях»
+    expect(row?.recommendation).toContain("изолирующих самоспасателях");
+  });
+
+  // ── РД п.46: скорости в самоспасателях ────────────────────────────────
+  // Наклонная выработка на подъём: без защиты человек идёт быстрее, чем
+  // в самоспасателе. Раньше время выхода за очагом считалось по скоростям
+  // «без ИДА» — и получалось заниженным.
+  it("п.46: за очагом время выхода считается по скоростям в самоспасателе", () => {
+    const steepNodes: TopoNode[] = [
+      node("s0", { atmosphereLink: true, peopleNodeType: "exit", z: 300 }),
+      node("s1", { z: 0 }),
+      node("s2", { z: 0, peopleNodeType: "workplace", peopleCount: 5, selfRescuerTime: 60 }),
+    ];
+    // b_up — крутой подъём 30°: по п.46 скорость 20 м/мин, без ИДА — 27 м/мин
+    const steepBranches: TopoBranch[] = [
+      branch("bf", "s1", "s2", { hasFire: true, fireHeatRelease: 5 }),
+      branch("bup", "s2", "s0", { angle: 30, length: 600 }),
+    ];
+    const r = calcEvacuationRisk(steepNodes, steepBranches);
+    const row = r.rows.find(x => x.nodeId === "s2");
+    expect(row?.zone).toBe("after");
+    // 600 м на подъём 30°: 600/20 = 30 мин (п.46), а не 600/27 ≈ 22 мин
+    console.log("время выхода за очагом:", row?.evacTime, "мин");
+    expect(row!.evacTime).toBeGreaterThan(25);
+  });
+
+  // ── РД п.30: правила выбора режима ────────────────────────────────────
+  it("п.30: пожар в стволе без реверса помечается как расхождение с РД", () => {
+    // Очаг переносим на ствол b0 — по РД здесь предписан реверс
+    const shaftFire = branches.map(b =>
+      b.id === "b0" ? { ...b, hasFire: true } : { ...b, hasFire: false });
+    const notes = checkRdRules({
+      branches: shaftFire, nodes, actions: [], reversedBranchCount: 0,
+    });
+    console.log("замечания РД:", notes.map(n => `[${n.clause}] ${n.text}`));
+    expect(hasRdProblem(notes)).toBe(true);
+    expect(notes.some(n => n.kind === "required")).toBe(true);
+  });
+
+  it("п.30: с реверсом расхождения нет", () => {
+    const shaftFire = branches.map(b =>
+      b.id === "b0" ? { ...b, hasFire: true } : { ...b, hasFire: false });
+    const notes = checkRdRules({
+      branches: shaftFire, nodes,
+      actions: [{ kind: "fan_reverse", branchId: "b0", label: "Реверсировать ВГП-1", effortMin: 2 }],
+      reversedBranchCount: 3,
+    });
+    expect(hasRdProblem(notes)).toBe(false);
+  });
+
+  // ── Вместимость убежища (РД п.25) ─────────────────────────────────────
+  // Раньше поле заполнялось в панели узла, но в расчёт не шло: «спасёнными»
+  // числились люди, которым в убежище не хватит места.
+  it("вместимость ПВП меньше числа людей — это не спасение", () => {
+    // Свежая струя только в t1 — ЗА очагом (ветвь tf), и путь туда долгий:
+    // 3000 м на подъём 30° = 150 мин по п.46. Самоспасателя на 10 мин мало,
+    // значит спасти может только ПВП — вот его вместимость и проверяется.
+    const tightNodes: TopoNode[] = [
+      node("t0", { atmosphereLink: true, peopleNodeType: "exit", z: 500 }),
+      node("t1", { z: 0 }),
+      node("t2", { z: 0, peopleNodeType: "workplace", peopleCount: 20, selfRescuerTime: 10 }),
+      node("t3", { z: 0, peopleNodeType: "switchpoint", refugeCapacity: 5 }),
+    ];
+    const tightBranches: TopoBranch[] = [
+      branch("tf", "t1", "t2", { hasFire: true, fireHeatRelease: 5, angle: -30, length: 3000 }),
+      branch("tlong", "t2", "t0", { angle: 20, length: 2000 }),
+      branch("tsp", "t2", "t3", { length: 50 }),
+    ];
+    const r = calcEvacuationRisk(tightNodes, tightBranches);
+    const row = r.rows.find(x => x.nodeId === "t2");
+    console.log("вердикт:", row?.level, "|", row?.recommendation);
+    // 20 человек в ПВП на 5 мест — не «нужен ПВП», а критично
+    expect(row?.level).toBe("critical");
+    expect(row?.recommendation).toContain("Мест не хватает");
+  });
 });

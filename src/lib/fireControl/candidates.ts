@@ -190,12 +190,14 @@ export function collectActions(input: CandidateInput, stats?: CandidateStats): F
       actions.push({
         kind: "fan_reverse", branchId: b.id,
         label: `Реверсировать вентилятор ${where}`,
+        objectName: where, isMainFan: isMain,
         effortMin: EFFORT.fanReverse,
       });
     }
     actions.push({
       kind: "fan_stop", branchId: b.id,
       label: `Остановить вентилятор ${where}`,
+      objectName: where, isMainFan: isMain,
       effortMin: EFFORT.fanStop,
     });
 
@@ -208,6 +210,7 @@ export function collectActions(input: CandidateInput, stats?: CandidateStats): F
         actions.push({
           kind: "fan_rpm", branchId: b.id, rpm, prevRpm: b.fanRpm,
           label: `Снизить обороты ${where} до ${rpm} об/мин`,
+          objectName: where, isMainFan: isMain,
           effortMin: EFFORT.fanRpm,
         });
       }
@@ -234,6 +237,7 @@ export function collectActions(input: CandidateInput, stats?: CandidateStats): F
         kind: "door_close", branchId: b.id, symbolId: s.id,
         windowArea: 0, prevWindowArea: now,
         label: `Закрыть дверь ${where}`,
+        objectName: where,
         effortMin: effort,
       });
     }
@@ -244,6 +248,7 @@ export function collectActions(input: CandidateInput, stats?: CandidateStats): F
         kind: "door_open", branchId: b.id, symbolId: s.id,
         windowArea: area, prevWindowArea: now,
         label: `Открыть дверь ${where}`,
+        objectName: where,
         effortMin: effort,
       });
       // Промежуточное положение окна: половина сечения. Регулятор редко
@@ -255,6 +260,7 @@ export function collectActions(input: CandidateInput, stats?: CandidateStats): F
           kind: "window_set", branchId: b.id, symbolId: s.id,
           windowArea: half, prevWindowArea: now,
           label: `Открыть окно ${where} на ${half} м²`,
+          objectName: where,
           effortMin: effort,
         });
       }

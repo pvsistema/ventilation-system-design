@@ -17,8 +17,9 @@
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import { runFireMode, type FireModeRunParams } from "@/lib/fireModeRun";
-import { calcEvacuationRisk, type EvacRiskOptions } from "@/lib/evacuationRisk";
+import { calcEvacuationRisk, type EvacRiskOptions, type EvacRiskRow } from "@/lib/evacuationRisk";
 import { applyActions, totalEffort, describeActions, type FireAction } from "./actions";
+import { checkRdRules, hasRdProblem, type RdNote } from "./rdRules";
 
 /** Что подставить в расчёт помимо самих действий. */
 export interface EvaluateContext {
@@ -44,6 +45,26 @@ export interface EvaluateContext {
   };
 }
 
+/**
+ * Строка «Пути и время выхода людей» для оперативной части ПЛА
+ * (РД-15-11-2007, Приложение 1, графа 3).
+ *
+ * Собирается из расчёта, а не пишется вручную: переписывание маршрутов
+ * в план — источник ошибок, а время выхода там обязано совпадать с расчётным.
+ */
+export interface EvacActionLine {
+  /** Рабочее место. */
+  place: string;
+  /** Людей, чел. */
+  people: number;
+  /** До очага / за очагом / вне струи. */
+  zone: "before" | "after" | "aside";
+  /** Текст мероприятия по п.25 — как его записывают в план. */
+  text: string;
+  /** Время выхода, мин. */
+  timeMin: number;
+}
+
 /** Итог одного варианта — то, что показывается строкой в окне. */
 export interface VariantResult {
   /** Набор действий варианта. Пустой — это исходное состояние. */
@@ -56,6 +77,19 @@ export interface VariantResult {
   peopleInSmoke: number;
   /** Людей, спасаемых пунктом переключения. */
   peopleNeedSwitch: number;
+  /**
+   * Людей ЗА очагом пожара (РД п.25) — их выводят только в изолирующих
+   * самоспасателях через дым. Зависит от режима: реверс переворачивает струю
+   * и может перевести людей в зону «до очага», где выход идёт по свежему
+   * воздуху. Поэтому показатель участвует и в сравнении вариантов.
+   */
+  peopleAfterFire: number;
+  /** Людей ДО очага — выходят навстречу свежей струе. */
+  peopleBeforeFire: number;
+  /** Замечания по соответствию РД-15-11-2007 (п.29, п.30). */
+  rdNotes: RdNote[];
+  /** Мероприятия по выводу людей — готовый текст для оперативной части ПЛА. */
+  evacActions: EvacActionLine[];
   /** Выработок с превышением допустимой скорости воздуха. */
   velocityViolations: number;
   /** Ветви с превышением — для подсветки на схеме. */
@@ -105,6 +139,36 @@ function countVelocityViolations(
 }
 
 /**
+ * Мероприятия по выводу людей — дословно по РД-15-11-2007, п.25.
+ *
+ * Формулировки разные по сторонам от очага, и это не стилистика:
+ *   • до очага — «навстречу свежей струе к выходу на поверхность»;
+ *   • за очагом — «в изолирующих самоспасателях кратчайшим путём в выработки
+ *     со свежей струёй и далее на поверхность».
+ * Именно такой текст ждут в оперативной части плана.
+ */
+function buildEvacActions(rows: EvacRiskRow[]): EvacActionLine[] {
+  return rows.map(r => {
+    const place = r.description || r.nodeName || `узел № ${r.nodeNumber}`;
+    let text: string;
+    if (r.zone === "after") {
+      const via = r.freshAirNodeName !== "—"
+        ? `в «${r.freshAirNodeName}» (${r.freshAirTime.toFixed(0)} мин)`
+        : "в ближайшие выработки со свежей струёй";
+      text = `Включиться в изолирующие самоспасатели, выходить кратчайшим путём ${via}, `
+        + `далее на поверхность через «${r.exitName}».`;
+    } else {
+      text = `Выходить навстречу свежей струе к выходу на поверхность через «${r.exitName}».`;
+    }
+    if (r.level === "needs-switch" && r.switchPointName !== "—") {
+      text += ` Переключение в новый самоспасатель в «${r.switchPointName}» `
+        + `(${r.switchPointTime.toFixed(0)} мин).`;
+    }
+    return { place, people: r.peopleCount, zone: r.zone, text, timeMin: r.evacTime };
+  });
+}
+
+/**
  * Посчитать один вариант: применить действия, прогнать пожар, оценить вывод.
  *
  * Возвращает failed=true, если сеть не сошлась. Такой вариант не отбрасывается
@@ -140,6 +204,8 @@ export async function evaluateVariant(
       ...base,
       peopleAtRisk: Number.POSITIVE_INFINITY,
       peopleInSmoke: 0, peopleNeedSwitch: 0,
+      peopleAfterFire: 0, peopleBeforeFire: 0,
+      rdNotes: [], evacActions: [],
       velocityViolations: 0, violationBranchIds: [],
       reversedBranches: 0,
       flows: new Map(), smokeByBranch: new Map(),
@@ -165,6 +231,12 @@ export async function evaluateVariant(
 
   const evac = calcEvacuationRisk(ctx.nodes, branchesAfter, ctx.evacOptions);
   const velocity = countVelocityViolations(branchesAfter, fire.flows);
+  const rdNotes = checkRdRules({
+    branches: branchesAfter,
+    nodes: ctx.nodes,
+    actions,
+    reversedBranchCount: fire.result.reversedBranches.size,
+  });
 
   const smokeByBranch = new Map<string, number>();
   for (const [id, fr] of fire.result.branches) {
@@ -181,6 +253,10 @@ export async function evaluateVariant(
     peopleAtRisk:     evac.error ? 0 : evac.peopleAtRisk,
     peopleInSmoke:    evac.error ? 0 : evac.peopleInSmoke,
     peopleNeedSwitch: evac.error ? 0 : evac.peopleNeedSwitch,
+    peopleAfterFire:  evac.error ? 0 : evac.peopleAfterFire,
+    peopleBeforeFire: evac.error ? 0 : evac.peopleBeforeFire,
+    rdNotes,
+    evacActions: evac.error ? [] : buildEvacActions(evac.rows),
     velocityViolations: velocity.count,
     violationBranchIds: velocity.ids,
     reversedBranches: fire.result.reversedBranches.size,
@@ -195,16 +271,26 @@ export async function evaluateVariant(
  *
  * Порядок приоритетов задан не вкусом, а смыслом аварийного плана:
  *   1. люди, не успевающие выйти — это жизни, здесь компромиссов нет;
- *   2. нарушения допустимой скорости — режим с ними не утвердят;
- *   3. люди в зоне задымления — отравление даже при успешном выходе;
- *   4. трудоёмкость — при прочих равных берём то, что успеют сделать;
- *   5. число действий — короткая команда исполняется без ошибок.
+ *   2. люди ЗА ОЧАГОМ (РД п.25) — их выводят через дым в самоспасателях,
+ *      и режим, уводящий их на свежую струю, объективно лучше даже при
+ *      одинаковом числе «не успевающих»;
+ *   3. расхождение с предписаниями РД п.30 — такой режим не утвердят;
+ *   4. нарушения допустимой скорости — тоже основание не утвердить;
+ *   5. люди в зоне задымления — отравление даже при успешном выходе;
+ *   6. трудоёмкость — при прочих равных берём то, что успеют сделать;
+ *   7. число действий — короткая команда исполняется без ошибок.
  *
  * Несошедшийся вариант всегда хуже любого сошедшегося.
  */
 export function compareVariants(a: VariantResult, b: VariantResult): number {
   if (a.failed !== b.failed) return a.failed ? 1 : -1;
   if (a.peopleAtRisk !== b.peopleAtRisk) return a.peopleAtRisk - b.peopleAtRisk;
+  if (a.peopleAfterFire !== b.peopleAfterFire) {
+    return a.peopleAfterFire - b.peopleAfterFire;
+  }
+  const aRd = hasRdProblem(a.rdNotes) ? 1 : 0;
+  const bRd = hasRdProblem(b.rdNotes) ? 1 : 0;
+  if (aRd !== bRd) return aRd - bRd;
   if (a.velocityViolations !== b.velocityViolations) {
     return a.velocityViolations - b.velocityViolations;
   }

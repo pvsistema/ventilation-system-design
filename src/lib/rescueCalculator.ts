@@ -585,10 +585,59 @@ export function calcRescue(
 //           ФНиП №467 (угольные шахты)
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Способ расчёта скорости движения людей.
+ *
+ * «rd» / «fnip» — движение БЕЗ средств защиты (обычный выход по свежей струе).
+ * «rescuer» — движение В ИЗОЛИРУЮЩЕМ САМОСПАСАТЕЛЕ по загазованным выработкам,
+ * таблица РД-15-11-2007 п.46. Это принципиально другие, гораздо меньшие числа:
+ * на подъёме 60° и круче — 5 м/мин против 14 «без ИДА». Раньше время выхода
+ * за очагом считалось по скоростям без защиты и сравнивалось со сроком действия
+ * самоспасателя — то есть «шли» налегке, а «дышали» самоспасателем.
+ */
+export type WorkerSpeedMethod = "rd" | "fnip" | "rescuer";
+
+/**
+ * Скорости передвижения в изолирующих самоспасателях, м/мин.
+ * Источник: РД-15-11-2007, п.46, таблица.
+ *
+ *   горизонтальные выработки высотой 1,8–2,0 м ......... 60
+ *   наклонные и вертикальные, подъём:  10° 45 · 20° 30 · 30° 20 · ≥60° 5
+ *   наклонные и вертикальные, спуск:   10° 60 · 20° 40 · 30° 25 · ≥60° 7
+ *
+ * Между узлами таблицы — линейная интерполяция: реальные выработки редко
+ * имеют ровно 10 или 20 градусов, а ступенчатый переход давал бы скачок
+ * времени выхода на сотые доли градуса.
+ */
+function getSelfRescuerSpeed(angleDeg: number): number {
+  const a = Math.min(90, Math.abs(angleDeg));
+  const isDown = angleDeg < 0;
+  // [угол, подъём, спуск]; 0° — горизонт, общий для обоих направлений
+  const table: [number, number, number][] = [
+    [0,  60, 60],
+    [10, 45, 60],
+    [20, 30, 40],
+    [30, 20, 25],
+    [60,  5,  7],
+    [90,  5,  7],
+  ];
+  for (let i = 0; i < table.length - 1; i++) {
+    const [a0, u0, d0] = table[i];
+    const [a1, u1, d1] = table[i + 1];
+    if (a >= a0 && a <= a1) {
+      const t = a1 > a0 ? (a - a0) / (a1 - a0) : 0;
+      return isDown ? d0 + t * (d1 - d0) : u0 + t * (u1 - u0);
+    }
+  }
+  return isDown ? 7 : 5;
+}
+
 // Скорости горнорабочего (м/мин) — без ИДА, аварийная обстановка
 // Источник: РД 15-11-2007, Приложение 4, таблица нормативных скоростей движения
 // (согласованы с Аэросетью / ВНИМИ: горизонт = 60 м/мин, подъём 8° = 80 м/мин)
-function getWorkerSpeed(method: "rd" | "fnip", angleDeg: number): number {
+function getWorkerSpeed(method: WorkerSpeedMethod, angleDeg: number): number {
+  // Движение в самоспасателе — своя нормативная таблица (п.46).
+  if (method === "rescuer") return getSelfRescuerSpeed(angleDeg);
   const a = Math.abs(angleDeg);
   const isDown = angleDeg < 0;
   if (method === "rd") {
@@ -657,7 +706,7 @@ export interface WorkerPathResult {
   startNodeId: string;
   targetNodeId: string;
   waypointNodeIds: string[];
-  method: "rd" | "fnip";
+  method: WorkerSpeedMethod;
   segments: WorkerSegment[];
   totalTimeForward: number;  // мин
   totalTimeBack: number;     // мин
@@ -672,7 +721,7 @@ export function calcWorkerPath(
   branches: TopoBranchLite[],
   startNodeId: string,
   targetNodeId: string,
-  method: "rd" | "fnip",
+  method: WorkerSpeedMethod,
   waypointNodeIds: string[] = [],
 ): WorkerPathResult {
   const warnings: string[] = [];
