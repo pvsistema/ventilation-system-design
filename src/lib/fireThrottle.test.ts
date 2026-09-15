@@ -17,7 +17,7 @@
 import { describe, it, expect } from "vitest";
 import {
   throttleFactor, applyFireThrottle, meanTempFromFlowDrop, firePowerFromFlowDrop,
-  THROTTLE_MAX_RATIO,
+  THROTTLE_MAX_RATIO, DEFAULT_THROTTLE,
 } from "@/lib/fireThrottle";
 import {
   limitPowerByOxygen, oxygenLimitedPower_MW, oxygenDeficitCoFactor,
@@ -32,8 +32,34 @@ const LAB = { before: 2.71, during: 2.18, recovered: 2.71, reversed: 0.59, grown
 /** Сечение гофры Ø160 мм, м². */
 const LAB_AREA = Math.PI * 0.16 * 0.16 / 4;
 const AMBIENT = 20;
+/** Поправка включена явно — для тестов САМОЙ формулы.
+ *  По умолчанию она выключена (двойной учёт нагрева, см. fireThrottle.ts). */
+const ON = { enabled: true };
 
 describe("тепловой дроссель", () => {
+
+  it("по умолчанию поправка ВЫКЛЮЧЕНА (двойной учёт нагрева)", () => {
+    // Решатель уже учитывает расширение горячего воздуха через плотность в
+    // естественной тяге: ρ = 353/(273+T). Отношение плотностей ρ₀/ρ равно
+    // отношению абсолютных температур T/T₀ — это одна и та же величина.
+    // Множитель на сопротивление вводил бы нагрев второй раз и ломал расчёт
+    // опрокидывания на восходящем проветривании.
+    expect(DEFAULT_THROTTLE.enabled).toBe(false);
+
+    // Наглядно: обе величины совпадают до шестого знака.
+    const T0 = 20, T = 237;
+    const rhoRatio = (353 / (273 + T0)) / (353 / (273 + T));
+    const tempRatio = (273 + T) / (273 + T0);
+    expect(rhoRatio).toBeCloseTo(tempRatio, 6);
+  });
+
+  it("с настройками по умолчанию сеть не трогается", () => {
+    const branches = [{ id: "b1", fromId: "n1", toId: "n2", resistance: 0.5 }];
+    // Вызов без явных опций — так его делает расчёт пожара.
+    const res = applyFireThrottle(branches, { n1: 600, n2: 400 }, 20);
+    expect(res.branches).toBe(branches);
+    expect(res.applied).toHaveLength(0);
+  });
 
   it("выключенная поправка не меняет сопротивление", () => {
     // Ключевая гарантия: нормативный расчёт остаётся прежним.
@@ -46,17 +72,17 @@ describe("тепловой дроссель", () => {
 
   it("множитель равен отношению абсолютных температур", () => {
     // T = 180 °C при фоне 20 °C → (180+273,15)/(20+273,15) = 1,546
-    const k = throttleFactor(180, 20);
+    const k = throttleFactor(180, 20, ON);
     expect(k).toBeCloseTo(453.15 / 293.15, 6);
   });
 
   it("холодный газ сопротивление не снижает", () => {
-    expect(throttleFactor(10, 20)).toBe(1);
-    expect(throttleFactor(20, 20)).toBe(1);
+    expect(throttleFactor(10, 20, ON)).toBe(1);
+    expect(throttleFactor(20, 20, ON)).toBe(1);
   });
 
   it("множитель ограничен сверху", () => {
-    expect(throttleFactor(5000, 20)).toBe(THROTTLE_MAX_RATIO);
+    expect(throttleFactor(5000, 20, ON)).toBe(THROTTLE_MAX_RATIO);
   });
 
   it("частично прогретая ветвь дросселируется слабее", () => {
@@ -71,7 +97,7 @@ describe("тепловой дроссель", () => {
       { id: "hot",  fromId: "n1", toId: "n2", resistance: 1 },
       { id: "cold", fromId: "n3", toId: "n4", resistance: 1 },
     ];
-    const res = applyFireThrottle(branches, { n1: 300, n2: 300 }, 20);
+    const res = applyFireThrottle(branches, { n1: 300, n2: 300 }, 20, ON);
     expect(res.applied.map(a => a.branchId)).toEqual(["hot"]);
     expect(res.branches[1].resistance).toBe(1);
   });
@@ -98,14 +124,14 @@ describe("тепловой дроссель", () => {
   it("фаза 1: дроссель объясняет падение расхода при постоянном напоре", () => {
     // Q ∝ 1/√R. Рост сопротивления в 1,546 раза даёт падение расхода
     // в √1,546 = 1,243 раза: 2,71 / 1,243 = 2,18 — ровно замер.
-    const k = throttleFactor(180, AMBIENT);
+    const k = throttleFactor(180, AMBIENT, ON);
     const qAfter = LAB.before / Math.sqrt(k);
     expect(qAfter).toBeCloseTo(LAB.during, 1);
   });
 
   it("прямая и обратная задачи согласованы", () => {
     const T = meanTempFromFlowDrop(LAB.before, LAB.during, AMBIENT)!;
-    const k = throttleFactor(T, AMBIENT);
+    const k = throttleFactor(T, AMBIENT, ON);
     expect(LAB.before / Math.sqrt(k)).toBeCloseTo(LAB.during, 6);
   });
 });
