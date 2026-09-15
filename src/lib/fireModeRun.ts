@@ -46,6 +46,22 @@ const FIRE_Q_TOL_REL = 0.01;
  * численным шумом решателя.
  */
 const FIRE_Q_TOL_MIN = 0.002;
+/**
+ * Признак стагнации: во сколько раз должна убывать невязка, чтобы итерации
+ * считались продуктивными.
+ *
+ * Если очередной пересчёт уменьшил max|ΔQ| менее чем на 10 %, процесс уже не
+ * уточняет результат, а топчется на численном шуме решателя. Дальше гонять
+ * сеть бессмысленно: на устойчивых схемах это давало лишние 8–10 сетевых
+ * расчётов, которые не меняли ни одной цифры.
+ *
+ * Критерий сходимости (tol) при этом НЕ ослаблен — он остаётся прежним.
+ * Здесь закрывается ровно противоположный случай: расчёт не сходится по
+ * допуску, но и не улучшается.
+ */
+const FIRE_STAGNATION_RATIO = 0.9;
+/** Сколько подряд непродуктивных итераций считать стагнацией. */
+const FIRE_STAGNATION_STREAK = 2;
 
 export interface FireModeRunParams {
   branches: TopoBranch[];
@@ -117,6 +133,38 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
   const oxygenLimitedSeats = new Map<string, { wanted: number; limit: number; flow: number }>();
   /** Ветви, прогретые дымом: их сопротивление выросло (тепловой дроссель). */
   let throttledBranches: ThrottleBranchResult[] = [];
+
+  /**
+   * Отпечаток исходных данных для решателя с предыдущей итерации.
+   *
+   * ЗАЧЕМ. Решатель — чистая функция: на одинаковых входных данных он вернёт
+   * одинаковые расходы. Когда температуры узлов и сопротивления ветвей между
+   * итерациями перестали меняться, очередной вызов заведомо даст тот же
+   * результат — а это полный расчёт сети, то есть запрос на сервер и заметная
+   * пауза. Сравнив отпечаток, такой вызов можно пропустить целиком.
+   *
+   * В отпечаток входит ровно то, что влияет на ответ решателя: сопротивление
+   * ветви (его меняет дроссель), тепловая депрессия и температуры узлов.
+   */
+  let prevSolveKey = "";
+  /** Невязка предыдущей итерации — для обнаружения стагнации. */
+  let prevMaxDQ: number | null = null;
+  /** Сколько подряд итераций невязка не убывает. */
+  let stagnationStreak = 0;
+  const solveKey = (
+    brs: TopoBranch[],
+    hot: Record<string, number>,
+  ): string => {
+    // Числа округляем: различия в тысячных долях лежат внутри погрешности
+    // решателя и на расходы не влияют, а из-за них отпечаток никогда бы
+    // не совпал и оптимизация не работала.
+    const b = brs.map(x =>
+      `${x.id}:${(x.resistance ?? 0).toFixed(6)}:${(x.fireThermalDepression ?? 0).toFixed(3)}`,
+    ).join("|");
+    const h = Object.keys(hot).sort()
+      .map(k => `${k}:${hot[k].toFixed(2)}`).join("|");
+    return `${b}#${h}`;
+  };
 
   // Исходные расходы ДО пожара — сохраняем для обнаружения опрокидывания
   const originalFlows = new Map<string, number>(branches.map(b => [b.id, b.flow ?? 0]));
@@ -233,6 +281,17 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
     const throttleRes = applyFireThrottle(branchesWithHt, hotNodeTemps, AMBIENT_TEMP, throttle);
     throttledBranches = throttleRes.applied;
 
+    // Исходные данные для решателя те же, что на прошлой итерации? Тогда и
+    // расходы он вернёт те же — считать нечего, процесс сошёлся. Это главный
+    // источник ускорения: на устойчивых схемах температуры и сопротивления
+    // замирают уже на 2–3 итерации, а сеть пересчитывалась до упора.
+    const key = solveKey(throttleRes.branches, hotNodeTemps);
+    if (key === prevSolveKey) {
+      log(`  Итерация ${iter + 1}: исходные данные не изменились — расчёт сети сошёлся`);
+      break;
+    }
+    prevSolveKey = key;
+
     // Шаг D: пересчитать сеть с горячими узлами
     const newFlows = await solveIteration(throttleRes.branches, AMBIENT_TEMP, hotNodeTemps);
     if (newFlows.size === 0) break; // ошибка сети — прерываем
@@ -283,6 +342,26 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
 
     currentFlows = nextFlows;
     if (maxDQ < tol) break;
+
+    // ── Выход по стагнации ───────────────────────────────────────────────
+    // Невязка перестала убывать — итерации больше не уточняют результат, а
+    // повторяют численный шум решателя. Каждая такая итерация стоит полного
+    // расчёта сети, поэтому дальше идти незачем: цифры уже не изменятся.
+    //
+    // Важно: это НЕ ослабление критерия сходимости. Если расчёт сходится, он
+    // выйдет строкой выше по допуску tol. Здесь закрывается случай, когда
+    // сходимости нет и не будет.
+    if (prevMaxDQ !== null && maxDQ > prevMaxDQ * FIRE_STAGNATION_RATIO) {
+      stagnationStreak += 1;
+      if (stagnationStreak >= FIRE_STAGNATION_STREAK) {
+        log(`  Невязка перестала убывать (${maxDQ.toFixed(3)} м³/с) — расчёт остановлен: ` +
+            `дальнейшие пересчёты результат не уточняют`);
+        break;
+      }
+    } else {
+      stagnationStreak = 0;
+    }
+    prevMaxDQ = maxDQ;
   }
 
   // ── Журнал поправок ───────────────────────────────────────────────────
