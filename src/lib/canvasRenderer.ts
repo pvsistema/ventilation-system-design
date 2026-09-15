@@ -10,6 +10,7 @@ import { type UnitsConfig, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "./branchLabelExtras";
 import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
+import { buildTube, shadeColor, shouldDrawTube, TUBE_MAX_COUNT } from "./tube3d";
 
 /**
  * Порог переключения SVG → Canvas по числу видимых ветвей.
@@ -245,6 +246,16 @@ export interface CanvasRenderOptions {
    * фактической модели, а ошибка ввода сечения ничем себя не выдаёт.
    */
   widthBySection?: boolean;
+  /**
+   * Объёмный вид выработок: вместо линии рисуется «труба» по реальному сечению
+   * (ширина, высота, форма свода). Работает только в 3D-ракурсах — на плане
+   * труба смотрится точно как линия, а стоит дороже.
+   *
+   * Объём включается не для всех выработок сразу: он дороже линии примерно
+   * вчетверо, поэтому рисуется только вблизи и только для тех, что реально
+   * видны на экране (см. tube3d.ts — TUBE_MAX_COUNT и shouldDrawTube).
+   */
+  tube3d?: boolean;
   /** Масштаб по осям XY — нужен для нормализации objSF при реальных координатах */
   xyScale?: number;
   /** ID ветвей, загрязнённых воздухом (pollutesAir + все ниже по потоку) — стрелки синие */
@@ -611,6 +622,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     posInnerColors, posOuterColors, printMode = false, transparentBg = false,
     nodeLodThresholds,
     fixedObjectScale = false, scaleLimits, widthBySection = false,
+    tube3d = false,
     pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
     rescuePathNodeIds, rescueNodeLetters,
@@ -621,6 +633,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // Поля ниже сейчас не используются в рендере, но деструктурированы явно
     // чтобы при случайном обращении к ним не было ReferenceError.
     nodes: _nodes, horizons: _horizons,
+    // zScale нужен объёмному виду: сечение растягивается по вертикали так же,
+    // как и вся схема, иначе труба «оторвётся» от своей осевой линии.
     zScale: _zScale, zLevel: _zLevel,
   } = opts;
 
@@ -995,9 +1009,65 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // всех заливок слоя окрашенные ветви дорисовывают свои КОНЦЫ поверх белых
   // (см. «ПОДПРОХОД: концы окрашенных ветвей»). Так и глубина сохраняется,
   // и окраска в узлах не теряется.
+  // ── ПОДПРОХОД: ОБЪЁМНЫЙ ВИД (трубы) ──────────────────────────────────────
+  // Выработки, для которых включён объём, рисуются здесь и ПРОПУСКАЮТСЯ в
+  // обычной заливке ниже — иначе плоская линия легла бы поверх трубы.
+  //
+  // Условия, при которых объём вообще имеет смысл:
+  //   • включён переключатель и вид 3D (на плане труба = линия, но дороже);
+  //   • выработка на экране достаточно длинная и толстая (shouldDrawTube);
+  //   • не превышен лимит труб на кадр — дальше выигрыш в наглядности
+  //     исчезает, а стоимость растёт линейно.
+  const tubeDrawn = new Set<string>();
+  if (tube3d && is3D && !thinLines) {
+    const _xyT = xyScale ?? 1;
+    const _zT = _zScale ?? 1;
+    let budget = TUBE_MAX_COUNT;
+    for (const { b } of group) {
+      if (budget <= 0) break;
+      const p = bParamsMap.get(b.id);
+      if (!p || p.isDead || p.isLeakage || b.isVentPipeBranch) continue;
+      // Ширина трубы на экране: сечение (м) × масштаб плана × масштаб вида.
+      const secW = b.shape === "round" ? (b.diameter ?? 0) : (b.rectWidth ?? 0);
+      const screenW = secW * _xyT * view.scale;
+      if (!shouldDrawTube(p.segLen, screenW)) continue;
+
+      const fn = p.fromNode, tn = p.toNode;
+      if (!fn || !tn) continue;
+      const geom = buildTube(
+        b,
+        { x: fn.x * _xyT, y: fn.y * _xyT, z: fn.z * _zT },
+        { x: tn.x * _xyT, y: tn.y * _xyT, z: tn.z * _zT },
+        proj, _xyT, _zT,
+      );
+      if (!geom) continue;
+
+      for (const s of geom.strips) {
+        const q = s.pts;
+        ctx.beginPath();
+        ctx.moveTo(q[0], q[1]); ctx.lineTo(q[2], q[3]);
+        ctx.lineTo(q[4], q[5]); ctx.lineTo(q[6], q[7]);
+        ctx.closePath();
+        ctx.fillStyle = shadeColor(p.color, s.shade);
+        ctx.fill();
+        // Тонкая грань между полосами — иначе на светлых цветах труба
+        // выглядит плоским пятном.
+        if (p.bwBorder > 0) {
+          ctx.strokeStyle = "rgba(31,41,55,0.35)";
+          ctx.lineWidth = 0.6;
+          ctx.stroke();
+        }
+      }
+      tubeDrawn.add(b.id);
+      budget--;
+    }
+  }
+
   for (const { b } of group) {
     const p = bParamsMap.get(b.id);
     if (!p) continue;
+    // Выработка уже нарисована объёмом — плоскую линию поверх не кладём.
+    if (tubeDrawn.has(b.id)) continue;
     const { isSel, isDead, isLeakage, Q, V, overV,
       sxA, syA, sxB, syB, midX, midY, color, w,
       flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle } = p;

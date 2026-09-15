@@ -1488,6 +1488,10 @@ export default function CadPage() {
   // С включённой настройкой ширина линии идёт от сечения — схема сразу
   // читается как план горных работ, а промахи видно глазом.
   const [widthBySectionOn, setWidthBySectionOn] = useState(false);
+  // Объёмный вид выработок: вместо линии — «труба» по реальному сечению.
+  // Работает только в 3D-ракурсах и только вблизи (см. tube3d.ts): объём
+  // дороже линии примерно вчетверо, поэтому на полной схеме он не включается.
+  const [tube3dOn, setTube3dOn] = useState(false);
   // Пределы масштаба маркеров «Позиции ПЛА» (в % от нормального размера), как у ветвей/текста.
   const [scalePositionMin, setScalePositionMin] = useState(80);
   const [scalePositionMax, setScalePositionMax] = useState(150);
@@ -3110,6 +3114,7 @@ export default function CadPage() {
     textBlocks,
     scaleLimitsEnabled,
     widthBySectionOn,
+    tube3dOn,
     scaleBranchMin,
     scaleBranchMax,
     scalePositionMin,
@@ -3684,6 +3689,7 @@ export default function CadPage() {
     if (data.xyScale !== undefined) setXyScale(data.xyScale as number);
     if (data.scaleLimitsEnabled !== undefined) setScaleLimitsEnabled(data.scaleLimitsEnabled as boolean);
     if (data.widthBySectionOn !== undefined) setWidthBySectionOn(data.widthBySectionOn as boolean);
+    if (data.tube3dOn !== undefined) setTube3dOn(data.tube3dOn as boolean);
     if (data.scaleBranchMin !== undefined) setScaleBranchMin(data.scaleBranchMin as number);
     if (data.scaleBranchMax !== undefined) setScaleBranchMax(data.scaleBranchMax as number);
     if (data.scalePositionMin !== undefined) setScalePositionMin(data.scalePositionMin as number);
@@ -11957,6 +11963,7 @@ export default function CadPage() {
                 branchMin: scaleBranchMin, branchMax: scaleBranchMax,
               } : undefined}
               widthBySection={widthBySectionOn}
+              tube3d={tube3dOn}
               bulkheadScale={bulkheadScale}
               fanScale={fanScale}
               colorByHorizon={colorMode === "horizon"}
@@ -14156,6 +14163,8 @@ export default function CadPage() {
       setScaleBranchMax={setScaleBranchMax}
       widthBySectionOn={widthBySectionOn}
       setWidthBySectionOn={setWidthBySectionOn}
+      tube3dOn={tube3dOn}
+      setTube3dOn={setTube3dOn}
       scalePositionMin={scalePositionMin}
       setScalePositionMin={setScalePositionMin}
       scalePositionMax={scalePositionMax}

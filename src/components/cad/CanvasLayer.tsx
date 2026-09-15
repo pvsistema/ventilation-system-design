@@ -75,6 +75,8 @@ interface CanvasLayerProps {
   };
   /** Ширина ветви зависит от площади её сечения. */
   widthBySection?: boolean;
+  /** Объёмный вид выработок (труба по реальному сечению) — только в 3D. */
+  tube3d?: boolean;
   pollutedBranchIds?: Set<string>;
   xyScale?: number;
   /** Пороги авто-скрытия узлов при отдалении (настройка «Видимость узлов») */
@@ -232,6 +234,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         fixedObjectScale: p.fixedObjectScale,
         scaleLimits: p.scaleLimits,
         widthBySection: p.widthBySection,
+        tube3d: p.tube3d,
         pollutedBranchIds: p.pollutedBranchIds,
         xyScale: p.xyScale,
         nodeLodThresholds: p.nodeLodThresholds,
@@ -340,6 +343,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.infoConfig, props.unitsConfig,
     props.waterNodeResults, props.waterBranchResults, props.branchFireColors, props.branchExplosionColors,
     props.reversedBranchIds, props.fixedObjectScale, props.pollutedBranchIds,
+    props.tube3d,
     props.transparentBg,
     props.compareBranchColors,
     props.colorMode, props.sectionColors, props.flowColorMin, props.flowColorMax, props.flowColorHue,

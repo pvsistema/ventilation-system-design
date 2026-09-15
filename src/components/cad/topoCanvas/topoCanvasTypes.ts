@@ -88,6 +88,8 @@ export interface Props {
    * Пределы берутся из scaleLimits.branchMin/branchMax.
    */
   widthBySection?: boolean;
+  /** Объёмный вид выработок (труба по реальному сечению) — только в 3D. */
+  tube3d?: boolean;
   /** Масштаб перемычек в % от ширины ветви (150 = 1.5× ширины ветви). */
   bulkheadScale?: number;
   /** Масштаб вентиляторов в % от ширины ветви (450 = 4.5× ширины ветви). */

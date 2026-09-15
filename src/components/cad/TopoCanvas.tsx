@@ -55,7 +55,7 @@ export default function TopoCanvas(props: Props) {
     onNodeAdd, onNodeMove, onNodeDragStart, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", animSpeed = 1, workPlane,
     horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, canvasThreshold = CANVAS_THRESHOLD, scaleLimits,
-    widthBySection = false,
+    widthBySection = false, tube3d = false,
     bulkheadScale = 150,
     fanScale = 450,
     colorByHorizon = false, showFlowArrows = false, pollutionThreshold,
@@ -1708,6 +1708,7 @@ export default function TopoCanvas(props: Props) {
           fixedObjectScale={fixedObjectScale}
           scaleLimits={scaleLimits}
           widthBySection={widthBySection}
+          tube3d={tube3d}
           colorByHorizon={colorByHorizon}
           showFlowArrows={showFlowArrows}
           flowDisplay={flowDisplay}

@@ -35,6 +35,7 @@ export interface CadModalsProps {
   scaleBranchMax: number; setScaleBranchMax: (v: number) => void;
   /** Ширина ветви зависит от площади её сечения (см. branchWidthBySection.ts). */
   widthBySectionOn: boolean; setWidthBySectionOn: (v: boolean) => void;
+  tube3dOn: boolean; setTube3dOn: (v: boolean) => void;
   scalePositionMin: number; setScalePositionMin: (v: number) => void;
   scalePositionMax: number; setScalePositionMax: (v: number) => void;
   positionGostMm: number; setPositionGostMm: (v: number) => void;
@@ -192,6 +193,24 @@ export default function CadModals(p: CadModalsProps) {
                               видно. Выключено — все выработки одной толщины.
                               Пределы справа задают, насколько тонкой и толстой может
                               стать линия.
+                            </span>
+                          </span>
+                        </label>
+                        {/* Объёмный вид — рядом с толщиной ветви: обе настройки
+                            управляют тем, как выглядит сама выработка. */}
+                        <label className="flex items-start gap-1.5 mt-2 cursor-pointer select-none">
+                          <input type="checkbox" checked={p.tube3dOn}
+                            onChange={e => p.setTube3dOn(e.target.checked)}
+                            className="mt-0.5" />
+                          <span className="text-[11px]">
+                            <span className="text-gray-700">Объёмный вид выработок (3D)</span>
+                            <span className="block text-[11px] text-gray-500">
+                              Выработка рисуется трубой по реальному сечению: ствол —
+                              круглый, квершлаг — сводчатый, штрек — трапеция. Видно
+                              только в объёмных ракурсах (ИЗО, фронт, профиль): на плане
+                              труба выглядит как обычная линия. Вблизи — объём, при
+                              отдалении автоматически возвращаются линии, чтобы схема
+                              не тормозила.
                             </span>
                           </span>
                         </label>
