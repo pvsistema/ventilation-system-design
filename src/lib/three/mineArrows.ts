@@ -40,6 +40,7 @@
 // и движение было бы незаметно.
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from "three";
+import { mergeGeometries } from "three/examples/jsm/utils/BufferGeometryUtils.js";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { toThree } from "./mineScene";
 
@@ -116,22 +117,63 @@ export interface FlowArrows {
 }
 
 /**
- * Единичный конус остриём вдоль +X.
+ * Из чего складывается стрелка: наконечник и хвостик.
  *
- * ConeGeometry в three смотрит вдоль оси Y, поэтому сразу разворачиваем её:
- * дальше матрица экземпляра работает так же, как у выработок, — переводит +X в
- * направление потока.
- *
- * Донышко (openEnded = false) оставляем: без него сквозь стрелку видно
- * внутренность конуса, и на светлой схеме она выглядит дырой.
+ * Пропорции взяты с чертежа (canvasRenderer: наконечник 2.2 ширины линии,
+ * хвостик 3.0, толщина хвостика 0.15 от полуширины наконечника). Два режима
+ * обязаны показывать одну и ту же стрелку: человек, привыкший читать
+ * направление на чертеже, не должен заново привыкать к объёму.
  */
-function makeConeGeometry(): THREE.BufferGeometry {
-  const g = new THREE.ConeGeometry(1, 1, CONE_FACETS, 1, false);
+const HEAD_FRAC = 2.2 / 5.2;        // доля длины, приходящаяся на наконечник
+const TAIL_R_FRAC = 0.15;           // толщина хвостика от радиуса наконечника
+/** Во сколько раз стрелка целиком длиннее своей толщины. */
+const ARROW_LEN_K = 5.2;
+
+/**
+ * Единичная стрелка остриём вдоль +X: наконечник плюс хвостик.
+ *
+ * Длина всей стрелки — ровно 1, чтобы матрица экземпляра растягивала её по
+ * длине выработки одним числом, а шейдер сдвигал по локальному X.
+ *
+ * ConeGeometry и CylinderGeometry в three смотрят вдоль оси Y, поэтому сразу
+ * разворачиваем их: дальше матрица экземпляра работает так же, как у
+ * выработок, — переводит +X в направление потока.
+ *
+ * Донышки (openEnded = false) оставляем: без них сквозь стрелку видно её
+ * внутренность, и на светлой схеме она выглядит дырой.
+ */
+function makeArrowGeometry(): THREE.BufferGeometry {
+  const headLen = HEAD_FRAC;
+  const tailLen = 1 - headLen;
+
+  const head = new THREE.ConeGeometry(1, headLen, CONE_FACETS, 1, false);
   // Остриё ConeGeometry в +Y, центр в середине высоты. Сдвигаем так, чтобы
-  // основание было в нуле, затем кладём на ось X.
-  g.translate(0, 0.5, 0);
-  g.rotateZ(-Math.PI / 2);
-  return g;
+  // основание наконечника пришлось на конец хвостика, а остриё — точно в 1.
+  head.translate(0, 1 - headLen / 2, 0);
+  head.rotateZ(-Math.PI / 2);
+
+  // Хвостик заходит под наконечник на четверть его длины: иначе на стыке при
+  // косом взгляде видна щель между тонкой трубкой и широким основанием.
+  const stemLen = tailLen + headLen * 0.25;
+  const tail = new THREE.CylinderGeometry(
+    TAIL_R_FRAC, TAIL_R_FRAC, stemLen, Math.max(6, CONE_FACETS / 2), 1, false,
+  );
+  tail.translate(0, stemLen / 2, 0);
+  tail.rotateZ(-Math.PI / 2);
+
+  const merged = mergeGeometries([head, tail], false);
+  head.dispose();
+  tail.dispose();
+  // mergeGeometries возвращает null, если наборы атрибутов разошлись. У обеих
+  // заготовок они одинаковые, но подстраховаться дешевле, чем уронить режим:
+  // без стрелок схема читается, с пустым экраном — нет.
+  if (!merged) {
+    const fallback = new THREE.ConeGeometry(1, 1, CONE_FACETS, 1, false);
+    fallback.translate(0, 0.5, 0);
+    fallback.rotateZ(-Math.PI / 2);
+    return fallback;
+  }
+  return merged;
 }
 
 /** Поперечный размер выработки, м — по нему подбирается размер стрелки. */
@@ -149,9 +191,11 @@ interface Placement {
   dir: THREE.Vector3;
   /** Длина выработки в координатах сцены. */
   len: number;
-  /** Радиус «муфты» и длина конуса. */
+  /** Радиус наконечника и полная длина стрелки (хвостик + наконечник). */
   rad: number;
   aLen: number;
+  /** Отступ от узлов: на него стрелка отодвинута от начала выработки. */
+  margin: number;
   /** Сколько стрелок ставим и с каким шагом. */
   count: number;
   step: number;
@@ -200,18 +244,30 @@ function planArrows(input: ArrowsInput): { plan: Placement[]; total: number } {
     if (!(len > 1e-6)) continue;
     dir.divideScalar(len);
 
-    // Радиус «муфты» — заметно шире сечения, иначе стрелка утонет в трубе.
+    // Радиус наконечника — заметно шире сечения, иначе стрелка утонет в трубе.
     const rad = sectionRadius(b) * kx * 1.7;
-    // Длина стрелки соразмерна её толщине, но не длиннее трети выработки:
-    // на короткой сбойке стрелка иначе заняла бы её целиком.
-    const aLen = Math.min(rad * 2.4, len * 0.34);
+
+    // ── Отступ от узлов ───────────────────────────────────────────────
+    // В узле сходится несколько выработок, и там они врезаются друг в друга.
+    // Стрелка, доходящая вплотную до узла, оказывается внутри соседней
+    // выработки и торчит из неё — со стороны это выглядит так, будто стрелка
+    // вылезла за край. Отступ равен радиусу наконечника: ровно столько
+    // занимает место стыка.
+    const margin = Math.min(rad, len * 0.12);
+
+    // Длина стрелки соразмерна её толщине, но не длиннее трети свободной
+    // части выработки: на короткой сбойке стрелка иначе заняла бы её целиком.
+    const free = len - margin * 2;
+    if (!(free > 1e-6)) continue;
+    const aLen = Math.min(rad * ARROW_LEN_K, free * 0.6);
     if (!(aLen > 1e-6)) continue;
 
-    // Шаг между стрелками: примерно три длины самой стрелки. Реже — поток
+    // Шаг между стрелками: примерно полторы длины самой стрелки — стрелка
+    // теперь с хвостиком и сама по себе длиннее прежнего конуса. Реже — поток
     // распадается на отдельные редкие метки, чаще — стрелки наезжают друг на
     // друга и сливаются в сплошную колбасу.
-    const step = aLen * 3;
-    const count = Math.max(1, Math.min(MAX_PER_BRANCH, Math.floor(len / step)));
+    const step = aLen * 1.6;
+    const count = Math.max(1, Math.min(MAX_PER_BRANCH, Math.floor(free / step)));
     if (total + count > MAX_TOTAL) break;
 
     // Скорость бега — от натурной скорости воздуха, приведённой к масштабу
@@ -219,7 +275,7 @@ function planArrows(input: ArrowsInput): { plan: Placement[]; total: number } {
     const v = Math.min(V_MAX, Math.max(V_MIN, Math.abs(b.velocity ?? 0)));
     const speed = v * kx * SPEED_K * animK;
 
-    plan.push({ branch: b, from, dir, len, rad, aLen, count, step, speed });
+    plan.push({ branch: b, from, dir, len, rad, aLen, margin, count, step, speed });
     total += count;
   }
 
@@ -236,10 +292,10 @@ export function buildFlowArrows(input: ArrowsInput): FlowArrows | null {
   const { plan, total } = planArrows(input);
   if (total === 0) return null;
 
-  const geom = makeConeGeometry();
+  const geom = makeArrowGeometry();
 
   // ── Данные для шейдера, по одному числу на стрелку ────────────────────
-  // Всё в ЛОКАЛЬНЫХ единицах конуса: матрица экземпляра уже растягивает его по
+  // Всё в ЛОКАЛЬНЫХ единицах стрелки: матрица экземпляра уже растягивает её по
   // длине выработки, поэтому смещение вдоль локальной оси X автоматически
   // превращается в движение вдоль выработки в нужную сторону. Это избавляет от
   // хранения направления отдельным вектором.
@@ -248,7 +304,7 @@ export function buildFlowArrows(input: ArrowsInput): FlowArrows | null {
   const aPhase = new Float32Array(total);  // начальный сдвиг
 
   const mat = new THREE.MeshLambertMaterial({
-    // Конус надет на выработку, и изнутри его стенка тоже попадает в кадр —
+    // Стрелка надета на выработку, и изнутри её стенка тоже попадает в кадр —
     // без DoubleSide стрелка при взгляде «в хвост» выглядит рассечённой.
     side: THREE.DoubleSide,
   });
@@ -269,7 +325,7 @@ export function buildFlowArrows(input: ArrowsInput): FlowArrows | null {
          uniform float uTime;`,
       )
       // Вмешиваемся ДО project_vertex: там вершина ещё в локальных координатах
-      // конуса и матрица экземпляра к ней не применена. Сдвиг по локальному X
+      // стрелки и матрица экземпляра к ней не применена. Сдвиг по локальному X
       // как раз и станет движением вдоль выработки.
       .replace(
         "#include <project_vertex>",
@@ -300,16 +356,22 @@ export function buildFlowArrows(input: ArrowsInput): FlowArrows | null {
   for (const pl of plan) {
     q.setFromUnitVectors(axisX, pl.dir);
     scale.set(pl.aLen, pl.rad, pl.rad);
-    // Все стрелки выработки стоят в её начале; расходятся они за счёт
-    // начального сдвига в шейдере, а не за счёт разных матриц.
-    base.copy(pl.from);
+    // Все стрелки выработки стартуют от одной точки — на отступ от начального
+    // узла; расходятся они за счёт начального сдвига в шейдере, а не за счёт
+    // разных матриц.
+    base.copy(pl.dir).multiplyScalar(pl.margin).add(pl.from);
     m.compose(base, q, scale);
 
-    // Пробег: от начала выработки до места, где остриё дойдёт до конечного
-    // узла. Без вычитания длины самой стрелки она выскакивала бы за узел и
-    // залезала в соседнюю выработку.
-    const spanWorld = Math.max(pl.aLen * 0.5, pl.len - pl.aLen);
-    // Перевод в локальные единицы конуса: матрица растянула его в aLen раз.
+    // ── Пробег ───────────────────────────────────────────────────────
+    // Считается по ХВОСТУ стрелки: он стоит в нуле локальных координат, а
+    // остриё — в единице, то есть на aLen дальше. Чтобы остриё не вышло за
+    // отступ у конечного узла, из свободной длины вычитается вся стрелка
+    // целиком. Раньше отступов не было и вычиталась длина одного конуса —
+    // стрелка доходила ровно до узла, где выработки врезаются друг в друга, и
+    // выглядела торчащей наружу.
+    const free = pl.len - pl.margin * 2;
+    const spanWorld = Math.max(pl.aLen * 0.25, free - pl.aLen);
+    // Перевод в локальные единицы стрелки: матрица растянула её в aLen раз.
     const spanLocal = spanWorld / pl.aLen;
     const speedLocal = pl.speed / pl.aLen;
 

@@ -57,6 +57,16 @@ export interface MineView3DProps {
   pollutedBranchIds?: Set<string>;
   /** Множитель скорости анимации: 1 — обычная, 0.5 — вдвое медленнее. */
   animSpeed?: number;
+  /**
+   * Включена ли кнопка «Анимация» на ленте.
+   *
+   * Она одна на оба режима: выключив движение на чертеже и перейдя в объём,
+   * человек вправе ожидать, что стрелки и здесь стоят. Сами стрелки при этом
+   * никуда не деваются — замирают на местах: направление струи читается по
+   * ним и в неподвижном виде, а на слабой видеокарте непрерывная перерисовка
+   * съедает всё, что осталось.
+   */
+  animated?: boolean;
 }
 
 /** Состояние камеры: сферические координаты вокруг точки интереса. */
@@ -344,10 +354,16 @@ export default function MineView3D(p: MineView3DProps) {
         scene.add(arrows.mesh);
         arrowsRef.current = arrows;
         setArrowCount(arrows.arrowCount);
-        // Пока стрелки на схеме, кадры нужны каждый — движение иначе не
-        // покажешь. Выключили стрелки — возвращаемся к отрисовке по событию и
-        // видеокарта снова простаивает.
-        animatingRef.current = true;
+        // Кадр за кадром схема перерисовывается только пока стрелки ДВИЖУТСЯ.
+        // Раньше здесь стояло безусловное true: стрелки бежали даже с
+        // выключенной кнопкой «Анимация», и отключить их было нечем, а
+        // видеокарта грелась на статичной картинке. Теперь выключенная
+        // анимация возвращает отрисовку по событию: стрелки остаются на
+        // схеме, но стоят.
+        animatingRef.current = p.animated !== false;
+        // Замершие стрелки ставим в начало пробега, иначе они остались бы там,
+        // где их застало выключение, — вразнобой по всей выработке.
+        if (!animatingRef.current) arrows.setTime(0);
       }
     }
     needsRenderRef.current = true;
@@ -360,7 +376,7 @@ export default function MineView3D(p: MineView3DProps) {
       arrowsRef.current = null;
       animatingRef.current = false;
     };
-  }, [ready, showArrows, p.nodes, p.branches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed]);
+  }, [ready, showArrows, p.nodes, p.branches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
 
   // ── Смена окраски без пересборки ──────────────────────────────────────
   // Переключили заливку (расход / скорость / участки / горизонты) — меняется

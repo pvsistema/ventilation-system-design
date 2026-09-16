@@ -44,6 +44,23 @@ export interface MineLabel {
   lines: string[];
   showNum: boolean;
   overV: boolean;
+  /**
+   * Ручное смещение подписи от середины выработки, экранные пиксели.
+   *
+   * Берётся ровно то, что человек выставил на чертеже: если он оттащил подпись
+   * в сторону, чтобы она не легла на соседнюю выработку, в объёме она должна
+   * стоять там же. По умолчанию — над линией, как на чертеже.
+   */
+  offX: number;
+  offY: number;
+  /**
+   * Вес подписи при нехватке места на экране.
+   *
+   * Чем крупнее выработка по расходу, тем важнее её подпись: при наложении
+   * уступает мелкая сбойка, а не главный ствол. Порядок от расхода не зависит
+   * от ракурса, поэтому при вращении подписи не меняются местами и не мигают.
+   */
+  weight: number;
 }
 
 export interface LabelBuildInput {
@@ -93,8 +110,16 @@ export function buildMineLabels(input: LabelBuildInput): MineLabel[] {
       id: b.id,
       pos: new THREE.Vector3().addVectors(a, c).multiplyScalar(0.5),
       lines, showNum, overV,
+      // Смещение — то же, что на чертеже. Значение по умолчанию (−16 по Y)
+      // повторяет чертёжное: подпись стоит над выработкой.
+      offX: b.labelOffsetX ?? 0,
+      offY: b.labelOffsetY ?? -16,
+      weight: Math.abs(b.flow ?? 0),
     });
   }
+  // Крупные выработки — первыми: при нехватке места на экране подпись
+  // достаётся стволу, а не сбойке рядом с ним.
+  out.sort((p, q) => q.weight - p.weight);
   return out;
 }
 
@@ -122,15 +147,50 @@ export function drawMineLabels(
   ctx.clearRect(0, 0, w, h);
   if (labels.length === 0) return 0;
 
-  // Занятые места на экране.
+  // ── Занятые места на экране ───────────────────────────────────────────
   //
   // В объёме выработки уходят вдаль и их середины то и дело проецируются в одну
-  // точку: без этой проверки подписи ложились бы штабелем и не читалась бы ни
-  // одна. Сетка грубая — по высоте строки: точного разбора наложений тут не
-  // нужно, важно лишь не печатать текст поверх текста.
-  const cellW = 74, cellH = 13;
-  const cols = Math.max(1, Math.ceil(w / cellW));
-  const taken = new Set<number>();
+  // точку: без разбора наложений подписи ложились бы штабелем и не читалась бы
+  // ни одна.
+  //
+  // Раньше здесь была грубая сетка 74×13: подпись занимала ОДНУ ячейку
+  // независимо от того, сколько места на экране она на самом деле съедала.
+  // Из-за этого при малейшем повороте схемы середина выработки переезжала в
+  // соседнюю ячейку, и подпись то пропадала, то возвращалась — со стороны это
+  // и выглядело как «надписи убегают». Теперь считается настоящий
+  // прямоугольник текста, а сетка осталась только как способ быстро найти
+  // соседей: решение зависит от того, где текст, а не от того, в какую клетку
+  // попала точка привязки.
+  const CELL = 48;
+  const gridCols = Math.max(1, Math.ceil(w / CELL) + 2);
+  const placed = new Map<number, Box[]>();
+
+  const hit = (bx: Box): boolean => {
+    const c0 = Math.floor(bx.x0 / CELL), c1 = Math.floor(bx.x1 / CELL);
+    const r0 = Math.floor(bx.y0 / CELL), r1 = Math.floor(bx.y1 / CELL);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const cell = placed.get(r * gridCols + c);
+        if (!cell) continue;
+        for (const o of cell) {
+          if (bx.x0 < o.x1 && bx.x1 > o.x0 && bx.y0 < o.y1 && bx.y1 > o.y0) return true;
+        }
+      }
+    }
+    return false;
+  };
+
+  const put = (bx: Box) => {
+    const c0 = Math.floor(bx.x0 / CELL), c1 = Math.floor(bx.x1 / CELL);
+    const r0 = Math.floor(bx.y0 / CELL), r1 = Math.floor(bx.y1 / CELL);
+    for (let r = r0; r <= r1; r++) {
+      for (let c = c0; c <= c1; c++) {
+        const k = r * gridCols + c;
+        const cell = placed.get(k);
+        if (cell) cell.push(bx); else placed.set(k, [bx]);
+      }
+    }
+  };
 
   ctx.save();
   ctx.textAlign = "center";
@@ -140,33 +200,53 @@ export function drawMineLabels(
   const v = new THREE.Vector3();
   let drawn = 0;
 
+  // Размеры текста — ровно чертёжные (см. canvasRenderer: lh = 11, номер
+  // 9/7.5 пт, данные 8.5 пт). В объёме масштаб подписи постоянный: текст
+  // всегда смотрит на человека и всегда одного кегля, иначе дальние подписи
+  // превратились бы в нечитаемую пыль.
+  const LH = 11;
+  const dataFont = `600 8.5px "Segoe UI",sans-serif`;
+
   for (const L of labels) {
     if (drawn >= MAX_LABELS) break;
 
     v.copy(L.pos).project(cam);
     // z вне [-1..1] — выработка за спиной камеры или за границей отсечения.
     if (v.z < -1 || v.z > 1) continue;
-    const sx = (v.x * 0.5 + 0.5) * w;
-    const sy = (-v.y * 0.5 + 0.5) * h;
-    // Подписи за краем кадра не рисуем: их не видно, а место в сетке они бы
-    // заняли и вытеснили бы видимые.
-    if (sx < -40 || sx > w + 40 || sy < -20 || sy > h + 20) continue;
+    // Точка привязки: середина выработки плюс то самое смещение, которое
+    // человек задал на чертеже. Смещение экранное и не масштабируется — иначе
+    // при отдалении подпись уезжала бы от своей выработки.
+    const sx = (v.x * 0.5 + 0.5) * w + L.offX;
+    const sy = (-v.y * 0.5 + 0.5) * h + L.offY;
+    // Подписи за краем кадра не рисуем: их не видно, а место они бы заняли и
+    // вытеснили бы видимые.
+    if (sx < -60 || sx > w + 60 || sy < -40 || sy > h + 40) continue;
 
-    const key = Math.floor(sy / cellH) * cols + Math.floor(sx / cellW);
-    if (taken.has(key)) continue;
-    taken.add(key);
+    // Высота блока и вертикальная раскладка — как на чертеже: строки
+    // центрированы относительно точки привязки.
+    const bh = L.lines.length * LH + 4;
 
-    const lh = 11;
-    // Подпись ставится НАД серединой выработки, как на чертеже: под линией её
-    // перекрывала бы сама выработка.
-    const top = sy - L.lines.length * lh - 4;
+    // Ширину меряем заранее, до рисования: по ней проверяется наложение, и
+    // отвергнутая подпись не должна оставить на холсте ни пикселя.
+    let maxW = 0;
+    for (let i = 0; i < L.lines.length; i++) {
+      const isNum = i === 0 && L.showNum;
+      ctx.font = isNum ? numFont(L.lines[i]) : dataFont;
+      const lw = ctx.measureText(L.lines[i]).width;
+      if (lw > maxW) maxW = lw;
+    }
+
+    const box: Box = {
+      x0: sx - maxW / 2 - 2, x1: sx + maxW / 2 + 2,
+      y0: sy - bh / 2 - 1, y1: sy + bh / 2 + 1,
+    };
+    if (hit(box)) continue;
+    put(box);
 
     for (let i = 0; i < L.lines.length; i++) {
       const isNum = i === 0 && L.showNum;
-      ctx.font = isNum
-        ? `600 ${L.lines[i].length > 2 ? 9.5 : 11}px "Segoe UI",sans-serif`
-        : `600 10px "Segoe UI",sans-serif`;
-      const ty = top + lh * (i + 0.6);
+      ctx.font = isNum ? numFont(L.lines[i]) : dataFont;
+      const ty = sy - bh / 2 + LH * (i + 0.6);
       // Белая обводка под текстом — единственный способ прочитать подпись на
       // пёстрой схеме, где под ней может оказаться и светлая, и тёмная
       // выработка. На чертеже сделано так же.
@@ -183,4 +263,12 @@ export function drawMineLabels(
 
   ctx.restore();
   return drawn;
+}
+
+/** Прямоугольник подписи на экране, логические пиксели. */
+interface Box { x0: number; y0: number; x1: number; y1: number }
+
+/** Шрифт строки с номером: длинный номер набирается мельче — как на чертеже. */
+function numFont(text: string): string {
+  return `600 ${text.length > 2 ? 7.5 : 9}px "Segoe UI",sans-serif`;
 }

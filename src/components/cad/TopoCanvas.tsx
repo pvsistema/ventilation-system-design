@@ -1800,6 +1800,10 @@ export default function TopoCanvas(props: Props) {
               waterBranchResults={waterBranchResults}
               pollutedBranchIds={pollutedBranchIds}
               animSpeed={animSpeed}
+              /* Кнопка «Анимация» на ленте — одна на оба режима. Выключив
+                 движение на чертеже, человек ожидает, что и в объёме стрелки
+                 остановятся; раньше они бежали там всегда. */
+              animated={flowDisplay !== "off"}
             />
           </div>
         </CanvasErrorBoundary>
