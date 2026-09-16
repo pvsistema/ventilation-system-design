@@ -54,6 +54,12 @@ export interface BuiltScene {
   root: THREE.Group;
   /** Порядковый номер экземпляра → id выработки (для выбора мышью). */
   instanceToBranch: Map<THREE.InstancedMesh, string[]>;
+  /**
+   * Выработки в порядке экземпляров каждого меша. Нужны, чтобы перекрасить
+   * схему, не собирая геометрию заново: смена режима заливки меняет только
+   * цвет, а форма и положение выработок остаются прежними.
+   */
+  instanceBranches: Map<THREE.InstancedMesh, TopoBranch[]>;
   /** Габаритная сфера — по ней выставляется камера. */
   bounds: THREE.Sphere;
   /** Сколько выработок попало в сцену. */
@@ -171,6 +177,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   const { nodes, branches, xyScale, zScale, colorOf } = input;
   const root = new THREE.Group();
   const instanceToBranch = new Map<THREE.InstancedMesh, string[]>();
+  const instanceBranches = new Map<THREE.InstancedMesh, TopoBranch[]>();
 
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   const kx = xyScale > 0 ? xyScale : 1;
@@ -238,6 +245,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     mesh.frustumCulled = false;   // выработки тянутся через всю сцену
     root.add(mesh);
     instanceToBranch.set(mesh, ids);
+    instanceBranches.set(mesh, list);
     drawCalls++;
   }
 
@@ -258,7 +266,44 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   if (!box.isEmpty()) box.getBoundingSphere(bounds);
   else bounds.set(new THREE.Vector3(), 100);
 
-  return { root, instanceToBranch, bounds, branchCount, drawCalls };
+  return { root, instanceToBranch, instanceBranches, bounds, branchCount, drawCalls };
+}
+
+/**
+ * Перекрашивает уже собранную сцену, не трогая геометрию.
+ *
+ * Смена режима заливки (расход, скорость, участки, горизонты) меняет только
+ * цвет выработок — форма, длина и положение остаются теми же. Пересобирать
+ * ради этого всю сцену незачем: это секунды на большой схеме и, главное,
+ * сброс ракурса. Здесь переписывается только буфер цветов.
+ */
+export function recolorScene(built: BuiltScene | null, colorOf: (b: TopoBranch) => string): boolean {
+  if (!built) return false;
+  const tmp = new THREE.Color();
+  let changed = false;
+
+  for (const [mesh, list] of built.instanceBranches) {
+    // Прошлые цвета помним на самом меше. Функция цвета приходит новой почти
+    // на каждую перерисовку страницы, хотя сам цвет обычно тот же — без этой
+    // проверки мы бы гоняли буфер в видеопамять впустую по десятку раз в
+    // секунду. На схеме в тысячи выработок это заметно.
+    const holder = mesh as THREE.InstancedMesh & { __lastColors?: string[] };
+    const prev = holder.__lastColors;
+    const next: string[] = prev ?? new Array<string>(list.length);
+
+    for (let i = 0; i < list.length; i++) {
+      const col = colorOf(list[i]);
+      if (prev && prev[i] === col) continue;
+      next[i] = col;
+      tmp.set(col);
+      mesh.setColorAt(i, tmp);
+      changed = true;
+    }
+
+    holder.__lastColors = next;
+    if (changed && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  }
+  return changed;
 }
 
 /** Освобождает видеопамять сцены. Без этого при пересборке будет утечка. */

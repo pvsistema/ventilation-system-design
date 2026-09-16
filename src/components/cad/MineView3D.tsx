@@ -19,7 +19,7 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
-import { buildMineScene, disposeScene, type BuiltScene } from "@/lib/three/mineScene";
+import { buildMineScene, disposeScene, recolorScene, type BuiltScene } from "@/lib/three/mineScene";
 import Icon from "@/components/ui/icon";
 
 export interface MineView3DProps {
@@ -74,6 +74,30 @@ export default function MineView3D(p: MineView3DProps) {
   // схема не вращалась вообще.
   const [ready, setReady] = useState(false);
 
+  // Функция цвета живёт в ref, а не в зависимостях сборки.
+  //
+  // Она приходит новой почти на каждую перерисовку страницы (в CadPage часть
+  // цветовых карт собирается прямо в разметке), и если держать её в списке
+  // зависимостей, сцена пересобирается снова и снова — именно это сбрасывало
+  // ракурс и выглядело как «схема триггерит и не вращается».
+  const colorOfRef = useRef(p.colorOf);
+  colorOfRef.current = p.colorOf;
+
+  // Признак «камеру уже ставили». Вписываем схему в экран только при первом
+  // показе: иначе любая пересборка (изменили расход, подвинули узел) возвращала
+  // бы вид к общему плану, вырывая человека из места, куда он приблизился.
+  const camInitedRef = useRef(false);
+
+  // Размеры холста — тоже в ref.
+  //
+  // Это не микрооптимизация, а причина, по которой схема не вращалась. Панели
+  // по краям рабочей области меняют её ширину и высоту на доли пикселя при
+  // каждой перерисовке. Если размеры стоят в зависимостях эффекта мыши, он
+  // пересоздаётся прямо во время перетаскивания, а вместе с ним обнуляется
+  // признак «кнопка зажата» — схема замирала на первом же движении.
+  const sizeRef = useRef({ w: p.width, h: p.height });
+  sizeRef.current = { w: p.width, h: p.height };
+
   // ── Инициализация рендерера (один раз) ────────────────────────────────
   useEffect(() => {
     const host = hostRef.current;
@@ -126,23 +150,34 @@ export default function MineView3D(p: MineView3DProps) {
       disposeScene(builtRef.current);
     }
 
+    // Ракурс запоминаем ДО пересборки и возвращаем после: сборка не должна
+    // трогать вид, даже если схема изменилась.
+    const keep = { az: camRef.current.az, el: camRef.current.el, zoom: camRef.current.zoom };
+
     const t0 = performance.now();
     const built = buildMineScene({
       nodes: p.nodes,
       branches: p.branches,
       xyScale: p.xyScale,
       zScale: p.zScale,
-      colorOf: p.colorOf,
+      colorOf: colorOfRef.current,
     });
     const buildMs = performance.now() - t0;
 
     scene.add(built.root);
     builtRef.current = built;
 
-    // Ставим камеру так, чтобы схема целиком поместилась в кадр.
+    // Вписываем схему в экран ТОЛЬКО при первом показе. Дальше ракурс —
+    // собственность человека: он мог приблизиться к конкретному стволу, и
+    // возвращать его к общему плану из-за пересчёта расхода нельзя.
     const c = camRef.current;
-    c.target.copy(built.bounds.center);
-    c.zoom = Math.max(10, built.bounds.radius * 1.15);
+    if (!camInitedRef.current) {
+      c.target.copy(built.bounds.center);
+      c.zoom = Math.max(10, built.bounds.radius * 1.15);
+      camInitedRef.current = true;
+    } else {
+      c.az = keep.az; c.el = keep.el; c.zoom = keep.zoom;
+    }
 
     setStats(s => ({ ...s, branches: built.branchCount, drawCalls: built.drawCalls }));
     needsRenderRef.current = true;
@@ -152,7 +187,19 @@ export default function MineView3D(p: MineView3DProps) {
       `[Модель 3D] выработок: ${built.branchCount}, вызовов отрисовки: ${built.drawCalls}, ` +
       `сборка: ${buildMs.toFixed(1)} мс`,
     );
-  }, [ready, p.nodes, p.branches, p.xyScale, p.zScale, p.colorOf]);
+    // p.colorOf намеренно НЕ в зависимостях — см. colorOfRef выше.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, p.nodes, p.branches, p.xyScale, p.zScale]);
+
+  // ── Смена окраски без пересборки ──────────────────────────────────────
+  // Переключили заливку (расход / скорость / участки / горизонты) — меняется
+  // только цвет. Геометрия та же, поэтому переписываем буфер цветов и сразу
+  // просим кадр. Ракурс при этом не трогается вообще.
+  useEffect(() => {
+    if (!builtRef.current) return;
+    // Кадр просим только если цвет реально изменился.
+    if (recolorScene(builtRef.current, p.colorOf)) needsRenderRef.current = true;
+  }, [p.colorOf]);
 
   // ── Цикл отрисовки ────────────────────────────────────────────────────
   // Рисуем не постоянно, а только когда есть что показать: после поворота,
@@ -169,7 +216,8 @@ export default function MineView3D(p: MineView3DProps) {
       const cam = cameraRef.current;
       if (renderer && scene && cam && needsRenderRef.current) {
         const c = camRef.current;
-        const aspect = p.width / Math.max(1, p.height);
+        const { w, h } = sizeRef.current;
+        const aspect = w / Math.max(1, h);
 
         cam.left = -c.zoom * aspect;
         cam.right = c.zoom * aspect;
@@ -189,7 +237,7 @@ export default function MineView3D(p: MineView3DProps) {
         cam.up.set(0, 1, 0);
         cam.lookAt(c.target);
 
-        renderer.setSize(p.width, p.height, false);
+        renderer.setSize(w, h, false);
         renderer.render(scene, cam);
         needsRenderRef.current = false;
         frames++;
@@ -213,7 +261,10 @@ export default function MineView3D(p: MineView3DProps) {
     };
     rafRef.current = requestAnimationFrame(loop);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
-  }, [p.width, p.height]);
+    // Зависимостей нет: размеры цикл берёт из sizeRef. Перезапускать цикл
+    // отрисовки при каждом изменении ширины на пиксель — верный способ
+    // потерять кадр ровно в момент, когда человек тянет схему мышью.
+  }, []);
 
   // Размер изменился — нужен новый кадр.
   useEffect(() => { needsRenderRef.current = true; }, [p.width, p.height]);
@@ -250,7 +301,7 @@ export default function MineView3D(p: MineView3DProps) {
         // камеры, тогда схема движется ровно за курсором.
         const cam = cameraRef.current;
         if (cam) {
-          const k = (c.zoom * 2) / Math.max(1, p.height);
+          const k = (c.zoom * 2) / Math.max(1, sizeRef.current.h);
           const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
           const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
           c.target.addScaledVector(right, -dx * k);
@@ -286,9 +337,10 @@ export default function MineView3D(p: MineView3DProps) {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("contextmenu", onCtx);
     };
-    // ready — ключевая зависимость: без неё эффект отрабатывал ДО создания
-    // холста, rendererRef.current был пуст, и мышь ни к чему не привязывалась.
-  }, [ready, p.height]);
+    // ready — ЕДИНСТВЕННАЯ зависимость. Без неё эффект отрабатывал ДО создания
+    // холста и мышь ни к чему не привязывалась; а с размерами в списке он
+    // пересоздавался посреди перетаскивания и терял зажатую кнопку.
+  }, [ready]);
 
   /** Ставит камеру в заданный ракурс и показывает схему целиком. */
   const setView = (az: number, el: number) => {
