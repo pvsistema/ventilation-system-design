@@ -174,7 +174,12 @@ export default function MineView3D(p: MineView3DProps) {
   const SOLIDITY: { key: "solid" | "glass" | "ghost"; label: string; value: number; hint: string }[] = [
     { key: "solid", label: "Плотно", value: 1, hint: "Сплошные выработки — как на показе" },
     { key: "glass", label: "Стекло", value: 0.55, hint: "Полупрозрачно: сквозь ближние выработки видны дальние" },
-    { key: "ghost", label: "Каркас", value: 0.22, hint: "Почти прозрачно: видна вся структура рудника" },
+    // «Каркас» ослаблен с 0.22 до 0.12: на плотной схеме даже при 0.22 десяток
+    // выработок, наложившихся друг на друга по лучу зрения, складывались в
+    // почти непрозрачное пятно — сквозь «каркас» дальние горизонты не
+    // читались. Теперь тело — лёгкая подсказка об объёме, а форму держат
+    // контурные рёбра.
+    { key: "ghost", label: "Каркас", value: 0.12, hint: "Почти прозрачно: видна вся структура рудника" },
   ];
   const [solidity, setSolidity] = useState<"solid" | "glass" | "ghost">("glass");
   const opacity = SOLIDITY.find(s => s.key === solidity)?.value ?? 1;
