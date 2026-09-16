@@ -25,6 +25,7 @@ import { buildFlowArrows, type FlowArrows } from "@/lib/three/mineArrows";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
+import { flowTime } from "@/lib/flowAnim";
 import Icon from "@/components/ui/icon";
 
 export interface MineView3DProps {
@@ -397,11 +398,10 @@ export default function MineView3D(p: MineView3DProps) {
     let frames = 0;
     let fpsAcc = performance.now();
 
-    // Момент начала показа — от него отсчитывается время для бегущих стрелок.
-    // Считаем от старта, а не от абсолютного времени: большие числа в шейдере
-    // теряют точность, и движение начинает дёргаться через несколько часов
-    // работы программы.
-    const t0 = performance.now();
+    // Время для бегущих стрелок берём из ОБЩИХ часов (flowAnim.flowTime):
+    // те же самые, по которым движется анимация на чертеже. Раньше отсчёт шёл
+    // от момента открытия режима «Модель», и при переключении «Чертёж ↔
+    // Модель» стрелки начинали путь заново — движение выглядело рассогласованным.
 
     const loop = () => {
       const renderer = rendererRef.current;
@@ -412,7 +412,7 @@ export default function MineView3D(p: MineView3DProps) {
       // видеокарта, здесь только одно число на всю схему.
       const arrows = arrowsRef.current;
       if (animatingRef.current && arrows) {
-        arrows.setTime((performance.now() - t0) / 1000);
+        arrows.setTime(flowTime());
         needsRenderRef.current = true;
       }
 

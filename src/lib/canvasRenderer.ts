@@ -11,6 +11,7 @@ import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics"
 import { branchLabelLines } from "./branchLabelLines";
 import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
 import { buildTube, shadeColor, shouldDrawTube, TUBE_MAX_COUNT, type TubeGeometry } from "./tube3d";
+import { arrowSpeedMps, FLOW_PX_MIN, FLOW_PX_MAX } from "./flowAnim";
 
 /**
  * Порог переключения SVG → Canvas по числу видимых ветвей.
@@ -1195,14 +1196,19 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         // места, где наконечник упрётся в конец), цепочка — один шаг до
         // соседней стрелки. runLen — период повтора движения.
         const runLen = single ? Math.max(1, segLen - arrowLen) : step;
-        // Скорость в пикселях за секунду — ПРЯМО пропорциональна скорости
-        // воздуха V: именно её глаз читает как «быстрее/медленнее», поэтому
-        // выработки честно сравниваются между собой независимо от толщины.
-        // Формула и пределы — те же, что в SVG-режиме, чтобы вид совпадал.
-        // Math.abs — при опрокидывании потока velocity отрицательна, и без
-        // модуля скорость упиралась в нижнюю границу: выработка с обратным
-        // потоком еле ползла независимо от реального расхода.
-        const pxPerSec = Math.max(12, Math.min(400, Math.abs(V) * 22)) * Math.max(0.1, animSpeed);
+        // Скорость бега — по общему закону (flowAnim), одному на чертёж и на
+        // модель: сначала метры рудника в секунду от натурной скорости
+        // воздуха, потом перевод в пиксели через масштаб показа.
+        //
+        // Раньше здесь стояли «22 пикселя в секунду на каждый метр в секунду»
+        // независимо от масштаба. В объёме же скорость считалась в координатах
+        // сцены, то есть с учётом масштаба — и один и тот же поток в двух
+        // режимах бежал с разным темпом. Теперь закон общий: перевод в пиксели
+        // ровно тот же, по которому проецируются сами выработки (1 м рудника =
+        // xyScale × view.scale пикселей).
+        const mPerSec = arrowSpeedMps(V, animSpeed);
+        const pxPerMeter = Math.max(1e-6, (xyScale ?? 1) * sc);
+        const pxPerSec = Math.max(FLOW_PX_MIN, Math.min(FLOW_PX_MAX, mPerSec * pxPerMeter));
         // Смещение = скорость × время. Считать через «долю цикла»
         // ((t/dur) % 1) * runLen НЕЛЬЗЯ: длина цикла зависит от масштаба, и при
         // его изменении фаза скачком менялась — стрелки телепортировались и

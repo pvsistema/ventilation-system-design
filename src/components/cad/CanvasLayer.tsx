@@ -12,6 +12,7 @@ import {
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "@/lib/waterHydraulics";
+import { flowTime } from "@/lib/flowAnim";
 
 
 
@@ -311,7 +312,12 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         // воздуха. В SVG-режиме скорость всегда была своя у каждой ветви, и
         // две части схемы выглядели по-разному. Теперь скорость считает сама
         // ветвь, по своему значению V.
-        animOffsetRef.current = ts / 1000;
+        //
+        // Часы — ОБЩИЕ с режимом «Модель» (flowTime): при переключении
+        // «Чертёж ↔ Модель» стрелки продолжают путь с того же места, а не
+        // начинают отсчёт заново. Раньше каждый режим считал время от своего
+        // старта, и после переключения фаза сбивалась.
+        animOffsetRef.current = flowTime();
         draw();
         last = ts;
       }
