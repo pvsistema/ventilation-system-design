@@ -556,6 +556,25 @@ export default function TopoCanvas(props: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view.azimuth, view.elevation]);
 
+  /**
+   * Схему повернули в режиме «Модель» — тот же угол ставим чертежу.
+   *
+   * Смещение (offsetX/offsetY) не трогаем: в объёме своя точка интереса и свой
+   * зум, переносить их на чертёж бессмысленно — схема уехала бы за край. Общими
+   * делаем только углы, по ним оба режима и смотрят на рудник одинаково.
+   *
+   * Сравнение с текущим значением обязательно: в объёме угол меняется на каждый
+   * кадр вращения, и без проверки чертёж пересчитывал бы проекцию всей схемы
+   * шестьдесят раз в секунду впустую.
+   */
+  const handleModelAngles = useCallback((azDeg: number, elDeg: number) => {
+    setView(v => (
+      Math.abs(v.azimuth - azDeg) < 0.01 && Math.abs(v.elevation - elDeg) < 0.01
+        ? v
+        : { ...v, azimuth: azDeg, elevation: elDeg }
+    ));
+  }, []);
+
   // Сообщить наверх об изменении вида
   useEffect(() => {
     onViewChange?.({
@@ -1804,6 +1823,12 @@ export default function TopoCanvas(props: Props) {
                  движение на чертеже, человек ожидает, что и в объёме стрелки
                  остановятся; раньше они бежали там всегда. */
               animated={flowDisplay !== "off"}
+              /* Ракурс — общий на оба режима: повернув схему в одном, человек
+                 находит её под тем же углом в другом. Иначе переключение
+                 режима каждый раз сбрасывало вид на чужой. */
+              viewAzimuth={view.azimuth}
+              viewElevation={view.elevation}
+              onViewAngles={handleModelAngles}
             />
           </div>
         </CanvasErrorBoundary>
