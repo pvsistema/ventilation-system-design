@@ -189,6 +189,15 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     if (b.isDead) continue;
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
+    // Узел без нормальных координат отбрасываем целиком.
+    //
+    // Одной такой выработки достаточно, чтобы габарит схемы стал нечислом, а
+    // за ним — и весь расчёт камеры. Видеокарта в этом случае не рисует
+    // НИЧЕГО: рабочая область остаётся пустой, хотя выработок тысячи. На
+    // больших схемах, собранных импортом из разных источников, такие узлы
+    // попадаются, и терять из-за одного всю картину нельзя.
+    if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;
+    if (!isFinite(tn.x) || !isFinite(tn.y) || !isFinite(tn.z)) continue;
     const k = shapeKey(b);
     let arr = groups.get(k);
     if (!arr) { arr = []; groups.set(k, arr); }
@@ -262,9 +271,19 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   root.add(dir);
   root.add(new THREE.AmbientLight(0xffffff, 0.75));
 
+  // Габарит — основа всего расчёта камеры, поэтому он обязан быть числом.
+  // Пустая схема, единственный узел или уцелевшее нечисло дают нулевой либо
+  // некорректный радиус; дальше он расходится по zoom и границам отсечения, и
+  // на экране не остаётся ничего. Подстраховываемся разумным значением.
   const bounds = new THREE.Sphere();
   if (!box.isEmpty()) box.getBoundingSphere(bounds);
-  else bounds.set(new THREE.Vector3(), 100);
+  if (!isFinite(bounds.radius) || bounds.radius <= 0) {
+    bounds.center.set(0, 0, 0);
+    bounds.radius = 100;
+  }
+  if (!isFinite(bounds.center.x) || !isFinite(bounds.center.y) || !isFinite(bounds.center.z)) {
+    bounds.center.set(0, 0, 0);
+  }
 
   return { root, instanceToBranch, instanceBranches, bounds, branchCount, drawCalls };
 }

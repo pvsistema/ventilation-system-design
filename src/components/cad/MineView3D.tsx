@@ -117,15 +117,36 @@ export default function MineView3D(p: MineView3DProps) {
     host.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
+    // Потеря контекста видеокарты. Случается на больших сценах, при спящем
+    // режиме ноутбука и при обновлении драйвера. Внешне — ровно тот же белый
+    // экран: холст жив, но рисовать в нём больше нечем. Без этого обработчика
+    // человек видел бы пустоту и не понимал, что произошло.
+    const onLost = (e: Event) => {
+      e.preventDefault();          // без этого контекст не восстановится
+      setWebglFailed(true);
+    };
+    const onRestored = () => {
+      setWebglFailed(false);
+      needsRenderRef.current = true;
+    };
+    renderer.domElement.addEventListener("webglcontextlost", onLost);
+    renderer.domElement.addEventListener("webglcontextrestored", onRestored);
+
     const scene = new THREE.Scene();
     sceneRef.current = scene;
 
-    const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -100000, 100000);
+    // Границы отсечения (near/far) выставляются в цикле отрисовки по реальному
+    // размеру схемы. Жёстко заданные числа здесь — лишь заглушка до первого
+    // кадра: на большом руднике любая константа рано или поздно оказывается
+    // меньше схемы, и та целиком уходит за дальнюю границу.
+    const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -1, 1);
     cameraRef.current = cam;
     setReady(true);
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
+      renderer.domElement.removeEventListener("webglcontextlost", onLost);
+      renderer.domElement.removeEventListener("webglcontextrestored", onRestored);
       disposeScene(builtRef.current);
       builtRef.current = null;
       renderer.dispose();
@@ -183,10 +204,25 @@ export default function MineView3D(p: MineView3DProps) {
     needsRenderRef.current = true;
 
     // Сборка — разовая операция, полезно видеть её цену на реальной схеме.
+    // Габарит выводим тоже: если схема не показалась, по нему сразу видно,
+    // дошла ли геометрия до сцены или отсеялась на входе.
     console.info(
       `[Модель 3D] выработок: ${built.branchCount}, вызовов отрисовки: ${built.drawCalls}, ` +
-      `сборка: ${buildMs.toFixed(1)} мс`,
+      `сборка: ${buildMs.toFixed(1)} мс, радиус схемы: ${built.bounds.radius.toFixed(0)}`,
     );
+
+    // Выработки есть, а габарит нулевой — геометрия до сцены не дошла.
+    // Чаще всего это значит, что у узлов нет координат.
+    if (built.branchCount > 0 && !(built.bounds.radius > 0)) {
+      console.warn("[Модель 3D] схема собрана, но габарит пустой — проверьте координаты узлов");
+    }
+    // Ни одной выработки при непустом списке — все отсеялись на входе.
+    if (built.branchCount === 0 && p.branches.length > 0) {
+      console.warn(
+        `[Модель 3D] ни одна из ${p.branches.length} выработок не попала в сцену: ` +
+        `нет узлов или координаты не числовые`,
+      );
+    }
     // p.colorOf намеренно НЕ в зависимостях — см. colorOfRef выше.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, p.nodes, p.branches, p.xyScale, p.zScale]);
@@ -219,16 +255,44 @@ export default function MineView3D(p: MineView3DProps) {
         const { w, h } = sizeRef.current;
         const aspect = w / Math.max(1, h);
 
+        // Последний рубеж обороны камеры. Если zoom или точка интереса каким-то
+        // образом стали нечислом, матрица проекции вырождается и видеокарта
+        // перестаёт рисовать вообще всё — рабочая область белеет, хотя схема на
+        // месте. Молча возвращаем камеру к общему плану: лучше показать схему
+        // целиком, чем пустой экран.
+        if (!isFinite(c.zoom) || c.zoom <= 0 ||
+            !isFinite(c.az) || !isFinite(c.el) ||
+            !isFinite(c.target.x) || !isFinite(c.target.y) || !isFinite(c.target.z)) {
+          const b = builtRef.current;
+          c.az = -Math.PI / 4;
+          c.el = Math.PI / 6;
+          c.target.copy(b ? b.bounds.center : new THREE.Vector3());
+          c.zoom = b ? Math.max(10, b.bounds.radius * 1.15) : 200;
+        }
+
         cam.left = -c.zoom * aspect;
         cam.right = c.zoom * aspect;
         cam.top = c.zoom;
         cam.bottom = -c.zoom;
-        cam.updateProjectionMatrix();
 
         // Позиция камеры по сферическим координатам вокруг точки интереса.
-        // Расстояние берём заведомо большим радиуса сцены: для орто-камеры
-        // оно не влияет на размер, только на порядок отсечения.
-        const d = Math.max(1000, c.zoom * 50);
+        // Для орто-камеры расстояние не влияет на размер картинки, только на
+        // то, куда попадают границы отсечения.
+        //
+        // Отступ раньше считался как zoom×50 при жёстких границах ±100 000.
+        // На схеме в пару километров (да ещё с масштабом плана ×2,7) отступ
+        // переваливал за двести тысяч — вся схема оказывалась ДАЛЬШЕ дальней
+        // границы и просто не рисовалась: рабочая область оставалась пустой.
+        // Теперь отступ скромный, а границы считаются от габарита схемы, и
+        // размер рудника перестал что-либо решать.
+        const radius = builtRef.current?.bounds.radius ?? c.zoom;
+        const span = Math.max(radius, c.zoom) * 4 + 1000;
+        const d = span;
+
+        cam.near = -span * 2;
+        cam.far = span * 2;
+        cam.updateProjectionMatrix();
+
         cam.position.set(
           c.target.x + d * Math.cos(c.el) * Math.sin(c.az),
           c.target.y + d * Math.sin(c.el),
