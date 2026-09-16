@@ -1529,8 +1529,11 @@ export default function TopoCanvas(props: Props) {
   }).sort((a, b) => {
     // Главный критерий — порядок горизонта в списке слоёв (больший hOrder рисуется первым = ниже)
     if (a.hOrder !== b.hOrder) return b.hOrder - a.hOrder;
-    // Внутри одного горизонта — по глубине 3D (дальние рисуются первыми = ниже)
-    return a.depth - b.depth;
+    // Внутри одного горизонта — по глубине 3D (дальние рисуются первыми = ниже).
+    // depth — дальность ОТ камеры (больше = дальше), поэтому сортируем по
+    // убыванию. Та же правка, что в canvasRenderer.getSortedBranches: раньше
+    // здесь стояло возрастание, и в 3D ближняя выработка уходила под дальнюю.
+    return b.depth - a.depth;
   }), [visibleBranches, projNodesMap, horizonOrderMap]);
 
   // Условные обозначения (УО) сортируем по порядку горизонта привязанной ветви,
@@ -1551,7 +1554,8 @@ export default function TopoCanvas(props: Props) {
   }, [schemaSymbols, branchById, horizonOrderMap]);
 
   const nodesSorted = useMemo(
-    () => [...projNodes].sort((a, b) => a.depth - b.depth),
+    // Дальние узлы первыми — ближние рисуются поверх.
+    () => [...projNodes].sort((a, b) => b.depth - a.depth),
     [projNodes]
   );
 

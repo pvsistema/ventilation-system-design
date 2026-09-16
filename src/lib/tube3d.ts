@@ -149,10 +149,16 @@ function sectionBasis(a: Vec3, b: Vec3): { right: Vec3; up: Vec3 } | null {
   return { right: { x: rx, y: ry, z: rz }, up: { x: ux, y: uy, z: uz } };
 }
 
-/** Одна полоса боковой поверхности: четырёхугольник + яркость затенения. */
+/**
+ * Один плоский многоугольник поверхности трубы.
+ *
+ * Раньше это была строго полоса из четырёх углов. Теперь длина произвольная:
+ * тем же типом описываются и торцевые заглушки, у которых углов столько же,
+ * сколько точек в контуре сечения.
+ */
 export interface TubeStrip {
-  /** Экранные координаты четырёх углов */
-  pts: [number, number, number, number, number, number, number, number];
+  /** Экранные координаты углов подряд: x0,y0, x1,y1, … */
+  pts: number[];
   /** Множитель яркости 0…1 (1 — прямо освещённая грань) */
   shade: number;
   /** Средняя глубина — для сортировки полос между собой */
@@ -163,6 +169,22 @@ export interface TubeGeometry {
   strips: TubeStrip[];
   /** Средняя глубина трубы — для сортировки выработок между собой */
   depth: number;
+}
+
+/**
+ * Направление «от камеры вглубь сцены» в МИРОВЫХ координатах.
+ *
+ * Берётся не на глаз, а прямо из формулы проекции: depth = cosE·y1 − sinE·z,
+ * где y1 = −sinA·x + cosA·y. Градиент этой функции по (x,y,z) и есть искомый
+ * вектор — значит грань видна ровно тогда, когда её внешняя нормаль смотрит
+ * навстречу, то есть скалярное произведение отрицательно.
+ */
+export function cameraDir(proj: ProjOptions): Vec3 {
+  const az = ((proj.azimuth ?? 0) * Math.PI) / 180;
+  const el = ((proj.elevation ?? 90) * Math.PI) / 180;
+  const cosA = Math.cos(az), sinA = Math.sin(az);
+  const cosE = Math.cos(el), sinE = Math.sin(el);
+  return { x: -cosE * sinA, y: cosE * cosA, z: -sinE };
 }
 
 /**
@@ -181,13 +203,23 @@ const LIGHT: Vec3 = (() => {
 const AMBIENT = 0.45;
 
 /**
- * Строит боковую поверхность выработки как набор затенённых полос.
+ * Строит поверхность выработки как набор затенённых граней.
+ *
+ * СЕЧЕНИЕ НЕ ДЕФОРМИРУЕТСЯ. Масштабы XY и Z — это способ РАЗНЕСТИ схему в
+ * пространстве (растянуть план, преувеличить перепад высот), а не изменить
+ * саму выработку. Раньше контур множился по горизонтали на scaleXY, а по
+ * вертикали на scaleZ: при «Масштаб Z ×14» ствол сечением 3 м превращался в
+ * плиту высотой 42 м, круглая выработка — в вытянутый эллипс. Именно отсюда
+ * бралась «вытянутость», которой нет в AutoCAD.
+ *
+ * Теперь контур масштабируется ОДНИМ множителем по всем трём осям — форма
+ * сечения остаётся честной: круг остаётся кругом при любых масштабах вида.
  *
  * @param b        ветвь (нужны форма и размеры сечения)
  * @param from     мировые координаты начала, уже умноженные на xyScale/zScale
  * @param to       мировые координаты конца
  * @param proj     та же проекция, которой рисуется вся схема
- * @param scaleXY  масштаб плана — сечение растягивается вместе со схемой
+ * @param scaleXY  масштаб плана
  * @param scaleZ   масштаб по вертикали
  */
 export function buildTube(
@@ -206,28 +238,43 @@ export function buildTube(
 
   const { right, up } = basis;
 
+  // Единый (изотропный) множитель сечения. Берём масштаб плана: по нему
+  // читается схема в целом, и выработка остаётся соразмерной своей длине.
+  // По вертикали НЕ берём scaleZ — иначе сечение растянется (см. выше).
+  const secK = scaleXY > 0 ? scaleXY : 1;
+  void scaleZ;
+
   // Точка контура в мировых координатах на заданном конце выработки.
-  // Сечение масштабируется так же, как сама схема, иначе труба «оторвётся»
-  // от осевой линии при изменении масштабов XY/Z.
   const worldPt = (base: Vec3, p: SectionPoint): Vec3 => ({
-    x: base.x + (right.x * p.r + up.x * p.u) * scaleXY,
-    y: base.y + (right.y * p.r + up.y * p.u) * scaleXY,
-    z: base.z + (right.z * p.r + up.z * p.u) * scaleZ,
+    x: base.x + (right.x * p.r + up.x * p.u) * secK,
+    y: base.y + (right.y * p.r + up.y * p.u) * secK,
+    z: base.z + (right.z * p.r + up.z * p.u) * secK,
   });
 
   const n = outline.length;
   const strips: TubeStrip[] = [];
   let depthSum = 0;
+  let depthCount = 0;
+
+  // Направление взгляда — по нему отбрасываются грани, повёрнутые к камере
+  // изнанкой. Это надёжнее сортировки: у боковых полос трубы глубины почти
+  // совпадают, и при приближении порядок начинал скакать от кадра к кадру —
+  // труба «мерцала» и выглядела рваной. Невидимую грань просто не рисуем.
+  const cam = cameraDir(proj);
+
+  // Точки контура на обоих концах считаем ОДИН раз: раньше каждая точка
+  // проецировалась дважды (как конец одной полосы и начало соседней).
+  const scrA: { sx: number; sy: number; depth: number }[] = new Array(n);
+  const scrB: { sx: number; sy: number; depth: number }[] = new Array(n);
+  for (let i = 0; i < n; i++) {
+    scrA[i] = project3D(worldPt(from, outline[i]), proj);
+    scrB[i] = project3D(worldPt(to,   outline[i]), proj);
+  }
 
   for (let i = 0; i < n; i++) {
     const p0 = outline[i];
     const p1 = outline[(i + 1) % n];
-
-    const wA0 = worldPt(from, p0), wA1 = worldPt(from, p1);
-    const wB0 = worldPt(to,   p0), wB1 = worldPt(to,   p1);
-
-    const sA0 = project3D(wA0, proj), sA1 = project3D(wA1, proj);
-    const sB1 = project3D(wB1, proj), sB0 = project3D(wB0, proj);
+    const j = (i + 1) % n;
 
     // Нормаль полосы в мировых координатах: середина между нормалями углов
     // контура. Для выпуклого сечения это направление «наружу» от оси.
@@ -237,25 +284,62 @@ export function buildTube(
     const ny = (right.y * mr + up.y * mu) / ml;
     const nz = (right.z * mr + up.z * mu) / ml;
 
+    // Грань смотрит от камеры — её закрывает передняя стенка, пропускаем.
+    if (nx * cam.x + ny * cam.y + nz * cam.z > 0) continue;
+
     // Закон Ламберта: яркость ∝ косинусу угла между нормалью и светом.
     const dot = nx * LIGHT.x + ny * LIGHT.y + nz * LIGHT.z;
     const shade = AMBIENT + (1 - AMBIENT) * Math.max(0, dot);
 
-    const depth = (sA0.depth + sA1.depth + sB0.depth + sB1.depth) / 4;
+    const a0 = scrA[i], a1 = scrA[j], b1 = scrB[j], b0 = scrB[i];
+    const depth = (a0.depth + a1.depth + b0.depth + b1.depth) / 4;
     depthSum += depth;
+    depthCount++;
 
     strips.push({
-      pts: [sA0.sx, sA0.sy, sA1.sx, sA1.sy, sB1.sx, sB1.sy, sB0.sx, sB0.sy],
+      pts: [a0.sx, a0.sy, a1.sx, a1.sy, b1.sx, b1.sy, b0.sx, b0.sy],
       shade,
       depth,
     });
   }
 
-  // Дальние полосы рисуем первыми — ближние их перекроют. Без этого
-  // просвечивала бы задняя стенка трубы.
+  // ── ТОРЦЫ ────────────────────────────────────────────────────────────────
+  // Без крышек труба — открытый рукав: на повороте выработки и в тупике
+  // сквозь неё просвечивало то, что лежит позади. Рисуем торец там, где он
+  // обращён к камере.
+  const axis = {
+    x: to.x - from.x, y: to.y - from.y, z: to.z - from.z,
+  };
+  const axLen = Math.hypot(axis.x, axis.y, axis.z) || 1;
+  axis.x /= axLen; axis.y /= axLen; axis.z /= axLen;
+  const axDotCam = axis.x * cam.x + axis.y * cam.y + axis.z * cam.z;
+
+  const pushCap = (scr: typeof scrA, normal: Vec3, reverse: boolean) => {
+    const pts: number[] = [];
+    let d = 0;
+    for (let i = 0; i < n; i++) {
+      const k = reverse ? n - 1 - i : i;
+      pts.push(scr[k].sx, scr[k].sy);
+      d += scr[k].depth;
+    }
+    const lam = normal.x * LIGHT.x + normal.y * LIGHT.y + normal.z * LIGHT.z;
+    const depth = d / n;
+    depthSum += depth;
+    depthCount++;
+    strips.push({ pts, shade: AMBIENT + (1 - AMBIENT) * Math.max(0, lam), depth });
+  };
+
+  // Торец в начале смотрит против оси, в конце — по оси. К камере обращён
+  // тот, у которого скалярное произведение с направлением взгляда < 0.
+  if (-axDotCam < 0) pushCap(scrA, { x: -axis.x, y: -axis.y, z: -axis.z }, true);
+  if ( axDotCam < 0) pushCap(scrB, axis, false);
+
+  if (strips.length === 0) return null;
+
+  // Дальние грани рисуем первыми — ближние их перекроют.
   strips.sort((s1, s2) => s2.depth - s1.depth);
 
-  return { strips, depth: depthSum / n };
+  return { strips, depth: depthSum / Math.max(1, depthCount) };
 }
 
 /** Осветляет/затемняет цвет множителем яркости. */

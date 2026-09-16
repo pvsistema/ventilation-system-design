@@ -10,7 +10,7 @@ import { type UnitsConfig, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "./branchLabelExtras";
 import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
-import { buildTube, shadeColor, shouldDrawTube, TUBE_MAX_COUNT } from "./tube3d";
+import { buildTube, shadeColor, shouldDrawTube, TUBE_MAX_COUNT, type TubeGeometry } from "./tube3d";
 
 /**
  * Порог переключения SVG → Canvas по числу видимых ветвей.
@@ -387,8 +387,16 @@ function getSortedBranches(
   }).sort((a, b) => {
     // Главный критерий — порядок горизонта (слои как в Фотошопе): больший hOrder ниже.
     if (a.hOrder !== b.hOrder) return b.hOrder - a.hOrder;
-    // Внутри горизонта — по глубине 3D.
-    return a.depth - b.depth;
+    // Внутри горизонта — по глубине 3D: ДАЛЬНИЕ ПЕРВЫМИ, ближние лягут поверх.
+    //
+    // depth из project3D — это дальность ОТ камеры: больше = дальше (см.
+    // topology.ts, depth = cosE·y1 − sinE·z). Значит порядок отрисовки —
+    // по УБЫВАНИЮ. Здесь много лет стояло `a.depth - b.depth`, то есть
+    // возрастание: дальняя выработка рисовалась последней и ложилась поверх
+    // ближней. На плане это почти не видно (все ветви на одной глубине), а в
+    // 3D схема выглядела вывернутой наизнанку и «ломалась» при приближении —
+    // чем сильнее перспектива, тем заметнее неверный порядок.
+    return b.depth - a.depth;
   });
   return _sortedBranchesCache;
 }
@@ -512,7 +520,8 @@ function getSortedNodes(projNodes: ProjNode[], sortEpoch?: number): SortedNode[]
   }
   _sortedNodesKey = projNodes;
   _sortedNodesEpoch = sortEpoch;
-  const order = projNodes.map((_, i) => i).sort((a, b) => projNodes[a].depth - projNodes[b].depth);
+  // Дальние узлы первыми — ближние рисуются поверх (тот же порядок, что у ветвей).
+  const order = projNodes.map((_, i) => i).sort((a, b) => projNodes[b].depth - projNodes[a].depth);
   _sortedNodesOrder = order;
   _sortedNodesCache = order.map((idx) => projNodes[idx]);
   return _sortedNodesCache;
@@ -1018,7 +1027,17 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   //   • выработка на экране достаточно длинная и толстая (shouldDrawTube);
   //   • не превышен лимит труб на кадр — дальше выигрыш в наглядности
   //     исчезает, а стоимость растёт линейно.
-  const tubeDrawn = new Set<string>();
+  // ВАЖНО: здесь геометрия только СЧИТАЕТСЯ, но не рисуется. Рисуется она
+  // ниже, в общем цикле заливки — на месте своей выработки, то есть в том же
+  // порядке по глубине, что и все остальные.
+  //
+  // Раньше трубы рисовались отдельным проходом ПЕРЕД заливками. Из-за этого
+  // любая плоская линия ложилась поверх любой трубы — независимо от того, что
+  // ближе к камере. А объём включается только вблизи (LOD), поэтому при
+  // приближении картина выворачивалась: дальние выработки, оставшиеся
+  // линиями, перечёркивали ближние трубы. Это и выглядело как «3D ломается
+  // при приближении».
+  const tubeGeoms = new Map<string, TubeGeometry>();
   if (tube3d && is3D && !thinLines) {
     const _xyT = xyScale ?? 1;
     const _zT = _zScale ?? 1;
@@ -1041,33 +1060,46 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         proj, _xyT, _zT,
       );
       if (!geom) continue;
-
-      for (const s of geom.strips) {
-        const q = s.pts;
-        ctx.beginPath();
-        ctx.moveTo(q[0], q[1]); ctx.lineTo(q[2], q[3]);
-        ctx.lineTo(q[4], q[5]); ctx.lineTo(q[6], q[7]);
-        ctx.closePath();
-        ctx.fillStyle = shadeColor(p.color, s.shade);
-        ctx.fill();
-        // Тонкая грань между полосами — иначе на светлых цветах труба
-        // выглядит плоским пятном.
-        if (p.bwBorder > 0) {
-          ctx.strokeStyle = "rgba(31,41,55,0.35)";
-          ctx.lineWidth = 0.6;
-          ctx.stroke();
-        }
-      }
-      tubeDrawn.add(b.id);
+      tubeGeoms.set(b.id, geom);
       budget--;
     }
   }
 
+  /** Рисует готовую объёмную выработку. */
+  const paintTube = (geom: TubeGeometry, color: string) => {
+    ctx.save();
+    ctx.setLineDash([]);
+    ctx.globalAlpha = 1;
+    ctx.lineJoin = "round";
+    for (const s of geom.strips) {
+      const q = s.pts;
+      if (q.length < 6) continue;
+      ctx.beginPath();
+      ctx.moveTo(q[0], q[1]);
+      for (let k = 2; k < q.length; k += 2) ctx.lineTo(q[k], q[k + 1]);
+      ctx.closePath();
+      const fill = shadeColor(color, s.shade);
+      ctx.fillStyle = fill;
+      ctx.fill();
+      // Грань обводится СВОИМ ЖЕ цветом. Заливки соседних граней стыкуются
+      // ровно по общему ребру, и сглаживание Canvas оставляет между ними
+      // светлую нить в полпикселя — при приближении труба выглядела
+      // исчерченной. Обводка перекрывает шов и не добавляет видимых линий.
+      ctx.strokeStyle = fill;
+      ctx.lineWidth = 0.75;
+      ctx.stroke();
+    }
+    ctx.restore();
+  };
+
   for (const { b } of group) {
     const p = bParamsMap.get(b.id);
     if (!p) continue;
-    // Выработка уже нарисована объёмом — плоскую линию поверх не кладём.
-    if (tubeDrawn.has(b.id)) continue;
+    // Выработка показана объёмом — рисуем трубу ЗДЕСЬ, на её месте в порядке
+    // глубины, и пропускаем всё остальное оформление линии (плоская линия
+    // поверх трубы не нужна).
+    const _tube = tubeGeoms.get(b.id);
+    if (_tube) { paintTube(_tube, p.color); continue; }
     const { isSel, isDead, isLeakage, Q, V, overV,
       sxA, syA, sxB, syB, midX, midY, color, w,
       flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle } = p;
