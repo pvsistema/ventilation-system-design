@@ -31,6 +31,16 @@ import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { sectionOutline } from "@/lib/tube3d";
 
+/**
+ * Порог, выше которого контурные рёбра не строятся.
+ *
+ * Каркас — это дополнительный буфер вершин на каждую выработку. До нескольких
+ * тысяч выработок он бесплатен по скорости (вызовов отрисовки столько же), но
+ * на схеме в десятки тысяч выработка занимает считаные пиксели: рёбра сливаются
+ * в сплошную сетку, пользы от них нет, а видеопамяти уходит вдвое.
+ */
+const EDGE_LIMIT = 6000;
+
 /** Мир → three.js: у нас вверх Z, у three — Y. */
 export function toThree(x: number, y: number, z: number): THREE.Vector3 {
   return new THREE.Vector3(x, z, -y);
@@ -46,6 +56,22 @@ export interface SceneInput {
   zScale: number;
   /** Цвет выработки: id → hex. Считается снаружи, чтобы окраска совпадала с чертежом. */
   colorOf: (b: TopoBranch) => string;
+  /**
+   * Непрозрачность тела выработки, 0.15…1.
+   *
+   * Единица — привычный сплошной объём. Меньше единицы — «стеклянный» режим,
+   * как просмотр 3D-модели в CAD: сквозь ближние выработки видны дальние, и
+   * схема перестаёт быть сплошным пятном, в котором ничего не разобрать.
+   */
+  opacity?: number;
+  /**
+   * Рисовать ли контурные рёбра сечения.
+   *
+   * Без них форма выработки читается только по светотени, а на однотонной
+   * заливке соседние выработки сливаются в одно тело. Рёбра — это ровно то,
+   * чем CAD отделяет объект от объекта.
+   */
+  edges?: boolean;
 }
 
 /** Результат сборки — меши и служебные карты для выделения. */
@@ -60,6 +86,13 @@ export interface BuiltScene {
    * цвет, а форма и положение выработок остаются прежними.
    */
   instanceBranches: Map<THREE.InstancedMesh, TopoBranch[]>;
+  /**
+   * Каркас сечения для каждой пакетной заливки.
+   *
+   * Нужен, чтобы перекрасить контур вместе с телом: рёбра лежат в общем буфере
+   * группы, и цвет i-й выработки занимает в нём vertsPerBranch вершин подряд.
+   */
+  edgeOf: Map<THREE.InstancedMesh, { lines: THREE.LineSegments; vertsPerBranch: number }>;
   /** Габаритная сфера — по ней выставляется камера. */
   bounds: THREE.Sphere;
   /** Сколько выработок попало в сцену. */
@@ -140,6 +173,44 @@ function buildProfileGeometry(b: TopoBranch): THREE.BufferGeometry {
 }
 
 /**
+ * Каркас того же профиля: рёбра сечения на обоих торцах плюс продольные рёбра
+ * вдоль выработки.
+ *
+ * ЗАЧЕМ. Заливка сама по себе форму не показывает: две выработки одного цвета,
+ * идущие рядом, выглядят одним телом, а сводчатое сечение неотличимо от
+ * прямоугольного. Контур — то, по чему CAD даёт понять, где кончается один
+ * объект и начинается другой; в полупрозрачном режиме он вообще единственное,
+ * что держит форму.
+ *
+ * Геометрия строится в тех же единичных координатах, что и тело (профиль вдоль
+ * оси X на длину 1), поэтому к линиям подходит ТА ЖЕ матрица экземпляра —
+ * каркас не может разъехаться с заливкой.
+ *
+ * У круглого сечения продольные рёбра берём не все: 12 линий вдоль ствола
+ * превращают его в решётку. Достаточно четырёх — они и дают ощущение трубы.
+ */
+function buildProfileEdges(b: TopoBranch): THREE.BufferGeometry {
+  const outline = sectionOutline(b);
+  const n = outline.length;
+  const round = (b.shape ?? "rect") === "round";
+  const pos: number[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const p0 = outline[i];
+    const p1 = outline[(i + 1) % n];
+    // Контур сечения на обоих торцах.
+    pos.push(0, p0.u, p0.r, 0, p1.u, p1.r);
+    pos.push(1, p0.u, p0.r, 1, p1.u, p1.r);
+    // Продольное ребро. У круга — только каждое третье, иначе получается сетка.
+    if (!round || i % 3 === 0) pos.push(0, p0.u, p0.r, 1, p0.u, p0.r);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  return g;
+}
+
+/**
  * Матрица экземпляра: растягивает единичный профиль на конкретную выработку.
  *
  * Профиль лежит вдоль оси X, поэтому матрица должна повернуть ось X на
@@ -175,9 +246,14 @@ function branchMatrix(
  */
 export function buildMineScene(input: SceneInput): BuiltScene {
   const { nodes, branches, xyScale, zScale, colorOf } = input;
+  // Полупрозрачность ниже 0.15 делает схему неразличимой, выше 1 бессмысленна.
+  const opacity = Math.max(0.15, Math.min(1, input.opacity ?? 1));
+  const glass = opacity < 0.995;
+  const wantEdges = input.edges !== false;
   const root = new THREE.Group();
   const instanceToBranch = new Map<THREE.InstancedMesh, string[]>();
   const instanceBranches = new Map<THREE.InstancedMesh, TopoBranch[]>();
+  const edgeOf = new Map<THREE.InstancedMesh, { lines: THREE.LineSegments; vertsPerBranch: number }>();
 
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   const kx = xyScale > 0 ? xyScale : 1;
@@ -225,9 +301,30 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     // ровно тот чёрный силуэт, который и был виден. Цвет экземпляра
     // подхватывается сам: three.js видит instanceColor у InstancedMesh и
     // включает USE_INSTANCING_COLOR независимо от vertexColors.
-    const mat = new THREE.MeshLambertMaterial();
+    //
+    // Lambert заменён на Phong с лёгким бликом: у Lambert грань, отвёрнутая от
+    // света, отличается от освещённой только яркостью, и на плоской заливке
+    // рёбра сечения почти не видны. Слабый блик подчёркивает перелом граней —
+    // становится видно, где кровля, где бок, где свод.
+    const mat = new THREE.MeshPhongMaterial({
+      shininess: 18,
+      specular: 0x2a2f38,
+      // Обе стороны: в «стеклянном» режиме сквозь ближнюю стенку видна
+      // внутренняя поверхность дальней, и без DoubleSide выработка выглядела
+      // бы рассечённой.
+      side: glass ? THREE.DoubleSide : THREE.FrontSide,
+      transparent: glass,
+      opacity,
+      // Прозрачное тело в буфер глубины не пишем: иначе выработка, нарисованная
+      // первой, закрывала бы собой всё, что за ней, и «просвечивание» не
+      // работало бы вовсе — получилось бы мутное стекло вместо CAD-режима.
+      depthWrite: !glass,
+    });
     const mesh = new THREE.InstancedMesh(geom, mat, list.length);
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+    // Прозрачные тела рисуются после непрозрачных — иначе смешивание цветов
+    // зависит от случайного порядка в сцене.
+    if (glass) mesh.renderOrder = 1;
 
     const ids: string[] = [];
     let idx = 0;
@@ -256,6 +353,62 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     instanceToBranch.set(mesh, ids);
     instanceBranches.set(mesh, list);
     drawCalls++;
+
+    // ── Каркас сечения ──────────────────────────────────────────────────
+    // Линии инстансинг в three.js не поддерживают, поэтому рёбра всей группы
+    // сводим в ОДИН буфер: матрицу экземпляра применяем к точкам здесь, на
+    // сборке. Получается по одному вызову отрисовки на группу — столько же,
+    // сколько у заливки, и число выработок по-прежнему почти не влияет на
+    // скорость.
+    //
+    // На очень больших схемах каркас отключаем: там выработка занимает
+    // считаные пиксели, рёбра сливаются в сплошную сетку и только мешают, а
+    // памяти под них уходит вдвое против заливки.
+    if (wantEdges && list.length > 0 && branches.length <= EDGE_LIMIT) {
+      const proto = buildProfileEdges(list[0]);
+      const src = proto.getAttribute("position") as THREE.BufferAttribute;
+      const cnt = src.count;
+      const dst = new Float32Array(cnt * 3 * list.length);
+      const col = new Float32Array(cnt * 3 * list.length);
+      const v = new THREE.Vector3();
+      const m = new THREE.Matrix4();
+      let o = 0;
+
+      for (let i = 0; i < list.length; i++) {
+        mesh.getMatrixAt(i, m);
+        // Ребро темнее заливки — так контур читается на своей же выработке,
+        // а не спорит с ней по яркости.
+        tmpColor.set(colorOf(list[i])).multiplyScalar(0.45);
+        for (let k = 0; k < cnt; k++) {
+          v.fromBufferAttribute(src, k).applyMatrix4(m);
+          dst[o] = v.x; dst[o + 1] = v.y; dst[o + 2] = v.z;
+          col[o] = tmpColor.r; col[o + 1] = tmpColor.g; col[o + 2] = tmpColor.b;
+          o += 3;
+        }
+      }
+      proto.dispose();
+
+      const eg = new THREE.BufferGeometry();
+      eg.setAttribute("position", new THREE.BufferAttribute(dst, 3));
+      eg.setAttribute("color", new THREE.BufferAttribute(col, 3));
+      const em = new THREE.LineBasicMaterial({
+        vertexColors: true,
+        transparent: true,
+        // В стеклянном режиме контур — главное, что держит форму, поэтому он
+        // заметно плотнее тела. В сплошном хватает лёгкой обводки.
+        opacity: glass ? 0.85 : 0.5,
+        depthWrite: false,
+      });
+      const lines = new THREE.LineSegments(eg, em);
+      lines.frustumCulled = false;
+      lines.renderOrder = 2;   // поверх заливки, но под подсветкой выбора
+      root.add(lines);
+      // Запоминаем связь «заливка → её каркас»: при смене режима окраски
+      // контур должен перекраситься вместе с телом, иначе рёбра остались бы
+      // от прежней раскраски и спорили бы с новой.
+      edgeOf.set(mesh, { lines, vertsPerBranch: cnt });
+      drawCalls++;
+    }
   }
 
   // ── Освещение ─────────────────────────────────────────────────────────
@@ -266,10 +419,22 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   // Яркости подобраны так, чтобы СУММА в самой освещённой точке была около
   // единицы (0.75 + 0.55·cos). Прежние 1.6 и 1.1 в сумме давали 2.7 — всё
   // светлое выбивалось в белое пятно, а разница между выработками пропадала.
-  const dir = new THREE.DirectionalLight(0xffffff, 0.55);
+  //
+  // РАЗВЕС СМЕЩЁН В СТОРОНУ НАПРАВЛЕННОГО СВЕТА. Было 0.75 рассеянного против
+  // 0.55 направленного: рассеянный светит одинаково во все стороны, поэтому
+  // кровля и бок выработки отличались меньше чем на треть яркости — сечение
+  // выглядело плоской лентой, что и видно на снимке. Теперь наоборот, и грани
+  // расходятся по яркости вдвое: форма сечения читается без выделения.
+  const dir = new THREE.DirectionalLight(0xffffff, 0.8);
   dir.position.set(-0.4, 0.9, 0.5);
   root.add(dir);
-  root.add(new THREE.AmbientLight(0xffffff, 0.75));
+  // Второй направленный, с другой стороны и слабее — подсветка-заполнение.
+  // Без неё грань, отвёрнутая от главного источника, проваливается в ровный
+  // тёмный тон и теряет форму так же, как раньше теряла её на свету.
+  const fill = new THREE.DirectionalLight(0xffffff, 0.3);
+  fill.position.set(0.7, 0.2, -0.5);
+  root.add(fill);
+  root.add(new THREE.AmbientLight(0xffffff, 0.42));
 
   // Габарит — основа всего расчёта камеры, поэтому он обязан быть числом.
   // Пустая схема, единственный узел или уцелевшее нечисло дают нулевой либо
@@ -285,7 +450,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     bounds.center.set(0, 0, 0);
   }
 
-  return { root, instanceToBranch, instanceBranches, bounds, branchCount, drawCalls };
+  return { root, instanceToBranch, instanceBranches, edgeOf, bounds, branchCount, drawCalls };
 }
 
 /**
@@ -310,17 +475,36 @@ export function recolorScene(built: BuiltScene | null, colorOf: (b: TopoBranch) 
     const prev = holder.__lastColors;
     const next: string[] = prev ?? new Array<string>(list.length);
 
+    // Каркас лежит в общем буфере группы: цвет i-й выработки занимает в нём
+    // vertsPerBranch вершин подряд, начиная с i·vertsPerBranch.
+    const edge = built.edgeOf.get(mesh);
+    const eCol = edge
+      ? (edge.lines.geometry.getAttribute("color") as THREE.BufferAttribute)
+      : null;
+    let edgeChanged = false;
+
     for (let i = 0; i < list.length; i++) {
       const col = colorOf(list[i]);
       if (prev && prev[i] === col) continue;
       next[i] = col;
       tmp.set(col);
       mesh.setColorAt(i, tmp);
+
+      if (eCol && edge) {
+        // Ребро темнее заливки — тот же коэффициент, что и при сборке.
+        tmp.multiplyScalar(0.45);
+        const base = i * edge.vertsPerBranch;
+        for (let k = 0; k < edge.vertsPerBranch; k++) {
+          eCol.setXYZ(base + k, tmp.r, tmp.g, tmp.b);
+        }
+        edgeChanged = true;
+      }
       changed = true;
     }
 
     holder.__lastColors = next;
     if (changed && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    if (edgeChanged && eCol) eCol.needsUpdate = true;
   }
   return changed;
 }
@@ -427,6 +611,26 @@ function makeHighlightMesh(
     hl.matrixAutoUpdate = false;
     hl.frustumCulled = false;
     hl.renderOrder = kind === "select" ? 1000 : 999;
+
+    // Обводка по рёбрам рубашки. Полупрозрачная заливка сама по себе даёт лишь
+    // мутное пятно — на схеме, где тело выработки тоже прозрачное, по нему
+    // невозможно понять, ГДЕ именно кончается выделенная выработка. Сплошная
+    // линия по контуру решает это так же, как обводка выбора в CAD.
+    const wire = new THREE.LineSegments(
+      new THREE.EdgesGeometry(mesh.geometry, 25),
+      new THREE.LineBasicMaterial({
+        color: HL_COLORS[kind],
+        depthTest: false,
+        depthWrite: false,
+        transparent: true,
+        opacity: 0.95,
+      }),
+    );
+    // Рубашка уже стоит на месте выработки, поэтому обводке хватает единичной
+    // матрицы относительно неё.
+    wire.renderOrder = hl.renderOrder + 1;
+    wire.frustumCulled = false;
+    hl.add(wire);
     return hl;
   }
   return null;
@@ -438,6 +642,16 @@ function dropHighlight(root: THREE.Group, mesh: THREE.Mesh | null) {
   root.remove(mesh);
   const mat = mesh.material as THREE.Material;
   mat.dispose();
+  // Обводка — в отличие от рубашки — несёт СВОЮ геометрию (EdgesGeometry
+  // строится заново на каждое выделение). Её нужно освобождать здесь: выбор
+  // выработки происходит десятки раз за сеанс, и без этого видеопамять течёт
+  // на каждый щелчок.
+  for (const child of mesh.children) {
+    const l = child as THREE.LineSegments;
+    l.geometry?.dispose();
+    (l.material as THREE.Material)?.dispose();
+  }
+  mesh.clear();
 }
 
 /**

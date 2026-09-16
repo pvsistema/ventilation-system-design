@@ -127,6 +127,26 @@ export default function MineView3D(p: MineView3DProps) {
   const arrowsRef = useRef<FlowArrows | null>(null);
   const [showArrows, setShowArrows] = useState(true);
   const [arrowCount, setArrowCount] = useState(0);
+
+  // ── Плотность тела выработки ──────────────────────────────────────────
+  // Сплошная заливка хороша для показа, но на реальной схеме ближние выработки
+  // наглухо закрывают дальние: видно внешнюю оболочку рудника и ничего внутри.
+  // Полупрозрачный режим — то, чем в CAD смотрят такие модели: сквозь стенки
+  // читается вся структура, а форма держится на контурных рёбрах.
+  //
+  // Три положения вместо ползунка: промежуточные значения на глаз почти
+  // неразличимы, а лишняя ручка на панели требует объяснения.
+  const SOLIDITY: { key: "solid" | "glass" | "ghost"; label: string; value: number; hint: string }[] = [
+    { key: "solid", label: "Плотно", value: 1, hint: "Сплошные выработки — как на показе" },
+    { key: "glass", label: "Стекло", value: 0.55, hint: "Полупрозрачно: сквозь ближние выработки видны дальние" },
+    { key: "ghost", label: "Каркас", value: 0.22, hint: "Почти прозрачно: видна вся структура рудника" },
+  ];
+  const [solidity, setSolidity] = useState<"solid" | "glass" | "ghost">("glass");
+  const opacity = SOLIDITY.find(s => s.key === solidity)?.value ?? 1;
+
+  // Контурные рёбра сечения. Именно они показывают форму выработки: без них
+  // соседние выработки одного цвета сливаются в одно тело.
+  const [showEdges, setShowEdges] = useState(true);
   // Стрелки бегут — значит кадры нужны непрерывно, а не по событию. Держим это
   // признаком в ref: цикл отрисовки не должен зависеть от перерисовок React.
   const animatingRef = useRef(false);
@@ -275,6 +295,8 @@ export default function MineView3D(p: MineView3DProps) {
       xyScale: p.xyScale,
       zScale: p.zScale,
       colorOf: colorOfRef.current,
+      opacity,
+      edges: showEdges,
     });
     const buildMs = performance.now() - t0;
 
@@ -317,8 +339,9 @@ export default function MineView3D(p: MineView3DProps) {
       );
     }
     // p.colorOf намеренно НЕ в зависимостях — см. colorOfRef выше.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, p.nodes, p.branches, p.xyScale, p.zScale]);
+    // opacity и showEdges меняют материал и набор мешей, поэтому требуют
+    // пересборки; ракурс при этом сохраняется (см. keep выше).
+  }, [ready, p.nodes, p.branches, p.xyScale, p.zScale, opacity, showEdges]);
 
   // ── Подписи выработок ─────────────────────────────────────────────────
   // Текст собирается заранее и отдельно от геометрии: он меняется чаще (галочка
@@ -849,8 +872,13 @@ export default function MineView3D(p: MineView3DProps) {
         }}
       />
 
+      {/* Панель управления видом. Два ряда в ОДНОЙ колонке, а не двумя
+          абсолютными блоками: верхний ряд переносится по ширине, и при узкой
+          рабочей области второй ряд, стоящий на фиксированном отступе, залез
+          бы прямо на кнопки ракурсов. */}
+      <div className="absolute top-2 left-2 flex flex-col gap-1" style={{ maxWidth: 320 }}>
       {/* Кнопки стандартных ракурсов — те же, что в режиме «Чертёж» */}
-      <div className="absolute top-2 left-2 flex gap-1 flex-wrap" style={{ maxWidth: 320 }}>
+      <div className="flex gap-1 flex-wrap">
         {([
           ["План", 0, Math.PI / 2 - 0.02],
           ["Фронт", 0, 0],
@@ -895,6 +923,46 @@ export default function MineView3D(p: MineView3DProps) {
         >
           Направление
         </button>
+      </div>
+
+      {/* Плотность и контур — вторым рядом, отдельно от ракурсов: это не
+          «куда смотрим», а «как показана сама выработка». */}
+      <div className="flex gap-1 items-center flex-wrap">
+        <div className="flex rounded border overflow-hidden" style={{ borderColor: "var(--c-b2, #d1d5db)" }}>
+          {SOLIDITY.map(s => (
+            <button
+              key={s.key}
+              onClick={() => setSolidity(s.key)}
+              title={s.hint}
+              className="text-[11px] px-2 py-1 hover:bg-white"
+              style={{
+                background: solidity === s.key ? "rgba(219,234,254,0.95)" : "rgba(255,255,255,0.9)",
+                color: solidity === s.key ? "#2563eb" : "var(--c-t2, #374151)",
+                fontWeight: solidity === s.key ? 600 : 400,
+              }}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => setShowEdges(v => !v)}
+          title={
+            showEdges
+              ? "Скрыть контур сечения выработок"
+              : "Показать контур сечения: по нему видна форма выработки и её границы"
+          }
+          className="text-[11px] px-2 py-1 rounded border hover:bg-white"
+          style={{
+            borderColor: showEdges ? "#0f766e" : "var(--c-b2, #d1d5db)",
+            color: showEdges ? "#0f766e" : "var(--c-t2, #374151)",
+            background: showEdges ? "rgba(204,251,241,0.9)" : "rgba(255,255,255,0.9)",
+          }}
+        >
+          Контур
+        </button>
+      </div>
       </div>
 
       {/* Подсказка под курсором: название выработки и её расход.
