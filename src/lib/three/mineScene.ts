@@ -325,6 +325,156 @@ export function recolorScene(built: BuiltScene | null, colorOf: (b: TopoBranch) 
   return changed;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ВЫБОР ВЫРАБОТКИ МЫШЬЮ
+//
+// Выработки нарисованы пакетом (InstancedMesh), отдельных объектов под каждую
+// в сцене нет — значит и «кликнуть по объекту» напрямую нельзя. Зато луч,
+// пущенный из точки экрана, three.js умеет проверять по экземплярам и
+// возвращает instanceId. Порядковый номер экземпляра мы при сборке сохранили в
+// instanceBranches, отсюда и получается сама выработка.
+//
+// Луч бьёт по ВСЕМ мешам сразу, поэтому ближайшее пересечение и есть та
+// выработка, которую человек видит под курсором — в том числе если перед ней
+// проходит другая: выбирается передняя, как и ожидается в CAD.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Что нашлось под курсором. */
+export interface PickResult {
+  branch: TopoBranch;
+  /** Точка попадания в координатах сцены — по ней ставится подпись. */
+  point: THREE.Vector3;
+}
+
+/**
+ * Ищет выработку под лучом.
+ *
+ * Луч должен быть уже настроен снаружи (setFromCamera): здесь нет ни камеры,
+ * ни размеров холста — сцена о них ничего не знает.
+ */
+export function pickBranch(built: BuiltScene | null, ray: THREE.Raycaster): PickResult | null {
+  if (!built) return null;
+
+  const meshes: THREE.InstancedMesh[] = [];
+  for (const [mesh] of built.instanceBranches) meshes.push(mesh);
+  if (meshes.length === 0) return null;
+
+  // recursive=false: подсветка и источники света в проверку попадать не должны.
+  const hits = ray.intersectObjects(meshes, false);
+  for (const h of hits) {
+    const mesh = h.object as THREE.InstancedMesh;
+    const list = built.instanceBranches.get(mesh);
+    if (!list) continue;
+    const i = h.instanceId;
+    if (i === undefined || i === null) continue;
+    const branch = list[i];
+    if (!branch) continue;
+    return { branch, point: h.point.clone() };
+  }
+  return null;
+}
+
+/** Хранилище подсветки: висит на самой сцене, чтобы не плодить состояние. */
+interface HighlightHolder {
+  __hl?: {
+    select: THREE.Mesh | null;
+    hover: THREE.Mesh | null;
+    selectId: string | null;
+    hoverId: string | null;
+  };
+}
+
+/** Цвета подсветки: выбранная — оранжевая (как в чертеже), под курсором — голубая. */
+const HL_COLORS = { select: 0xff7a00, hover: 0x2ea8ff };
+
+/**
+ * Строит «рубашку» вокруг выработки: тот же профиль, раздутый поперёк.
+ *
+ * Геометрия берётся ТА ЖЕ, что у пакетного меша (не копия) — это бесплатно по
+ * памяти, но значит, что освобождать её вместе с подсветкой нельзя: она ещё
+ * нужна самой схеме. Поэтому при снятии подсветки мы удаляем только материал.
+ */
+function makeHighlightMesh(
+  built: BuiltScene,
+  id: string,
+  kind: "select" | "hover",
+): THREE.Mesh | null {
+  for (const [mesh, list] of built.instanceBranches) {
+    const idx = list.findIndex(b => b.id === id);
+    if (idx < 0) continue;
+
+    const m = new THREE.Matrix4();
+    mesh.getMatrixAt(idx, m);
+    // Раздуваем только сечение (локальные оси Y и Z), длину оставляем: иначе
+    // подсветка вылезала бы за узлы и заходила в соседние выработки.
+    const grow = kind === "select" ? 1.35 : 1.2;
+    m.multiply(new THREE.Matrix4().makeScale(1, grow, grow));
+
+    const mat = new THREE.MeshBasicMaterial({
+      color: HL_COLORS[kind],
+      transparent: true,
+      opacity: kind === "select" ? 0.45 : 0.3,
+      // Глубину не проверяем: выбранная выработка должна быть видна, даже если
+      // она за другими. Так же ведёт себя выделение в объёмных вьюверах — иначе
+      // человек щёлкнул по списку, а на экране ничего не изменилось.
+      depthTest: false,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+
+    const hl = new THREE.Mesh(mesh.geometry, mat);
+    hl.applyMatrix4(m);
+    hl.matrixAutoUpdate = false;
+    hl.frustumCulled = false;
+    hl.renderOrder = kind === "select" ? 1000 : 999;
+    return hl;
+  }
+  return null;
+}
+
+/** Убирает подсветку со сцены. Геометрия общая со схемой — её не трогаем. */
+function dropHighlight(root: THREE.Group, mesh: THREE.Mesh | null) {
+  if (!mesh) return;
+  root.remove(mesh);
+  const mat = mesh.material as THREE.Material;
+  mat.dispose();
+}
+
+/**
+ * Показывает подсветку выбранной выработки и той, что под курсором.
+ *
+ * Возвращает true, если картинка изменилась — вызывающая сторона по этому
+ * признаку решает, просить ли новый кадр. Без проверки схема перерисовывалась
+ * бы на каждое движение мыши, даже когда под курсором пусто.
+ */
+export function setHighlight(
+  built: BuiltScene | null,
+  selectId: string | null,
+  hoverId: string | null,
+): boolean {
+  if (!built) return false;
+  const holder = built.root as unknown as THREE.Group & HighlightHolder;
+  const st = holder.__hl ?? (holder.__hl = { select: null, hover: null, selectId: null, hoverId: null });
+
+  // Под курсором и так выбранная выработка — второй раз подсвечивать незачем.
+  const hov = hoverId && hoverId !== selectId ? hoverId : null;
+  if (st.selectId === selectId && st.hoverId === hov) return false;
+
+  if (st.selectId !== selectId) {
+    dropHighlight(built.root, st.select);
+    st.select = selectId ? makeHighlightMesh(built, selectId, "select") : null;
+    if (st.select) built.root.add(st.select);
+    st.selectId = selectId;
+  }
+  if (st.hoverId !== hov) {
+    dropHighlight(built.root, st.hover);
+    st.hover = hov ? makeHighlightMesh(built, hov, "hover") : null;
+    if (st.hover) built.root.add(st.hover);
+    st.hoverId = hov;
+  }
+  return true;
+}
+
 /** Освобождает видеопамять сцены. Без этого при пересборке будет утечка. */
 export function disposeScene(built: BuiltScene | null) {
   if (!built) return;
