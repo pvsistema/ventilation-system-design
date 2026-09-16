@@ -20,6 +20,11 @@ import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { buildMineScene, disposeScene, recolorScene, pickBranch, setHighlight, type BuiltScene } from "@/lib/three/mineScene";
+import { buildMineLabels, drawMineLabels, type MineLabel } from "@/lib/three/mineLabels";
+import { buildFlowArrows } from "@/lib/three/mineArrows";
+import { type InfoDisplayConfig } from "@/lib/infoConfig";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
+import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import Icon from "@/components/ui/icon";
 
 export interface MineView3DProps {
@@ -34,6 +39,16 @@ export interface MineView3DProps {
   /** Выбранная выработка: подсвечивается и в 3D. */
   selectedBranchId?: string | null;
   onSelectBranch?: (id: string | null) => void;
+  // ── Подписи выработок ────────────────────────────────────────────────
+  // Набор величин и единицы — те же, что у чертежа: «Панель информации»
+  // управляет обоими режимами сразу, иначе человек, настроив подписи, не нашёл
+  // бы их в объёме.
+  /** Какие величины показывать в подписи. */
+  infoConfig?: InfoDisplayConfig | null;
+  /** Единицы измерения для подписей. */
+  unitsConfig?: UnitsConfig;
+  /** Результаты расчёта водопровода — для показаний редуктора в подписи. */
+  waterBranchResults?: Map<string, WaterBranchResult>;
 }
 
 /** Состояние камеры: сферические координаты вокруг точки интереса. */
@@ -65,6 +80,22 @@ export default function MineView3D(p: MineView3DProps) {
     zoom: 200,
     target: new THREE.Vector3(),
   });
+
+  // Холст подписей — отдельный слой поверх картинки видеокарты. Почему не
+  // объёмный текст в самой сцене, см. комментарий в mineLabels.ts.
+  const labelCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const labelsRef = useRef<MineLabel[]>([]);
+  // Выключатель подписей. Держим в состоянии (нужна кнопка) и в ref (цикл
+  // отрисовки не должен зависеть от перерисовок React).
+  const [showLabels, setShowLabels] = useState(true);
+  const showLabelsRef = useRef(showLabels);
+  showLabelsRef.current = showLabels;
+
+  // Стрелки направления воздуха — пакетный меш, живёт отдельно от схемы:
+  // расход пересчитывается чаще, чем меняется геометрия, и пересобирать ради
+  // стрелок всю схему незачем.
+  const arrowsRef = useRef<THREE.InstancedMesh | null>(null);
+  const [showArrows, setShowArrows] = useState(true);
 
   const [stats, setStats] = useState({ branches: 0, drawCalls: 0, fps: 0 });
   // Выработка под курсором: её имя показываем в плашке, а саму — подсвечиваем.
@@ -250,6 +281,64 @@ export default function MineView3D(p: MineView3DProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, p.nodes, p.branches, p.xyScale, p.zScale]);
 
+  // ── Подписи выработок ─────────────────────────────────────────────────
+  // Текст собирается заранее и отдельно от геометрии: он меняется чаще (галочка
+  // в «Панели информации», смена единиц), но пересобирать ради него сцену в
+  // видеопамяти незачем — положение выработок от этого не меняется.
+  useEffect(() => {
+    labelsRef.current = buildMineLabels({
+      nodes: p.nodes,
+      branches: p.branches,
+      xyScale: p.xyScale,
+      zScale: p.zScale,
+      infoConfig: p.infoConfig,
+      unitsConfig: p.unitsConfig ?? DEFAULT_UNITS_CONFIG,
+      waterBranchResults: p.waterBranchResults,
+    });
+    needsRenderRef.current = true;
+  }, [p.nodes, p.branches, p.xyScale, p.zScale, p.infoConfig, p.unitsConfig, p.waterBranchResults]);
+
+  // Подписи включили или выключили — нужен новый кадр, иначе слой так и остался
+  // бы в прежнем состоянии до первого поворота схемы.
+  useEffect(() => { needsRenderRef.current = true; }, [showLabels, p.selectedBranchId]);
+
+  // ── Стрелки направления воздуха ───────────────────────────────────────
+  // Пересобираются при изменении схемы и при выключении: меш небольшой (один
+  // конус на выработку), а вот держать в сцене невидимые стрелки незачем —
+  // видеокарта всё равно прогоняет их через отсечение.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    // Старые стрелки освобождаем: и геометрия, и материал у них собственные,
+    // со схемой не делятся — без dispose видеопамять течёт при каждом расчёте.
+    const prev = arrowsRef.current;
+    if (prev) {
+      scene.remove(prev);
+      prev.geometry.dispose();
+      (prev.material as THREE.Material).dispose();
+      arrowsRef.current = null;
+    }
+
+    if (showArrows) {
+      const arrows = buildFlowArrows({
+        nodes: p.nodes, branches: p.branches,
+        xyScale: p.xyScale, zScale: p.zScale,
+      });
+      if (arrows) { scene.add(arrows); arrowsRef.current = arrows; }
+    }
+    needsRenderRef.current = true;
+
+    return () => {
+      const m = arrowsRef.current;
+      if (!m) return;
+      scene.remove(m);
+      m.geometry.dispose();
+      (m.material as THREE.Material).dispose();
+      arrowsRef.current = null;
+    };
+  }, [ready, showArrows, p.nodes, p.branches, p.xyScale, p.zScale]);
+
   // ── Смена окраски без пересборки ──────────────────────────────────────
   // Переключили заливку (расход / скорость / участки / горизонты) — меняется
   // только цвет. Геометрия та же, поэтому переписываем буфер цветов и сразу
@@ -326,6 +415,36 @@ export default function MineView3D(p: MineView3DProps) {
 
         renderer.setSize(w, h, false);
         renderer.render(scene, cam);
+
+        // Подписи — вторым слоем, на обычном холсте поверх картинки
+        // видеокарты. Только здесь: матрица камеры уже окончательная, и текст
+        // сядет ровно на те места, где нарисованы выработки.
+        const lc = labelCanvasRef.current;
+        if (lc) {
+          if (showLabelsRef.current && labelsRef.current.length > 0) {
+            const dpr = Math.min(window.devicePixelRatio, 2);
+            // Холст держим в пикселях устройства, а рисуем в логических:
+            // иначе текст на экранах с высокой плотностью выходит мыльным.
+            if (lc.width !== Math.round(w * dpr) || lc.height !== Math.round(h * dpr)) {
+              lc.width = Math.round(w * dpr);
+              lc.height = Math.round(h * dpr);
+            }
+            const lctx = lc.getContext("2d");
+            if (lctx) {
+              lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+              drawMineLabels(lctx, labelsRef.current, cam, {
+                selectedId: selectedRef.current, width: w, height: h,
+              });
+            }
+          } else if (lc.width > 0) {
+            // Подписи выключили — холст гасим, иначе на схеме остался бы
+            // отпечаток последнего кадра с текстом.
+            const lctx = lc.getContext("2d");
+            lctx?.setTransform(1, 0, 0, 1, 0, 0);
+            lctx?.clearRect(0, 0, lc.width, lc.height);
+          }
+        }
+
         needsRenderRef.current = false;
         frames++;
         last = performance.now();
@@ -575,6 +694,18 @@ export default function MineView3D(p: MineView3DProps) {
     <div className="absolute inset-0" style={{ overflow: "hidden" }}>
       <div ref={hostRef} style={{ width: p.width, height: p.height, cursor: "grab" }} />
 
+      {/* Слой подписей. pointerEvents отключены: холст лежит поверх схемы во
+          всю рабочую область, и без этого он перехватывал бы и вращение, и
+          выбор выработки — модель перестала бы отзываться на мышь вообще. */}
+      <canvas
+        ref={labelCanvasRef}
+        style={{
+          position: "absolute", left: 0, top: 0,
+          width: p.width, height: p.height,
+          pointerEvents: "none",
+        }}
+      />
+
       {/* Кнопки стандартных ракурсов — те же, что в режиме «Чертёж» */}
       <div className="absolute top-2 left-2 flex gap-1 flex-wrap" style={{ maxWidth: 320 }}>
         {([
@@ -590,6 +721,37 @@ export default function MineView3D(p: MineView3DProps) {
             {label}
           </button>
         ))}
+
+        {/* Подписи нужны не всегда: при разборе геометрии текст мешает, при
+            разговоре о расходах — наоборот, главное на экране. Поэтому
+            выключатель стоит рядом с ракурсами, а не прячется в настройках. */}
+        <button
+          onClick={() => setShowLabels(v => !v)}
+          title={showLabels ? "Скрыть подписи выработок" : "Показать подписи выработок"}
+          className="text-[11px] px-2 py-1 rounded border hover:bg-white"
+          style={{
+            borderColor: showLabels ? "#2563eb" : "var(--c-b2, #d1d5db)",
+            color: showLabels ? "#2563eb" : "var(--c-t2, #374151)",
+            background: showLabels ? "rgba(219,234,254,0.9)" : "rgba(255,255,255,0.9)",
+          }}
+        >
+          Подписи
+        </button>
+
+        {/* Стрелки направления воздуха. Выключаются отдельно от подписей: при
+            разговоре о направлении струи текст обычно мешает, и наоборот. */}
+        <button
+          onClick={() => setShowArrows(v => !v)}
+          title={showArrows ? "Скрыть стрелки направления воздуха" : "Показать стрелки направления воздуха"}
+          className="text-[11px] px-2 py-1 rounded border hover:bg-white"
+          style={{
+            borderColor: showArrows ? "#dc2626" : "var(--c-b2, #d1d5db)",
+            color: showArrows ? "#dc2626" : "var(--c-t2, #374151)",
+            background: showArrows ? "rgba(254,226,226,0.9)" : "rgba(255,255,255,0.9)",
+          }}
+        >
+          Направление
+        </button>
       </div>
 
       {/* Подсказка под курсором: название выработки и её расход.

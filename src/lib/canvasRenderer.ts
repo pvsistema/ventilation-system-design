@@ -4,11 +4,11 @@
 // тысяч отдельных элементов. Значение настраивается пользователем в панели.
 // Математика проекции полностью переиспользуется из topology.ts
 // ─────────────────────────────────────────────────────────────────────────────
-import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, calcBranchLength, sectionKind, SECTION_KIND_COLORS } from "./topology";
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, sectionKind, SECTION_KIND_COLORS } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
-import { type UnitsConfig, getUnit } from "./unitsConfig";
+import { type UnitsConfig } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
-import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "./branchLabelExtras";
+import { branchLabelLines } from "./branchLabelLines";
 import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
 import { buildTube, shadeColor, shouldDrawTube, TUBE_MAX_COUNT, type TubeGeometry } from "./tube3d";
 
@@ -309,14 +309,6 @@ export function flowQColor(q: number, min: number, max: number, hue: "red" | "bl
   const g = Math.round(255 + (tg - 255) * t);
   const b = Math.round(255 + (tb - 255) * t);
   return `rgb(${r},${g},${b})`;
-}
-
-function fmtR(rMkyurg: number, unit: { fromBase: (v: number) => number; symbol: string; decimals: number }): string {
-  const v = unit.fromBase(rMkyurg);
-  if (v === 0) return `0 ${unit.symbol}`;
-  const mag = Math.floor(Math.log10(Math.abs(v)));
-  const decimals = Math.max(unit.decimals, -mag + 1);
-  return `${v.toFixed(decimals)}${unit.symbol}`;
 }
 
 // ─── Кэши сортировки по глубине (ветви и узлы) ─────────────────────────────
@@ -1100,7 +1092,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // поверх трубы не нужна).
     const _tube = tubeGeoms.get(b.id);
     if (_tube) { paintTube(_tube, p.color); continue; }
-    const { isSel, isDead, isLeakage, Q, V, overV,
+    const { isSel, isLeakage, Q, V, overV,
       sxA, syA, sxB, syB, midX, midY, color, w,
       flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle } = p;
 
@@ -1368,69 +1360,20 @@ export function renderCanvas(opts: CanvasRenderOptions) {
 
     // Метки ветвей
     if (lodLabels) {
-      const ic = (b.indicators && Object.keys(b.indicators).length > 0)
-        ? { ...(infoConfig ?? {}), ...b.indicators } as typeof infoConfig
-        : infoConfig;
       const labelOpacity = Math.min(1, Math.max(0, (sc - _labelLod) / Math.max(0.08, _labelLod * 1.5)));
       const branchNum = b.id.replace(/^B/, "");
-      const hasCalc = (Q > 0 || b.velocity > 0) && !isDead;
-      const showNum = !ic || ic.branchNumber;
       const lox = (b.labelOffsetX ?? 0) * objSF;
       const loy = (b.labelOffsetY ?? -16) * objSF;
       const labelAng = (b.labelAngle ?? 0) * Math.PI / 180;
       const anchorX = midX + lox, anchorY = midY + loy;
 
-      const dataLines: string[] = [];
-      if (!isDead && ic) {
-        const uFlow = getUnit(unitsConfig, "flow");
-        const uVel  = getUnit(unitsConfig, "velocity");
-        const uPres = getUnit(unitsConfig, "pressure");
-        const uLen  = getUnit(unitsConfig, "length");
-        const uArea = getUnit(unitsConfig, "area");
-        const uRes  = getUnit(unitsConfig, "resistance");
-        const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
-        const lenReal = b.length || Math.round(calcBranchLength(p.fromNode, p.toNode));
-        if (ic.branchName && b.type) dataLines.push(b.type);
-        if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(lenReal).toFixed(uLen.decimals)}${uLen.symbol}`);
-        if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
-        if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
-        if (ic.branchResistance) dataLines.push(`R=${fmtR(b.resistance * 1000, uRes)}`);
-        if (ic.branchResistanceSum) dataLines.push(`Rсум=${fmtR(branchTotalR(b) * 1000, uRes)}`);
-        if (ic.branchAlpha) dataLines.push(`α=${(b.alphaCoef ?? 0).toFixed(0)}·10⁻⁴`);
-        if (ic.branchVMax) dataLines.push(`Vmax=${uVel.fromBase(b.vMax ?? 0).toFixed(uVel.decimals)}${uVel.symbol}`);
-        if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(V).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
-        if ((ic.branchFlow || ic.branchFlowCalc) && hasCalc) dataLines.push(`Q=${Qsign}${uFlow.fromBase(Q).toFixed(uFlow.decimals)}${uFlow.symbol}`);
-        if (ic.branchDepression && hasCalc) dataLines.push(`Н=${uPres.fromBase(b.dP).toFixed(uPres.decimals)}${uPres.symbol}`);
-        if (ic.branchExtraFan && b.hasFan) dataLines.push(`ДопН=${uPres.fromBase(branchExtraPressure(b)).toFixed(uPres.decimals)}${uPres.symbol}`);
-        if (ic.branchHeight && branchSectionHeight(b) > 0) dataLines.push(`Высота=${uLen.fromBase(branchSectionHeight(b)).toFixed(2)}${uLen.symbol}`);
-        if (ic.branchPeople && branchPeopleCount(b) > 0) dataLines.push(`Людей=${branchPeopleCount(b)}`);
-        // Показатели вентилятора (расход, напор, мощность, КПД) в подписи ветви
-        // БОЛЬШЕ НЕ выводим: они рисуются отдельной подписью у самого значка
-        // вентилятора (см. drawSymbolsToCanvas). Раньше они попадали сюда — в
-        // общий блок с длиной и сечением — и на схеме оказывались далеко от
-        // оборудования, к которому относятся.
-        // ─── Водопроводные показатели трубы (вкладка «Водопровод») ───
-        if (b.hasWaterPipe) {
-          if (ic.waterVelocity && (b.wpComputedVelocity ?? 0) > 0)
-            dataLines.push(`Vв=${(b.wpComputedVelocity ?? 0).toFixed(2)} м/с`);
-          if (ic.waterFlow && (b.wpComputedFlow ?? 0) > 0)
-            dataLines.push(`Qв=${(b.wpComputedFlow ?? 0).toFixed(1)} м³/ч`);
-          if (ic.waterReducerPressure && b.wpHasReducer) {
-            const wbr = waterBranchResults?.get(b.id);
-            const pIn  = wbr && wbr.reducerInP > 0 ? wbr.reducerInP : null;
-            const pOut = wbr && wbr.reducerOutP > 0 ? wbr.reducerOutP : (b.wpReducerOutPressure ?? 0);
-            dataLines.push(pIn != null
-              ? `Ред: ${pIn.toFixed(2)}→${pOut.toFixed(2)} МПа`
-              : `Ред: →${pOut.toFixed(2)} МПа`);
-          }
-        }
-      } else if (!isDead && !ic && hasCalc) {
-        const Qsign = (b.fanReverse && b.hasFan) ? "−" : "";
-        dataLines.push(`Q=${Qsign}${Q.toFixed(1)}`);
-        if (b.velocity > 0) dataLines.push(`V=${b.velocity.toFixed(1)}`);
-      }
-
-      const allLines = showNum ? [branchNum, ...dataLines] : dataLines;
+      // Текст подписи собирается в общем модуле — том же, которым пользуется
+      // объёмный режим «Модель». Иначе одна и та же выработка показывала бы на
+      // чертеже и в объёме разные числа.
+      const { lines: allLines, showNum } = branchLabelLines({
+        b, fromNode: p.fromNode, toNode: p.toNode,
+        infoConfig, unitsConfig, waterBranchResults,
+      });
       if (allLines.length === 0) continue;
 
       ctx.save();

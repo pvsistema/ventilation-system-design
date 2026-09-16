@@ -1795,6 +1795,9 @@ export default function TopoCanvas(props: Props) {
               colorOf={branchColor3d}
               selectedBranchId={selectedBranchId}
               onSelectBranch={onSelectBranch}
+              infoConfig={infoConfig}
+              unitsConfig={unitsConfig}
+              waterBranchResults={waterBranchResults}
             />
           </div>
         </CanvasErrorBoundary>
