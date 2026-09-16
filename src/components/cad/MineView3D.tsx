@@ -6,10 +6,15 @@
 // Здесь другая задача — посмотреть схему в объёме, облететь её, показать
 // заказчику или комиссии.
 //
-// УПРАВЛЕНИЕ (как в привычных CAD):
-//   • левая кнопка   — вращение вокруг точки интереса;
-//   • правая/средняя — перенос (панорама);
-//   • колесо         — приближение.
+// УПРАВЛЕНИЕ — ОДНО И ТО ЖЕ С РЕЖИМОМ «ЧЕРТЁЖ» (см. TopoCanvas):
+//   • правая кнопка        — вращение вокруг точки интереса;
+//   • средняя / Shift+ЛКМ  — перенос (панорама);
+//   • левая кнопка         — выбор выработки, перетаскиванием — перенос;
+//   • колесо               — приближение К КУРСОРУ;
+//   • Shift/Ctrl + колесо  — панорама по горизонтали / вертикали.
+//
+// Раскладка намеренно повторена буква в букву: два режима одной программы не
+// могут требовать от человека разных рук на одно и то же движение.
 //
 // Камера ОРТОГРАФИЧЕСКАЯ, а не перспективная. Для маркшейдерского дела это
 // принципиально: при ортогональной проекции параллельные выработки остаются
@@ -730,7 +735,7 @@ export default function MineView3D(p: MineView3DProps) {
     const el = rendererRef.current?.domElement;
     if (!el) return;
 
-    let mode: "orbit" | "pan" | null = null;
+    let mode: "orbit" | "pan" | "select" | null = null;
     let lastX = 0, lastY = 0;
     // Сколько пикселей прошла мышь с нажатия. Нужно, чтобы отличить щелчок от
     // вращения: обе операции — левая кнопка, и без этого порога любой облёт
@@ -771,8 +776,20 @@ export default function MineView3D(p: MineView3DProps) {
     };
 
     const onDown = (e: MouseEvent) => {
-      // Левая — вращение, правая и средняя — перенос (как в CAD-программах).
-      mode = e.button === 0 ? "orbit" : "pan";
+      // РАСКЛАДКА КНОПОК — та же, что в режиме «Чертёж» (см. TopoCanvas,
+      // onMouseDown). Раньше здесь было ровно наоборот: левая вращала, правая
+      // переносила. Человек, привыкший крутить схему правой кнопкой на
+      // чертеже, в объёме получал перенос — и наоборот. Два режима одной
+      // программы не могут требовать разных рук.
+      //
+      //   ПКМ                  — вращение;
+      //   СКМ или Shift+ЛКМ    — перенос (панорама);
+      //   ЛКМ                  — выбор выработки (щелчок) и перенос при
+      //                          перетаскивании: рамки выделения в объёме нет,
+      //                          и оставлять левую кнопку без дела незачем.
+      if (e.button === 2) mode = "orbit";
+      else if (e.button === 1 || e.shiftKey) mode = "pan";
+      else mode = "select";
       lastX = e.clientX; lastY = e.clientY;
       dragDist = 0;
       e.preventDefault();
@@ -787,7 +804,7 @@ export default function MineView3D(p: MineView3DProps) {
           if (hoverIdRef.current !== null) {
             hoverIdRef.current = null;
             if (setHighlight(builtRef.current, selectedRef.current, null)) needsRenderRef.current = true;
-            el.style.cursor = "grab";
+            el.style.cursor = "default";
           }
           setHover(prev => (prev ? null : prev));
           return;
@@ -807,7 +824,7 @@ export default function MineView3D(p: MineView3DProps) {
         if (id !== hoverIdRef.current) {
           hoverIdRef.current = id;
           if (setHighlight(builtRef.current, selectedRef.current, id)) needsRenderRef.current = true;
-          el.style.cursor = id ? "pointer" : "grab";
+          el.style.cursor = id ? "pointer" : "default";
         }
         if (hit) {
           // Название — то же, что в чертеже: название выработки, а если оно не
@@ -835,11 +852,18 @@ export default function MineView3D(p: MineView3DProps) {
       const c = camRef.current;
 
       if (mode === "orbit") {
-        c.az -= dx * 0.008;
-        // Подъём ограничиваем чуть-чуть не доходя до полюса: ровно на полюсе
-        // направление «вверх» вырождается и картинка скачком переворачивается.
+        // Чувствительность и направление — ровно как в «Чертеже»: там
+        // 0,5° на пиксель, азимут растёт вправо, подъём УБЫВАЕТ при движении
+        // мыши вниз. Здесь стояло 0,008 рад/px (≈0,46°) и подъём с обратным
+        // знаком — схема в объёме кренилась не в ту сторону, что на чертеже,
+        // и на одно и то же движение руки поворачивалась чуть иначе.
+        const RAD_PER_PX = (0.5 * Math.PI) / 180;
+        c.az -= dx * RAD_PER_PX;
+        // Подъём держим в тех же пределах, что чертёж: от вида сбоку (0°) до
+        // плана сверху (90°). Полюс не трогаем — на нём направление «вверх»
+        // вырождается и картинка скачком переворачивается.
         const lim = Math.PI / 2 - 0.02;
-        c.el = Math.max(-lim, Math.min(lim, c.el + dy * 0.008));
+        c.el = Math.max(0, Math.min(lim, c.el - dy * RAD_PER_PX));
         // Сообщаем чертежу: ракурс общий, и повернув схему в объёме, человек
         // ожидает найти её под тем же углом, вернувшись к чертежу.
         notifyAngles();
@@ -859,9 +883,12 @@ export default function MineView3D(p: MineView3DProps) {
     };
 
     const onUp = (e: MouseEvent) => {
-      const wasOrbit = mode === "orbit";
+      // Выбор выработки — только по левой кнопке, как на чертеже. Правая
+      // (вращение) там открывает контекстное меню и выделение не трогает,
+      // средняя переносит вид.
+      const wasSelect = mode === "select";
       mode = null;
-      if (!wasOrbit) return;
+      if (!wasSelect) return;
 
       // Щелчок, а не облёт. Порог в 4 пикселя: рука на мыши всегда чуть дрожит,
       // и требовать идеально неподвижного клика — значит не дать выбрать
@@ -885,10 +912,70 @@ export default function MineView3D(p: MineView3DProps) {
     const onWheel = (e: WheelEvent) => {
       e.preventDefault();
       const c = camRef.current;
-      // Шаг зума — доля от текущего масштаба, поэтому приближение ощущается
-      // одинаково и на общем плане, и вблизи забоя.
-      c.zoom *= e.deltaY > 0 ? 1.12 : 1 / 1.12;
-      c.zoom = Math.max(1, Math.min(200000, c.zoom));
+      const cam = cameraRef.current;
+
+      // Колесо ведёт себя так же, как в «Чертеже» (см. TopoCanvas, нативный
+      // wheel-listener): обычное — зум К КУРСОРУ, Shift — панорама по
+      // горизонтали, Ctrl — по вертикали. Раньше здесь был ступенчатый зум
+      // ×1,12 в центр экрана: выработка, к которой человек тянулся колесом,
+      // уползала из-под курсора, и приближаться приходилось в два приёма —
+      // покрутил, потом дотащил правой кнопкой.
+
+      // Нормализуем дельту: deltaMode 0=px, 1=строки, 2=страницы.
+      const normY = e.deltaMode === 1 ? e.deltaY * 18 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+      const normX = e.deltaMode === 1 ? e.deltaX * 18 : e.deltaMode === 2 ? e.deltaX * 400 : e.deltaX;
+
+      // Перенос точки интереса вдоль осей камеры на заданное число ЭКРАННЫХ
+      // пикселей — тот же пересчёт, что при переносе правой кнопкой.
+      const panScreen = (px: number, py: number) => {
+        if (!cam) return;
+        const k = (c.zoom * 2) / Math.max(1, sizeRef.current.h);
+        const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+        const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+        c.target.addScaledVector(right, px * k);
+        c.target.addScaledVector(up, -py * k);
+      };
+
+      if (e.shiftKey) {
+        // ── ПАНОРАМА ПО ГОРИЗОНТАЛИ ────────────────────────────────────
+        panScreen(Math.max(-200, Math.min(200, normY + normX)), 0);
+      } else if (e.ctrlKey || e.metaKey) {
+        // ── ПАНОРАМА ПО ВЕРТИКАЛИ ──────────────────────────────────────
+        panScreen(
+          Math.max(-200, Math.min(200, normX)),
+          Math.max(-200, Math.min(200, normY)),
+        );
+      } else {
+        // ── ЗУМ К КУРСОРУ ──────────────────────────────────────────────
+        // Шаг — тот же, что на чертеже: доля от текущего масштаба, поэтому
+        // приближение ощущается одинаково и на общем плане, и вблизи забоя.
+        const capped = Math.max(-150, Math.min(150, normY));
+        const factor = Math.pow(0.998, capped);
+        const prev = c.zoom;
+        const next = Math.max(1, Math.min(200000, prev / factor));
+        if (next === prev) return;
+        c.zoom = next;
+
+        // Держим точку под курсором на месте. У ортокамеры мир на экране
+        // масштабируется от ЦЕНТРА кадра, значит центр надо отодвинуть к
+        // курсору ровно на ту долю, на которую изменился масштаб.
+        const rect = el.getBoundingClientRect();
+        if (rect.width > 0 && rect.height > 0) {
+          // Смещение курсора от центра холста, в пикселях.
+          const offX = e.clientX - rect.left - rect.width / 2;
+          const offY = e.clientY - rect.top - rect.height / 2;
+          // При зуме (prev → next) мировая точка под курсором уезжает; k —
+          // насколько сдвинуть центр, чтобы она вернулась под курсор.
+          const k = 1 - next / prev;
+          const kw = (prev * 2) / Math.max(1, sizeRef.current.h);
+          if (cam) {
+            const right = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 0);
+            const up = new THREE.Vector3().setFromMatrixColumn(cam.matrix, 1);
+            c.target.addScaledVector(right, offX * kw * k);
+            c.target.addScaledVector(up, -offY * kw * k);
+          }
+        }
+      }
       needsRenderRef.current = true;
     };
 
@@ -901,7 +988,7 @@ export default function MineView3D(p: MineView3DProps) {
       if (hoverIdRef.current === null) return;
       hoverIdRef.current = null;
       if (setHighlight(builtRef.current, selectedRef.current, null)) needsRenderRef.current = true;
-      el.style.cursor = "grab";
+      el.style.cursor = "default";
       setHover(null);
     };
 
@@ -953,7 +1040,7 @@ export default function MineView3D(p: MineView3DProps) {
 
   return (
     <div className="absolute inset-0" style={{ overflow: "hidden" }}>
-      <div ref={hostRef} style={{ width: p.width, height: p.height, cursor: "grab" }} />
+      <div ref={hostRef} style={{ width: p.width, height: p.height, cursor: "default" }} />
 
       {/* Слой подписей. pointerEvents отключены: холст лежит поверх схемы во
           всю рабочую область, и без этого он перехватывал бы и вращение, и
@@ -1022,21 +1109,29 @@ export default function MineView3D(p: MineView3DProps) {
         {/* Условные обозначения. Перемычки и двери стоят поперёк выработки,
             вентиляторы и пожарные знаки повёрнуты лицом к человеку — см.
             mineSymbols.ts. Выключатель нужен: при разборе геометрии знаки
-            загораживают сечения, а при показе схемы они — главное. */}
-        <button
-          onClick={() => setShowSymbols(v => !v)}
-          title={showSymbols
-            ? "Скрыть условные обозначения (перемычки, двери, вентиляторы, знаки)"
-            : "Показать условные обозначения схемы"}
-          className="text-[11px] px-2 py-1 rounded border hover:bg-white"
-          style={{
-            borderColor: showSymbols ? "#7c3aed" : "var(--c-b2, #d1d5db)",
-            color: showSymbols ? "#7c3aed" : "var(--c-t2, #374151)",
-            background: showSymbols ? "rgba(237,233,254,0.9)" : "rgba(255,255,255,0.9)",
-          }}
-        >
-          Обозначения
-        </button>
+            загораживают сечения, а при показе схемы они — главное.
+
+            Кнопка показывается ТОЛЬКО когда знаков на схеме нет: иначе ими
+            управляет группа «УО» во втором ряду, где рядом лежит и размер.
+            Два переключателя одного и того же — верный способ получить
+            «нажал, а не выключилось»: человек жмёт один, а погашено уже
+            другим. */}
+        {(p.schemaSymbols?.length ?? 0) === 0 && symbolCount === 0 && (
+          <button
+            onClick={() => setShowSymbols(v => !v)}
+            title={showSymbols
+              ? "Скрыть условные обозначения (перемычки, двери, вентиляторы, знаки)"
+              : "Показать условные обозначения схемы"}
+            className="text-[11px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: showSymbols ? "#7c3aed" : "var(--c-b2, #d1d5db)",
+              color: showSymbols ? "#7c3aed" : "var(--c-t2, #374151)",
+              background: showSymbols ? "rgba(237,233,254,0.9)" : "rgba(255,255,255,0.9)",
+            }}
+          >
+            Обозначения
+          </button>
+        )}
       </div>
 
       {/* Плотность и контур — вторым рядом, отдельно от ракурсов: это не
@@ -1106,27 +1201,50 @@ export default function MineView3D(p: MineView3DProps) {
           </button>
         )}
 
-        {/* Размер знаков. Перемычка всегда вписана в сечение своей выработки,
-            а вот отдельно стоящие знаки на схеме со стволами и сбойками
-            одного размера быть не могут — эта ручка и подгоняет их под
-            конкретную схему. */}
-        {showSymbols && symbolCount > 0 && (
+        {/* Условные обозначения: выключатель и размер знаков.
+
+            Слово «УО» здесь — не подпись, а кнопка: знаки в объёме гасят и
+            зажигают чаще всего именно отсюда, разбирая геометрию под ними, и
+            искать ради этого другой конец панели незачем. Группа не исчезает,
+            когда знаки погашены, — иначе выключатель пропадал бы вместе с тем,
+            что выключил, и вернуть УО было бы нечем.
+
+            Размер: перемычка всегда вписана в сечение своей выработки, а вот
+            отдельно стоящие знаки на схеме со стволами и сбойками одного
+            размера быть не могут — эта ручка и подгоняет их под схему. Пока
+            знаки погашены, размер недоступен: менять нечего. */}
+        {(symbolCount > 0 || (p.schemaSymbols?.length ?? 0) > 0) && (
           <div className="flex rounded border overflow-hidden items-center"
-            style={{ borderColor: "var(--c-b2, #d1d5db)" }}
-            title="Размер условных обозначений">
-            <span className="text-[10px] px-1.5 py-1"
-              style={{ background: "rgba(255,255,255,0.9)", color: "var(--c-t3, #9ca3af)" }}>
+            style={{ borderColor: showSymbols ? "#7c3aed" : "var(--c-b2, #d1d5db)" }}>
+            <button
+              onClick={() => setShowSymbols(v => !v)}
+              title={showSymbols
+                ? "Скрыть условные обозначения в объёме"
+                : "Показать условные обозначения в объёме"}
+              className="text-[10px] px-1.5 py-1 hover:bg-white"
+              style={{
+                background: showSymbols ? "rgba(237,233,254,0.95)" : "rgba(255,255,255,0.9)",
+                color: showSymbols ? "#7c3aed" : "var(--c-t3, #9ca3af)",
+                fontWeight: showSymbols ? 600 : 400,
+              }}
+            >
               УО
-            </span>
+            </button>
             {SYM_SIZES.map(s => (
               <button
                 key={s.key}
-                onClick={() => setSymSize(s.key)}
+                onClick={() => showSymbols && setSymSize(s.key)}
+                disabled={!showSymbols}
+                title={showSymbols ? `Размер условных обозначений: ${s.label}` : "Знаки погашены — включите УО"}
                 className="text-[11px] px-2 py-1 hover:bg-white"
                 style={{
-                  background: symSize === s.key ? "rgba(237,233,254,0.95)" : "rgba(255,255,255,0.9)",
-                  color: symSize === s.key ? "#7c3aed" : "var(--c-t2, #374151)",
-                  fontWeight: symSize === s.key ? 600 : 400,
+                  background: showSymbols && symSize === s.key ? "rgba(237,233,254,0.95)" : "rgba(255,255,255,0.9)",
+                  color: !showSymbols
+                    ? "var(--c-t3, #9ca3af)"
+                    : symSize === s.key ? "#7c3aed" : "var(--c-t2, #374151)",
+                  fontWeight: showSymbols && symSize === s.key ? 600 : 400,
+                  cursor: showSymbols ? "pointer" : "not-allowed",
+                  opacity: showSymbols ? 1 : 0.55,
                 }}
               >
                 {s.label}
@@ -1186,7 +1304,7 @@ export default function MineView3D(p: MineView3DProps) {
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"
         style={{ background: "rgba(255,255,255,0.92)", border: "1px solid var(--c-b1, #e5e7eb)", color: "var(--c-t3, #6b7280)" }}>
-        ЛКМ — поворот, щелчок — выбор выработки · ПКМ — перенос · колесо — приближение
+        ЛКМ — выбор выработки · ПКМ — поворот · СКМ либо Shift+ЛКМ — перенос · колесо — приближение
       </div>
     </div>
   );
