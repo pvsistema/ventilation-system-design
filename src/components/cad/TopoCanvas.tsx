@@ -1584,6 +1584,16 @@ export default function TopoCanvas(props: Props) {
       .map(x => x.sym);
   }, [schemaSymbols, branchById, horizonOrderMap]);
 
+  // УО для режима «Модель»: только те, что стоят на ВИДИМЫХ выработках.
+  // Скрыв горизонт, человек ожидает, что вместе с выработками уйдут и их
+  // перемычки, — иначе значки повисли бы в пустоте. Свободные значки (без
+  // привязки к выработке) в объём не идут вовсе: их экранные координаты к
+  // трёхмерной схеме отношения не имеют.
+  const modelSymbols = useMemo(
+    () => schemaSymbolsSorted.filter(s => s.branchId && !hiddenBranchIds.has(s.branchId)),
+    [schemaSymbolsSorted, hiddenBranchIds],
+  );
+
   const nodesSorted = useMemo(
     // Дальние узлы первыми — ближние рисуются поверх.
     () => [...projNodes].sort((a, b) => b.depth - a.depth),
@@ -1817,6 +1827,10 @@ export default function TopoCanvas(props: Props) {
               infoConfig={infoConfig}
               unitsConfig={unitsConfig}
               waterBranchResults={waterBranchResults}
+              /* Условные обозначения — те же, что на чертеже. Без них объём
+                 показывал голую геометрию: перемычки, двери, вентиляторы и
+                 очаги пожара несут половину содержания вентиляционного плана. */
+              schemaSymbols={modelSymbols}
               pollutedBranchIds={pollutedBranchIds}
               animSpeed={animSpeed}
               /* Кнопка «Анимация» на ленте — одна на оба режима. Выключив

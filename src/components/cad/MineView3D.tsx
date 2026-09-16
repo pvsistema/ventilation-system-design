@@ -22,6 +22,8 @@ import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { buildMineScene, disposeScene, recolorScene, pickBranch, setHighlight, type BuiltScene } from "@/lib/three/mineScene";
 import { buildMineLabels, drawMineLabels, type MineLabel } from "@/lib/three/mineLabels";
 import { buildFlowArrows, type FlowArrows } from "@/lib/three/mineArrows";
+import { buildMineSymbols, type MineSymbols } from "@/lib/three/mineSymbols";
+import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
@@ -50,6 +52,15 @@ export interface MineView3DProps {
   unitsConfig?: UnitsConfig;
   /** Результаты расчёта водопровода — для показаний редуктора в подписи. */
   waterBranchResults?: Map<string, WaterBranchResult>;
+  /**
+   * Условные обозначения схемы — те же, что на чертеже.
+   *
+   * В объёме это не украшение: перемычка, дверь, вентилятор и очаг пожара
+   * несут половину содержания вентиляционного плана. Показываются ровно теми
+   * же значками из общей легенды, чтобы человек читал модель так же, как
+   * читает чертёж (см. mineSymbols.ts).
+   */
+  schemaSymbols?: SchemaSymbol[];
   /**
    * Выработки с загазованной (исходящей) струёй. Стрелки в них синие, в
    * остальных красные — ровно как на чертеже. Считается снаружи тем же
@@ -127,6 +138,25 @@ export default function MineView3D(p: MineView3DProps) {
   const arrowsRef = useRef<FlowArrows | null>(null);
   const [showArrows, setShowArrows] = useState(true);
   const [arrowCount, setArrowCount] = useState(0);
+
+  // ── Условные обозначения ──────────────────────────────────────────────
+  // Живут отдельным слоем, как и стрелки: значки переставляют куда чаще, чем
+  // меняется геометрия выработок, и пересобирать ради одной перемычки всю
+  // схему в видеопамяти незачем.
+  const symbolsRef = useRef<MineSymbols | null>(null);
+  const [showSymbols, setShowSymbols] = useState(true);
+  const [symbolCount, setSymbolCount] = useState(0);
+  // Размер знаков. На схеме, где рядом стоят ствол и сбойка, единого размера
+  // не существует: перемычка вписана в сечение, а вентилятор при этом может
+  // оказаться то с ноготь, то во весь экран. Три положения вместо ползунка —
+  // промежуточные значения на глаз неразличимы.
+  const SYM_SIZES: { key: "s" | "m" | "l"; label: string; value: number }[] = [
+    { key: "s", label: "S", value: 0.7 },
+    { key: "m", label: "M", value: 1 },
+    { key: "l", label: "L", value: 1.5 },
+  ];
+  const [symSize, setSymSize] = useState<"s" | "m" | "l">("m");
+  const symSizeK = SYM_SIZES.find(s => s.key === symSize)?.value ?? 1;
 
   // ── Плотность тела выработки ──────────────────────────────────────────
   // Сплошная заливка хороша для показа, но на реальной схеме ближние выработки
@@ -433,6 +463,49 @@ export default function MineView3D(p: MineView3DProps) {
     };
   }, [ready, showArrows, arrowsInside, p.nodes, p.branches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
 
+  // ── Условные обозначения ──────────────────────────────────────────────
+  // Пересобираются при смене схемы, состава значков и их размера. Геометрию
+  // выработок это не трогает: значки — свой слой в сцене.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const prev = symbolsRef.current;
+    if (prev) {
+      scene.remove(prev.group);
+      prev.dispose();
+      symbolsRef.current = null;
+    }
+    setSymbolCount(0);
+
+    if (showSymbols && p.schemaSymbols && p.schemaSymbols.length > 0) {
+      const built = buildMineSymbols({
+        nodes: p.nodes, branches: p.branches,
+        symbols: p.schemaSymbols,
+        xyScale: p.xyScale, zScale: p.zScale,
+        sizeK: symSizeK,
+        // Картинки значков грузятся браузером асинхронно. Режим «Модель»
+        // рисует по событию, и без этого сигнала знаки появлялись бы только
+        // после первого поворота схемы.
+        onReady: () => { needsRenderRef.current = true; },
+      });
+      if (built) {
+        scene.add(built.group);
+        symbolsRef.current = built;
+        setSymbolCount(built.count);
+      }
+    }
+    needsRenderRef.current = true;
+
+    return () => {
+      const s = symbolsRef.current;
+      if (!s) return;
+      scene.remove(s.group);
+      s.dispose();
+      symbolsRef.current = null;
+    };
+  }, [ready, showSymbols, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+
   // ── Смена окраски без пересборки ──────────────────────────────────────
   // Переключили заливку (расход / скорость / участки / горизонты) — меняется
   // только цвет. Геометрия та же, поэтому переписываем буфер цветов и сразу
@@ -549,6 +622,13 @@ export default function MineView3D(p: MineView3DProps) {
         if (renderer.getPixelRatio() !== dpr) renderer.setPixelRatio(dpr);
 
         renderer.setSize(w, h, true);
+
+        // Знаки, которые должны читаться с любого ракурса (вентиляторы,
+        // пожарные и горноспасательные обозначения), разворачиваем лицом к
+        // человеку. Только здесь: матрица камеры уже окончательная. Сама
+        // функция ничего не делает, если ракурс с прошлого кадра не менялся.
+        symbolsRef.current?.updateFacing(cam);
+
         renderer.render(scene, cam);
 
         // Подписи — вторым слоем, на обычном холсте поверх картинки
@@ -938,6 +1018,25 @@ export default function MineView3D(p: MineView3DProps) {
         >
           Направление
         </button>
+
+        {/* Условные обозначения. Перемычки и двери стоят поперёк выработки,
+            вентиляторы и пожарные знаки повёрнуты лицом к человеку — см.
+            mineSymbols.ts. Выключатель нужен: при разборе геометрии знаки
+            загораживают сечения, а при показе схемы они — главное. */}
+        <button
+          onClick={() => setShowSymbols(v => !v)}
+          title={showSymbols
+            ? "Скрыть условные обозначения (перемычки, двери, вентиляторы, знаки)"
+            : "Показать условные обозначения схемы"}
+          className="text-[11px] px-2 py-1 rounded border hover:bg-white"
+          style={{
+            borderColor: showSymbols ? "#7c3aed" : "var(--c-b2, #d1d5db)",
+            color: showSymbols ? "#7c3aed" : "var(--c-t2, #374151)",
+            background: showSymbols ? "rgba(237,233,254,0.9)" : "rgba(255,255,255,0.9)",
+          }}
+        >
+          Обозначения
+        </button>
       </div>
 
       {/* Плотность и контур — вторым рядом, отдельно от ракурсов: это не
@@ -1006,6 +1105,35 @@ export default function MineView3D(p: MineView3DProps) {
             Поток внутри
           </button>
         )}
+
+        {/* Размер знаков. Перемычка всегда вписана в сечение своей выработки,
+            а вот отдельно стоящие знаки на схеме со стволами и сбойками
+            одного размера быть не могут — эта ручка и подгоняет их под
+            конкретную схему. */}
+        {showSymbols && symbolCount > 0 && (
+          <div className="flex rounded border overflow-hidden items-center"
+            style={{ borderColor: "var(--c-b2, #d1d5db)" }}
+            title="Размер условных обозначений">
+            <span className="text-[10px] px-1.5 py-1"
+              style={{ background: "rgba(255,255,255,0.9)", color: "var(--c-t3, #9ca3af)" }}>
+              УО
+            </span>
+            {SYM_SIZES.map(s => (
+              <button
+                key={s.key}
+                onClick={() => setSymSize(s.key)}
+                className="text-[11px] px-2 py-1 hover:bg-white"
+                style={{
+                  background: symSize === s.key ? "rgba(237,233,254,0.95)" : "rgba(255,255,255,0.9)",
+                  color: symSize === s.key ? "#7c3aed" : "var(--c-t2, #374151)",
+                  fontWeight: symSize === s.key ? 600 : 400,
+                }}
+              >
+                {s.label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       </div>
 
@@ -1052,7 +1180,8 @@ export default function MineView3D(p: MineView3DProps) {
       <div className="absolute bottom-2 left-2 text-[10px] px-2 py-1 rounded"
         style={{ background: "rgba(255,255,255,0.92)", border: "1px solid var(--c-b1, #e5e7eb)", color: "var(--c-t3, #6b7280)" }}>
         выработок: <b>{stats.branches}</b> · вызовов отрисовки: <b>{stats.drawCalls}</b>
-        {arrowCount > 0 && <> · стрелок: <b>{arrowCount}</b></>} · {stats.fps} кадр/с
+        {arrowCount > 0 && <> · стрелок: <b>{arrowCount}</b></>}
+        {symbolCount > 0 && <> · обозначений: <b>{symbolCount}</b></>} · {stats.fps} кадр/с
       </div>
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"
