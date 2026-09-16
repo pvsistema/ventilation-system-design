@@ -1,0 +1,263 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// mineScene.ts — построение 3D-сцены рудника на three.js (режим «Модель»).
+//
+// ЗАЧЕМ ОТДЕЛЬНЫЙ РЕЖИМ, А НЕ ЗАМЕНА ЧЕРТЕЖА.
+// Режим «Чертёж» (Canvas 2D) остаётся основным: он векторный, печатается,
+// выгружается в SVG и несёт слой печати с рамкой и штампом. Из WebGL вектор
+// снять нельзя — оттуда снимается только растр, поэтому подменять им чертёж
+// нельзя. Зато объём, вращение и облёт на Canvas 2D упираются в процессор:
+// каждая грань там — отдельная команда растеризатору, и на 14 000 выработок
+// кадр уходит за сотню миллисекунд.
+//
+// Здесь другой подход: вся геометрия грузится в видеопамять ОДИН раз, а
+// выработки одного типа сечения рисуются пакетом через InstancedMesh. Вместо
+// сотни тысяч команд — единицы вызовов отрисовки, и число выработок почти
+// перестаёт влиять на скорость.
+//
+// ─────────────────────────────────────────────────────────────────────────────
+// ОТКУДА БЕРЁТСЯ ГЕОМЕТРИЯ
+//
+// Контур сечения — из того же sectionOutline(), которым рисует режим «Чертёж».
+// Это принципиально: объём строится по тем же числам (ширина, высота, свод,
+// диаметр), по которым считается вентиляция. Никаких отдельных «графических»
+// размеров нет, и картинка не может разойтись с расчётом.
+//
+// СИСТЕМА КООРДИНАТ. В three.js вверх — ось Y, у нас в горном деле вверх —
+// ось Z (z=0 поверхность, z<0 глубина). Поэтому при переносе меняем оси:
+//   three.x = мир.x     three.y = мир.z     three.z = −мир.y
+// Знак у Y сохраняет правую тройку, иначе схема окажется зеркальной.
+// ─────────────────────────────────────────────────────────────────────────────
+import * as THREE from "three";
+import { type TopoNode, type TopoBranch } from "@/lib/topology";
+import { sectionOutline } from "@/lib/tube3d";
+
+/** Мир → three.js: у нас вверх Z, у three — Y. */
+export function toThree(x: number, y: number, z: number): THREE.Vector3 {
+  return new THREE.Vector3(x, z, -y);
+}
+
+/** Что нужно сцене от схемы. */
+export interface SceneInput {
+  nodes: TopoNode[];
+  branches: TopoBranch[];
+  /** Масштаб плана — тот же, что в режиме «Чертёж». */
+  xyScale: number;
+  /** Масштаб по вертикали. */
+  zScale: number;
+  /** Цвет выработки: id → hex. Считается снаружи, чтобы окраска совпадала с чертежом. */
+  colorOf: (b: TopoBranch) => string;
+}
+
+/** Результат сборки — меши и служебные карты для выделения. */
+export interface BuiltScene {
+  /** Корневая группа: всё содержимое схемы. */
+  root: THREE.Group;
+  /** Порядковый номер экземпляра → id выработки (для выбора мышью). */
+  instanceToBranch: Map<THREE.InstancedMesh, string[]>;
+  /** Габаритная сфера — по ней выставляется камера. */
+  bounds: THREE.Sphere;
+  /** Сколько выработок попало в сцену. */
+  branchCount: number;
+  /** Сколько вызовов отрисовки получилось (главный показатель скорости). */
+  drawCalls: number;
+}
+
+/**
+ * Ключ формы сечения. Выработки с одинаковым ключом рисуются одним
+ * InstancedMesh — это и даёт выигрыш по скорости.
+ *
+ * Размеры округляем до 10 см: разница в сантиметрах на экране не видна, а без
+ * округления почти каждая выработка получала бы собственный меш, и смысл
+ * пакетной отрисовки терялся.
+ */
+function shapeKey(b: TopoBranch): string {
+  const r = (v: number) => Math.round((v ?? 0) * 10) / 10;
+  const s = b.shape ?? "rect";
+  if (s === "round") return `round:${r(b.diameter ?? 0)}`;
+  if (s === "trap") return `trap:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.trapTopWidth ?? 0)}`;
+  if (s === "arch") return `arch:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.archHeight ?? 0)}`;
+  return `rect:${r(b.rectWidth)}:${r(b.rectHeight)}`;
+}
+
+/**
+ * Профиль выработки, вытянутый вдоль оси X на единичную длину.
+ *
+ * Строим вручную, а не через ExtrudeGeometry: нам нужна ровно боковая
+ * поверхность с торцами и корректными нормалями, а Extrude добавляет скос
+ * кромок и лишние вершины.
+ *
+ * Единичная длина позволяет растянуть один и тот же меш на любую выработку
+ * матрицей экземпляра — именно так работает InstancedMesh.
+ */
+function buildProfileGeometry(b: TopoBranch): THREE.BufferGeometry {
+  const outline = sectionOutline(b);
+  const n = outline.length;
+
+  const pos: number[] = [];
+  const nor: number[] = [];
+
+  // Боковая поверхность: на каждое ребро контура — два треугольника.
+  for (let i = 0; i < n; i++) {
+    const p0 = outline[i];
+    const p1 = outline[(i + 1) % n];
+
+    // Нормаль ребра наружу: поворот направления ребра на 90°.
+    const er = p1.r - p0.r, eu = p1.u - p0.u;
+    const el = Math.hypot(er, eu) || 1;
+    const nr = eu / el, nu = -er / el;
+
+    // Четыре угла полосы: x=0 — начало выработки, x=1 — конец.
+    const a0 = [0, p0.u, p0.r], a1 = [0, p1.u, p1.r];
+    const b0 = [1, p0.u, p0.r], b1 = [1, p1.u, p1.r];
+
+    // Два треугольника: a0-b0-b1 и a0-b1-a1
+    pos.push(...a0, ...b0, ...b1, ...a0, ...b1, ...a1);
+    for (let k = 0; k < 6; k++) nor.push(0, nu, nr);
+  }
+
+  // Торцы — веером от центра контура. Без них выработка выглядит открытым
+  // рукавом: на повороте и в тупике сквозь неё видно то, что позади.
+  for (let i = 1; i < n - 1; i++) {
+    const c = outline[0], p = outline[i], q = outline[i + 1];
+    // Начало (нормаль против оси)
+    pos.push(0, c.u, c.r, 0, q.u, q.r, 0, p.u, p.r);
+    for (let k = 0; k < 3; k++) nor.push(-1, 0, 0);
+    // Конец (нормаль по оси)
+    pos.push(1, c.u, c.r, 1, p.u, p.r, 1, q.u, q.r);
+    for (let k = 0; k < 3; k++) nor.push(1, 0, 0);
+  }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+  return g;
+}
+
+/**
+ * Матрица экземпляра: растягивает единичный профиль на конкретную выработку.
+ *
+ * Профиль лежит вдоль оси X, поэтому матрица должна повернуть ось X на
+ * направление выработки, растянуть по длине и поставить в начальную точку.
+ */
+function branchMatrix(
+  from: THREE.Vector3,
+  to: THREE.Vector3,
+  sectionScale: number,
+): THREE.Matrix4 {
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const len = dir.length();
+  if (!(len > 1e-6)) return new THREE.Matrix4().makeScale(0, 0, 0);
+  dir.normalize();
+
+  // Поворот, переводящий +X в направление выработки.
+  const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
+
+  return new THREE.Matrix4().compose(
+    from,
+    q,
+    // По оси выработки — её длина, поперёк — масштаб сечения.
+    new THREE.Vector3(len, sectionScale, sectionScale),
+  );
+}
+
+/**
+ * Собирает сцену: выработки, узлы, освещение, сетка.
+ *
+ * Выработки группируются по форме сечения; каждая группа — один InstancedMesh.
+ * На реальной схеме форм обычно десяток-другой, поэтому вместо тысяч вызовов
+ * отрисовки получается несколько десятков.
+ */
+export function buildMineScene(input: SceneInput): BuiltScene {
+  const { nodes, branches, xyScale, zScale, colorOf } = input;
+  const root = new THREE.Group();
+  const instanceToBranch = new Map<THREE.InstancedMesh, string[]>();
+
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  const kx = xyScale > 0 ? xyScale : 1;
+  const kz = zScale > 0 ? zScale : 1;
+
+  // ── Группировка выработок по форме сечения ────────────────────────────
+  const groups = new Map<string, TopoBranch[]>();
+  for (const b of branches) {
+    if (b.isDead) continue;
+    const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
+    if (!fn || !tn) continue;
+    const k = shapeKey(b);
+    let arr = groups.get(k);
+    if (!arr) { arr = []; groups.set(k, arr); }
+    arr.push(b);
+  }
+
+  const box = new THREE.Box3();
+  let branchCount = 0;
+  let drawCalls = 0;
+
+  const tmpColor = new THREE.Color();
+
+  for (const [, list] of groups) {
+    if (list.length === 0) continue;
+
+    const geom = buildProfileGeometry(list[0]);
+    // Материал один на группу. vertexColors — чтобы у каждой выработки был
+    // свой цвет без создания отдельного материала (иначе пакетная отрисовка
+    // распалась бы обратно на отдельные вызовы).
+    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    const mesh = new THREE.InstancedMesh(geom, mat, list.length);
+    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+
+    const ids: string[] = [];
+    let idx = 0;
+    for (const b of list) {
+      const fn = nodeById.get(b.fromId)!;
+      const tn = nodeById.get(b.toId)!;
+      const a = toThree(fn.x * kx, fn.y * kx, fn.z * kz);
+      const c = toThree(tn.x * kx, tn.y * kx, tn.z * kz);
+
+      // Сечение масштабируется по плану — тем же множителем по всем осям,
+      // иначе круглый ствол превратился бы в эллипс при «Масштаб Z ×14».
+      mesh.setMatrixAt(idx, branchMatrix(a, c, kx));
+      tmpColor.set(colorOf(b));
+      mesh.setColorAt(idx, tmpColor);
+      ids.push(b.id);
+      box.expandByPoint(a);
+      box.expandByPoint(c);
+      idx++;
+      branchCount++;
+    }
+
+    mesh.instanceMatrix.needsUpdate = true;
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+    mesh.frustumCulled = false;   // выработки тянутся через всю сцену
+    root.add(mesh);
+    instanceToBranch.set(mesh, ids);
+    drawCalls++;
+  }
+
+  // ── Освещение ─────────────────────────────────────────────────────────
+  // Два источника: направленный сверху-сбоку даёт объём, рассеянный не даёт
+  // теневой стороне почернеть. Тени не считаем — на схеме в тысячи выработок
+  // они стоят дорого и мешают читать геометрию.
+  const dir = new THREE.DirectionalLight(0xffffff, 1.6);
+  dir.position.set(-0.4, 0.9, 0.5);
+  root.add(dir);
+  root.add(new THREE.AmbientLight(0xffffff, 1.1));
+
+  const bounds = new THREE.Sphere();
+  if (!box.isEmpty()) box.getBoundingSphere(bounds);
+  else bounds.set(new THREE.Vector3(), 100);
+
+  return { root, instanceToBranch, bounds, branchCount, drawCalls };
+}
+
+/** Освобождает видеопамять сцены. Без этого при пересборке будет утечка. */
+export function disposeScene(built: BuiltScene | null) {
+  if (!built) return;
+  built.root.traverse(obj => {
+    const m = obj as THREE.Mesh;
+    if (m.geometry) m.geometry.dispose();
+    const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+    if (Array.isArray(mat)) mat.forEach(x => x.dispose());
+    else if (mat) mat.dispose();
+  });
+  built.root.clear();
+}

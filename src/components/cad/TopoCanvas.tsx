@@ -19,6 +19,7 @@ import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
 import { medianSection, widthBySection as widthBySectionFn } from "@/lib/branchWidthBySection";
 import CanvasLayer from "@/components/cad/CanvasLayer";
+import MineView3D from "@/components/cad/MineView3D";
 import { CanvasErrorBoundary } from "@/components/cad/CanvasErrorBoundary";
 import { CANVAS_THRESHOLD, hitNodeCanvas, hitBranchCanvas, hitBranchLabelCanvas, velocityColor as velocityColorFn, flowQColor as flowQColorFn } from "@/components/cad/CanvasLayerExports";
 
@@ -55,7 +56,7 @@ export default function TopoCanvas(props: Props) {
     onNodeAdd, onNodeMove, onNodeDragStart, onBranchAdd, onSplitBranchAt, onSelectNode, onSelectBranch, zLevel,
     viewPreset, onViewChange, flowDisplay = "off", animSpeed = 1, workPlane,
     horizons, highlightHorizonId = null, branchWidth = 2.5, branchBorder = 0, thinLines = false, fixedObjectScale = false, canvasThreshold = CANVAS_THRESHOLD, scaleLimits,
-    widthBySection = false, tube3d = false,
+    widthBySection = false, tube3d = false, viewMode = "draft",
     bulkheadScale = 150,
     fanScale = 450,
     colorByHorizon = false, showFlowArrows = false, pollutionThreshold,
@@ -170,6 +171,17 @@ export default function TopoCanvas(props: Props) {
     if (Q > 0) return velocityColorFn(b.velocity);
     return null;
   }, [posInnerColors, horizonMap, colorByHorizon, colorMode, sectionColors, flowColorMin, flowColorMax, flowColorHue, velColorMin, velColorMax, velColorHue]);
+
+  // Цвет выработки для режима «Модель». Берём ту же заливку, что и на чертеже,
+  // чтобы объём не рассказывал другую историю, чем схема. Когда заливки нет
+  // (branchBodyColor вернул null), в 3D всё равно нужен какой-то цвет: там нет
+  // ни обводки, ни белого фона под линией, и бесцветная выработка была бы
+  // невидимой. Подставляем спокойный серо-стальной — он не спорит с цветными
+  // выработками и читается как «режим окраски выключен».
+  const branchColor3d = useCallback(
+    (b: TopoBranch): string => branchBodyColor(b) ?? "#9aa4b2",
+    [branchBodyColor],
+  );
 
   // Видимые ветви: если горизонт привязан и скрыт — фильтруем
   const visibleBranches = useMemo(() => branches.filter((b) => {
@@ -1680,7 +1692,7 @@ export default function TopoCanvas(props: Props) {
           Обёрнут в CanvasErrorBoundary: если рендер упадёт из-за непредвиденной
           ошибки (например, некорректные данные маршрута горноспасателей),
           пользователь увидит понятное сообщение вместо чёрного экрана всего приложения. */}
-      {useCanvas && (
+      {useCanvas && viewMode !== "model" && (
         <CanvasErrorBoundary>
         <CanvasLayer
           width={size.w}
@@ -1756,6 +1768,35 @@ export default function TopoCanvas(props: Props) {
           buildFromNodeId={tool === "branch" ? branchFrom : null}
           buildToPos={tool === "branch" && branchFrom ? hoverScreenPos : null}
         />
+        </CanvasErrorBoundary>
+      )}
+
+      {/* ── Режим «Модель»: объёмный просмотр на WebGL ────────────────────
+          Ложится поверх всей рабочей области (zIndex 4) и перекрывает чертёж
+          вместе с его оверлеями: узлами, подписями, условными обозначениями,
+          рамкой печати. Это осознанно — в объёме их рисовать нечем, и
+          полупрозрачные остатки плоской схемы поверх модели только мешали бы
+          читать геометрию.
+
+          CanvasLayer при этом размонтирован, а не спрятан: держать в памяти
+          второй холст на схему в тысячи выработок незачем. Обратно в «Чертёж»
+          он собирается заново, вид при этом не теряется — состояние камеры
+          чертежа живёт в TopoCanvas, а не в самом холсте. */}
+      {viewMode === "model" && (
+        <CanvasErrorBoundary>
+          <div style={{ position: "absolute", top: 0, left: 0, width: size.w, height: size.h, zIndex: 4 }}>
+            <MineView3D
+              width={size.w}
+              height={size.h}
+              nodes={nodes}
+              branches={visibleBranches}
+              xyScale={xyScale}
+              zScale={zScale}
+              colorOf={branchColor3d}
+              selectedBranchId={selectedBranchId}
+              onSelectBranch={onSelectBranch}
+            />
+          </div>
         </CanvasErrorBoundary>
       )}
 

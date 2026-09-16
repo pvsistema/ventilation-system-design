@@ -1403,6 +1403,15 @@ export default function CadPage() {
     setViewPreset({ name, nonce: Date.now() });
   };
 
+  // Режим рабочей области: «Чертёж» или «Модель».
+  //
+  // «Чертёж» — основной и единственный режим для работы: только он векторный,
+  // печатается, выгружается в SVG и допускает правку схемы. «Модель» — это
+  // просмотр: объёмный облёт на WebGL, чтобы оценить взаимное положение
+  // горизонтов и показать схему на защите. Редактировать в нём нельзя, поэтому
+  // режим по умолчанию — «Чертёж», и переключение ничего в схеме не меняет.
+  const [viewMode, setViewMode] = useState<"draft" | "model">("draft");
+
   // Режим отображения направления воздушного потока (по умолчанию ВЫКЛ).
   const [flowDisplay, setFlowDisplay] = useState<"off" | "flow" | "chevrons" | "both">("off");
   // Скорость анимации движения воздуха: 1 — обычная, 0.5 — вдвое медленнее.
@@ -11505,6 +11514,28 @@ export default function CadPage() {
 
             <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
 
+            {/* ── Чертёж / Модель ──
+                Стоит сразу за ракурсами: это продолжение той же мысли «как
+                смотрим на схему». Кнопка одна, с переключением состояния —
+                два отдельных режима в тулбаре занимали бы место и создавали
+                ложное впечатление, что их можно включить одновременно. */}
+            <button
+              onClick={() => setViewMode(m => m === "draft" ? "model" : "draft")}
+              className="h-6 px-2 flex items-center gap-1 rounded text-[11px]"
+              style={{
+                background: viewMode === "model" ? "var(--c-blue, #2563eb)" : "white",
+                color: viewMode === "model" ? "white" : "var(--c-t1, #1f1f1f)",
+                border: "1px solid " + (viewMode === "model" ? "var(--c-blue, #1d4ed8)" : "var(--c-b2, #d0d0d0)"),
+              }}
+              title={viewMode === "model"
+                ? "Вернуться к чертежу: редактирование, подписи, печать"
+                : "Объёмный просмотр схемы. Только просмотр — правка и печать в чертеже"}>
+              <Icon name={viewMode === "model" ? "PenLine" : "Box"} size={11} />
+              {viewMode === "model" ? "Чертёж" : "Модель"}
+            </button>
+
+            <div className="w-px h-5 mx-1" style={{ background: "#d0d0d0" }} />
+
             {/* ── Режим цветовой заливки ── */}
             <select
               value={colorMode}
@@ -11964,6 +11995,7 @@ export default function CadPage() {
               } : undefined}
               widthBySection={widthBySectionOn}
               tube3d={tube3dOn}
+              viewMode={viewMode}
               bulkheadScale={bulkheadScale}
               fanScale={fanScale}
               colorByHorizon={colorMode === "horizon"}
