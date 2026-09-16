@@ -198,10 +198,18 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     if (list.length === 0) continue;
 
     const geom = buildProfileGeometry(list[0]);
-    // Материал один на группу. vertexColors — чтобы у каждой выработки был
-    // свой цвет без создания отдельного материала (иначе пакетная отрисовка
-    // распалась бы обратно на отдельные вызовы).
-    const mat = new THREE.MeshLambertMaterial({ vertexColors: true });
+    // Материал один на группу: цвет каждой выработки задаётся через
+    // setColorAt (instanceColor), а не отдельным материалом — иначе пакетная
+    // отрисовка распалась бы обратно на отдельные вызовы.
+    //
+    // vertexColors здесь НЕ ставим, хотя напрашивается. Этот флаг включает в
+    // шейдере `vColor *= color`, где color — атрибут ВЕРШИН геометрии. Такого
+    // атрибута у нас нет (профиль несёт только position и normal), поэтому
+    // color приходит нулевым, и вся схема умножается на ноль — получается
+    // ровно тот чёрный силуэт, который и был виден. Цвет экземпляра
+    // подхватывается сам: three.js видит instanceColor у InstancedMesh и
+    // включает USE_INSTANCING_COLOR независимо от vertexColors.
+    const mat = new THREE.MeshLambertMaterial();
     const mesh = new THREE.InstancedMesh(geom, mat, list.length);
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
 
@@ -237,10 +245,14 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   // Два источника: направленный сверху-сбоку даёт объём, рассеянный не даёт
   // теневой стороне почернеть. Тени не считаем — на схеме в тысячи выработок
   // они стоят дорого и мешают читать геометрию.
-  const dir = new THREE.DirectionalLight(0xffffff, 1.6);
+  //
+  // Яркости подобраны так, чтобы СУММА в самой освещённой точке была около
+  // единицы (0.75 + 0.55·cos). Прежние 1.6 и 1.1 в сумме давали 2.7 — всё
+  // светлое выбивалось в белое пятно, а разница между выработками пропадала.
+  const dir = new THREE.DirectionalLight(0xffffff, 0.55);
   dir.position.set(-0.4, 0.9, 0.5);
   root.add(dir);
-  root.add(new THREE.AmbientLight(0xffffff, 1.1));
+  root.add(new THREE.AmbientLight(0xffffff, 0.75));
 
   const bounds = new THREE.Sphere();
   if (!box.isEmpty()) box.getBoundingSphere(bounds);

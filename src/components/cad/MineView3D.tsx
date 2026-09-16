@@ -68,6 +68,11 @@ export default function MineView3D(p: MineView3DProps) {
 
   const [stats, setStats] = useState({ branches: 0, drawCalls: 0, fps: 0 });
   const [webglFailed, setWebglFailed] = useState(false);
+  // Признак «холст создан». Нужен, чтобы эффект управления мышью перезапустился
+  // ПОСЛЕ появления canvas: сам по себе rendererRef.current в списке
+  // зависимостей не отслеживается, и обработчики вешались в пустоту —
+  // схема не вращалась вообще.
+  const [ready, setReady] = useState(false);
 
   // ── Инициализация рендерера (один раз) ────────────────────────────────
   useEffect(() => {
@@ -93,6 +98,7 @@ export default function MineView3D(p: MineView3DProps) {
 
     const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, -100000, 100000);
     cameraRef.current = cam;
+    setReady(true);
 
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
@@ -101,6 +107,9 @@ export default function MineView3D(p: MineView3DProps) {
       renderer.dispose();
       if (renderer.domElement.parentNode === host) host.removeChild(renderer.domElement);
       rendererRef.current = null;
+      sceneRef.current = null;
+      cameraRef.current = null;
+      setReady(false);
     };
   }, []);
 
@@ -108,6 +117,7 @@ export default function MineView3D(p: MineView3DProps) {
   useEffect(() => {
     const scene = sceneRef.current;
     if (!scene) return;
+    void ready;   // сцену собираем только после появления холста
 
     // Старую сцену обязательно освобождаем — иначе видеопамять течёт при
     // каждом изменении схемы.
@@ -142,7 +152,7 @@ export default function MineView3D(p: MineView3DProps) {
       `[Модель 3D] выработок: ${built.branchCount}, вызовов отрисовки: ${built.drawCalls}, ` +
       `сборка: ${buildMs.toFixed(1)} мс`,
     );
-  }, [p.nodes, p.branches, p.xyScale, p.zScale, p.colorOf]);
+  }, [ready, p.nodes, p.branches, p.xyScale, p.zScale, p.colorOf]);
 
   // ── Цикл отрисовки ────────────────────────────────────────────────────
   // Рисуем не постоянно, а только когда есть что показать: после поворота,
@@ -182,15 +192,21 @@ export default function MineView3D(p: MineView3DProps) {
         renderer.setSize(p.width, p.height, false);
         renderer.render(scene, cam);
         needsRenderRef.current = false;
-
         frames++;
-        const now = performance.now();
-        if (now - fpsAcc > 500) {
-          setStats(s => ({ ...s, fps: Math.round((frames * 1000) / (now - fpsAcc)) }));
-          frames = 0;
-          fpsAcc = now;
-        }
-        last = now;
+        last = performance.now();
+      }
+
+      // Счётчик кадров считаем ВНЕ условия отрисовки. Раньше он стоял внутри:
+      // пока схему не двигают, кадров нет, ветка не выполняется, и значение
+      // навсегда застревало. А в самый первый заход frames и интервал были
+      // нулевыми — отсюда «NaN кадр/с» в углу.
+      const now = performance.now();
+      const dt = now - fpsAcc;
+      if (dt >= 500) {
+        const fps = dt > 0 ? Math.round((frames * 1000) / dt) : 0;
+        setStats(s => (s.fps === fps ? s : { ...s, fps }));
+        frames = 0;
+        fpsAcc = now;
       }
       void last;
       rafRef.current = requestAnimationFrame(loop);
@@ -270,7 +286,9 @@ export default function MineView3D(p: MineView3DProps) {
       el.removeEventListener("wheel", onWheel);
       el.removeEventListener("contextmenu", onCtx);
     };
-  }, [p.height]);
+    // ready — ключевая зависимость: без неё эффект отрабатывал ДО создания
+    // холста, rendererRef.current был пуст, и мышь ни к чему не привязывалась.
+  }, [ready, p.height]);
 
   /** Ставит камеру в заданный ракурс и показывает схему целиком. */
   const setView = (az: number, el: number) => {
