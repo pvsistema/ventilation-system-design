@@ -147,6 +147,16 @@ export default function MineView3D(p: MineView3DProps) {
   // Контурные рёбра сечения. Именно они показывают форму выработки: без них
   // соседние выработки одного цвета сливаются в одно тело.
   const [showEdges, setShowEdges] = useState(true);
+
+  // ── Где вести стрелки воздуха ─────────────────────────────────────────
+  // Внутри выработки — нагляднее всего: видно не просто направление, а то, что
+  // воздух идёт ПО этой выработке, и стрелки не загромождают пространство
+  // между ними. Но смысл в этом есть, только пока тело прозрачное: в сплошном
+  // режиме стрелка внутри трубы не видна вовсе. Поэтому переключатель доступен
+  // не всегда, а при возврате к «Плотно» стрелки сами выходят наружу.
+  const [preferInside, setPreferInside] = useState(true);
+  const canInside = opacity < 0.995;
+  const arrowsInside = canInside && preferInside;
   // Стрелки бегут — значит кадры нужны непрерывно, а не по событию. Держим это
   // признаком в ref: цикл отрисовки не должен зависеть от перерисовок React.
   const animatingRef = useRef(false);
@@ -389,6 +399,11 @@ export default function MineView3D(p: MineView3DProps) {
         xyScale: p.xyScale, zScale: p.zScale,
         pollutedBranchIds: p.pollutedBranchIds,
         animSpeed: p.animSpeed,
+        // Стрелка идёт ВНУТРИ выработки, только когда тело прозрачное: сквозь
+        // него её видно, и читается не просто направление, а то, что воздух
+        // идёт именно по этой выработке. В сплошном режиме стрелка внутри
+        // трубы не видна вообще, поэтому там она по-прежнему снаружи.
+        inside: arrowsInside,
       });
       if (arrows) {
         scene.add(arrows.mesh);
@@ -416,7 +431,7 @@ export default function MineView3D(p: MineView3DProps) {
       arrowsRef.current = null;
       animatingRef.current = false;
     };
-  }, [ready, showArrows, p.nodes, p.branches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
+  }, [ready, showArrows, arrowsInside, p.nodes, p.branches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
 
   // ── Смена окраски без пересборки ──────────────────────────────────────
   // Переключили заливку (расход / скорость / участки / горизонты) — меняется
@@ -962,6 +977,35 @@ export default function MineView3D(p: MineView3DProps) {
         >
           Контур
         </button>
+
+        {/* Стрелки внутри выработок. Доступно только на прозрачном теле:
+            в сплошном режиме стрелка внутри трубы не видна, и кнопка,
+            которая ничего не меняет, вводила бы в заблуждение. */}
+        {showArrows && (
+          <button
+            onClick={() => canInside && setPreferInside(v => !v)}
+            disabled={!canInside}
+            title={
+              !canInside
+                ? "Стрелки внутри выработок видны только на прозрачном теле — выберите «Стекло» или «Каркас»"
+                : arrowsInside
+                  ? "Стрелки идут внутри выработок. Нажмите, чтобы вынести их наружу"
+                  : "Вести стрелки внутри выработок, по их оси"
+            }
+            className="text-[11px] px-2 py-1 rounded border"
+            style={{
+              borderColor: arrowsInside ? "#b45309" : "var(--c-b2, #d1d5db)",
+              color: !canInside
+                ? "var(--c-t3, #9ca3af)"
+                : arrowsInside ? "#b45309" : "var(--c-t2, #374151)",
+              background: arrowsInside ? "rgba(254,243,199,0.9)" : "rgba(255,255,255,0.9)",
+              cursor: canInside ? "pointer" : "not-allowed",
+              opacity: canInside ? 1 : 0.55,
+            }}
+          >
+            Поток внутри
+          </button>
+        )}
       </div>
       </div>
 
