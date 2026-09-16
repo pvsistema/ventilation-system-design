@@ -1,10 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// mineArrows.ts — СТРЕЛКИ НАПРАВЛЕНИЯ ВОЗДУХА В РЕЖИМЕ «МОДЕЛЬ».
+// mineArrows.ts — БЕГУЩИЕ СТРЕЛКИ НАПРАВЛЕНИЯ ВОЗДУХА В РЕЖИМЕ «МОДЕЛЬ».
 //
 // Направление движения воздуха — главное, что читают на вентиляционной схеме:
 // по нему видно, куда пойдёт дым при пожаре и откуда придёт свежая струя.
-// В расчёте оно уже есть (знак расхода), но до сих пор показывалось только на
-// чертеже — в объёме выработки выглядели одинаково в обе стороны.
+//
+// ЦВЕТ — ТОТ ЖЕ, ЧТО НА ЧЕРТЕЖЕ, и он не украшение, а смысл:
+//   красный — свежая струя, идущая к рабочим местам;
+//   синий   — исходящая, загазованная (доля загрязнённого воздуха выше порога).
+// Признак загазованности приходит снаружи, из того же расчёта, что красит
+// стрелки на чертеже: два режима обязаны показывать одно и то же.
 //
 // ПОЧЕМУ СТРЕЛКА — «МУФТА» ВОКРУГ ВЫРАБОТКИ, А НЕ ВНУТРИ НЕЁ.
 // Выработка в объёме — сплошная непрозрачная труба. Стрелка, положенная по её
@@ -17,8 +21,23 @@
 // сторону движения воздуха. Он виден снаружи, честно перекрывается тем, что
 // стоит ближе к человеку, и не мешает видеть саму выработку.
 //
-// Как и геометрия схемы, все стрелки рисуются одним пакетом (InstancedMesh):
-// на схеме в тысячи выработок отдельные объекты съели бы весь выигрыш.
+// ─────────────────────────────────────────────────────────────────────────────
+// КАК СДЕЛАНО ДВИЖЕНИЕ
+//
+// Стрелки не пересчитываются на процессоре: их положение вдоль выработки
+// считает видеокарта прямо в вершинном шейдере по одному общему числу —
+// текущему времени. На схеме в тысячи выработок это принципиально: пересборка
+// десятков тысяч матриц шестьдесят раз в секунду съела бы весь выигрыш от
+// пакетной отрисовки, ради которого движок и делался.
+//
+// Каждой стрелке заранее записаны три числа: длина пробега, скорость и
+// начальный сдвиг. Дальше она бежит сама, а вся анимация схемы — это одна
+// переменная времени, обновляемая раз в кадр.
+//
+// Стрелок на выработке несколько, с равным шагом: дойдя до конца, стрелка
+// возвращается в начало, и на её место приходит следующая — получается
+// непрерывный поток. Иначе на длинном стволе одинокая стрелка ползла бы минуту
+// и движение было бы незаметно.
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
@@ -32,17 +51,68 @@ import { toThree } from "./mineScene";
  */
 const MIN_FLOW = 0.1;
 
-/** Цвет стрелок — тот же красный, что и на чертеже. */
-const ARROW_COLOR = 0xdc2626;
+/** Цвета струи — те же, что на чертеже. */
+const COLOR_FRESH = 0xdc2626;     // свежая
+const COLOR_POLLUTED = 0x2563eb;  // загазованная (исходящая)
 
 /** Граней в конусе. Двенадцати хватает: стрелка мелкая, ребра на ней не видны. */
 const CONE_FACETS = 12;
+
+/**
+ * Пределы скорости воздуха, м/с, в которых считается бег стрелки.
+ *
+ * Снизу — чтобы стрелка в слабо проветриваемой выработке не замирала совсем и
+ * было видно, что воздух всё-таки идёт. Сверху — чтобы в стволе с сильной
+ * струёй стрелки не превращались в мельтешение, за которым не уследить.
+ */
+const V_MIN = 0.25;
+const V_MAX = 20;
+
+/**
+ * Во сколько раз бег стрелок быстрее натурной скорости воздуха.
+ *
+ * Один к одному было бы честно, но нечитаемо: на схеме в масштабе плана
+ * стрелка шла бы от узла до узла десятки секунд. Множитель общий для всех
+ * выработок, поэтому сравнение их между собой остаётся правдивым: где воздух
+ * быстрее, там стрелки заметно быстрее.
+ */
+const SPEED_K = 3;
+
+/** Сколько стрелок максимум на одной выработке. */
+const MAX_PER_BRANCH = 5;
+
+/**
+ * Потолок общего числа стрелок.
+ *
+ * Отрисовка у них одна на всех, но каждая занимает место в памяти видеокарты.
+ * На схеме, где стрелок больше этого числа, они всё равно сливаются, поэтому
+ * лишние просто не ставим.
+ */
+const MAX_TOTAL = 20000;
 
 export interface ArrowsInput {
   nodes: TopoNode[];
   branches: TopoBranch[];
   xyScale: number;
   zScale: number;
+  /**
+   * Выработки с загазованной (исходящей) струёй — красятся синим.
+   * Считается снаружи, тем же расчётом, что и на чертеже.
+   */
+  pollutedBranchIds?: Set<string>;
+  /** Множитель скорости анимации из настроек: 1 — обычная, 0.5 — вдвое медленнее. */
+  animSpeed?: number;
+}
+
+/** Готовые стрелки: меш для сцены плюс управление временем и уборка. */
+export interface FlowArrows {
+  mesh: THREE.InstancedMesh;
+  /** Двигает все стрелки разом. Время в секундах от начала показа. */
+  setTime(seconds: number): void;
+  /** Освобождает видеопамять: геометрия и материал здесь собственные. */
+  dispose(): void;
+  /** Сколько стрелок получилось — видно в счётчике внизу экрана. */
+  arrowCount: number;
 }
 
 /**
@@ -72,21 +142,40 @@ function sectionRadius(b: TopoBranch): number {
   return Math.max(w, h) / 2;
 }
 
+/** Геометрия одной выработки, посчитанная до раскладки стрелок. */
+interface Placement {
+  branch: TopoBranch;
+  from: THREE.Vector3;
+  dir: THREE.Vector3;
+  /** Длина выработки в координатах сцены. */
+  len: number;
+  /** Радиус «муфты» и длина конуса. */
+  rad: number;
+  aLen: number;
+  /** Сколько стрелок ставим и с каким шагом. */
+  count: number;
+  step: number;
+  /** Скорость бега в координатах сцены, единиц в секунду. */
+  speed: number;
+}
+
 /**
- * Строит пакет стрелок потока.
+ * Считает раскладку стрелок по выработкам.
  *
- * Возвращает null, если ставить нечего: схема не рассчитана или воздух никуда
- * не идёт. Вызывающая сторона в этом случае просто ничего не добавляет в сцену.
+ * Вынесено отдельно, потому что число экземпляров в пакетной отрисовке
+ * задаётся заранее и потом не меняется: сначала надо узнать, сколько всего
+ * стрелок получится, и только потом создавать меш.
  */
-export function buildFlowArrows(input: ArrowsInput): THREE.InstancedMesh | null {
+function planArrows(input: ArrowsInput): { plan: Placement[]; total: number } {
   const { nodes, branches, xyScale, zScale } = input;
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   const kx = xyScale > 0 ? xyScale : 1;
   const kz = zScale > 0 ? zScale : 1;
+  const animK = Math.max(0.1, input.animSpeed ?? 1);
 
-  // Сначала отбираем выработки со значимым расходом: размер пакета в
-  // InstancedMesh задаётся заранее и потом не меняется.
-  const list: TopoBranch[] = [];
+  const plan: Placement[] = [];
+  let total = 0;
+
   for (const b of branches) {
     if (b.isDead) continue;
     if (Math.abs(b.flow ?? 0) < MIN_FLOW) continue;
@@ -94,37 +183,6 @@ export function buildFlowArrows(input: ArrowsInput): THREE.InstancedMesh | null 
     if (!fn || !tn) continue;
     if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;
     if (!isFinite(tn.x) || !isFinite(tn.y) || !isFinite(tn.z)) continue;
-    list.push(b);
-  }
-  if (list.length === 0) return null;
-
-  const geom = makeConeGeometry();
-  const mat = new THREE.MeshLambertMaterial({
-    color: ARROW_COLOR,
-    // Конус надет на выработку, и изнутри его стенка тоже попадает в кадр —
-    // без DoubleSide стрелка при взгляде «в хвост» выглядит рассечённой.
-    side: THREE.DoubleSide,
-  });
-  const mesh = new THREE.InstancedMesh(geom, mat, list.length);
-  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-  mesh.frustumCulled = false;
-  // Рисуем после выработок: при равной глубине (стрелка вплотную к трубе)
-  // побеждает то, что нарисовано позже, иначе стрелка местами исчезала бы
-  // в поверхности выработки.
-  mesh.renderOrder = 5;
-
-  const from = new THREE.Vector3();
-  const to = new THREE.Vector3();
-  const dir = new THREE.Vector3();
-  const axisX = new THREE.Vector3(1, 0, 0);
-  const q = new THREE.Quaternion();
-  const base = new THREE.Vector3();
-  const m = new THREE.Matrix4();
-
-  let idx = 0;
-  for (const b of list) {
-    const fn = nodeById.get(b.fromId)!;
-    const tn = nodeById.get(b.toId)!;
 
     // Направление стрелки — по воздуху, а не по тому, как выработку начертили.
     // Отрицательный расход означает движение против направления выработки; у
@@ -135,28 +193,154 @@ export function buildFlowArrows(input: ArrowsInput): THREE.InstancedMesh | null 
     const a = reversed ? tn : fn;
     const c = reversed ? fn : tn;
 
-    from.copy(toThree(a.x * kx, a.y * kx, a.z * kz));
-    to.copy(toThree(c.x * kx, c.y * kx, c.z * kz));
-    dir.subVectors(to, from);
+    const from = toThree(a.x * kx, a.y * kx, a.z * kz);
+    const to = toThree(c.x * kx, c.y * kx, c.z * kz);
+    const dir = new THREE.Vector3().subVectors(to, from);
     const len = dir.length();
-    if (!(len > 1e-6)) { m.makeScale(0, 0, 0); mesh.setMatrixAt(idx++, m); continue; }
+    if (!(len > 1e-6)) continue;
     dir.divideScalar(len);
 
     // Радиус «муфты» — заметно шире сечения, иначе стрелка утонет в трубе.
     const rad = sectionRadius(b) * kx * 1.7;
     // Длина стрелки соразмерна её толщине, но не длиннее трети выработки:
-    // на короткой сбойке стрелка иначе вылезла бы за оба узла и залезла в
-    // соседние выработки.
+    // на короткой сбойке стрелка иначе заняла бы её целиком.
     const aLen = Math.min(rad * 2.4, len * 0.34);
+    if (!(aLen > 1e-6)) continue;
 
-    q.setFromUnitVectors(axisX, dir);
-    // Ставим стрелку так, чтобы её СЕРЕДИНА пришлась на середину выработки:
-    // основание конуса в нуле, поэтому отступаем назад на половину длины.
-    base.copy(from).addScaledVector(dir, len / 2 - aLen / 2);
-    m.compose(base, q, new THREE.Vector3(aLen, rad, rad));
-    mesh.setMatrixAt(idx++, m);
+    // Шаг между стрелками: примерно три длины самой стрелки. Реже — поток
+    // распадается на отдельные редкие метки, чаще — стрелки наезжают друг на
+    // друга и сливаются в сплошную колбасу.
+    const step = aLen * 3;
+    const count = Math.max(1, Math.min(MAX_PER_BRANCH, Math.floor(len / step)));
+    if (total + count > MAX_TOTAL) break;
+
+    // Скорость бега — от натурной скорости воздуха, приведённой к масштабу
+    // плана. Пределы не дают стрелке ни замереть, ни замелькать.
+    const v = Math.min(V_MAX, Math.max(V_MIN, Math.abs(b.velocity ?? 0)));
+    const speed = v * kx * SPEED_K * animK;
+
+    plan.push({ branch: b, from, dir, len, rad, aLen, count, step, speed });
+    total += count;
   }
 
+  return { plan, total };
+}
+
+/**
+ * Строит бегущие стрелки потока.
+ *
+ * Возвращает null, если ставить нечего: схема не рассчитана или воздух никуда
+ * не идёт. Вызывающая сторона в этом случае просто ничего не добавляет в сцену.
+ */
+export function buildFlowArrows(input: ArrowsInput): FlowArrows | null {
+  const { plan, total } = planArrows(input);
+  if (total === 0) return null;
+
+  const geom = makeConeGeometry();
+
+  // ── Данные для шейдера, по одному числу на стрелку ────────────────────
+  // Всё в ЛОКАЛЬНЫХ единицах конуса: матрица экземпляра уже растягивает его по
+  // длине выработки, поэтому смещение вдоль локальной оси X автоматически
+  // превращается в движение вдоль выработки в нужную сторону. Это избавляет от
+  // хранения направления отдельным вектором.
+  const aSpan = new Float32Array(total);   // длина пробега
+  const aSpeed = new Float32Array(total);  // единиц в секунду
+  const aPhase = new Float32Array(total);  // начальный сдвиг
+
+  const mat = new THREE.MeshLambertMaterial({
+    // Конус надет на выработку, и изнутри его стенка тоже попадает в кадр —
+    // без DoubleSide стрелка при взгляде «в хвост» выглядит рассечённой.
+    side: THREE.DoubleSide,
+  });
+
+  // Ссылку на переменную времени держим снаружи: она появляется только в
+  // момент компиляции шейдера, а двигать стрелки нужно каждый кадр.
+  const timeUniform = { value: 0 };
+
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = timeUniform;
+    shader.vertexShader = shader.vertexShader
+      .replace(
+        "#include <common>",
+        `#include <common>
+         attribute float aSpan;
+         attribute float aSpeed;
+         attribute float aPhase;
+         uniform float uTime;`,
+      )
+      // Вмешиваемся ДО project_vertex: там вершина ещё в локальных координатах
+      // конуса и матрица экземпляра к ней не применена. Сдвиг по локальному X
+      // как раз и станет движением вдоль выработки.
+      .replace(
+        "#include <project_vertex>",
+        `transformed.x += mod(uTime * aSpeed + aPhase, aSpan);
+         #include <project_vertex>`,
+      );
+  };
+
+  const mesh = new THREE.InstancedMesh(geom, mat, total);
+  mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
+  // Выработки тянутся через всю сцену, отсечение по габаритам здесь только
+  // мешает: стрелка привязана к выработке, а не к точке.
+  mesh.frustumCulled = false;
+  // Рисуем после выработок: при равной глубине (стрелка вплотную к трубе)
+  // побеждает то, что нарисовано позже, иначе стрелка местами исчезала бы
+  // в поверхности выработки.
+  mesh.renderOrder = 5;
+
+  const axisX = new THREE.Vector3(1, 0, 0);
+  const q = new THREE.Quaternion();
+  const base = new THREE.Vector3();
+  const scale = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  const col = new THREE.Color();
+  const polluted = input.pollutedBranchIds;
+
+  let idx = 0;
+  for (const pl of plan) {
+    q.setFromUnitVectors(axisX, pl.dir);
+    scale.set(pl.aLen, pl.rad, pl.rad);
+    // Все стрелки выработки стоят в её начале; расходятся они за счёт
+    // начального сдвига в шейдере, а не за счёт разных матриц.
+    base.copy(pl.from);
+    m.compose(base, q, scale);
+
+    // Пробег: от начала выработки до места, где остриё дойдёт до конечного
+    // узла. Без вычитания длины самой стрелки она выскакивала бы за узел и
+    // залезала в соседнюю выработку.
+    const spanWorld = Math.max(pl.aLen * 0.5, pl.len - pl.aLen);
+    // Перевод в локальные единицы конуса: матрица растянула его в aLen раз.
+    const spanLocal = spanWorld / pl.aLen;
+    const speedLocal = pl.speed / pl.aLen;
+
+    col.set(polluted?.has(pl.branch.id) ? COLOR_POLLUTED : COLOR_FRESH);
+
+    for (let i = 0; i < pl.count; i++) {
+      mesh.setMatrixAt(idx, m);
+      mesh.setColorAt(idx, col);
+      aSpan[idx] = spanLocal;
+      aSpeed[idx] = speedLocal;
+      // Равномерно разносим стрелки по всему пробегу — так поток выглядит
+      // сплошным, а не пачкой, вышедшей одновременно.
+      aPhase[idx] = (spanLocal * i) / pl.count;
+      idx++;
+    }
+  }
+
+  geom.setAttribute("aSpan", new THREE.InstancedBufferAttribute(aSpan, 1));
+  geom.setAttribute("aSpeed", new THREE.InstancedBufferAttribute(aSpeed, 1));
+  geom.setAttribute("aPhase", new THREE.InstancedBufferAttribute(aPhase, 1));
+
   mesh.instanceMatrix.needsUpdate = true;
-  return mesh;
+  if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+
+  return {
+    mesh,
+    arrowCount: total,
+    setTime(seconds: number) { timeUniform.value = seconds; },
+    dispose() {
+      geom.dispose();
+      mat.dispose();
+    },
+  };
 }

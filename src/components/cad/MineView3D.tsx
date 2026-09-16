@@ -21,7 +21,7 @@ import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { buildMineScene, disposeScene, recolorScene, pickBranch, setHighlight, type BuiltScene } from "@/lib/three/mineScene";
 import { buildMineLabels, drawMineLabels, type MineLabel } from "@/lib/three/mineLabels";
-import { buildFlowArrows } from "@/lib/three/mineArrows";
+import { buildFlowArrows, type FlowArrows } from "@/lib/three/mineArrows";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
@@ -49,6 +49,14 @@ export interface MineView3DProps {
   unitsConfig?: UnitsConfig;
   /** Результаты расчёта водопровода — для показаний редуктора в подписи. */
   waterBranchResults?: Map<string, WaterBranchResult>;
+  /**
+   * Выработки с загазованной (исходящей) струёй. Стрелки в них синие, в
+   * остальных красные — ровно как на чертеже. Считается снаружи тем же
+   * расчётом, чтобы два режима не разошлись в главном.
+   */
+  pollutedBranchIds?: Set<string>;
+  /** Множитель скорости анимации: 1 — обычная, 0.5 — вдвое медленнее. */
+  animSpeed?: number;
 }
 
 /** Состояние камеры: сферические координаты вокруг точки интереса. */
@@ -94,8 +102,12 @@ export default function MineView3D(p: MineView3DProps) {
   // Стрелки направления воздуха — пакетный меш, живёт отдельно от схемы:
   // расход пересчитывается чаще, чем меняется геометрия, и пересобирать ради
   // стрелок всю схему незачем.
-  const arrowsRef = useRef<THREE.InstancedMesh | null>(null);
+  const arrowsRef = useRef<FlowArrows | null>(null);
   const [showArrows, setShowArrows] = useState(true);
+  const [arrowCount, setArrowCount] = useState(0);
+  // Стрелки бегут — значит кадры нужны непрерывно, а не по событию. Держим это
+  // признаком в ref: цикл отрисовки не должен зависеть от перерисовок React.
+  const animatingRef = useRef(false);
 
   const [stats, setStats] = useState({ branches: 0, drawCalls: 0, fps: 0 });
   // Выработка под курсором: её имя показываем в плашке, а саму — подсвечиваем.
@@ -314,30 +326,41 @@ export default function MineView3D(p: MineView3DProps) {
     // со схемой не делятся — без dispose видеопамять течёт при каждом расчёте.
     const prev = arrowsRef.current;
     if (prev) {
-      scene.remove(prev);
-      prev.geometry.dispose();
-      (prev.material as THREE.Material).dispose();
+      scene.remove(prev.mesh);
+      prev.dispose();
       arrowsRef.current = null;
     }
+    animatingRef.current = false;
+    setArrowCount(0);
 
     if (showArrows) {
       const arrows = buildFlowArrows({
         nodes: p.nodes, branches: p.branches,
         xyScale: p.xyScale, zScale: p.zScale,
+        pollutedBranchIds: p.pollutedBranchIds,
+        animSpeed: p.animSpeed,
       });
-      if (arrows) { scene.add(arrows); arrowsRef.current = arrows; }
+      if (arrows) {
+        scene.add(arrows.mesh);
+        arrowsRef.current = arrows;
+        setArrowCount(arrows.arrowCount);
+        // Пока стрелки на схеме, кадры нужны каждый — движение иначе не
+        // покажешь. Выключили стрелки — возвращаемся к отрисовке по событию и
+        // видеокарта снова простаивает.
+        animatingRef.current = true;
+      }
     }
     needsRenderRef.current = true;
 
     return () => {
-      const m = arrowsRef.current;
-      if (!m) return;
-      scene.remove(m);
-      m.geometry.dispose();
-      (m.material as THREE.Material).dispose();
+      const a = arrowsRef.current;
+      if (!a) return;
+      scene.remove(a.mesh);
+      a.dispose();
       arrowsRef.current = null;
+      animatingRef.current = false;
     };
-  }, [ready, showArrows, p.nodes, p.branches, p.xyScale, p.zScale]);
+  }, [ready, showArrows, p.nodes, p.branches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed]);
 
   // ── Смена окраски без пересборки ──────────────────────────────────────
   // Переключили заливку (расход / скорость / участки / горизонты) — меняется
@@ -358,10 +381,25 @@ export default function MineView3D(p: MineView3DProps) {
     let frames = 0;
     let fpsAcc = performance.now();
 
+    // Момент начала показа — от него отсчитывается время для бегущих стрелок.
+    // Считаем от старта, а не от абсолютного времени: большие числа в шейдере
+    // теряют точность, и движение начинает дёргаться через несколько часов
+    // работы программы.
+    const t0 = performance.now();
+
     const loop = () => {
       const renderer = rendererRef.current;
       const scene = sceneRef.current;
       const cam = cameraRef.current;
+
+      // Стрелки бегут — двигаем их и просим кадр. Само движение считает
+      // видеокарта, здесь только одно число на всю схему.
+      const arrows = arrowsRef.current;
+      if (animatingRef.current && arrows) {
+        arrows.setTime((performance.now() - t0) / 1000);
+        needsRenderRef.current = true;
+      }
+
       if (renderer && scene && cam && needsRenderRef.current) {
         const c = camRef.current;
         const { w, h } = sizeRef.current;
@@ -775,10 +813,29 @@ export default function MineView3D(p: MineView3DProps) {
         </div>
       )}
 
+      {/* Легенда струй. Цвет стрелки — не оформление, а смысл: по нему на
+          схеме отличают свежую струю от исходящей. Без подписи его пришлось бы
+          угадывать, поэтому легенда показывается всегда, пока стрелки на
+          схеме. */}
+      {showArrows && arrowCount > 0 && (
+        <div className="absolute top-2 right-2 text-[10px] px-2 py-1 rounded flex flex-col gap-1"
+          style={{ background: "rgba(255,255,255,0.92)", border: "1px solid var(--c-b1, #e5e7eb)", color: "var(--c-t3, #6b7280)" }}>
+          <div className="flex items-center gap-1.5">
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: "#dc2626", display: "inline-block" }} />
+            свежая струя
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span style={{ width: 10, height: 10, borderRadius: 2, background: "#2563eb", display: "inline-block" }} />
+            исходящая (загазованная)
+          </div>
+        </div>
+      )}
+
       {/* Счётчик скорости: ради него прототип и делался — видно цену объёма */}
       <div className="absolute bottom-2 left-2 text-[10px] px-2 py-1 rounded"
         style={{ background: "rgba(255,255,255,0.92)", border: "1px solid var(--c-b1, #e5e7eb)", color: "var(--c-t3, #6b7280)" }}>
-        выработок: <b>{stats.branches}</b> · вызовов отрисовки: <b>{stats.drawCalls}</b> · {stats.fps} кадр/с
+        выработок: <b>{stats.branches}</b> · вызовов отрисовки: <b>{stats.drawCalls}</b>
+        {arrowCount > 0 && <> · стрелок: <b>{arrowCount}</b></>} · {stats.fps} кадр/с
       </div>
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"

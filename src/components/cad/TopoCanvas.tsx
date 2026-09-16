@@ -1798,6 +1798,8 @@ export default function TopoCanvas(props: Props) {
               infoConfig={infoConfig}
               unitsConfig={unitsConfig}
               waterBranchResults={waterBranchResults}
+              pollutedBranchIds={pollutedBranchIds}
+              animSpeed={animSpeed}
             />
           </div>
         </CanvasErrorBoundary>
