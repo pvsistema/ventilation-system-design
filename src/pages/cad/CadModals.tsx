@@ -1,16 +1,16 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// CadModals — presentational-обёртка над модальными окнами с инлайновым JSX:
-// настройки пределов масштабов, объединение ветвей при удалении узла, число
-// людей в отделении, подтверждение закрытия, «О программе», сравнение схем.
+// CadModals — presentational-обёртка над модальными окнами: настройки пределов
+// масштабов, возврат к маркшейдерским координатам, удаление ветвей, объединение
+// ветвей при удалении узла, число людей в отделении, подтверждение закрытия,
+// «О программе», сравнение схем.
+// Разметка вынесена в ./modals/* — здесь остаётся только раскладка пропсов.
 // Логика/состояние остаются в CadPage. Поведение 1:1 с исходником.
 // ─────────────────────────────────────────────────────────────────────────────
 import type React from "react";
-import Icon from "@/components/ui/icon";
-import AppLogo from "@/components/AppLogo";
-import UpdateCheckButton from "@/components/cad/UpdateCheckButton";
-import CoreVersionRow from "@/components/cad/CoreVersionRow";
-import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
-import { compareBranches, compareNodes } from "./cadUtils";
+import CadScaleSettingsModal from "./modals/CadScaleSettingsModal";
+import CadTopologyModals from "./modals/CadTopologyModals";
+import CadAppInfoModals from "./modals/CadAppInfoModals";
+import CadCompareModal from "./modals/CadCompareModal";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { type CompareResult } from "./cadTypes";
 import { type DeleteBranchPlan } from "./deleteBranchPlan";
@@ -98,754 +98,74 @@ export default function CadModals(p: CadModalsProps) {
   return (
     <>
       {/* ═══ ДИАЛОГ НАСТРОЙКИ ПРЕДЕЛОВ МАСШТАБОВ ═══════════════════════ */}
-      {p.scaleSettingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
-          onClick={() => p.setScaleSettingsOpen(false)}>
-          {/* Боковое меню разделов убрано.
-              Из шести пунктов работал только «Пределы масштабов» — остальные
-              («Схема», «Единицы измерения», «Координатная сетка», «Размеры
-              объектов», «Цвета и шрифты») были нерабочими надписями: клик по
-              ним ничего не открывал. Пустые пункты создают ложное ожидание
-              настроек, которых нет, поэтому окно оставлено одностраничным. */}
-          <div className="bg-white shadow-2xl border border-gray-300 flex"
-            style={{ minWidth: 560, fontFamily: "Segoe UI, Tahoma, sans-serif", borderRadius: 0 }}
-            onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col" style={{ flex: 1 }}>
-              {/* Заголовок */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300"
-                style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
-                <span className="text-[12px] font-semibold text-gray-800">Пределы масштабов</span>
-                <button onClick={() => p.setScaleSettingsOpen(false)}
-                  className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white text-gray-600">
-                  <Icon name="X" size={12} />
-                </button>
-              </div>
+      <CadScaleSettingsModal
+        scaleSettingsOpen={p.scaleSettingsOpen}
+        setScaleSettingsOpen={p.setScaleSettingsOpen}
+        scaleTextMin={p.scaleTextMin} setScaleTextMin={p.setScaleTextMin}
+        scaleTextMax={p.scaleTextMax} setScaleTextMax={p.setScaleTextMax}
+        scaleBranchMin={p.scaleBranchMin} setScaleBranchMin={p.setScaleBranchMin}
+        scaleBranchMax={p.scaleBranchMax} setScaleBranchMax={p.setScaleBranchMax}
+        widthBySectionOn={p.widthBySectionOn} setWidthBySectionOn={p.setWidthBySectionOn}
+        tube3dOn={p.tube3dOn} setTube3dOn={p.setTube3dOn}
+        scalePositionMin={p.scalePositionMin} setScalePositionMin={p.setScalePositionMin}
+        scalePositionMax={p.scalePositionMax} setScalePositionMax={p.setScalePositionMax}
+        positionGostMm={p.positionGostMm} setPositionGostMm={p.setPositionGostMm}
+        bulkheadScale={p.bulkheadScale} setBulkheadScale={p.setBulkheadScale}
+        fanScale={p.fanScale} setFanScale={p.setFanScale}
+        setScaleLimitsEnabled={p.setScaleLimitsEnabled}
+      />
 
-              {/* Подзаголовок внутри убран: после удаления бокового меню он
-                  повторял бы заголовок окна слово в слово. */}
-              <div className="px-6 py-4 flex-1">
-                {/* Таблица */}
-                <table className="text-[12px] w-full mb-4" style={{ borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr>
-                      <th className="text-left py-1 pr-4 font-normal text-gray-500" style={{ width: "50%" }}></th>
-                      <th className="text-center py-1 px-3 font-semibold text-gray-700" style={{ width: "25%" }}>Минимум</th>
-                      <th className="text-center py-1 px-3 font-semibold text-gray-700" style={{ width: "25%" }}>Максимум</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Строка 1: Текстовые объекты */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "top" }}>
-                        Размер текстовых объектов<br />
-                        <span className="text-[11px] text-gray-500">(номер узла, номер ветви, номер устройства, название и т.п.)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleTextMin}
-                            onChange={e => p.setScaleTextMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleTextMax}
-                            onChange={e => p.setScaleTextMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                    </tr>
+      {/* ═══ ПРАВКА ТОПОЛОГИИ: F5, удаление ветвей, объединение, отделение ══ */}
+      <CadTopologyModals
+        branchesRaw={p.branchesRaw}
+        resetSurveyDialog={p.resetSurveyDialog}
+        setResetSurveyDialog={p.setResetSurveyDialog}
+        resetAllNodesToSurvey={p.resetAllNodesToSurvey}
+        movedNodeCount={p.movedNodeCount}
+        nodeCount={p.nodeCount}
+        deleteBranchDialog={p.deleteBranchDialog}
+        setDeleteBranchDialog={p.setDeleteBranchDialog}
+        confirmDeleteBranches={p.confirmDeleteBranches}
+        mergeNodeDialog={p.mergeNodeDialog}
+        setMergeNodeDialog={p.setMergeNodeDialog}
+        doDeleteNode={p.doDeleteNode}
+        mergeAdjacentBranches={p.mergeAdjacentBranches}
+        squadDialog={p.squadDialog}
+        setSquadDialog={p.setSquadDialog}
+        squadCount={p.squadCount}
+        setSquadCount={p.setSquadCount}
+        addSymbol={p.addSymbol}
+        setTool={p.setTool}
+        setActiveSymbolTypeId={p.setActiveSymbolTypeId}
+      />
 
-                    {/* Строка 2: Толщина ветви + режим «по сечению».
-                        Галочка стоит здесь, а не отдельной настройкой: она
-                        управляет ровно тем же — шириной линии выработки, и
-                        пределы ниже действуют на неё же. */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "top" }}>
-                        <div>Толщина ветви</div>
-                        <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer select-none">
-                          <input type="checkbox" checked={p.widthBySectionOn}
-                            onChange={e => {
-                              const on = e.target.checked;
-                              p.setWidthBySectionOn(on);
-                              // Разброс сечений на руднике — десятки раз, а
-                              // прежние пределы (80–150%) рассчитаны на ручную
-                              // подгонку толщины. В них разница между стволом и
-                              // сбойкой почти незаметна, и смысл режима теряется.
-                              // При первом включении раздвигаем их до рабочих,
-                              // но только если они остались стандартными —
-                              // осознанно выставленные числа не трогаем.
-                              if (on && p.scaleBranchMin === 80 && p.scaleBranchMax === 150) {
-                                p.setScaleBranchMin(30);
-                                p.setScaleBranchMax(300);
-                              }
-                            }}
-                            className="mt-0.5" />
-                          <span className="text-[11px]">
-                            <span className="text-gray-700">Масштаб выработок по сечению</span>
-                            <span className="block text-[11px] text-gray-500">
-                              Ширина линии зависит от площади сечения: схема выглядит как
-                              фактическая модель, а ошибки в сечении (2 вместо 20) сразу
-                              видно. Выключено — все выработки одной толщины.
-                              Пределы справа задают, насколько тонкой и толстой может
-                              стать линия.
-                            </span>
-                          </span>
-                        </label>
-                        {/* Объёмный вид — рядом с толщиной ветви: обе настройки
-                            управляют тем, как выглядит сама выработка. */}
-                        <label className="flex items-start gap-1.5 mt-2 cursor-pointer select-none">
-                          <input type="checkbox" checked={p.tube3dOn}
-                            onChange={e => p.setTube3dOn(e.target.checked)}
-                            className="mt-0.5" />
-                          <span className="text-[11px]">
-                            <span className="text-gray-700">Объёмный вид выработок (3D)</span>
-                            <span className="block text-[11px] text-gray-500">
-                              Выработка рисуется трубой по реальному сечению: ствол —
-                              круглый, квершлаг — сводчатый, штрек — трапеция. Видно
-                              только в объёмных ракурсах (ИЗО, фронт, профиль): на плане
-                              труба выглядит как обычная линия. Вблизи — объём, при
-                              отдалении автоматически возвращаются линии, чтобы схема
-                              не тормозила.
-                            </span>
-                          </span>
-                        </label>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleBranchMin}
-                            onChange={e => p.setScaleBranchMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleBranchMax}
-                            onChange={e => p.setScaleBranchMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Строка 3: Масштаб перемычек */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                        <div className="text-gray-700">Масштаб перемычек</div>
-                        <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center" colSpan={2}>
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={20} max={500} value={p.bulkheadScale}
-                            onChange={e => p.setBulkheadScale(Math.max(20, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">% от ширины ветви</span>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Строка 4: Масштаб вентиляторов */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                        <div className="text-gray-700">Масштаб вентиляторов</div>
-                        <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center" colSpan={2}>
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={50} max={2000} value={p.fanScale}
-                            onChange={e => p.setFanScale(Math.max(50, Math.min(2000, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">% от ширины ветви</span>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Строка 5: Пределы масштаба Позиций ПЛА */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
-                        Размер позиций ПЛА
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scalePositionMin}
-                            onChange={e => p.setScalePositionMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scalePositionMax}
-                            onChange={e => p.setScalePositionMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                    </tr>
-
-                    {/* Строка 6: ГОСТ-размер маркера позиции ПЛА */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                        <div className="text-gray-700">Размер позиции по ГОСТ</div>
-                        <span className="text-[11px] text-gray-500">(диаметр маркера позиции ПЛА на чертеже, по умолчанию 13 мм)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center" colSpan={2}>
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={2} max={100} step={0.5} value={p.positionGostMm}
-                            onChange={e => p.setPositionGostMm(Math.max(2, Math.min(100, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">мм</span>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Подвал диалога */}
-              <div className="flex items-center justify-between px-4 py-2 border-t border-gray-300" style={{ background: "var(--c-s2, #f5f5f5)" }}>
-                <button
-                  onClick={() => {
-                    p.setScaleTextMin(80); p.setScaleTextMax(150);
-                    p.setScaleBranchMin(80); p.setScaleBranchMax(150);
-                    p.setWidthBySectionOn(false);
-                    p.setScalePositionMin(80); p.setScalePositionMax(150);
-                    p.setPositionGostMm(13);
-                    p.setBulkheadScale(150); p.setFanScale(450);
-                  }}
-                  className="px-4 py-1 text-[12px] border border-gray-400 bg-white hover:bg-gray-100"
-                  style={{ minWidth: 70 }}>
-                  Сброс
-                </button>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      p.setScaleLimitsEnabled(true);
-                      p.setScaleSettingsOpen(false);
-                    }}
-                    className="px-4 py-1 text-[12px] border border-gray-500 bg-white hover:bg-gray-100"
-                    style={{ minWidth: 70 }}>
-                    ОК
-                  </button>
-                  <button
-                    onClick={() => p.setScaleSettingsOpen(false)}
-                    className="px-4 py-1 text-[12px] border border-gray-500 bg-white hover:bg-gray-100"
-                    style={{ minWidth: 70 }}>
-                    Отмена
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ ДИАЛОГ: ВЕРНУТЬ СХЕМУ К МАРКШЕЙДЕРСКИМ КООРДИНАТАМ (F5) ════════ */}
-      {p.resetSurveyDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
-          <div className="flex flex-col shadow-2xl border border-gray-400"
-            style={{ width: 400, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
-            <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
-              <span className="text-[12px] font-semibold text-gray-800">
-                Вернуть схему к маркшейдерским координатам
-              </span>
-              <button onClick={() => p.setResetSurveyDialog(false)}
-                className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
-                <Icon name="X" size={12} />
-              </button>
-            </div>
-
-            <div className="p-4 flex flex-col gap-3">
-              <div className="rounded text-[11px] px-3 py-2"
-                style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
-                <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
-                  <Icon name="MapPin" size={12} />
-                  Будет возвращено на место: {p.movedNodeCount} узл. из {p.nodeCount}
-                </div>
-                <div className="text-[11px] text-blue-900 leading-relaxed">
-                  Узлы встанут туда, где выработки находятся на самом деле.
-                  Сдвиги, сделанные для читаемости схемы, будут отменены.
-                </div>
-              </div>
-              <div className="text-[11px] text-gray-600 leading-relaxed">
-                На расчёт это не влияет: длины выработок и воздухораспределение
-                и так считались по маркшейдерским координатам. Меняется только
-                вид схемы. Действие отменяется через Ctrl+Z.
-              </div>
-            </div>
-
-            <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200"
-              style={{ background: "var(--c-s2, #f8f8f8)" }}>
-              <button onClick={() => p.setResetSurveyDialog(false)}
-                className="text-[11px] px-3 py-1 rounded"
-                style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}>
-                Отмена
-              </button>
-              <button
-                onClick={() => { p.resetAllNodesToSurvey(); p.setResetSurveyDialog(false); }}
-                className="text-[11px] px-3 py-1 rounded font-semibold"
-                style={{ background: "var(--c-blue-bg, #1d4ed8)", border: "1px solid var(--c-blue, #1d4ed8)", color: "white", cursor: "pointer" }}>
-                Вернуть на место
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ═══ ДИАЛОГ: ПОДТВЕРЖДЕНИЕ УДАЛЕНИЯ ВЕТВЕЙ ══════════════════════════ */}
-      {p.deleteBranchDialog && (() => {
-        const plan = p.deleteBranchDialog;
-        const hasSymbols = plan.symbols.length > 0;
-        const hasOrphans = plan.orphanNodeIds.length > 0;
-        const listCls = "text-[11px] text-gray-700 leading-relaxed";
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
-            <div className="flex flex-col shadow-2xl border border-gray-400"
-              style={{ width: 420, maxHeight: "85vh", background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
-              <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300 flex-shrink-0"
-                style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
-                <span className="text-[12px] font-semibold text-gray-800">
-                  {plan.branchIds.length > 1
-                    ? `Удаление выработок (${plan.branchIds.length})`
-                    : "Удаление выработки"}
-                </span>
-                <button onClick={() => p.setDeleteBranchDialog(null)}
-                  className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
-                  <Icon name="X" size={12} />
-                </button>
-              </div>
-
-              <div className="p-4 flex flex-col gap-3 overflow-y-auto">
-                <div className="rounded text-[11px] px-3 py-2"
-                  style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5" }}>
-                  <div className="font-semibold text-red-800 mb-1">
-                    Будет удалено: {plan.branchIds.length} выраб.
-                  </div>
-                  <div className={listCls} style={{ maxHeight: 90, overflowY: "auto" }}>
-                    {plan.branchLabels.slice(0, 12).map((n, i) => (
-                      <div key={i}>· {n}</div>
-                    ))}
-                    {plan.branchLabels.length > 12 && (
-                      <div className="text-gray-500">…и ещё {plan.branchLabels.length - 12}</div>
-                    )}
-                  </div>
-                </div>
-
-                {/* УО на удаляемых ветвях — вентиляторы, перемычки и т.п. */}
-                {hasSymbols && (
-                  <div className="rounded text-[11px] px-3 py-2"
-                    style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d" }}>
-                    <div className="font-semibold text-amber-800 mb-1 flex items-center gap-1">
-                      <Icon name="TriangleAlert" size={12} />
-                      Вместе с ними исчезнут УО ({plan.symbols.length})
-                    </div>
-                    <div className={listCls} style={{ maxHeight: 90, overflowY: "auto" }}>
-                      {plan.symbols.slice(0, 12).map(s => (
-                        <div key={s.id}>· {s.label}</div>
-                      ))}
-                      {plan.symbols.length > 12 && (
-                        <div className="text-gray-500">…и ещё {plan.symbols.length - 12}</div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* Изолированные узлы: главная причина, по которой расчёт сети
-                    переставал сходиться после молчаливого удаления ветви. */}
-                {hasOrphans && (
-                  <div className="rounded text-[11px] px-3 py-2"
-                    style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
-                    <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
-                      <Icon name="Unlink" size={12} />
-                      Останутся без выработок ({plan.orphanNodeIds.length} узл.)
-                    </div>
-                    <div className={listCls} style={{ maxHeight: 70, overflowY: "auto" }}>
-                      {plan.orphanNodeLabels.slice(0, 12).map((n, i) => (
-                        <div key={i}>· {n}</div>
-                      ))}
-                      {plan.orphanNodeLabels.length > 12 && (
-                        <div className="text-gray-500">…и ещё {plan.orphanNodeLabels.length - 12}</div>
-                      )}
-                    </div>
-                    <div className="text-[10px] text-blue-700 mt-1">
-                      Такие узлы ни к чему не подключены и мешают расчёту
-                      воздухораспределения. Рекомендуется удалить их вместе с выработками.
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200 flex-shrink-0"
-                style={{ background: "var(--c-s2, #f8f8f8)" }}>
-                <button onClick={() => p.setDeleteBranchDialog(null)}
-                  className="text-[11px] px-3 py-1 rounded"
-                  style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}>
-                  Отмена
-                </button>
-                {hasOrphans && (
-                  <button onClick={() => p.confirmDeleteBranches(plan, false)}
-                    className="text-[11px] px-3 py-1 rounded"
-                    style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}>
-                    Оставить узлы
-                  </button>
-                )}
-                <button onClick={() => p.confirmDeleteBranches(plan, true)}
-                  className="text-[11px] px-3 py-1 rounded font-semibold"
-                  style={{ background: "var(--c-red-bg, #dc2626)", border: "1px solid var(--c-red, #dc2626)", color: "white", cursor: "pointer" }}>
-                  {hasOrphans ? "Удалить с узлами" : "Удалить"}
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ═══ ДИАЛОГ: ОБЪЕДИНИТЬ ВЕТВИ ПРИ УДАЛЕНИИ ПРОМЕЖУТОЧНОГО УЗЛА ══════ */}
-      {p.mergeNodeDialog && (() => {
-        const brA = p.branchesRaw.find(b => b.id === p.mergeNodeDialog!.branchA) as (TopoBranch & { name?: string }) | undefined;
-        const brB = p.branchesRaw.find(b => b.id === p.mergeNodeDialog!.branchB) as (TopoBranch & { name?: string }) | undefined;
-        const nameA = brA?.name || p.mergeNodeDialog!.branchA.substring(0, 12);
-        const nameB = brB?.name || p.mergeNodeDialog!.branchB.substring(0, 12);
-        return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
-            <div className="flex flex-col shadow-2xl border border-gray-400"
-              style={{ width: 360, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
-              {/* Заголовок */}
-              <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-                style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
-                <span className="text-[12px] font-semibold text-gray-800">Удаление узла</span>
-                <button onClick={() => p.setMergeNodeDialog(null)}
-                  className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
-                  <Icon name="X" size={12} />
-                </button>
-              </div>
-              {/* Тело */}
-              <div className="p-4 flex flex-col gap-3">
-                <p className="text-[12px] text-gray-700">
-                  Узел соединяет две выработки. Объединить их в одну?
-                </p>
-                <div className="rounded text-[11px] text-gray-600 px-3 py-2" style={{ background: "var(--c-tint-blue, #f0f4ff)", border: "1px solid #c8d4e8" }}>
-                  <div className="font-semibold text-gray-700 mb-1">Будут объединены:</div>
-                  <div>· {nameA || "Выработка 1"}</div>
-                  <div>· {nameB || "Выработка 2"}</div>
-                  <div className="mt-1 text-[10px] text-gray-500">Длина = сумма длин. Параметры берутся от первой выработки.</div>
-                </div>
-              </div>
-              {/* Кнопки */}
-              <div className="flex gap-2 justify-end px-4 py-3 border-t border-gray-200"
-                style={{ background: "var(--c-s2, #f8f8f8)" }}>
-                <button
-                  onClick={() => { p.doDeleteNode(p.mergeNodeDialog!.nodeId); p.setMergeNodeDialog(null); }}
-                  className="text-[11px] px-3 py-1 rounded"
-                  style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "var(--c-red-ink, #991b1b)", cursor: "pointer" }}>
-                  Удалить без объединения
-                </button>
-                <button
-                  onClick={() => {
-                    p.mergeAdjacentBranches(p.mergeNodeDialog!.nodeId, p.mergeNodeDialog!.branchA, p.mergeNodeDialog!.branchB);
-                    p.setMergeNodeDialog(null);
-                  }}
-                  className="text-[11px] px-3 py-1 rounded font-semibold"
-                  style={{ background: "var(--c-blue-bg, #1d4ed8)", border: "1px solid var(--c-blue, #1d4ed8)", color: "white", cursor: "pointer" }}>
-                  Объединить выработки
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ═══ ДИАЛОГ: ЧИСЛО ЛЮДЕЙ В ОТДЕЛЕНИИ ════════════════════════════════ */}
-      {p.squadDialog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
-          onClick={() => p.setSquadDialog(null)}>
-          <div className="flex flex-col shadow-2xl border border-gray-400"
-            style={{ width: 320, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
-            onClick={e => e.stopPropagation()}>
-            <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
-              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
-              <span className="text-[12px] font-semibold text-gray-800">Число людей в отделении</span>
-              <button onClick={() => p.setSquadDialog(null)} className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
-                <Icon name="X" size={12} />
-              </button>
-            </div>
-            <div className="p-4 flex flex-col gap-3">
-              <label className="text-[11px] text-gray-600">Количество человек:</label>
-              <input
-                autoFocus
-                type="number" min={1} max={99}
-                value={p.squadCount}
-                onChange={e => p.setSquadCount(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === "Enter") {
-                    const n = parseInt(p.squadCount) || 5;
-                    p.addSymbol(p.squadDialog!.typeId, p.squadDialog!.x, p.squadDialog!.y, p.squadDialog!.branchId, `${n} чел.`, undefined, p.squadDialog!.t);
-                    p.setTool("select"); p.setActiveSymbolTypeId(null); p.setSquadDialog(null);
-                  }
-                  if (e.key === "Escape") p.setSquadDialog(null);
-                }}
-                className="border border-gray-300 rounded px-2 py-1 text-[13px] text-center w-full outline-none focus:border-blue-500" />
-              <div className="flex gap-2 justify-end">
-                <button onClick={() => p.setSquadDialog(null)}
-                  className="h-7 px-3 text-[11px] border border-gray-300 rounded hover:bg-gray-100">Отмена</button>
-                <button onClick={() => {
-                  const n = parseInt(p.squadCount) || 5;
-                  p.addSymbol(p.squadDialog!.typeId, p.squadDialog!.x, p.squadDialog!.y, p.squadDialog!.branchId, `${n} чел.`, undefined, p.squadDialog!.t);
-                  p.setTool("select"); p.setActiveSymbolTypeId(null); p.setSquadDialog(null);
-                }}
-                  className="h-7 px-3 text-[11px] rounded text-white" style={{ background: "var(--c-blue-bg, #2563eb)" }}>
-                  Разместить
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Диалог подтверждения закрытия ───────────────────────────────── */}
-      {p.showCloseConfirm && (() => {
-        type W = Window & { __IS_DESKTOP__?: boolean; chrome?: { webview?: { postMessage: (s: string) => void } } };
-        const w = window as W;
-        const isDesktop = !!w.__IS_DESKTOP__;
-        const doClose = () => {
-          p.setShowCloseConfirm(false);
-          if (isDesktop) {
-            w.chrome?.webview?.postMessage(JSON.stringify({ cmd: "win-close-confirmed" }));
-          } else {
-            window.close();
-          }
-        };
-        return (
-          <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-            style={{ background: "rgba(0,0,0,0.45)" }}>
-            <div className="bg-white rounded shadow-xl border border-gray-300 w-[340px]"
-              style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
-              <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200"
-                style={{ background: "var(--c-s2, #f5f5f5)", borderRadius: "8px 8px 0 0" }}>
-                <Icon name="FileQuestion" size={16} className="text-yellow-600" />
-                <span className="text-[13px] font-semibold text-gray-800">Несохранённые изменения</span>
-              </div>
-              <div className="px-4 py-4">
-                <p className="text-[13px] text-gray-700 mb-1">
-                  Проект <strong>«{p.projectFileName}»</strong> содержит несохранённые изменения.
-                </p>
-                <p className="text-[12px] text-gray-500">Сохранить перед закрытием?</p>
-              </div>
-              <div className="flex gap-2 justify-end px-4 pb-4">
-                <button
-                  onClick={() => p.setShowCloseConfirm(false)}
-                  className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
-                  Отмена
-                </button>
-                <button
-                  onClick={doClose}
-                  className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-red-50 text-red-600">
-                  Не сохранять
-                </button>
-                <button
-                  onClick={async () => { await p.handleSave(); doClose(); }}
-                  className="h-7 px-3 text-[12px] rounded text-white"
-                  style={{ background: "var(--c-blue-bg, #2563eb)" }}>
-                  Сохранить
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── Окно «О программе» ──────────────────────────────────────────── */}
-      {p.showAbout && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.45)" }}
-          onClick={() => p.setShowAbout(false)}>
-          <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[460px] overflow-hidden"
-            style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
-            onClick={(e) => e.stopPropagation()}>
-            {/* Шапка диалога */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
-              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d6d6d6))" }}>
-              <span className="text-[12px] font-semibold text-gray-800">О программе</span>
-              <button
-                onClick={() => p.setShowAbout(false)}
-                className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
-            </div>
-
-            {/* Контент */}
-            <div className="px-6 py-6 flex flex-col items-center text-center"
-              style={{ background: "linear-gradient(160deg, var(--c-s1, #ffffff) 0%, var(--c-tint-blue, #eaf4fc) 100%)" }}>
-              <AppLogo
-                className="w-48 object-contain mb-2"
-                style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
-              />
-
-              <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
-                <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">{APP_VERSION}</span></div>
-                <CoreVersionRow />
-                <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">{APP_BUILD_DATE}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop</span></div>
-                {(() => {
-                  const isOnline = navigator.onLine;
-                  return (
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Сеть:</span>
-                      <span className="font-medium flex items-center gap-1.5">
-                        <span style={{
-                          width: 8, height: 8, borderRadius: 999,
-                          background: isOnline ? "var(--c-green-lt, #22c55e)" : "var(--c-amber-lt, #f59e0b)",
-                          display: "inline-block",
-                        }} />
-                        {isOnline ? "Онлайн" : "Офлайн-режим"}
-                      </span>
-                    </div>
-                  );
-                })()}
-              </div>
-
-              <div className="w-full mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-500 leading-relaxed">
-                © 2026 ПВ-Система. Все права защищены.<br/>
-                Программа предназначена для проектирования систем<br/>
-                вентиляции и водоснабжения рудников и шахт.
-              </div>
-            </div>
-
-            {/* Футер */}
-            <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
-              <UpdateCheckButton currentVersion={APP_VERSION} />
-              <button
-                onClick={() => p.setShowAbout(false)}
-                className="h-7 px-4 text-[12px] rounded text-white font-medium flex-shrink-0"
-                style={{ background: "var(--c-blue-bg, #2563eb)" }}>
-                OK
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ── Подтверждение закрытия и «О программе» ──────────────────────── */}
+      <CadAppInfoModals
+        projectFileName={p.projectFileName}
+        showCloseConfirm={p.showCloseConfirm}
+        setShowCloseConfirm={p.setShowCloseConfirm}
+        handleSave={p.handleSave}
+        showAbout={p.showAbout}
+        setShowAbout={p.setShowAbout}
+      />
 
       {/* ── Диалог сравнения схем ──────────────────────────────────────── */}
-      {p.compareShowDialog && (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.45)" }}
-          onClick={() => p.setCompareShowDialog(false)}>
-          <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[480px]"
-            style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
-            onClick={e => e.stopPropagation()}>
-            {/* Шапка */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
-              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d6d6d6))" }}>
-              <span className="text-[12px] font-semibold text-gray-800">↔ Сравнение схем</span>
-              <button onClick={() => p.setCompareShowDialog(false)}
-                className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
-            </div>
-
-            <div className="px-6 py-4 space-y-4">
-              {/* Текущая схема */}
-              <div>
-                <div className="text-[11px] text-gray-500 mb-1 font-medium">Исходный файл:</div>
-                <div className="flex items-center gap-2 px-3 py-2 rounded border border-gray-200"
-                  style={{ background: "var(--c-s2, #f9fafb)" }}>
-                  <Icon name="FileText" size={18} style={{ color: "var(--c-blue, #2563eb)" }} />
-                  <span className="text-[12px] font-medium text-gray-800">{p.projectFileName}</span>
-                  <span className="ml-auto text-[10px] text-gray-400">{p.nodes.length} уз. / {p.branches.length} вет.</span>
-                </div>
-              </div>
-
-              {/* Выбор файла для сравнения */}
-              <div>
-                <div className="text-[11px] text-gray-500 mb-1 font-medium">Изменённая схема:</div>
-                <button
-                  disabled={p.compareLoading}
-                  onClick={() => {
-                    const inp = document.createElement("input");
-                    inp.type = "file";
-                    inp.accept = ".vproj,.json,application/json,text/plain";
-                    inp.onchange = () => {
-                      const file = inp.files?.[0];
-                      if (!file) return;
-                      p.setCompareLoading(true);
-                      const reader = new FileReader();
-                      reader.onload = () => {
-                        try {
-                          const data = JSON.parse(reader.result as string) as Record<string, unknown>;
-                          if (!data.nodes || !Array.isArray(data.nodes)) {
-                            alert("Файл не является проектом ПВ-Система.");
-                            p.setCompareLoading(false);
-                            return;
-                          }
-                          const oldBranches = p.branchesRaw;
-                          const oldNodes    = p.nodes;
-                          const newBranches = (data.branches as typeof p.branchesRaw) ?? [];
-                          const newNodes    = (data.nodes    as typeof p.nodes) ?? [];
-                          const branchDiffs = compareBranches(oldBranches, newBranches);
-                          const nodeDiffs   = compareNodes(oldNodes, newNodes);
-                          p.setCompareResult({
-                            branches: branchDiffs,
-                            nodes:    nodeDiffs,
-                            fileName: file.name,
-                          });
-                          p.setCompareFilter("all");
-                          p.setCompareSelectedId(null);
-                          p.setActiveSide("compare");
-                          p.setLeftPanelOpen(true);
-                          p.setCompareShowDialog(false);
-                          p.setActiveRibbon("vent");
-                        } catch {
-                          alert("Ошибка чтения файла.");
-                        } finally {
-                          p.setCompareLoading(false);
-                        }
-                      };
-                      reader.readAsText(file);
-                    };
-                    inp.click();
-                  }}
-                  className="w-full flex items-center gap-3 px-4 py-3 rounded border-2 border-dashed transition-colors"
-                  style={{
-                    borderColor: p.compareLoading ? "#93c5fd" : "var(--c-b2, #d1d5db)",
-                    background: p.compareLoading ? "var(--c-tint-blue, #eff6ff)" : "var(--c-s2, #f9fafb)",
-                    cursor: p.compareLoading ? "wait" : "pointer",
-                  }}>
-                  <Icon name={p.compareLoading ? "Loader" : "FolderOpen"} size={22}
-                    style={{ color: "var(--c-blue, #2563eb)" }} className={p.compareLoading ? "animate-spin" : ""} />
-                  <div className="text-left">
-                    <div className="text-[12px] font-medium text-gray-800">
-                      {p.compareLoading ? "Загрузка..." : "Выбрать файл для сравнения"}
-                    </div>
-                    <div className="text-[10px] text-gray-400">Формат .vproj</div>
-                  </div>
-                </button>
-              </div>
-
-              <div className="text-[10px] text-gray-400 leading-relaxed">
-                Сравнение покажет: добавленные, удалённые и изменённые выработки.
-                Жёлтым выделяются изменённые, зелёным — добавленные, красным — удалённые.
-              </div>
-            </div>
-
-            <div className="flex justify-end gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
-              <button onClick={() => p.setCompareShowDialog(false)}
-                className="h-7 px-4 text-[12px] rounded border border-gray-300 text-gray-700 hover:bg-gray-100">
-                Отмена
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <CadCompareModal
+        nodes={p.nodes}
+        branches={p.branches}
+        branchesRaw={p.branchesRaw}
+        projectFileName={p.projectFileName}
+        compareShowDialog={p.compareShowDialog}
+        setCompareShowDialog={p.setCompareShowDialog}
+        compareLoading={p.compareLoading}
+        setCompareLoading={p.setCompareLoading}
+        setCompareResult={p.setCompareResult}
+        setCompareFilter={p.setCompareFilter}
+        setCompareSelectedId={p.setCompareSelectedId}
+        setActiveSide={p.setActiveSide}
+        setLeftPanelOpen={p.setLeftPanelOpen}
+        setActiveRibbon={p.setActiveRibbon}
+      />
     </>
   );
 }
