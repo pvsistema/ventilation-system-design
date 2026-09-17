@@ -760,12 +760,27 @@ export default function MineView3D(p: MineView3DProps) {
         cam.far = span * 2;
         cam.updateProjectionMatrix();
 
+        // ПОЛОЖЕНИЕ КАМЕРЫ — ровно то, что даёт проекция чертежа.
+        //
+        // В чертеже (project3D в lib/topology.ts) поворот на азимут A и подъём E
+        // задают экранные оси в мировых координатах:
+        //   вправо = ( cosA,        sinA,       0    )
+        //   вверх  = (−sinE·sinA,   sinE·cosA,  cosE )
+        //   взгляд = ( cosE·sinA,  −cosE·cosA,  sinE ) — от сцены к камере.
+        // Мир переводится в three как (x, z, −y) (см. mineScene.ts), поэтому
+        // камера встаёт сюда, а «верх» считается ЯВНО по той же формуле.
+        const ce = Math.cos(c.el), se = Math.sin(c.el);
+        const ca = Math.cos(c.az), sa = Math.sin(c.az);
         cam.position.set(
-          c.target.x + d * Math.cos(c.el) * Math.sin(c.az),
-          c.target.y + d * Math.sin(c.el),
-          c.target.z + d * Math.cos(c.el) * Math.cos(c.az),
+          c.target.x + d * ce * sa,
+          c.target.y + d * se,
+          c.target.z + d * ce * ca,
         );
-        cam.up.set(0, 1, 0);
+        // Свой «верх» вместо (0,1,0): на плане (подъём 90°) мировая вертикаль
+        // совпадает с направлением взгляда, lookAt вырождается и картинка
+        // скачком переворачивается. Отсюда же и брался «почти план» 89,98° —
+        // он больше не нужен, план теперь ровно 90°, как в чертеже.
+        cam.up.set(-se * sa, ce, -se * ca);
         cam.lookAt(c.target);
 
         // Размер холста видеокарты.
@@ -877,13 +892,14 @@ export default function MineView3D(p: MineView3DProps) {
     const azDeg = p.viewAzimuth, elDeg = p.viewElevation;
     if (azDeg === undefined || elDeg === undefined) return;
     const c = camRef.current;
-    // Азимут в чертеже отсчитывается в ту же сторону, что и здесь, но у
-    // объёма ноль смотрит вдоль −Z, а у чертежа — вдоль −Y. Совмещаем знаком:
-    // при вращении чертежа вправо объём тоже поворачивается вправо.
-    const az = (-azDeg * Math.PI) / 180;
-    // Угол подъёма: 90° в чертеже — план сверху, у нас это предельный подъём.
-    const lim = Math.PI / 2 - 0.02;
-    const el = Math.max(-lim, Math.min(lim, (elDeg * Math.PI) / 180));
+    // Азимут — БЕЗ смены знака. Раньше здесь стоял минус, и объём разворачивался
+    // зеркально чертежу: «ИЗО ЮЗ» показывал то, что на чертеже было «ИЗО ЮВ».
+    // Камера теперь строится по формулам самого чертежа (см. блок положения
+    // камеры выше), а там азимут входит как есть.
+    const az = (azDeg * Math.PI) / 180;
+    // Угол подъёма: как в чертеже — от вида сбоку (0°) до плана сверху (90°).
+    // Полюс больше не вырезаем: «верх» камеры задан явно и на 90° не вырождается.
+    const el = Math.max(0, Math.min(Math.PI / 2, (elDeg * Math.PI) / 180));
     if (Math.abs(c.az - az) < 1e-4 && Math.abs(c.el - el) < 1e-4) return;
     c.az = az; c.el = el;
     needsRenderRef.current = true;
@@ -916,14 +932,14 @@ export default function MineView3D(p: MineView3DProps) {
     /**
      * Сообщает наверх текущий ракурс — в градусах чертежа.
      *
-     * Обратный перевод к тому, что делает эффект приёма выше: знак азимута
-     * меняется, подъём переводится в градусы. Благодаря этому оба режима
-     * держат один и тот же угол, откуда бы его ни повернули.
+     * Обратный перевод к тому, что делает эффект приёма выше: просто радианы
+     * в градусы, знак не трогаем. Благодаря этому оба режима держат один и тот
+     * же угол, откуда бы его ни повернули.
      */
     const notifyAngles = () => {
       const c = camRef.current;
       onAnglesRef.current?.(
-        (-c.az * 180) / Math.PI,
+        (c.az * 180) / Math.PI,
         (c.el * 180) / Math.PI,
       );
     };
@@ -1092,12 +1108,14 @@ export default function MineView3D(p: MineView3DProps) {
         // знаком — схема в объёме кренилась не в ту сторону, что на чертеже,
         // и на одно и то же движение руки поворачивалась чуть иначе.
         const RAD_PER_PX = (0.5 * Math.PI) / 180;
-        c.az -= dx * RAD_PER_PX;
+        // Азимут РАСТЁТ вправо — как в чертеже (az = start.az + dx·0,5).
+        // Здесь стоял минус, и на одно и то же движение руки два режима
+        // крутили схему в разные стороны.
+        c.az += dx * RAD_PER_PX;
         // Подъём держим в тех же пределах, что чертёж: от вида сбоку (0°) до
-        // плана сверху (90°). Полюс не трогаем — на нём направление «вверх»
-        // вырождается и картинка скачком переворачивается.
-        const lim = Math.PI / 2 - 0.02;
-        c.el = Math.max(0, Math.min(lim, c.el - dy * RAD_PER_PX));
+        // плана сверху (90°) включительно — на полюсе «верх» камеры задан явно
+        // и не вырождается, поэтому обрезать до 89,98° больше не нужно.
+        c.el = Math.max(0, Math.min(Math.PI / 2, c.el - dy * RAD_PER_PX));
         // Сообщаем чертежу: ракурс общий, и повернув схему в объёме, человек
         // ожидает найти её под тем же углом, вернувшись к чертежу.
         notifyAngles();
@@ -1258,7 +1276,7 @@ export default function MineView3D(p: MineView3DProps) {
     needsRenderRef.current = true;
     // Ракурс общий с чертежом — сообщаем и отсюда, иначе кнопки «План/Фронт»
     // в объёме разворачивали бы только его, а чертёж оставался под старым углом.
-    p.onViewAngles?.((-az * 180) / Math.PI, (el * 180) / Math.PI);
+    p.onViewAngles?.((az * 180) / Math.PI, (el * 180) / Math.PI);
   };
 
   if (webglFailed) {
@@ -1299,19 +1317,36 @@ export default function MineView3D(p: MineView3DProps) {
       <div className="absolute top-2 left-2 flex flex-col gap-1" style={{ maxWidth: 320 }}>
       {/* Кнопки стандартных ракурсов — те же, что в режиме «Чертёж» */}
       <div className="flex gap-1 flex-wrap">
+        {/* Углы взяты из VIEW_PRESETS (lib/topology.ts) — тех же, по которым
+            работают кнопки ракурсов на чертеже, и в тех же градусах.
+            «Профиль» там left = −90°, а не +90°: со знаком плюс объём
+            показывал схему с противоположного борта. */}
         {([
-          ["План", 0, Math.PI / 2 - 0.02],
+          ["План", 0, 90],
           ["Фронт", 0, 0],
-          ["Профиль", Math.PI / 2, 0],
-          ["ИЗО ЮЗ", -Math.PI / 4, Math.PI / 6],
-          ["ИЗО ЮВ", Math.PI / 4, Math.PI / 6],
-        ] as [string, number, number][]).map(([label, az, el]) => (
+          ["Профиль", -90, 0],
+          ["ИЗО ЮЗ", -45, 30],
+          ["ИЗО ЮВ", 45, 30],
+        ] as [string, number, number][]).map(([label, azDeg, elDeg]) => {
+          const az = (azDeg * Math.PI) / 180;
+          const el = (elDeg * Math.PI) / 180;
+          // Подсветка текущего ракурса — как у кнопок вида на чертеже
+          // (ViewBtn в cadComponents.tsx): допуск в градус, тот же лиловый.
+          const active =
+            p.viewAzimuth !== undefined && p.viewElevation !== undefined &&
+            Math.abs(p.viewAzimuth - azDeg) < 1 && Math.abs(p.viewElevation - elDeg) < 1;
+          return (
           <button key={label} onClick={() => setView(az, el)}
-            className="text-[11px] px-2 py-1 rounded border bg-white/90 hover:bg-white"
-            style={{ borderColor: "var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)" }}>
+            className="text-[11px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: active ? "#5b21b6" : "var(--c-b2, #d1d5db)",
+              color: active ? "white" : "var(--c-t2, #374151)",
+              background: active ? "var(--c-purple, #7c3aed)" : "rgba(255,255,255,0.9)",
+            }}>
             {label}
           </button>
-        ))}
+          );
+        })}
 
         {/* Подписи нужны не всегда: при разборе геометрии текст мешает, при
             разговоре о расходах — наоборот, главное на экране. Поэтому
