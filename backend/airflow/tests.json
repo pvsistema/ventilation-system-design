@@ -2667,6 +2667,105 @@
         "kirchhoffBalance": 0.0
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Пожар при НИСХОДЯЩЕМ проветривании — горячий столб ТОРМОЗИТ струю (расход снижается)",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "cross",
+        "surfaceTemp": 15,
+        "useNaturalDraft": true,
+        "geoGradient": 0,
+        "mineAirTemp": 15,
+        "nodes": [
+          {
+            "id": "A",
+            "z": 0,
+            "isAtm": true
+          },
+          {
+            "id": "M",
+            "z": -20
+          },
+          {
+            "id": "B",
+            "z": -26,
+            "airTemp": 182.5,
+            "userTemp": true,
+            "hotNode": true
+          },
+          {
+            "id": "C",
+            "z": -90
+          },
+          {
+            "id": "D",
+            "z": -90
+          },
+          {
+            "id": "E",
+            "z": 0,
+            "isAtm": true
+          }
+        ],
+        "branches": [
+          {
+            "id": "R1",
+            "fromId": "A",
+            "toId": "M",
+            "length": 100,
+            "area": 16.2,
+            "R": 0.2
+          },
+          {
+            "id": "F",
+            "fromId": "M",
+            "toId": "B",
+            "length": 31,
+            "area": 16.2,
+            "R": 0.1
+          },
+          {
+            "id": "R2",
+            "fromId": "B",
+            "toId": "C",
+            "length": 300,
+            "area": 16.2,
+            "R": 0.5
+          },
+          {
+            "id": "D1",
+            "fromId": "C",
+            "toId": "D",
+            "length": 250,
+            "area": 16.2,
+            "R": 0.4
+          },
+          {
+            "id": "S",
+            "fromId": "D",
+            "toId": "E",
+            "length": 90,
+            "area": 20,
+            "R": 0.3,
+            "hasFan": true,
+            "fanMode": "constant",
+            "fanPressure": 2500
+          }
+        ],
+        "options": {
+          "tolerance": 0.001,
+          "maxIter": 5000,
+          "alpha": 0.8
+        }
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true
+      },
+      "bodyMatcher": "partial",
+      "note": "Штатный расход схемы 40.83 м3/с. Очаг в нисходящем съезде греет узел B до 182.5 C. Вес горячего столба считается интегралом плотности по высоте, поэтому тяга ТОРМОЗИТ поступающую струю: 40.83 -> 40.37 м3/с. Прежняя формула rho(t_cp) завышала подсос со стороны исходящего ствола вдвое и давала РОСТ расхода, чего методика при нисходящем проветривании не допускает."
     }
   ]
 }
