@@ -8,6 +8,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConf
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
 import {
   type SymbolSizing, makeSymbolSizing, symbolSizeOnBranch,
@@ -291,21 +292,12 @@ export async function drawSymbolsToCanvas(
     // ── Индикаторы замерной станции ───────────────────────────────────
     if (isMeasureStation && hasBranchPts) {
       const brMs = brForSym2;
-      const msLines: string[] = [];
-      if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
-      if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
-      if (sym.msIndFlow) {
-        const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
-        msLines.push(`Q=${q.toFixed(2)} м³/с`);
-      }
-      if (sym.msIndArea) {
-        const a = sym.msArea ?? (brMs?.area ?? 0);
-        msLines.push(`S=${a.toFixed(2)} м²`);
-      }
-      if (sym.msIndVelocity) {
-        const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
-        msLines.push(`v=${v.toFixed(2)} м/с`);
-      }
+      // Набор показателей — общий с экраном: галочки «Панели информации»
+      // работают сразу у всех станций, личные галочки станции добавляют своё.
+      // Печать обязана совпадать с экраном, поэтому сборка строк одна на всех
+      // (см. msIndicatorLines.ts).
+      const msFlags = msIndicatorFlags(sym, infoConfig);
+      const msLines = msIndicatorLines(sym, brMs, msFlags);
       if (msLines.length > 0) {
         // Кегль — от ширины ветви, как подписи выработок и как на экране.
         // Раньше он считался от SZ самого знака, и вместе с раздутым на листе
@@ -351,7 +343,7 @@ export async function drawSymbolsToCanvas(
         ctx.textBaseline = "top";
         msLines.forEach((line, i) => {
           const tyMs = byMs - boxHMs / 2 + i * lhMs + 3 * sz.indZoomSF;
-          const fw = i === 0 && sym.msIndNumber ? "700" : "400";
+          const fw = i === 0 && msFlags.number ? "700" : "400";
           ctx.font = `${fw} ${fsMs}px "Segoe UI", sans-serif`;
           // Обводка нужна только без подложки: на плашке она размывает буквы.
           if (!bgMs) {

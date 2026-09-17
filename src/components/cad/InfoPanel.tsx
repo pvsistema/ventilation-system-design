@@ -104,6 +104,7 @@ export default function InfoPanel({
   const [nodesOpen, setNodesOpen] = useState(false);
   const [branchesOpen, setBranchesOpen] = useState(false);
   const [waterOpen, setWaterOpen] = useState(false);
+  const [msOpen, setMsOpen] = useState(false);
   const [nodeVisOpen, setNodeVisOpen] = useState(false);
   const [posVisOpen, setPosVisOpen] = useState(false);
   const [preset, setPreset] = useState(0);
@@ -192,6 +193,23 @@ export default function InfoPanel({
             <CheckRow label="Высота ветви (Высота), м" checked={config.branchHeight} onChange={set("branchHeight")} />
             <CheckRow label="Количество людей (Людей)" checked={config.branchPeople} onChange={set("branchPeople")} />
             <CheckRow label="Депрессия (Н), даПа" checked={config.branchDepression} onChange={set("branchDepression")} />
+          </div>
+        )}
+
+        {/* ─── Замерные станции ───
+            Галочки работают сразу у ВСЕХ станций схемы. Раньше показатели
+            включались только в карточке отдельной станции, и чтобы показать
+            расход на всех, приходилось обойти каждую из десятков. Личная
+            галочка станции при этом сохраняется: она добавляет показатель
+            именно ей, поверх общего набора. */}
+        <SectionHeader label="Замерные станции" expanded={msOpen} onToggle={() => setMsOpen((v) => !v)} onAll={setGroup("msInd")} />
+        {msOpen && (
+          <div>
+            <CheckRow label="Номер замерной станции (№)" checked={config.msIndNumber} onChange={set("msIndNumber")} />
+            <CheckRow label="Местоположение" checked={config.msIndLocation} onChange={set("msIndLocation")} />
+            <CheckRow label="Расход воздуха (Q), м³/с" checked={config.msIndFlow} onChange={set("msIndFlow")} />
+            <CheckRow label="Площадь сечения (S), м²" checked={config.msIndArea} onChange={set("msIndArea")} />
+            <CheckRow label="Скорость воздуха (v), м/с" checked={config.msIndVelocity} onChange={set("msIndVelocity")} />
           </div>
         )}
 

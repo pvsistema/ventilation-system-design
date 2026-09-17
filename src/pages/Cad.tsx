@@ -9700,9 +9700,17 @@ export default function CadPage() {
                         </div>
                       )}
 
-                      {/* Отображаемые индикаторы */}
+                      {/* Отображаемые индикаторы ТОЛЬКО У ЭТОЙ станции.
+                          Те же показатели можно включить сразу у всех станций
+                          схемы — в «Панели информации», раздел «Замерные
+                          станции». Здесь остаётся добавка для одной: включённое
+                          общей галочкой отсюда не выключить, иначе две ручки
+                          спорили бы за один показатель. */}
                       <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-3 uppercase tracking-wide">
                         Отображаемые индикаторы
+                      </div>
+                      <div className="text-[10px] text-gray-500 mb-1.5 leading-snug">
+                        Сразу у всех станций — в «Панели информации», раздел «Замерные станции».
                       </div>
                       {[
                         { key: "msIndNumber"   as const, label: "Номер замерной станции" },
@@ -9710,18 +9718,31 @@ export default function CadPage() {
                         { key: "msIndFlow"     as const, label: "Расход воздуха" },
                         { key: "msIndArea"     as const, label: "Площадь сечения" },
                         { key: "msIndVelocity" as const, label: "Скорость воздуха" },
-                      ].map(({ key, label }) => (
-                        <label key={key} className="flex items-center gap-2 mb-1.5 cursor-pointer select-none">
-                          <input type="checkbox"
-                            checked={!!sym[key]}
-                            onChange={(e) => updSym({ [key]: e.target.checked })}
-                            style={{ width: 13, height: 13, accentColor: "#2563eb" }} />
-                          <span className="text-gray-700">{label}</span>
-                        </label>
-                      ))}
+                      ].map(({ key, label }) => {
+                        // Показатель уже включён общей галочкой — он виден на
+                        // всех станциях, и личная галочка ничего не изменит.
+                        const byAll = !!infoConfig[key];
+                        return (
+                          <label key={key}
+                            title={byAll
+                              ? "Включено для всех станций в «Панели информации»"
+                              : undefined}
+                            className="flex items-center gap-2 mb-1.5 cursor-pointer select-none">
+                            <input type="checkbox"
+                              checked={byAll || !!sym[key]}
+                              disabled={byAll}
+                              onChange={(e) => updSym({ [key]: e.target.checked })}
+                              style={{ width: 13, height: 13, accentColor: "#2563eb" }} />
+                            <span className={byAll ? "text-gray-400" : "text-gray-700"}>{label}</span>
+                          </label>
+                        );
+                      })}
 
-                      {/* Настройки индикаторов (если хоть один включён) */}
-                      {(sym.msIndNumber || sym.msIndLocation || sym.msIndFlow || sym.msIndArea || sym.msIndVelocity) && (
+                      {/* Настройки индикаторов (если хоть один включён —
+                          личной галочкой или общей) */}
+                      {(sym.msIndNumber || sym.msIndLocation || sym.msIndFlow || sym.msIndArea || sym.msIndVelocity
+                        || infoConfig.msIndNumber || infoConfig.msIndLocation || infoConfig.msIndFlow
+                        || infoConfig.msIndArea || infoConfig.msIndVelocity) && (
                         <div className="mt-2">
                           <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 uppercase tracking-wide">
                             Настройки

@@ -6,6 +6,8 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
+import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
 import {
   type SymbolSizing, makeSymbolSizing, symbolSizeOnBranch,
@@ -26,13 +28,19 @@ interface Props {
    *  их размер считался от «сырого» view.scale, который при подгонке схемы
    *  под лист в разы больше экранного. */
   sizing?: SymbolSizing;
+  /**
+   * Общие галочки показа величин. Нужны замерным станциям: их показатели
+   * включаются сразу на всю схему из «Панели информации», и предпросмотр
+   * печати обязан показывать ровно то же, что экран.
+   */
+  infoConfig?: InfoDisplayConfig | null;
 }
 
 export default function SchemaSymbolsOverlay({
   symbols, branches, projNodesMap,
   viewScale, unitsConfig = DEFAULT_UNITS_CONFIG,
   width, height, defaultBranchWidth = 7,
-  sizing,
+  sizing, infoConfig,
 }: Props) {
   const sz: SymbolSizing = sizing ?? makeSymbolSizing({ objSF: viewScale, viewScale });
   const branchById = new Map(branches.map(b => [b.id, b]));
@@ -330,21 +338,10 @@ export default function SchemaSymbolsOverlay({
         // Индикаторы замерной станции
         const renderMeasureStationIndicators = () => {
           if (!isMeasureStation || !hasBranchPts) return null;
-          const lines: string[] = [];
-          if (sym.msIndNumber && sym.msNumber)     lines.push(`№${sym.msNumber}`);
-          if (sym.msIndLocation && sym.msLocation) lines.push(sym.msLocation);
-          if (sym.msIndFlow) {
-            const q = sym.msFlow ?? (brForSym ? Math.abs(brForSym.flow ?? 0) : 0);
-            lines.push(`Q=${q.toFixed(2)} м³/с`);
-          }
-          if (sym.msIndArea) {
-            const a = sym.msArea ?? (brForSym?.area ?? 0);
-            lines.push(`S=${a.toFixed(2)} м²`);
-          }
-          if (sym.msIndVelocity) {
-            const v = sym.msVelocity ?? (brForSym ? Math.abs(brForSym.velocity ?? 0) : 0);
-            lines.push(`v=${v.toFixed(2)} м/с`);
-          }
+          // Те же показатели, что на экране: общие галочки «Панели информации»
+          // плюс личные галочки станции (см. msIndicatorLines.ts).
+          const msFlags = msIndicatorFlags(sym, infoConfig);
+          const lines = msIndicatorLines(sym, brForSym, msFlags);
           if (!lines.length) return null;
 
           // Кегль — от ширины ветви, как подписи выработок и как на экране.
@@ -381,7 +378,7 @@ export default function SchemaSymbolsOverlay({
                   x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                   textAnchor="middle" fontSize={fSize}
                   fill={msFg} fontFamily="Segoe UI, sans-serif"
-                  fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
+                  fontWeight={i === 0 && msFlags.number ? "700" : "normal"}
                   style={msBg
                     ? undefined
                     : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>

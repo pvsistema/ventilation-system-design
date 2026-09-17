@@ -4,6 +4,7 @@ import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
 import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
 
@@ -856,21 +857,12 @@ export function renderSymbolNode(
           SVG скрыт, а символы рисуются этим отдельным оверлеем. */}
       {view.scale > 0.05 && sym.typeId === "measure_station" && hasBranchPts && (() => {
         const brMs = symBr;
-        const msLines: string[] = [];
-        if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
-        if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
-        if (sym.msIndFlow) {
-          const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
-          msLines.push(`Q=${q.toFixed(2)} м³/с`);
-        }
-        if (sym.msIndArea) {
-          const a = sym.msArea ?? (brMs?.area ?? 0);
-          msLines.push(`S=${a.toFixed(2)} м²`);
-        }
-        if (sym.msIndVelocity) {
-          const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
-          msLines.push(`v=${v.toFixed(2)} м/с`);
-        }
+        // Показатели берутся из ДВУХ источников: общие галочки «Панели
+        // информации» (работают сразу у всех станций схемы) и личные галочки
+        // этой станции. Сборка строк — в одном месте на все режимы вывода,
+        // см. msIndicatorLines.ts.
+        const msFlags = msIndicatorFlags(sym, infoConfig);
+        const msLines = msIndicatorLines(sym, brMs, msFlags);
         if (!msLines.length) return null;
 
         // Масштабируем индикатор замерной станции ТАК ЖЕ, как подписи
@@ -936,7 +928,7 @@ export function renderSymbolNode(
                   x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                   textAnchor="middle" fontSize={fSize}
                   fill={msFg} fontFamily="Segoe UI, sans-serif"
-                  fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
+                  fontWeight={i === 0 && msFlags.number ? "700" : "normal"}
                   style={msBg
                     ? undefined
                     : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>

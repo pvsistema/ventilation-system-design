@@ -13,6 +13,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
 import { medianSection, widthBySection as widthBySectionFn } from "@/lib/branchWidthBySection";
@@ -781,21 +782,10 @@ export function generateSvg(opts: SvgExportOptions): string {
 
         // Индикаторы замерной станции
         const brMs = sym.branchId ? brById.get(sym.branchId) : null;
-        const msLines: string[] = [];
-        if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
-        if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
-        if (sym.msIndFlow) {
-          const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
-          msLines.push(`Q=${q.toFixed(2)} м³/с`);
-        }
-        if (sym.msIndArea) {
-          const a = sym.msArea ?? (brMs?.area ?? 0);
-          msLines.push(`S=${a.toFixed(2)} м²`);
-        }
-        if (sym.msIndVelocity) {
-          const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
-          msLines.push(`v=${v.toFixed(2)} м/с`);
-        }
+        // Набор показателей тот же, что на экране: общие галочки «Панели
+        // информации» плюс личные галочки станции (см. msIndicatorLines.ts).
+        const msFlags = msIndicatorFlags(sym, infoConfig);
+        const msLines = msIndicatorLines(sym, brMs, msFlags);
         if (msLines.length > 0) {
           const brDxMs = tsx2 - fsx, brDyMs = tsy2 - fsy;
           const brLenMs = Math.hypot(brDxMs, brDyMs);
@@ -819,7 +809,7 @@ export function generateSvg(opts: SvgExportOptions): string {
           }
           msLines.forEach((line, i) => {
             const tyMs = byMs - boxHMs/2 + i * lhMs + 3 * symSizing.indZoomSF;
-            const fwMs = i === 0 && sym.msIndNumber ? "700" : "400";
+            const fwMs = i === 0 && msFlags.number ? "700" : "400";
             // Белая обводка текста нужна только без плашки.
             const strokeAttr = bgMs ? "" : ` stroke="white" stroke-width="2" paint-order="stroke"`;
             parts.push(`<text x="${n(bxMs)}" y="${n(tyMs)}" text-anchor="middle" dominant-baseline="auto" font-size="${n(fsMs, 1)}" font-weight="${fwMs}"${strokeAttr} fill="${fgMs}">${esc(line)}</text>`);

@@ -45,6 +45,7 @@ import TopoCanvasSymbolsOverlay from "@/components/cad/topoCanvas/TopoCanvasSymb
 import { useViewEffects } from "@/components/cad/topoCanvas/TopoCanvasViewEffects";
 import { useCanvasTheme } from "@/hooks/useTheme";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
+import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 
 export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
@@ -3481,21 +3482,12 @@ export default function TopoCanvas(props: Props) {
               {/* ── Индикаторы замерной станции на схеме ─────────────── */}
               {view.scale > 0.05 && sym.typeId === "measure_station" && hasBranchPts && (() => {
                 const brMs = symBrSvg;
-                const msLines: string[] = [];
-                if (sym.msIndNumber && sym.msNumber)     msLines.push(`№${sym.msNumber}`);
-                if (sym.msIndLocation && sym.msLocation) msLines.push(sym.msLocation);
-                if (sym.msIndFlow) {
-                  const q = sym.msFlow ?? (brMs ? Math.abs(brMs.flow ?? 0) : 0);
-                  msLines.push(`Q=${q.toFixed(2)} м³/с`);
-                }
-                if (sym.msIndArea) {
-                  const a = sym.msArea ?? (brMs?.area ?? 0);
-                  msLines.push(`S=${a.toFixed(2)} м²`);
-                }
-                if (sym.msIndVelocity) {
-                  const v = sym.msVelocity ?? (brMs ? Math.abs(brMs.velocity ?? 0) : 0);
-                  msLines.push(`v=${v.toFixed(2)} м/с`);
-                }
+                // Общие галочки «Панели информации» включают показатель сразу
+                // у ВСЕХ станций схемы, личная галочка станции добавляет его
+                // только ей. Сборка строк — общая на все режимы вывода,
+                // см. msIndicatorLines.ts.
+                const msFlags = msIndicatorFlags(sym, infoConfig);
+                const msLines = msIndicatorLines(sym, brMs, msFlags);
                 if (!msLines.length) return null;
 
                 // Масштабируем индикатор замерной станции ТАК ЖЕ, как подписи
@@ -3562,7 +3554,7 @@ export default function TopoCanvas(props: Props) {
                           x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                           textAnchor="middle" fontSize={fSize}
                           fill={msFg} fontFamily="Segoe UI, sans-serif"
-                          fontWeight={i === 0 && sym.msIndNumber ? "700" : "normal"}
+                          fontWeight={i === 0 && msFlags.number ? "700" : "normal"}
                           style={msBg
                             ? undefined
                             : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>

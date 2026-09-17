@@ -457,9 +457,14 @@ export default function MineView3D(p: MineView3DProps) {
       infoConfig: p.infoConfig,
       unitsConfig: p.unitsConfig ?? DEFAULT_UNITS_CONFIG,
       waterBranchResults: p.waterBranchResults,
+      // Показатели замерных станций — такие же подписи, как у выработок, и
+      // включаются той же «Панелью информации». Без этого человек ставил
+      // галочку и не находил чисел в объёме: приходилось идти на чертёж.
+      symbols: p.schemaSymbols,
     });
     needsRenderRef.current = true;
-  }, [p.nodes, p.branches, p.xyScale, p.zScale, p.infoConfig, p.unitsConfig, p.waterBranchResults]);
+  }, [p.nodes, p.branches, p.xyScale, p.zScale, p.infoConfig, p.unitsConfig,
+      p.waterBranchResults, p.schemaSymbols]);
 
   // Подписи включили или выключили — нужен новый кадр, иначе слой так и остался
   // бы в прежнем состоянии до первого поворота схемы.
@@ -1524,9 +1529,9 @@ export default function MineView3D(p: MineView3DProps) {
 
             Кнопка появляется, только когда на схеме есть замерная станция.
 
-            Зачем выключатель. Обойма вдоль выработки — правильное чтение
+            Зачем выключатель. Две линии внутри выработки — правильное чтение
             знака, но на схеме, где станции стоят вплотную, красные прогоны
-            могут мешать разбирать геометрию. Погасив её, человек получает
+            могут мешать разбирать геометрию. Погасив их, человек получает
             станции плоским значком, как на чертеже. */}
         {hasMsSymbols && (
           <button
@@ -1535,7 +1540,7 @@ export default function MineView3D(p: MineView3DProps) {
             title={!showSymbols
               ? "Знаки погашены — включите УО"
               : showMs3D
-                ? "Замерная станция объёмом: обойма ВДОЛЬ выработки размечает участок замера. Наведите курсор — номер, расход и сечение"
+                ? "Замерная станция объёмом: две линии ВДОЛЬ выработки, внутри неё, размечают участок замера. Наведите курсор — номер, расход и сечение"
                 : "Замерная станция плоским значком, как на чертеже"}
             className="text-[10px] px-2 py-1 rounded border hover:bg-white"
             style={{

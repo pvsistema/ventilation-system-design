@@ -47,6 +47,22 @@ export interface InfoDisplayConfig {
   fanPressure: boolean;
   fanShaftPower: boolean;
   fanEfficiency: boolean;
+  // ─── Индикаторы замерных станций (сразу у ВСЕХ станций схемы) ───
+  // Раньше показатели станции включались только в её карточке. На схеме
+  // станций десятки, и чтобы показать расход на всех, приходилось обойти
+  // каждую. Здесь галочка работает так же, как у ветвей: включает величину
+  // сразу везде. Личная галочка станции при этом никуда не делась — она
+  // ДОБАВЛЯЕТ показатель именно этой станции (см. msIndicatorLines.ts).
+  /** Номер замерной станции — у всех станций схемы. */
+  msIndNumber: boolean;
+  /** Место установки станции. */
+  msIndLocation: boolean;
+  /** Расход воздуха на станции, м³/с. */
+  msIndFlow: boolean;
+  /** Площадь сечения замера, м². */
+  msIndArea: boolean;
+  /** Скорость воздуха, м/с. */
+  msIndVelocity: boolean;
   // ─── Водопровод (общие данные по схеме) ─────────────────────────
   waterReservoir: boolean;
   waterConsumer: boolean;
@@ -106,6 +122,11 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   fanPressure: false,
   fanShaftPower: false,
   fanEfficiency: false,
+  msIndNumber: false,
+  msIndLocation: false,
+  msIndFlow: false,
+  msIndArea: false,
+  msIndVelocity: false,
   waterReservoir: true,
   waterConsumer: true,
   waterPumpStation: true,

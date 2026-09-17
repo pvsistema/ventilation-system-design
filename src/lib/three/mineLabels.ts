@@ -23,6 +23,11 @@ import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { branchLabelLines } from "@/lib/branchLabelLines";
+import { type SchemaSymbol } from "@/pages/cad/cadTypes";
+import {
+  MEASURE_STATION_TYPE_ID, msIndicatorFlags, msIndicatorLines,
+} from "@/lib/msIndicatorLines";
+import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { toThree } from "./mineScene";
 
 /**
@@ -76,6 +81,14 @@ export interface MineLabel {
    * от ракурса, поэтому при вращении подписи не меняются местами и не мигают.
    */
   weight: number;
+  /**
+   * Цвет плашки под подписью. Нужен замерным станциям: их показатели и на
+   * чертеже стоят на цветной подложке, иначе теряются среди подписей расходов.
+   * Не задан (обычная подпись выработки) — текст с белой обводкой, как раньше.
+   */
+  bg?: string | null;
+  /** Цвет текста на плашке. Имеет смысл только вместе с bg. */
+  fg?: string;
 }
 
 export interface LabelBuildInput {
@@ -86,6 +99,13 @@ export interface LabelBuildInput {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig: UnitsConfig;
   waterBranchResults?: Map<string, WaterBranchResult>;
+  /**
+   * Условные обозначения схемы. Нужны ради замерных станций: их показатели —
+   * такие же подписи, как у выработок, и включаются той же «Панелью
+   * информации». В объёме их не было вовсе: человек ставил галочку и не
+   * находил чисел — приходилось возвращаться на чертёж.
+   */
+  symbols?: SchemaSymbol[];
 }
 
 /**
@@ -135,6 +155,50 @@ export function buildMineLabels(input: LabelBuildInput): MineLabel[] {
       weight: Math.abs(b.flow ?? 0),
     });
   }
+  // ── Показатели замерных станций ─────────────────────────────────────
+  //
+  // Станция — не выработка, но подпись у неё той же природы: набор величин,
+  // включённый галочками. Поэтому она идёт тем же потоком — так она участвует
+  // в общем разборе наложений и не ложится поверх подписи своей же выработки.
+  //
+  // Вес станций выше любого расхода: замер — то, ради чего к станции подходят,
+  // и уступать место подписи соседней выработки он не должен.
+  const branchById = new Map(branches.map(b => [b.id, b]));
+  for (const sym of input.symbols ?? []) {
+    if (sym.typeId !== MEASURE_STATION_TYPE_ID) continue;
+    if (!sym.branchId) continue;
+    const b = branchById.get(sym.branchId);
+    if (!b || b.isDead) continue;
+    const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
+    if (!fn || !tn) continue;
+    if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;
+    if (!isFinite(tn.x) || !isFinite(tn.y) || !isFinite(tn.z)) continue;
+
+    const flags = msIndicatorFlags(sym, input.infoConfig);
+    const lines = msIndicatorLines(sym, b, flags);
+    if (lines.length === 0) continue;
+
+    const a = toThree(fn.x * kx, fn.y * kx, fn.z * kz);
+    const c = toThree(tn.x * kx, tn.y * kx, tn.z * kz);
+    // Станция стоит не в середине выработки, а в своей точке t — там же, где
+    // на чертеже. Подпись обязана быть при ней, а не при выработке.
+    const t = Math.max(0, Math.min(1, sym.t ?? 0.5));
+    const bg = msIndBg(sym.msIndBgColor);
+    out.push({
+      id: `ms:${sym.id}`,
+      pos: new THREE.Vector3().lerpVectors(a, c, t),
+      end: c,
+      lines,
+      showNum: flags.number,
+      overV: false,
+      manualOffset: false,
+      offX: 0, offY: 0,
+      weight: Number.MAX_SAFE_INTEGER,
+      bg,
+      fg: msIndTextColor(bg),
+    });
+  }
+
   // Крупные выработки — первыми: при нехватке места на экране подпись
   // достаётся стволу, а не сбойке рядом с ним.
   out.sort((p, q) => q.weight - p.weight);
@@ -321,19 +385,44 @@ export function drawMineLabels(
       ctx.restore();
     }
 
+    // Цветная плашка — у замерных станций. На чертеже их показатели стоят на
+    // подложке, иначе теряются среди подписей расходов; в объёме схема ещё
+    // пестрее, и без плашки станция не читается вовсе.
+    if (L.bg) {
+      const bw = maxW + 10, x0 = sx - bw / 2, y0 = sy - bh / 2;
+      const rx = Math.min(4, bh / 3);
+      ctx.beginPath();
+      ctx.moveTo(x0 + rx, y0);
+      ctx.arcTo(x0 + bw, y0, x0 + bw, y0 + bh, rx);
+      ctx.arcTo(x0 + bw, y0 + bh, x0, y0 + bh, rx);
+      ctx.arcTo(x0, y0 + bh, x0, y0, rx);
+      ctx.arcTo(x0, y0, x0 + bw, y0, rx);
+      ctx.closePath();
+      ctx.fillStyle = L.bg;
+      ctx.fill();
+      ctx.strokeStyle = "white";
+      ctx.lineWidth = 1.2;
+      ctx.stroke();
+    }
+
     for (let i = 0; i < L.lines.length; i++) {
       const isNum = i === 0 && L.showNum;
       ctx.font = isNum ? numFont(L.lines[i]) : dataFont;
       const ty = sy - bh / 2 + LH * (i + 0.6);
       // Белая обводка под текстом — единственный способ прочитать подпись на
       // пёстрой схеме, где под ней может оказаться и светлая, и тёмная
-      // выработка. На чертеже сделано так же.
-      ctx.strokeStyle = "rgba(255,255,255,0.92)";
-      ctx.lineWidth = 3;
-      ctx.strokeText(L.lines[i], sx, ty);
-      ctx.fillStyle = isNum
-        ? (L.id === opts.selectedId ? "#2563eb" : "#374151")
-        : (L.overV ? "#dc2626" : "#1e3a5f");
+      // выработка. На чертеже сделано так же. На плашке обводка не нужна: она
+      // размывает буквы, а фон и без неё отделяет текст от схемы.
+      if (!L.bg) {
+        ctx.strokeStyle = "rgba(255,255,255,0.92)";
+        ctx.lineWidth = 3;
+        ctx.strokeText(L.lines[i], sx, ty);
+      }
+      ctx.fillStyle = L.bg
+        ? (L.fg ?? "#ffffff")
+        : isNum
+          ? (L.id === opts.selectedId ? "#2563eb" : "#374151")
+          : (L.overV ? "#dc2626" : "#1e3a5f");
       ctx.fillText(L.lines[i], sx, ty);
     }
     drawn++;

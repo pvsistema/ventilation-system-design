@@ -333,6 +333,9 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           width={width}
           height={height}
           defaultBranchWidth={branchWidth}
+          // Общие галочки показа величин: показатели замерных станций
+          // включаются на всю схему разом, и лист обязан совпасть с экраном.
+          infoConfig={infoConfig}
           // Тот же objSF, с которым renderCanvas рисует сами ветви, — иначе
           // значки и подписи на листе живут отдельной жизнью от выработок.
           sizing={makeSymbolSizing({
