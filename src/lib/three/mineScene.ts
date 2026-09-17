@@ -115,10 +115,24 @@ export interface BuiltScene {
 function shapeKey(b: TopoBranch): string {
   const r = (v: number) => Math.round((v ?? 0) * 10) / 10;
   const s = b.shape ?? "rect";
-  if (s === "round") return `round:${r(b.diameter ?? 0)}`;
-  if (s === "trap") return `trap:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.trapTopWidth ?? 0)}`;
-  if (s === "arch") return `arch:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.archHeight ?? 0)}`;
-  return `rect:${r(b.rectWidth)}:${r(b.rectHeight)}`;
+  // Площадь — обязательная часть ключа.
+  //
+  // Профиль группы строится по ПЕРВОЙ её выработке и надевается на все
+  // остальные. С тех пор как sectionOutline приводит контур к фактической
+  // площади сечения, две ветви с одинаковыми габаритами, но разной S — а это
+  // обычное дело после импорта, где габариты дефолтные, а площадь своя —
+  // попали бы в одну группу и получили бы ЧУЖУЮ толщину: обе нарисовались бы
+  // сечением первой. Ровно отсюда и берётся «одинаковые по площади выработки
+  // выглядят разными».
+  //
+  // Округление до 0,1 м² оставляет группировку рабочей: сечения на схеме
+  // повторяются, и число групп остаётся в десятках.
+  const a = `:${Math.round((b.area ?? 0) * 10) / 10}`;
+  if (s === "round") return `round:${r(b.diameter ?? 0)}${a}`;
+  if (s === "trap") return `trap:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.trapTopWidth ?? 0)}${a}`;
+  if (s === "arch") return `arch:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.archHeight ?? 0)}${a}`;
+  if (s === "custom") return `custom${a}`;
+  return `rect:${r(b.rectWidth)}:${r(b.rectHeight)}${a}`;
 }
 
 /**
