@@ -356,7 +356,10 @@ export function generateSvg(opts: SvgExportOptions): string {
       const bw = branchW(b);
       const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
       const w = (bw + bb * 2) * objSF;
-      const dash = b.isLeakage ? `stroke-dasharray="6 4"` : "";
+      // Проектируемая выработка — границы (обводка) пунктиром.
+      const dash = b.isLeakage ? `stroke-dasharray="6 4"`
+        : b.designed ? `stroke-dasharray="${n(7 * objSF)} ${n(5 * objSF)}" stroke-linecap="butt"`
+        : "";
       parts.push(`<line x1="${n(from.sx)}" y1="${n(from.sy)}" x2="${n(to.sx)}" y2="${n(to.sy)}" stroke-width="${n(w)}" ${dash}/>`);
     }
     parts.push(`</g>`);

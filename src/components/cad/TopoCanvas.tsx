@@ -2111,7 +2111,13 @@ export default function TopoCanvas(props: Props) {
             if (!from || !to) return null;
             const isSel = selectedBranchId === b.id || (selectedBranchIds?.has(b.id) ?? false);
             const isLeakage = b.isLeakage ?? false;
+            // Проектируемая выработка — обводку (границы) рисуем пунктиром.
+            // Заливка остаётся сплошной, «пунктирными» становятся именно края.
+            const isDesigned = b.designed ?? false;
             const bw = branchDisplayWidth(b);
+            // Шаг пунктира тянем за масштабом объектов, иначе на отдалении
+            // штрихи сливаются в сплошную, а на приближении растягиваются.
+            const designedDash = `${(7 * objSF).toFixed(2)} ${(5 * objSF).toFixed(2)}`;
             const bb = (b.lineBorder !== undefined && b.lineBorder >= 0) ? b.lineBorder : branchBorder;
             const baseW = isSel ? bw + 1 : bw;
             const w = thinLines ? 1 : Math.max(baseW * objSF, 1.0);
@@ -2121,8 +2127,8 @@ export default function TopoCanvas(props: Props) {
               <line key={`border-${b.id}`}
                 x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                 stroke="#1f2937" strokeWidth={w + borderW * 2}
-                strokeLinecap="round" opacity="0.85"
-                strokeDasharray={isLeakage ? "6 4" : undefined} />
+                strokeLinecap={isDesigned && !isLeakage ? "butt" : "round"} opacity="0.85"
+                strokeDasharray={isLeakage ? "6 4" : isDesigned ? designedDash : undefined} />
             );
           });
           // ── ПРОХОД 2: fill + декор всех ветвей ───────────────────────────

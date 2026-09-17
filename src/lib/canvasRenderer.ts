@@ -771,7 +771,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // Вычисляем параметры ОДИН РАЗ для каждой ветви и сохраняем в Map.
   // Ранее branchParams() вызывался дважды (проход 1 + проход 2) = 2×N вычислений.
   type BranchP = {
-    isSel: boolean; isMulti: boolean; isDead: boolean; isLeakage: boolean;
+    isSel: boolean; isMulti: boolean; isDead: boolean; isLeakage: boolean; isDesigned: boolean;
     Q: number; V: number; overV: boolean; reversed: boolean;
     sxA: number; syA: number; sxB: number; syB: number;
     midX: number; midY: number; color: string; w: number; bwBorder: number; bw: number;
@@ -792,6 +792,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const isMulti   = selectedBranchIds.has(b.id);
     const isDead    = b.isDead ?? false;
     const isLeakage = b.isLeakage ?? false;
+    // Проектируемая выработка — её границы (обводка) рисуются пунктиром.
+    const isDesigned = b.designed ?? false;
     const Q  = Math.abs(b.flow);
     const V  = b.velocity;
     const overV = V > b.vMax;
@@ -845,7 +847,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const ux = segLen > 0 ? dx / segLen : 0;
     const uy = segLen > 0 ? dy / segLen : 0;
     const angle = Math.atan2(dy, dx);
-    bParamsMap.set(b.id, { isSel, isMulti, isDead, isLeakage, Q, V, overV, reversed,
+    bParamsMap.set(b.id, { isSel, isMulti, isDead, isLeakage, isDesigned, Q, V, overV, reversed,
       sxA, syA, sxB, syB, midX, midY, color, w, bwBorder, bw,
       flowVisible, showDashes, showChevrons, dx, dy, segLen, ux, uy, angle,
       fromSx: from.sx, fromSy: from.sy, toSx: to.sx, toSy: to.sy,
@@ -960,13 +962,19 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // десятки тысяч вызовов графики за кадр. Цвет и прозрачность у обводки
     // одинаковые, поэтому объединение ничего не меняет визуально.
     // Утечки (штриховая линия) рисуем по-старому, поштучно — их мало.
-    if (p.isLeakage) {
+    if (p.isLeakage || p.isDesigned) {
+      // Утечки и ПРОЕКТИРУЕМЫЕ ветви — штриховая обводка, рисуем поштучно:
+      // в общий сплошной путь их класть нельзя, пунктир задаётся на контексте.
       ctx.strokeStyle = "#1f2937";
       ctx.lineWidth = p.w + p.bwBorder * 2;
       ctx.globalAlpha = 0.85;
-      ctx.setLineDash([6, 4]);
+      // Шаг штриха у проектируемых тянем за масштабом объектов — иначе
+      // на отдалении пунктир схлопывается в сплошную линию.
+      if (p.isLeakage) ctx.setLineDash([6, 4]);
+      else { ctx.lineCap = "butt"; ctx.setLineDash([7 * objSF, 5 * objSF]); }
       ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
       ctx.setLineDash([]);
+      ctx.lineCap = "round";
     } else {
       const lw = p.w + p.bwBorder * 2;
       // Округляем толщину до 0.1px: соседние ветви почти всегда имеют одинаковую
