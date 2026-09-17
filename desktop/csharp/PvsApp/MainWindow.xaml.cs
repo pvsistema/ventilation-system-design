@@ -673,14 +673,17 @@ public partial class MainWindow : Window
             case "save-file":
                 HandleSaveFile(doc.RootElement);
                 break;
+            // Работа с диском ЗАПУСКАЕТСЯ и отпускается: обработчик сообщений
+            // не ждёт её завершения, иначе поток окна снова оказался бы занят
+            // ожиданием диска. Ответ уйдёт сам, когда файл будет прочитан.
             case "read-file":
-                HandleReadFile(doc.RootElement);
+                _ = HandleReadFile(doc.RootElement);
                 break;
             case "write-file":
-                HandleWriteFile(doc.RootElement);
+                _ = HandleWriteFile(doc.RootElement);
                 break;
             case "get-pending-file":
-                HandleGetPendingFile(doc.RootElement);
+                _ = HandleGetPendingFile(doc.RootElement);
                 break;
             case "install-update":
                 _ = HandleInstallUpdate();
@@ -785,44 +788,74 @@ public partial class MainWindow : Window
         });
     }
 
-    private void HandleReadFile(JsonElement root)
+    // ── Чтение и запись файлов ────────────────────────────────────────────────
+    //
+    // ВСЕ обращения к диску здесь АСИНХРОННЫЕ (ReadAllTextAsync / WriteAllTextAsync).
+    // Раньше стояли обычные File.ReadAllText и File.WriteAllText, а вызываются
+    // они из обработчика сообщений — то есть прямо в потоке ОКНА. Пока диск
+    // отвечал, окно не перерисовывалось и не принимало нажатия: снаружи это
+    // выглядело как зависшая программа. На руднике это происходит регулярно:
+    // схемы лежат на сетевой папке, а жёсткий диск после простоя «просыпается»
+    // несколько секунд. Теперь ожидание диска идёт в фоне — окно живое, а
+    // ответ уходит интерфейсу по готовности (ReplyToJs сам возвращается в
+    // поток окна).
+
+    private async Task HandleReadFile(JsonElement root)
     {
         string path  = root.TryGetProperty("path",  out var p) ? p.GetString() ?? "" : "";
         string reqId = root.TryGetProperty("reqId", out var r) ? r.GetString() ?? "" : "";
         try
         {
-            string content = File.ReadAllText(path, Encoding.UTF8);
+            string content = await File.ReadAllTextAsync(path, Encoding.UTF8);
             ReplyToJs(reqId, new { path, content });
         }
         catch (Exception ex) { ReplyToJs(reqId, new { error = ex.Message }); }
     }
 
-    private void HandleWriteFile(JsonElement root)
+    private async Task HandleWriteFile(JsonElement root)
     {
         string path    = root.TryGetProperty("path",    out var p) ? p.GetString() ?? "" : "";
         string content = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
         string reqId   = root.TryGetProperty("reqId",   out var r) ? r.GetString() ?? "" : "";
         try
         {
-            File.WriteAllText(path, content, Encoding.UTF8);
+            await File.WriteAllTextAsync(path, content, Encoding.UTF8);
             ReplyToJs(reqId, new { ok = true });
         }
         catch (Exception ex) { ReplyToJs(reqId, new { error = ex.Message }); }
     }
 
-    private void HandleGetPendingFile(JsonElement root)
+    private async Task HandleGetPendingFile(JsonElement root)
     {
         string reqId = root.TryGetProperty("reqId", out var r) ? r.GetString() ?? "" : "";
-        if (_pendingFile == null || !File.Exists(_pendingFile))
+
+        // Путь забираем СРАЗУ и обнуляем поле до чтения. Иначе повторный запрос
+        // (перезагрузка страницы в момент чтения) прочитал бы файл второй раз и
+        // открыл бы его дважды.
+        string? pending = _pendingFile;
+        _pendingFile = null;
+
+        if (pending == null)
         {
             ReplyToJs(reqId, (object?)null);
             return;
         }
+
+        // Отдельная НЕ-обнуляемая копия: внутри лямбды анализатор не помнит
+        // проверку выше и ругался бы на возможный null.
+        string path = pending;
+
         try
         {
-            string content = File.ReadAllText(_pendingFile, Encoding.UTF8);
-            var result = new { path = _pendingFile, content };
-            _pendingFile = null;
+            // File.Exists по сетевому пути тоже умеет ждать — уводим его в фон
+            // вместе с самим чтением, а не оставляем в потоке окна.
+            object? result = await Task.Run<object?>(async () =>
+            {
+                if (!File.Exists(path)) return null;
+                string content = await File.ReadAllTextAsync(path, Encoding.UTF8);
+                return new { path, content };
+            });
+
             ReplyToJs(reqId, result);
         }
         catch (Exception ex) { ReplyToJs(reqId, new { error = ex.Message }); }
@@ -1173,11 +1206,50 @@ public partial class MainWindow : Window
 
     // ── Утилиты ───────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Отправляет интерфейсу ответ на его запрос.
+    ///
+    /// ПОЧЕМУ PostWebMessageAsJson, А НЕ ExecuteScriptAsync.
+    /// Раньше ответ склеивался в СТРОКУ КОДА («__pvsCsReply("id", {...})») и
+    /// отдавался в ExecuteScriptAsync. Для схемы рудника это означало, что
+    /// файл на 10–30 МБ превращался в 10–30-мегабайтную ПРОГРАММУ, которую
+    /// движок браузера обязан разобрать как исходный текст JavaScript. Разбор
+    /// кода в разы дороже разбора данных, а на больших файлах вызов попросту
+    /// срывался: ответ не приходил, ожидание в интерфейсе не завершалось
+    /// никогда — окно открыто, а схема не появляется. Это и было «иногда
+    /// зависает при открытии файла».
+    ///
+    /// PostWebMessageAsJson передаёт РОВНО ДАННЫЕ: разбирается уже готовый
+    /// JSON, кода в нём нет. Попутно уходит и вторая, более коварная беда —
+    /// содержимое файла больше не попадает в текст программы, поэтому кавычки,
+    /// переводы строк и последовательности вида «</script>» внутри названий
+    /// выработок не могут сломать разбор.
+    ///
+    /// Формат сообщения: { "__pvsReply": "<reqId>", "payload": ... } —
+    /// «конверт», который в интерфейсе разбирает обработчик из BuildJsBootstrap.
+    /// </summary>
     private void ReplyToJs(string reqId, object? payload)
     {
-        string json = JsonSerializer.Serialize(payload ?? new { });
-        string js   = $"window.__pvsCsReply && window.__pvsCsReply({JsonSerializer.Serialize(reqId)}, {json});";
-        _ = WebView.CoreWebView2.ExecuteScriptAsync(js);
+        // Отправка обязана идти в потоке окна: WebView2 вызов из чужого потока
+        // не принимает. Асинхронное чтение файла продолжается в фоне, поэтому
+        // сюда мы попадаем уже НЕ из потока окна — возвращаемся в него сами.
+        void Send()
+        {
+            try
+            {
+                if (WebView?.CoreWebView2 == null) return;
+                string json = JsonSerializer.Serialize(new
+                {
+                    __pvsReply = reqId,
+                    payload    = payload,
+                });
+                WebView.CoreWebView2.PostWebMessageAsJson(json);
+            }
+            catch { /* окно закрывается — отвечать уже некому */ }
+        }
+
+        if (Dispatcher.CheckAccess()) Send();
+        else Dispatcher.InvokeAsync(Send);
     }
 
     /// <summary>
@@ -1303,16 +1375,94 @@ public partial class MainWindow : Window
     // своё окно не выводит, чтобы не дублировать требование.
     window.__PVS_SECURITY_GATE__ = 1;
 
-    // ── Реестр pending-промисов для C# ответов ──
-    var _pending = {};
+    // ── Реестр незавершённых запросов к ядру программы ──
+    //
+    // Ответ приходит СООБЩЕНИЕМ (PostWebMessageAsJson), а не выполнением кода:
+    // так содержимое файла на десятки мегабайт разбирается как данные, а не как
+    // текст программы. Разбор кода такого размера или тянулся минуты, или
+    // срывался вовсе — и тогда ожидание не завершалось никогда.
+    // Реестр живёт на window, а НЕ в замыкании этого скрипта. Скрипт выполняется
+    // заново после каждой перезагрузки страницы, а слушатель сообщений ставится
+    // один раз: с реестром внутри замыкания слушатель остался бы привязан к
+    // ПЕРВОМУ реестру, и все последующие запросы никогда бы не получили ответ.
+    window.__pvsPending = window.__pvsPending || {};
+    var _pending = window.__pvsPending;
+
+    // Приём ответов. Конверт от C#: { __pvsReply: "<id>", payload: ... }.
+    // Чужие сообщения (прогресс обновления и прочее) пропускаем мимо.
+    //
+    // ВАЖНО: ответ всегда отдаём через window.__pvsCsReply, а не разбираем
+    // реестр здесь же. Диалог печати (src/lib/desktopPrint.ts) ПОДМЕНЯЕТ
+    // __pvsCsReply своей обёрткой, чтобы поймать ответ на собственный запрос, и
+    // передаёт чужие ответы дальше по цепочке. Разбери мы реестр напрямую —
+    // обёртка печати никогда бы не вызвалась, и прямая печать на принтер
+    // перестала бы отвечать.
+    if (!window.__pvsReplyHooked) {
+        window.__pvsReplyHooked = true;
+        window.chrome.webview.addEventListener('message', function(e) {
+            var d = e.data;
+            if (!d || typeof d !== 'object' || typeof d.__pvsReply !== 'string') return;
+            if (window.__pvsCsReply) window.__pvsCsReply(d.__pvsReply, d.payload);
+        });
+    }
+
+    // Разбор ответа: находим ожидающий запрос и завершаем его. Эту же функцию
+    // зовёт цепочка подмен из диалога печати, поэтому она объявлена на window.
     window.__pvsCsReply = function(reqId, payload) {
-        if (_pending[reqId]) { _pending[reqId](payload); delete _pending[reqId]; }
+        var reg = window.__pvsPending || {};
+        var p = reg[reqId];
+        if (!p) return;                 // ответ опоздал: истёк срок ожидания
+        delete reg[reqId];
+        clearTimeout(p.timer);
+        p.resolve(payload);
     };
+
+    // Сколько ждать ответ ядра, миллисекунды. Разное по командам: чтение или
+    // запись файла со сетевого диска — это секунды, а печать листа A1 и
+    // установка обновления идут заметно дольше, обрывать их нельзя.
+    var CS_TIMEOUTS = {
+        'read-file':        20000,
+        'write-file':       20000,
+        'get-pending-file': 20000,
+        'save-file':        0,       // 0 = без срока: человек думает в диалоге
+        'print-html':       0,       // печать большого листа — минуты
+        'install-update':   0,       // скачивание по узкой связи — минуты
+        'list-printers':    10000
+    };
+    var CS_TIMEOUT_DEFAULT = 15000;
+
     function callCs(cmd, params) {
         return new Promise(function(resolve) {
             var id = Math.random().toString(36).slice(2);
-            _pending[id] = resolve;
-            window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd, reqId: id }, params || {})));
+            var ms = CS_TIMEOUTS[cmd];
+            if (ms === undefined) ms = CS_TIMEOUT_DEFAULT;
+
+            // СРОК ОЖИДАНИЯ. Раньше его не было совсем: любой сбой в ядре
+            // оставлял программу ждать вечно, без единого сообщения — снаружи
+            // это выглядело как наглухо зависшее окно. Теперь по истечении
+            // срока ожидание завершается понятной ошибкой, и интерфейс может
+            // показать её или пойти другим путём (например, открыть файл
+            // обычным окном выбора).
+            var timer = 0;
+            if (ms > 0) {
+                timer = setTimeout(function() {
+                    if (!_pending[id]) return;
+                    delete _pending[id];
+                    resolve({ error: 'Ядро программы не ответило за ' + Math.round(ms / 1000) +
+                                     ' с (команда «' + cmd + '»). Попробуйте повторить.',
+                              timeout: true });
+                }, ms);
+            }
+            _pending[id] = { resolve: resolve, timer: timer };
+
+            try {
+                window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd, reqId: id }, params || {})));
+            } catch (err) {
+                // Мост недоступен — отвечаем сразу, а не ждём истечения срока.
+                delete _pending[id];
+                clearTimeout(timer);
+                resolve({ error: 'Нет связи с ядром программы: ' + (err && err.message ? err.message : err) });
+            }
         });
     }
     // Без reqId (fire-and-forget)
@@ -1325,7 +1475,16 @@ public partial class MainWindow : Window
         onOpenFile:    function(handler) {
             window._pvs_open_handler = handler;
             callCs('get-pending-file', {}).then(function(r) {
-                if (r && r.content) handler({ path: r.path, content: r.content });
+                if (r && r.content) { handler({ path: r.path, content: r.content }); return; }
+                // Файл не прочитался (нет доступа, сетевой диск отвалился,
+                // истёк срок ожидания). Раньше такой случай не показывался
+                // никак: открывался пустой проект, и человек не понимал,
+                // почему схема не появилась.
+                if (r && r.error) {
+                    try { console.error('[PVS] Не удалось открыть файл: ' + r.error); } catch (e) {}
+                    if (window.__pvsOnOpenFileError) window.__pvsOnOpenFileError(r.error);
+                    else alert('Не удалось открыть файл.\n\n' + r.error);
+                }
             });
         },
         offOpenFile:   function() { window._pvs_open_handler = null; },
