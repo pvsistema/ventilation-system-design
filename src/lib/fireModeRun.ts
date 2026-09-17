@@ -13,7 +13,7 @@
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
   calcFireMode, calcFireTemp, fireSourceTempForMethod, computeHotNodeTemps,
-  calcFirePowerFromMaterial,
+  calcFirePowerFromMaterial, calcThermalDepressionUnified,
   type ThermalDepMethod, type FireCalculationResult,
 } from "@/lib/fireCalculator";
 
@@ -176,8 +176,40 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
         }, thermalDepMethod);
       }
       fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, reversedConfirmed: reversedSeats.has(b.id), length: b.length, area: b.area, perimeter: b.perimeter });
-      // fireThermalDepression больше НЕ прикладываем как источник.
-      return { ...b, fireThermalDepression: 0 };
+
+      // ── ТЕПЛОВАЯ ДЕПРЕССИЯ — СОСРЕДОТОЧЕННО НА ВЕТВИ ОЧАГА (4.5) ──────────
+      //
+      // ВОССТАНОВЛЕНО. Предыдущая правка обнуляла h_т и рассчитывала, что тягу
+      // целиком воспроизведут температуры столбов. Для нисходящего проветривания
+      // это не сработало: столб самой ветви очага короткий (Δz = L·sinβ — метры),
+      // а дым за ней поднимался по стволу в сотни метров и работал ДЫМОВОЙ
+      // ТРУБОЙ В ПОМОЩЬ потоку. Баланс выходил положительным, и расход рос
+      // (35 → 40 м³/с) там, где методика требует его снижения.
+      //
+      // Приложение 2, форм. (2.2): h = h_т + R_у·Q_в² — при нисходящем
+      // проветривании тепловая депрессия входит отдельным слагаемым ПРОТИВ
+      // потока. Приложение 4, форм. (4.5)–(4.6): она считается на разности
+      // отметок ЗОНЫ ГОРЕНИЯ Δz = l·sinβ, а не на длине всего пути дыма.
+      // Поэтому здесь h_т и прикладывается — в одной точке, как в методике.
+      //
+      // Двойного счёта нет: computeHotNodeTemps теперь не даёт тягового столба
+      // ни ветви очага, ни ветвям за пределами зоны горения.
+      //
+      // Знак. calcThermalDepressionUnified возвращает депрессию со знаком угла
+      // ОТНОСИТЕЛЬНО ПОТОКА (нисходящая → минус). Решателю нужен знак в
+      // ориентации ветви from→to, поэтому домножаем на знак штатного расхода.
+      const fromN2 = nodes.find(n => n.id === b.fromId);
+      const toN2   = nodes.find(n => n.id === b.toId);
+      const dzGeom2 = (toN2?.z ?? 0) - (fromN2?.z ?? 0);
+      const geomAngle2 = Math.abs(b.angle ?? 0) * Math.sign(dzGeom2 || 1);
+      const dirFlow2 = originalFlows.get(b.id) ?? b.flow ?? 0;
+      const flowSign2 = dirFlow2 >= 0 ? 1 : -1;
+      const htFlow = calcThermalDepressionUnified({
+        fireTemp_C: T_pr, ambientTemp_C: AMBIENT_TEMP,
+        length_m: b.length ?? 0, angle_deg: geomAngle2 * flowSign2,
+        airFlow_m3s: airQ, sectionArea_m2: b.area,
+      }, thermalDepMethod);
+      return { ...b, fireThermalDepression: htFlow * flowSign2 };
     });
 
     // Карта горячих узлов по актуальным расходам.
