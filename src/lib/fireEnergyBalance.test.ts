@@ -101,3 +101,46 @@ describe("Температура продуктов горения", () => {
     expect(power(15)).toBeCloseTo(N, 2);
   });
 });
+// ─────────────────────────────────────────────────────────────────────────────
+// Ограничение горячего столба зоной горения (норматив 4.6, 4.12-4.13).
+//
+// Методика считает тепловую депрессию на разности отметок ЗОНЫ ГОРЕНИЯ
+// Дz = l*sinB, где l - длина зоны горения (4.8), обычно 80-110 м. Если греть
+// узлы вдоль всего пути дыма до поверхности, решатель наберёт тягу на сотнях
+// метров вертикали: при T=135,9 C нормативные 56,1 Па отвечают столбу 15,8 м,
+// а на столбе 200 м та же разность плотностей даёт уже 670 Па.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Протяжённость горячего столба", () => {
+  const N = 8.52, Q = 58.55, S = 16.22;
+  const T = calcFireTemp(N, Q, AMB);
+
+  // Цепочка: очаг F (N1->N2), далее длинные ветви по ходу дыма.
+  const chain = (lens: number[]) => {
+    const br = [{ id: "F", fromId: "N1", toId: "N2", flow: Q, length: 24, area: S, perimeter: 16 }];
+    lens.forEach((len, i) => br.push({
+      id: `B${i}`, fromId: `N${i + 2}`, toId: `N${i + 3}`, flow: Q, length: len, area: S, perimeter: 16,
+    }));
+    return br;
+  };
+  const seat = [{ id: "F", fromId: "N1", toId: "N2", fireTemp: T, flow: Q, originalFlow: Q,
+                  length: 24, area: S, perimeter: 16 }];
+  const baseAll: Record<string, number> = {};
+  for (let i = 1; i <= 8; i++) baseAll[`N${i}`] = AMB;
+
+  it("перегрев затухает по мере удаления от очага", () => {
+    const hot = computeHotNodeTemps(seat, chain([100, 100, 100, 100]), AMB, baseAll);
+    const over = (n: string) => (hot[n] ?? AMB) - AMB;
+    // Каждый следующий узел холоднее предыдущего
+    expect(over("N3")).toBeLessThan(over("N2"));
+    expect(over("N4")).toBeLessThan(over("N3"));
+    expect(over("N5")).toBeLessThan(over("N4"));
+  });
+
+  it("на расстоянии много больше зоны горения перегрев практически исчезает", () => {
+    const hot = computeHotNodeTemps(seat, chain([100, 100, 100, 100]), AMB, baseAll);
+    const nearFire = (hot["N2"] ?? AMB) - AMB;
+    const farAway  = (hot["N6"] ?? AMB) - AMB;   // ~412 м от очага
+    expect(nearFire).toBeGreaterThan(20);        // у очага горячо
+    expect(farAway).toBeLessThan(nearFire * 0.1); // вдали — почти фон
+  });
+});

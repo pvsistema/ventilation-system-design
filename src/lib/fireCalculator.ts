@@ -1454,6 +1454,50 @@ export function computeHotNodeTemps(
   const wallLoss = (per: number, len: number, massFlow: number) =>
     (WALL_HEAT_ALPHA * per * len) / (Math.max(0.5, massFlow) * CP_AIR * 1000);
 
+  // ── ЗАТУХАНИЕ ТЕМПЕРАТУРЫ ПО ДЛИНЕ ПУТИ ДЫМА (норматив 4.12–4.13) ──────────
+  //
+  // ЗАЧЕМ. Методика прямо ограничивает протяжённость горячего столба: тепловая
+  // депрессия считается на разности отметок ЗОНЫ ГОРЕНИЯ Δz = l·sinβ (4.6), а
+  // температура струи спадает по ходу движения
+  //     Tк = 288 + (Tм − 288)·e^(−x̄/A),   x̄ = x/l        (4.12), (4.13)
+  // где l — длина зоны горения (4.8), обычно 80–110 м.
+  //
+  // У нас же горячими объявлялись узлы вдоль ВСЕГО пути дыма — до ствола и
+  // дальше. Решатель честно считает тягу как интеграл плотности по высоте
+  // контура, поэтому эффект множился на всю вертикаль пути. Проверка по
+  // скриншоту: при T=135,9 °C нормативная h_т = 56,1 Па отвечает столбу 15,8 м
+  // (= Δz зоны горения), а на столбе 100 м та же разность плотностей даёт уже
+  // 335 Па, на 200 м — 670 Па. Отсюда и лишнее падение расхода: тяга, которой
+  // по методике быть не должно.
+  //
+  // Теплопотери в стенки (wallLoss) эту роль выполнить не могут: при α = 14 и
+  // больших расходах экспонента спадает слишком медленно, и струя доезжает до
+  // ствола почти горячей.
+  //
+  // Поэтому вводим нормативное затухание по ПРОЙДЕННОМУ ПУТИ. Масштаб спада
+  // берём из (4.12): x̄/A = x/(l·A), то есть характерная длина — l·A. Перегрев
+  // узла умножается на e^(−x/(l·A)) и за пределами зоны горения быстро сходит
+  // на нет — ровно как задумано методикой.
+  const decayScaleOf = (fb: { flow: number; originalFlow?: number; area?: number }) => {
+    const Q = Math.abs(fb.originalFlow ?? fb.flow ?? 0);   // (4.8): Q ДО пожара
+    const S = Math.max(0.1, fb.area ?? 0);
+    if (!(Q > 0.01)) return null;                          // нет данных — не гасим
+    const t = Math.min(NORMATIVE_TIME_MAX_MIN, getNormativeFireTime());
+    const l = t * (0.28 + 0.07 * (Q / S));                 // (4.8) длина зоны горения
+    if (!(l > 0.001)) return null;
+    const a = Math.sqrt(S) / l;                            // (4.10)
+    const A = (100 * a) / (1.21 + 1.51 * (S / Q));         // (4.9)
+    if (!(A > 1e-6) || !Number.isFinite(A)) return null;
+    return { l, scale: l * A };                            // зона горения и масштаб спада, м
+  };
+
+  // Если очагов несколько — гасим по самому «короткому», иначе слабый очаг
+  // растянул бы горячую зону на всю сеть.
+  const decayParams = fireBranches
+    .map(decayScaleOf)
+    .filter((d): d is { l: number; scale: number } => d !== null)
+    .sort((x, y) => x.scale - y.scale)[0] ?? null;
+
   // ── БАЛАНС ТЕПЛА В УЗЛАХ (смешение струй) ─────────────────────────────────
   // ГЛАВНОЕ ИСПРАВЛЕНИЕ. Раньше температура узла бралась как МАКСИМУМ по всем
   // приходящим струям — подмешивание СВЕЖЕГО воздуха полностью игнорировалось.
@@ -1477,6 +1521,75 @@ export function computeHotNodeTemps(
     arr.push(b);
     branchesByOutNode.set(outNode, arr);
   }
+
+  // ── РАССТОЯНИЕ ОТ ОЧАГА ДО УЗЛА ПО ХОДУ ДЫМА, м ───────────────────────────
+  // Это x из формул (4.12)–(4.13). Считаем обходом в ширину строго ПО ПОТОКУ
+  // (из входного узла ветви в выходной), беря кратчайший путь от любого очага.
+  // Узлы, до которых дым не доходит, остаются без записи и не греются вовсе.
+  const distFromFire = new Map<string, number>();
+  {
+    // Куда уходит струя из узла: узел → список {куда, длина ветви}.
+    const outgoing = new Map<string, { to: string; len: number }[]>();
+    for (const b of allBranches) {
+      const q = b.flow ?? 0;
+      const from = q >= 0 ? b.fromId : b.toId;   // по знаку расхода
+      const to   = q >= 0 ? b.toId   : b.fromId;
+      const arr = outgoing.get(from) ?? [];
+      arr.push({ to, len: Math.max(0, b.length ?? 0) });
+      outgoing.set(from, arr);
+    }
+    // Старт — выходные узлы очагов, путь считаем от середины ветви очага.
+    const queue: string[] = [];
+    for (const fb of fireBranches) {
+      const dirFlow = fb.reversedConfirmed
+        ? (fb.flow ?? fb.originalFlow ?? 0)
+        : (fb.originalFlow ?? fb.flow ?? 0);
+      const outNode = dirFlow >= 0 ? fb.toId : fb.fromId;
+      const half = (fb.length ?? 0) * 0.5;
+      if (!distFromFire.has(outNode) || (distFromFire.get(outNode) as number) > half) {
+        distFromFire.set(outNode, half);
+        queue.push(outNode);
+      }
+    }
+    // Обход по потоку. Ограничение на число шагов — защита от контуров.
+    for (let head = 0; head < queue.length && head < 100000; head++) {
+      const nid = queue[head];
+      const d0 = distFromFire.get(nid) ?? 0;
+      for (const e of outgoing.get(nid) ?? []) {
+        const d = d0 + e.len;
+        const known = distFromFire.get(e.to);
+        // Записываем только если нашли путь КОРОЧЕ на заметную величину —
+        // иначе в контурах обход зациклится на микроулучшениях.
+        if (known === undefined || d < known - 0.5) {
+          distFromFire.set(e.to, d);
+          queue.push(e.to);
+        }
+      }
+    }
+  }
+
+  // Доля перегрева, дожившая до узла на расстоянии x от очага.
+  //
+  // Два сомножителя, и оба нужны:
+  //   1) e^(−x/(l·A))       — спад температуры струи по (4.12);
+  //   2) e^(−(x−l)/l) при x>l — выход ЗА ЗОНУ ГОРЕНИЯ.
+  //
+  // Второй сомножитель — принципиальный. Методика считает тепловую депрессию
+  // на разности отметок ЗОНЫ ГОРЕНИЯ Δz = l·sinβ (4.6) и нигде не продлевает
+  // её на весь путь дыма. Одного лишь (4.12) для этого мало: масштаб l·A ≈ 250 м,
+  // и на стволе в 300 м перегрев дожил бы на 30 %, дав сотни паскалей тяги
+  // вместо нормативных 56 Па. За зоной горения дым перемешан со свежим воздухом,
+  // тепло ушло в массив — столб перестаёт работать как тяговый.
+  const decayAt = (nodeId: string) => {
+    if (!decayParams) return 1;
+    const x = distFromFire.get(nodeId);
+    if (x === undefined) return 1;      // узел не на пути дыма — гасить нечего
+    const inZone = Math.exp(-x / decayParams.scale);
+    const beyond = x > decayParams.l
+      ? Math.exp(-(x - decayParams.l) / decayParams.l)
+      : 1;
+    return inZone * beyond;
+  };
 
   // Температура на выходе КАЖДОГО очага (после остывания на половине ветви).
   const fireOutlet = new Map<string, { node: string; t: number; m: number }>();
@@ -1555,8 +1668,15 @@ export function computeHotNodeTemps(
   // выпадал из «горячих» — решатель давал ему t_ср рудника. Между соседними
   // узлами возникала ступенька в несколько градусов на ровном месте и вместе
   // с ней фантомная тяга, душившая расход в смежных выработках.
+  //
+  // И ГЛАВНОЕ — применяем нормативное затухание по длине пути дыма (4.12):
+  // перегрев над массивом умножается на e^(−x/(l·A)). Без этого горячим
+  // считался весь путь до поверхности, и решатель набирал тепловую тягу на
+  // сотнях метров вертикали вместо Δz = l·sinβ зоны горения, как требует (4.6).
   nodeT.forEach((t, nid) => {
-    if (t > baseOf(nid) + 0.5) hot[nid] = Math.round(t * 100) / 100;
+    const tBase = baseOf(nid);
+    const tDecayed = tBase + (t - tBase) * decayAt(nid);
+    if (tDecayed > tBase + 0.5) hot[nid] = Math.round(tDecayed * 100) / 100;
   });
   return hot;
 }
