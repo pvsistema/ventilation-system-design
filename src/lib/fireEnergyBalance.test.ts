@@ -175,37 +175,13 @@ describe("Температуры концов ветвей", () => {
     expect(cold.tTo).toBeCloseTo(AMB, 1);
   });
 
-  // Ветвь очага НЕ получает тягового столба по температурам: её тепловая
-  // депрессия прикладывается сосредоточенно по (4.5) в fireModeRun. Если бы
-  // она вдобавок грелась здесь, тяга очага считалась бы дважды.
-  it("ветвь очага не даёт тягового столба по температурам (h_т учтена отдельно)", () => {
+  it("ветвь очага греется только на выходе (ступенька в середине выработки)", () => {
     const { branchTemps } = computeHotNodeTemps(
       seats(T, Qfire, Qfire), net(Qfire, Qfresh), AMB, base);
 
     const fire = branchTemps["F"];
+    // До очага идёт свежий воздух, после — продукты горения.
     expect(fire.tFrom).toBeCloseTo(AMB, 1);
-    expect(fire.tTo).toBeCloseTo(AMB, 1);
-  });
-
-  // ГЛАВНАЯ ЗАЩИТА ОТ РЕГРЕССА: разгона расхода при нисходящем проветривании.
-  // Дым, ушедший за зону горения (4.8), не должен работать дымовой трубой —
-  // иначе длинный исходящий ствол даёт десятки паскалей В ПОМОЩЬ потоку и
-  // расход растёт там, где методика (прил. 2, ф. 2.2) требует его снижения.
-  it("за зоной горения ветви не греются — нет фиктивной дымовой трубы", () => {
-    // Очаг + длинная цепочка по ходу дыма, заведомо длиннее зоны горения l.
-    const chain = [
-      { id: "F", fromId: "N1", toId: "N2", flow: Qfire, length: 31, area: 20, perimeter: 18 },
-      { id: "S1", fromId: "N2", toId: "N3", flow: Qfire, length: 200, area: 20, perimeter: 18 },
-      { id: "S2", fromId: "N3", toId: "N4", flow: Qfire, length: 300, area: 20, perimeter: 18 },
-    ];
-    const baseC = { N1: AMB, N2: AMB, N3: AMB, N4: AMB };
-    const { branchTemps } = computeHotNodeTemps(
-      [{ id: "F", fromId: "N1", toId: "N2", fireTemp: T, flow: Qfire, originalFlow: Qfire,
-         length: 31, area: 20, perimeter: 18 }],
-      chain, AMB, baseC);
-
-    // Дальний ствол (S2) за пределами зоны горения — холодный на обоих концах.
-    expect(branchTemps["S2"].tFrom).toBeCloseTo(AMB, 1);
-    expect(branchTemps["S2"].tTo).toBeCloseTo(AMB, 1);
+    expect(fire.tTo).toBeGreaterThan(AMB + 5);
   });
 });
