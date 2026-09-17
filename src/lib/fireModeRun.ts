@@ -182,10 +182,18 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
 
     // Карта горячих узлов по актуальным расходам.
     const branchesForHot = branchesIter.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: currentFlows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
-    const hotNodeTemps = computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP, baseNodeTemps);
+    const { hot: hotNodeTemps, branchTemps } =
+      computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP, baseNodeTemps);
 
-    // Шаг D: пересчитать сеть с горячими узлами
-    const newFlows = await solveIteration(branchesWithHt, AMBIENT_TEMP, hotNodeTemps);
+    // Шаг D: пересчитать сеть с горячими узлами.
+    // Температуры КОНЦОВ ветвей кладём в сами ветви: решатель считает вес
+    // столба по струе, а не по узлу, поэтому свежая (холодная) выработка,
+    // впадающая в задымлённый узел, больше не превращается в тяговый столб.
+    const branchesWithT = branchesWithHt.map(b => {
+      const t = branchTemps[b.id];
+      return t ? { ...b, fireTFrom: t.tFrom, fireTTo: t.tTo } : b;
+    });
+    const newFlows = await solveIteration(branchesWithT, AMBIENT_TEMP, hotNodeTemps);
     if (newFlows.size === 0) break; // ошибка сети — прерываем
 
     // Шаг E: адаптивная релаксация + проверка сходимости.

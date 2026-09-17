@@ -249,12 +249,27 @@ def handler(event: dict, context) -> dict:
                             nodes_sc.append(n)
                 else:
                     nodes_sc = nodes_in
+                # Температуры КОНЦОВ ВЕТВЕЙ ({branchId: {tFrom, tTo}}). По ним
+                # решатель считает вес горячего столба: температура принадлежит
+                # струе, а не узлу, поэтому свежая выработка, впадающая в
+                # задымлённый узел, остаётся холодной и не даёт ложной тяги
+                # (подробный разбор — в build_graph).
+                br_temps = sc.get("branchTemps") or {}
                 # Совместимость: если фронтенд ещё шлёт только депрессию — лумпим.
                 br_sc = []
                 for b in branches_in:
+                    bt = br_temps.get(b.get("id"))
                     if b.get("id") == tgt and not hot_temps:
                         b2 = dict(b)
                         b2["fireThermalDepression"] = h_fire
+                        if bt:
+                            b2["fireTFrom"] = bt.get("tFrom")
+                            b2["fireTTo"]   = bt.get("tTo")
+                        br_sc.append(b2)
+                    elif bt:
+                        b2 = dict(b)
+                        b2["fireTFrom"] = bt.get("tFrom")
+                        b2["fireTTo"]   = bt.get("tTo")
                         br_sc.append(b2)
                     else:
                         br_sc.append(b)
@@ -705,6 +720,32 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0,
         tz  = node_z.get(orig_to,   float(b.get("toZ",   0.0) or 0.0))
         ft  = node_temp.get(orig_from, surface_temp)
         tt  = node_temp.get(orig_to,   surface_temp)
+
+        # ── ТЕМПЕРАТУРА СТОЛБА — СВОЙСТВО СТРУИ, А НЕ УЗЛА ────────────────────
+        #
+        # Если модель пожара прислала температуры КОНЦОВ ВЕТВИ (fireTFrom/fireTTo),
+        # вес столба считаем по ним, а не по температурам узлов.
+        #
+        # ЗАЧЕМ. Узел — общая точка нескольких струй. Когда в него приходит дым,
+        # узел становится горячим, и ВСЕ ветви при нём получают горячий конец —
+        # включая те, по которым идёт свежий воздух НАВСТРЕЧУ, к узлу. Такая
+        # холодная нисходящая выработка объявлялась горячим столбом и получала
+        # тягу, тянущую воздух ВНИЗ, в шахту.
+        #
+        # Численная проверка на тестовой сети (два параллельных нисходящих ввода
+        # в общий узел, очаг в одном из них, узел нагрет до 95 °C):
+        #   ветвь очага   27.8 → −46.3 м³/с  (ложное опрокидывание)
+        #   свежая ветвь  27.9 → 100.9 м³/с  (+73 м³/с из ниоткуда)
+        # Ровно этот механизм и разгонял расход при нисходящем проветривании
+        # вместо того, чтобы его тормозить.
+        #
+        # Температуры ветвей приходят в ориентации from→to — той же, в которой
+        # построено ребро, поэтому знак Δz и знак тяги остаются согласованными.
+        t_from_br = b.get("fireTFrom")
+        t_to_br   = b.get("fireTTo")
+        if t_from_br is not None and t_to_br is not None:
+            ft = float(t_from_br)
+            tt = float(t_to_br)
 
         fh  = node_hum.get(orig_from, 0.0)
         th  = node_hum.get(orig_to,   0.0)

@@ -4035,6 +4035,11 @@ export default function CadPage() {
         fanStopped:  b.fanStopped ?? false,
         fanParallel: Math.max(1, b.fanParallel ?? 1),
         fireThermalDepression: b.fireThermalDepression ?? 0,
+        // Температуры концов ветви при пожаре (°C, ориентация from→to).
+        // Решатель считает по ним вес столба вместо температур узлов —
+        // см. FireThermalField в fireCalculator.ts.
+        fireTFrom: b.fireTFrom,
+        fireTTo: b.fireTTo,
         // Признак «в этой выработке очаг». Решателю он нужен для веса горячего
         // столба: в ветви очага нагрев идёт СКАЧКОМ в середине выработки (до
         // очага холодный воздух, после — продукты горения), а в ветвях за ней
@@ -4341,9 +4346,18 @@ export default function CadPage() {
   // пересчитывает. Возвращает Map<targetId, Map<branchId, Q>>.
   // Это заменяет сотни последовательных запросов одним.
   // ─────────────────────────────────────────────────────────────────────────
+  // Сценарий батч-расчёта пожара. branchTemps — температуры концов ветвей
+  // (°C, ориентация from→to); именно по ним решатель считает вес столба.
+  type FireScenario = {
+    id: string;
+    thermalDepression: number;
+    hotNodeTemps?: Record<string, number>;
+    branchTemps?: Record<string, { tFrom: number; tTo: number }>;
+  };
+
   const solveFireBatch = async (
     baseBranches: typeof branches,
-    scenarios: { id: string; thermalDepression: number; hotNodeTemps?: Record<string, number> }[],
+    scenarios: FireScenario[],
     surfaceTempVal: number,
   ): Promise<Map<string, Map<string, number>>> => {
     const out = new Map<string, Map<string, number>>();
@@ -4449,7 +4463,7 @@ export default function CadPage() {
       await new Promise(r => setTimeout(r, 0));
 
       // 1) Пересчитываем T_пр и h_t по актуальному расходу каждого сценария.
-      const scenarios: { id: string; thermalDepression: number; hotNodeTemps?: Record<string, number> }[] = [];
+      const scenarios: FireScenario[] = [];
       for (const s of active) {
         const target = s.target;
         // Расходы: мощность очага — по ШТАТНОМУ (тепловыделение техники не
@@ -4488,11 +4502,13 @@ export default function CadPage() {
         }, thermalDepMethod);
         // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
-        const hotNodeTemps = computeHotNodeTemps(
+        const { hot: hotNodeTemps, branchTemps } = computeHotNodeTemps(
           [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: T_src, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, reversedConfirmed: s.reversedConfirmed, length: target.length, area: target.area, perimeter: target.perimeter }],
           branchesForHot, ambientTemp, baseNodeTemps,
         );
-        scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
+        // Температуры концов ветвей — по ним решатель считает вес столба
+        // (узловая схема давала фиктивную тягу в свежих выработках).
+        scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps, branchTemps });
       }
 
       // 2) Один запрос на весь раунд. Базовая сеть — с расходами первого

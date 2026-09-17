@@ -1379,6 +1379,28 @@ export function fireSourceTempForMethod(
 // Здесь по актуальным расходам строим карту nodeId → T,°C от очага вниз по потоку.
 // Газ остывает о стенки выработки: T_out = T_ст + (T_in − T_ст)·exp(−α·P·L/(ρ·cp·Q)).
 // Возвращаем ТОЛЬКО заметно перегретые узлы (> ambient+2°C).
+/**
+ * Тепловое поле пожара для решателя.
+ *
+ * hot — температуры узлов (нужны панелям и совместимости).
+ *
+ * branchTemps — ГЛАВНОЕ. Температуры воздуха на КОНЦАХ КАЖДОЙ ветви
+ * (в ориентации from→to). Именно по ним решатель считает вес столба.
+ *
+ * Зачем отдельно от узлов. Температура — свойство СТРУИ, а не точки
+ * пространства. В узел, куда пришёл дым, втекают и холодные струи: свежий
+ * воздух по соседней выработке имеет свои 15 °C вплоть до самого узла, он
+ * смешивается с дымом только ПОСЛЕ него. Если же температуру хранить в узле,
+ * холодная нисходящая выработка получает на нижнем конце температуру дыма и
+ * объявляется горячим столбом — возникает мощная фиктивная тяга, разгоняющая
+ * приток. Ветвевые температуры это исключают: подогрев получают только те
+ * ветви, по которым дым реально течёт.
+ */
+export interface FireThermalField {
+  hot: Record<string, number>;
+  branchTemps: Record<string, { tFrom: number; tTo: number }>;
+}
+
 export function computeHotNodeTemps(
   // reversedConfirmed — опрокидывание УЖЕ подтверждено на предыдущей итерации.
   // Тогда горячий плюм должен идти по НОВОМУ (опрокинутому) направлению, а не по
@@ -1402,9 +1424,10 @@ export function computeHotNodeTemps(
   // вдали от очага струя сливается с окружающим воздухом без лишней разности
   // плотностей — тяга работает только там, где действительно горячо.
   baseNodeTemp_C?: Record<string, number>,
-): Record<string, number> {
+): FireThermalField {
   const hot: Record<string, number> = {};
-  if (fireBranches.length === 0) return hot;
+  const branchTemps: Record<string, { tFrom: number; tTo: number }> = {};
+  if (fireBranches.length === 0) return { hot, branchTemps };
 
   // Базовая температура узла (к ней остывает струя). Если карта не передана —
   // прежнее поведение (остывание к ambient).
@@ -1678,7 +1701,51 @@ export function computeHotNodeTemps(
     const tDecayed = tBase + (t - tBase) * decayAt(nid);
     if (tDecayed > tBase + 0.5) hot[nid] = Math.round(tDecayed * 100) / 100;
   });
-  return hot;
+
+  // ── ТЕМПЕРАТУРЫ НА КОНЦАХ ВЕТВЕЙ (то, по чему считается вес столба) ────────
+  //
+  // Температура принадлежит СТРУЕ, а не узлу. Поэтому для каждой ветви берём:
+  //   вход  — температуру узла, ОТКУДА эта струя втекает (с затуханием);
+  //   выход — её же, остывшую о стенки на длине ветви.
+  // Для ветви очага вход холодный (воздух до очага), выход — продукты горения.
+  //
+  // Ключевое отличие от прежней узловой схемы: ветвь, по которой идёт СВЕЖИЙ
+  // воздух, остаётся холодной на ОБОИХ концах, даже если впадает в горячий
+  // узел. Раньше она наследовала температуру дыма и превращалась в фиктивный
+  // тяговый столб.
+  const tOfNode = (nid: string) => {
+    const t = nodeT.get(nid);
+    const tBase = baseOf(nid);
+    if (t === undefined) return tBase;
+    return tBase + (t - tBase) * decayAt(nid);
+  };
+
+  for (const b of allBranches) {
+    const q = b.flow ?? 0;
+    const inNode  = q >= 0 ? b.fromId : b.toId;
+    const outNode = q >= 0 ? b.toId   : b.fromId;
+    const bPer = (b.perimeter && b.perimeter > 0)
+      ? b.perimeter : 4 * Math.sqrt(Math.max(1, b.area ?? 1));
+    const m = RHO_TRANSPORT * Math.max(0.4, Math.abs(q));
+    const bWall = baseOf(outNode);
+
+    const fo = fireOutlet.get(b.id);
+    // Вход ветви — температура струи, пришедшей из входного узла.
+    const tIn = tOfNode(inNode);
+    // Выход: у ветви очага это продукты горения (ступенька в середине
+    // выработки — решатель учитывает её флагом is_fire_seat), у обычной
+    // ветви — вход, остывший о стенки на всей длине.
+    const tOut = fo
+      ? tOfNode(fo.node)
+      : bWall + (tIn - bWall) * Math.exp(-wallLoss(bPer, b.length ?? 0, m));
+    // Возвращаем в ориентации ветви from→to (её же использует решатель).
+    const tFrom = q >= 0 ? tIn  : tOut;
+    const tTo   = q >= 0 ? tOut : tIn;
+    const r2 = (v: number) => Math.round(v * 100) / 100;
+    branchTemps[b.id] = { tFrom: r2(tFrom), tTo: r2(tTo) };
+  }
+
+  return { hot, branchTemps };
 }
 
 export function calcGasConcentrations(

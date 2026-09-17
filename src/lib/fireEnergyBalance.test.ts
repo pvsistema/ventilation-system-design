@@ -34,7 +34,7 @@ describe("Сохранение энергии очага в узловом см�
     const N = 8.52, Qштат = 75.04, Qфакт = 15, Qсвеж = 46.67;
     // T — по ТРАНСПОРТНОМУ (фактическому) расходу, как в fireModeRun.
     const T = calcFireTemp(N, Qфакт, AMB);
-    const hot = computeHotNodeTemps(seats(T, Qфакт, Qштат), net(Qфакт, Qсвеж), AMB, base);
+    const hot = computeHotNodeTemps(seats(T, Qфакт, Qштат), net(Qфакт, Qсвеж), AMB, base).hot;
 
     // Мощность, «увиденная» сетью в узле: суммарная масса × подогрев смеси
     const mSum = RHO * (Qфакт + Qсвеж);
@@ -46,7 +46,7 @@ describe("Сохранение энергии очага в узловом см�
   it("температура смеси считается по фактическим массам струй", () => {
     const N = 8.52, Qштат = 75.04, Qфакт = 15, Qсвеж = 46.67;
     const T = calcFireTemp(N, Qфакт, AMB);
-    const hot = computeHotNodeTemps(seats(T, Qфакт, Qштат), net(Qфакт, Qсвеж), AMB, base);
+    const hot = computeHotNodeTemps(seats(T, Qфакт, Qштат), net(Qфакт, Qсвеж), AMB, base).hot;
 
     // Верхняя оценка смеси по балансу масс: m_гор*T_гор + m_свеж*T_амб
     const tMixMax = (Qфакт * T + Qсвеж * AMB) / (Qфакт + Qсвеж);
@@ -66,7 +66,7 @@ describe("Сохранение энергии очага в узловом см�
     // Так считает fireModeRun: T — по ТРАНСПОРТНОМУ (фактическому) расходу.
     const energyAt = (qFact: number) => {
       const T = calcFireTemp(N, Math.max(0.5, qFact), AMB);
-      const hot = computeHotNodeTemps(seats(T, qFact, Qштат), net(qFact, Qсвеж), AMB, base);
+      const hot = computeHotNodeTemps(seats(T, qFact, Qштат), net(qFact, Qсвеж), AMB, base).hot;
       // Мощность, «увиденная» сетью в узле смешения.
       return RHO * (qFact + Qсвеж) * CP * 1000 * (hot["N2"] - AMB) / 1e6;
     };
@@ -128,7 +128,7 @@ describe("Протяжённость горячего столба", () => {
   for (let i = 1; i <= 8; i++) baseAll[`N${i}`] = AMB;
 
   it("перегрев затухает по мере удаления от очага", () => {
-    const hot = computeHotNodeTemps(seat, chain([100, 100, 100, 100]), AMB, baseAll);
+    const hot = computeHotNodeTemps(seat, chain([100, 100, 100, 100]), AMB, baseAll).hot;
     const over = (n: string) => (hot[n] ?? AMB) - AMB;
     // Каждый следующий узел холоднее предыдущего
     expect(over("N3")).toBeLessThan(over("N2"));
@@ -137,10 +137,51 @@ describe("Протяжённость горячего столба", () => {
   });
 
   it("на расстоянии много больше зоны горения перегрев практически исчезает", () => {
-    const hot = computeHotNodeTemps(seat, chain([100, 100, 100, 100]), AMB, baseAll);
+    const hot = computeHotNodeTemps(seat, chain([100, 100, 100, 100]), AMB, baseAll).hot;
     const nearFire = (hot["N2"] ?? AMB) - AMB;
     const farAway  = (hot["N6"] ?? AMB) - AMB;   // ~412 м от очага
     expect(nearFire).toBeGreaterThan(20);        // у очага горячо
     expect(farAway).toBeLessThan(nearFire * 0.1); // вдали — почти фон
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Температура принадлежит СТРУЕ, а не узлу (ветвевые температуры).
+//
+// Сторожит ошибку, из-за которой расход при пожаре РОС вместо падения.
+// Температуры хранились в узлах, и ветвь со СВЕЖИМ воздухом, впадающая в
+// задымлённый узел, получала на своём конце температуру дыма. Решатель считал
+// её горячим столбом и добавлял тягу, засасывающую воздух в шахту: в тесте
+// решателя свежая выработка получала +73 м³/с из ниоткуда, а ветвь очага
+// ложно опрокидывалась.
+//
+// Правильно: подогрет только тот конец ветви, по которой дым реально течёт.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("Температуры концов ветвей", () => {
+  const N = 8.52, Qfire = 35.58, Qfresh = 35.58;
+  const T = calcFireTemp(N, Qfire, AMB);
+
+  it("свежая ветвь остаётся холодной на обоих концах, даже впадая в задымлённый узел", () => {
+    const { hot, branchTemps } = computeHotNodeTemps(
+      seats(T, Qfire, Qfire), net(Qfire, Qfresh), AMB, base);
+
+    // Узел сопряжения действительно нагрет — дым туда пришёл.
+    expect(hot["N2"]).toBeGreaterThan(AMB + 5);
+
+    // Но встречная СВЕЖАЯ струя (N4→N2) холодная на входе И на выходе:
+    // она смешивается с дымом только ПОСЛЕ узла.
+    const cold = branchTemps["C"];
+    expect(cold.tFrom).toBeCloseTo(AMB, 1);
+    expect(cold.tTo).toBeCloseTo(AMB, 1);
+  });
+
+  it("ветвь очага греется только на выходе (ступенька в середине выработки)", () => {
+    const { branchTemps } = computeHotNodeTemps(
+      seats(T, Qfire, Qfire), net(Qfire, Qfresh), AMB, base);
+
+    const fire = branchTemps["F"];
+    // До очага идёт свежий воздух, после — продукты горения.
+    expect(fire.tFrom).toBeCloseTo(AMB, 1);
+    expect(fire.tTo).toBeGreaterThan(AMB + 5);
   });
 });
