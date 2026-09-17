@@ -166,7 +166,14 @@ function readLayers(raw: Uint8Array, dv: DataView, upTo: number): string[] {
  */
 function layerBase(list: string[], used: number[]): number {
   if (list.length === 0 || used.length === 0) return 0;
-  const maxNum = Math.max(...used);
+  // Выработка без горизонта помечена признаком 65535 (все биты подняты) — это
+  // НЕ номер в списке. Раньше он попадал в maxNum, условие цикла подбора
+  // (b + maxNum < list.length) не выполнялось ни разу, и функция возвращала 0.
+  // Схема получала горизонты со сдвигом: вместо «Горизонт -30 м.» выработкам
+  // доставались «Arial», «Проекция на 2D» и прочий мусор из начала списка.
+  const real = used.filter(n => n < list.length);
+  if (real.length === 0) return 0;
+  const maxNum = Math.max(...real);
   // Служебные строки: названия шрифтов, подписи схемы, одиночные символы.
   const junk = (s: string) =>
     s.length < 3 ||
@@ -179,9 +186,9 @@ function layerBase(list: string[], used: number[]): number {
     // Годится только начало сплошного блока настоящих названий.
     if (junk(list[b])) continue;
     let score = 0;
-    for (const n of used) if (!junk(list[b + n])) score++;
+    for (const n of real) if (!junk(list[b + n])) score++;
     if (score > bestScore) { bestScore = score; best = b; }
-    if (score === used.length) break;
+    if (score === real.length) break;
   }
   return best;
 }
@@ -271,7 +278,8 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
     const dz = Math.abs(ct.z - cf.z);
     const angle = len > 0 ? Math.round((Math.asin(Math.min(1, dz / len)) * 180) / Math.PI * 10) / 10 : 0;
     if (rb.name.trim()) named++;
-    const lay = layers[layerStart + rb.layer] ?? "";
+    // 65535 — признак «выработка вне горизонтов», а не номер в списке.
+    const lay = rb.layer >= layers.length ? "" : (layers[layerStart + rb.layer] ?? "");
     if (lay) {
       usedLayers.add(lay);
       const zs = layerZ.get(lay);
@@ -628,52 +636,60 @@ function readBranches(raw: Uint8Array, dv: DataView, nodes: RawNode[], tail: num
  * Ищет перемычки внутри записи одной выработки.
  *
  * Ни счётчика перемычек, ни отдельной таблицы в файле нет, поэтому ищем
- * сканированием по устойчивому признаку:
- *   [вид:байт][флаг:байт][смещение f64][высота f64][…][…][сопротивление f64]
- * Вид перемычки — 2, 4, 11 или 21 (глухая, с дверью, шлюз и т. п.),
- * сопротивление лежит ровно через 32 байта после смещения.
+ * сканированием. Якорь — НАЗВАНИЕ перемычки, за которым идёт её блок чисел:
+ *   [длина названия:i32][текст cp1251][вид:байт][флаг:байт]
+ *   [смещение f64][…][0 f64][0 f64][сопротивление f64]
+ * Смещение — доля 0..1 вдоль выработки, сопротивление лежит через 32 байта
+ * после него. Два нулевых поля между ними отсекают ложные срабатывания.
  *
- * Сверено с CSV-выгрузкой той же модели (рудник Весенний):
- * найдены ВСЕ 57 перемычек на всех 53 выработках, ложных срабатываний нет.
+ * Сверено с файлом рудника Джусинский: найдены все 82 перемычки с их
+ * названиями («-210 №1», «ворота в гараж», «парус -110»), ложных нет.
  */
 function readBulkheads(raw: Uint8Array, dv: DataView, from: number, to: number): RawCdf3Bulkhead[] {
   const out: RawCdf3Bulkhead[] = [];
   const seen = new Set<string>();
-  const lim = Math.min(to, raw.length) - 48;
+  const lim = Math.min(to, raw.length) - 60;
 
+  // Перемычку опознаём по её НАЗВАНИЮ: в файле оно лежит прямо перед блоком
+  // чисел — [длина:i32][текст cp1251][вид:байт][флаг:байт][смещение f64]…
+  // РАНЬШЕ искали иначе: по байту вида из списка (2, 4, 11, 21) и по «высоте»
+  // перемычки на +10. Оба признака оказались выдуманными. Виды в файлах
+  // встречаются и другие (12 — дверь, 18 — насыпная, 0 — деревянная), а на
+  // +10 лежит вовсе не высота, а ноль у 53 перемычек из 82. Из-за этого на
+  // руднике Джусинский находилось 25 перемычек вместо 82: терялись все
+  // «-210 №1…№10», «-166 №1…№10», ворота, паруса и двери насосных.
   for (let o = from; o < lim; o++) {
-    // Признак начала перемычки — байт вида перемычки (2, 4, 11, 21 — глухая,
-    // с дверью, шлюз и т. д.) и следом байт-флаг 0 или 1.
-    const kind = raw[o];
-    if (kind !== 2 && kind !== 4 && kind !== 11 && kind !== 21) continue;
-    if (raw[o + 1] !== 0 && raw[o + 1] !== 1) continue;
+    const nameLen = dv.getInt32(o, true);
+    if (nameLen < 1 || nameLen > 80) continue;
+    if (o + 4 + nameLen + 60 > raw.length) continue;
 
-    const q = o + 2;
-    const offset = dv.getFloat64(q, true);          // доля вдоль выработки 0..1
-    const height = dv.getFloat64(q + 8, true);      // высота перемычки, м
-    const rKmu = dv.getFloat64(q + 32, true);       // сопротивление, кМюрг
+    // Название — печатный текст без управляющих символов.
+    let printable = true;
+    for (let k = 0; k < nameLen; k++) {
+      if (raw[o + 4 + k] < 0x20) { printable = false; break; }
+    }
+    if (!printable) continue;
+
+    // Сразу за названием — блок чисел перемычки.
+    const q = o + 4 + nameLen;
+    if (raw[q + 1] !== 0 && raw[q + 1] !== 1) continue;
+    const offset = dv.getFloat64(q + 2, true);      // доля вдоль выработки 0..1
     if (!(offset >= 0 && offset <= 1)) continue;
-    if (!(height > 0.005 && height < 100)) continue;
+    // Два пустых поля — устойчивая примета блока перемычки. Без них на
+    // случайные числа внутри записи выработки приходились ложные срабатывания.
+    if (dv.getFloat64(q + 18, true) !== 0) continue;
+    if (dv.getFloat64(q + 26, true) !== 0) continue;
+    const rKmu = dv.getFloat64(q + 34, true);       // сопротивление, кМюрг
     if (!(rKmu > 1e-7 && rKmu < 1e5)) continue;
 
-    const key = `${offset.toFixed(6)}|${rKmu.toFixed(9)}`;
+    const name = decodeCp1251(raw.slice(o + 4, o + 4 + nameLen)).trim();
+
+    const key = `${offset.toFixed(6)}|${rKmu.toFixed(9)}|${name}`;
     if (seen.has(key)) continue;
     seen.add(key);
 
-    // Название, если записано: [длина:i32][текст cp1251][0x15 0x00][числа]
-    let name = "";
-    for (let ln = 1; ln <= 60; ln++) {
-      const p = o - 1 - ln;
-      if (p - 4 < from) break;
-      if (dv.getInt32(p - 4, true) === ln && raw[o - 1] === 0x15) {
-        const t = decodeCp1251(raw.slice(p, p + ln)).trim();
-        if (t && !/[\u0000-\u001f]/.test(t)) name = t;
-        break;
-      }
-    }
-
     out.push({ offset, rKmu, name });
-    o += 8;
+    o = q + 40;
   }
   return out;
 }
