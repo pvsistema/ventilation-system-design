@@ -116,16 +116,52 @@ function saveRecent(files: RecentFile[]) {
   }
 }
 
-/** Сохраняем JSON проекта в localStorage (fallback если нет handle) */
+/**
+ * Сохраняем JSON проекта в localStorage (запасной способ открыть его из
+ * списка последних, когда нет ни пути на диске, ни разрешения браузера).
+ *
+ * РАБОТА ОТЛОЖЕНА. Раньше эта функция вызывалась прямо посреди открытия схемы
+ * и синхронно делала две тяжёлые вещи: JSON.stringify всей схемы и запись
+ * результата в localStorage. На большой схеме это десятки мегабайт текста —
+ * главный поток вставал на секунды, ровно в тот момент, когда человек ждёт
+ * появления схемы на экране. Копия нужна только для списка последних файлов,
+ * то есть не сейчас, — поэтому делаем её, когда браузер освободится.
+ */
 export function saveRecentData(name: string, data: Record<string, unknown>) {
-  try {
-    const json = JSON.stringify(data);
-    // Не сохраняем если > 5 МБ — защита от quota exceeded
-    if (json.length < 5 * 1024 * 1024) {
-      localStorage.setItem(DATA_PREFIX + name, json);
+  const write = () => {
+    try {
+      const json = JSON.stringify(data);
+      // Не сохраняем если > 5 МБ — защита от quota exceeded
+      if (json.length < 5 * 1024 * 1024) {
+        localStorage.setItem(DATA_PREFIX + name, json);
+      } else {
+        // Схема переросла лимит — старая копия под этим именем устарела и
+        // только вводила бы в заблуждение («откроется», а откроется прошлая).
+        localStorage.removeItem(DATA_PREFIX + name);
+      }
+    } catch (_e) {
+      // ignore
     }
-  } catch (_e) {
-    // ignore
+  };
+
+  const idle = (window as Window & {
+    requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+  }).requestIdleCallback;
+  if (idle) idle(write, { timeout: 4000 });
+  else setTimeout(write, 300);
+}
+
+/**
+ * Есть ли сохранённая копия схемы — БЕЗ разбора её содержимого.
+ * Список последних файлов показывает эту отметку у каждой строки, а прежняя
+ * проверка через loadRecentData парсила ради неё весь JSON проекта: открытие
+ * меню «последние» на больших схемах ощутимо подвисало.
+ */
+export function hasRecentData(name: string): boolean {
+  try {
+    return localStorage.getItem(DATA_PREFIX + name) !== null;
+  } catch {
+    return false;
   }
 }
 

@@ -66,7 +66,7 @@ import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import PanelErrorBoundary from "@/components/cad/PanelErrorBoundary";
-import { useRecentFiles, saveRecentData, loadRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
+import { useRecentFiles, saveRecentData, loadRecentData, hasRecentData, saveHandleToIDB, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 import { calcBranchFirePower, type FireStabilityFact } from "@/lib/fireStability";
 import { } from "@/lib/api-urls";
@@ -170,11 +170,11 @@ export default function CadPage() {
   const applyProjectDataRef = useRef<((data: Record<string, unknown>, fileName: string, fromDisk?: boolean) => void) | null>(null);
 
   // Открытие .vproj файла из десктопа (двойной клик по файлу в проводнике).
-  // ВАЖНО: window.electronAPI инжектируется C# (WebView2) и может появиться
-  // ПОЗЖЕ, чем смонтируется React. Раньше эффект просто выходил, если API ещё
-  // не было — из-за чего файл не открывался и показывался пустой новый проект.
-  // Теперь ждём появления electronAPI (короткий поллинг) и только затем
-  // регистрируем обработчик открытия файла.
+  // Новые сборки оболочки просят файл у себя ещё до запуска скриптов страницы
+  // и оставляют обещание в window.__pvsPendingFilePromise — забираем готовое.
+  // Для старых сборок остаётся прежний путь: window.electronAPI инжектируется
+  // C# (WebView2) и может появиться ПОЗЖЕ, чем смонтируется React, поэтому его
+  // появления приходится дожидаться опросом.
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     type EAPI = { onOpenFile?: (h: (f: { path: string; content: string }) => void) => void; offOpenFile?: () => void };
@@ -198,6 +198,31 @@ export default function CadPage() {
       } catch { /* повреждённый файл — тихо игнорируем */ }
     };
 
+    // БЫСТРЫЙ ПУТЬ. Оболочка запрашивает файл у себя же ещё до загрузки
+    // страницы и кладёт обещание в window.__pvsPendingFilePromise. Если оно
+    // есть — схема уже читается (а чаще прочитана) и ждать моста незачем:
+    // раньше поллинг с шагом 200 мс мог сам по себе задержать открытие на
+    // пятую долю секунды, а на медленном старте — заметно дольше.
+    const early = (window as unknown as {
+      __pvsPendingFilePromise?: Promise<{ path?: string; content?: string; error?: string } | null> | null;
+    }).__pvsPendingFilePromise;
+
+    if (early) {
+      (window as unknown as { __pvsPendingFilePromise?: unknown }).__pvsPendingFilePromise = null;
+      early.then((r) => {
+        if (cancelled || !r) return;
+        if (r.content) { handler({ path: r.path || "", content: r.content }); return; }
+        if (r.error) {
+          // Файл не прочитался (нет доступа, сетевой диск отвалился). Молчать
+          // здесь нельзя: открылся бы пустой новый проект, и человек не понял
+          // бы, почему схема не появилась.
+          try { console.error("[PVS] Не удалось открыть файл: " + r.error); } catch { /* ignore */ }
+          alert("Не удалось открыть файл.\n\n" + r.error);
+        }
+      });
+      return () => { cancelled = true; };
+    }
+
     const tryRegister = () => {
       if (cancelled) return true;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -211,11 +236,13 @@ export default function CadPage() {
     };
 
     if (!tryRegister()) {
-      // Поллинг до 5 секунд (25 × 200мс) — на случай позднего инжекта моста C#
+      // Запасной путь для СТАРЫХ сборок оболочки, где раннего обещания нет.
+      // Шаг опроса 30 мс вместо 200: мост появляется почти сразу, и крупный
+      // шаг тут был чистым простоем.
       let tries = 0;
       const iv = window.setInterval(() => {
-        if (tryRegister() || ++tries >= 25) window.clearInterval(iv);
-      }, 200);
+        if (tryRegister() || ++tries >= 160) window.clearInterval(iv);
+      }, 30);
       return () => { cancelled = true; window.clearInterval(iv); registered?.offOpenFile?.(); };
     }
     return () => { cancelled = true; registered?.offOpenFile?.(); };
@@ -1888,12 +1915,20 @@ export default function CadPage() {
   const removeSymbol = (id: string) => setSchemaSymbols(prev => prev.filter(s => s.id !== id));
 
   // Создать fan-символы для всех ветвей с hasFan у которых ещё нет УО
+  // ИНДЕКС ВМЕСТО ПЕРЕБОРА. Раньше на каждую ветвь с вентилятором шёл полный
+  // проход по всем существующим символам и по всем уже созданным — то есть
+  // квадрат от размера схемы. При открытии большого проекта это были миллионы
+  // лишних сравнений в главном потоке, прямо перед первой отрисовкой.
   const ensureFanSymbols = (branches: typeof branchesRaw, existingSymbols: SchemaSymbol[]) => {
+    const branchesWithFanSymbol = new Set<string>();
+    for (const s of existingSymbols) {
+      if (s.typeId === "fan" && s.branchId) branchesWithFanSymbol.add(s.branchId);
+    }
     const newSymbols: SchemaSymbol[] = [];
     branches.forEach(b => {
       if (!b.hasFan) return;
-      if (existingSymbols.some(s => s.typeId === "fan" && s.branchId === b.id)) return;
-      if (newSymbols.some(s => s.branchId === b.id)) return;
+      if (branchesWithFanSymbol.has(b.id)) return;
+      branchesWithFanSymbol.add(b.id);   // и от дублей внутри одного прохода
       newSymbols.push({ id: `SYM_FAN_${b.id}`, typeId: "fan", x: 0, y: 0, branchId: b.id, t: 0.5 });
     });
     return newSymbols;
@@ -3557,8 +3592,12 @@ export default function CadPage() {
     // ── конец сброса ────────────────────────────────────────────────────
 
     // Каждый узел прогоняем через makeNode чтобы гарантировать все поля (как makeBranch для ветвей)
+    // Строим ОДИН раз и переиспользуем: ниже этот же массив нужен для recalcAll,
+    // и раньше там строился второй, точно такой же — на схеме в десятки тысяч
+    // узлов лишний проход стоил заметного времени на ровном месте.
     const rawNodes = (data.nodes as TopoNode[]) ?? [];
-    setNodes(rawNodes.map((n) => makeNode(n.id, n)));
+    const builtNodes = rawNodes.map((n) => makeNode(n.id, n));
+    setNodes(builtNodes);
     // Каждую ветвь прогоняем через makeBranch чтобы гарантировать все поля (fanRpm и т.д.)
     const rawBranches = (data.branches as TopoBranch[]) ?? [];
     // Совместимость со старыми файлами: раньше выбранный тип выработки
@@ -3577,8 +3616,7 @@ export default function CadPage() {
       })
     );
     // Пересчитываем R всех ветвей при загрузке — чтобы не использовать устаревшие кешированные значения
-    const recalcedBranches = recalcAll(rawNodes.map((n) => makeNode(n.id, n)), mergedBranches);
-    setBranches(recalcedBranches);
+    const recalcedBranches = recalcAll(builtNodes, mergedBranches);
     if (data.horizons) {
       const loaded = data.horizons as Horizon[];
       // Гарантируем наличие "Общего вида" при открытии любого проекта
@@ -3624,14 +3662,29 @@ export default function CadPage() {
     // Добавляем fan-символы для ветвей у которых нет УО (старые проекты)
     const autoFanSymbols = ensureFanSymbols(mergedBranches, loadedSymbols);
     setSchemaSymbols([...loadedSymbols, ...autoFanSymbols]);
+
     // Миграция: если на ветви hasBulkhead=true, но нет ни одного настоящего символа перемычки
-    // (только measure_station — которая раньше ошибочно входила в BULKHEAD_SYMBOL_IDS), сбрасываем флаг
-    setBranches(prev => prev.map(br => {
+    // (только measure_station — которая раньше ошибочно входила в BULKHEAD_SYMBOL_IDS), сбрасываем флаг.
+    //
+    // ПЕРЕПИСАНО С КВАДРАТА НА ИНДЕКС. Раньше для КАЖДОЙ ветви делалось два
+    // прохода по ВСЕМУ списку символов (.some). На схеме в 10 000 ветвей и
+    // 10 000 символов это до двухсот миллионов сравнений — секунды намертво
+    // занятого главного потока ровно в момент открытия. Теперь один проход по
+    // символам собирает два набора id ветвей, а дальше — простая проверка.
+    const branchesWithRealBulkhead = new Set<string>();
+    const branchesWithMeasureStation = new Set<string>();
+    for (const s of loadedSymbols) {
+      if (!s.branchId) continue;
+      if (BULKHEAD_SYMBOL_IDS.has(s.typeId)) branchesWithRealBulkhead.add(s.branchId);
+      else if (s.typeId === "measure_station") branchesWithMeasureStation.add(s.branchId);
+    }
+    // Ставим ветви ОДИН раз, уже с применённой миграцией. Прежде было два
+    // setBranches подряд: первый заставлял перерисовать всю схему со старыми
+    // флагами, второй — тут же перерисовать её заново.
+    setBranches(recalcedBranches.map(br => {
       if (!br.hasBulkhead) return br;
-      const hasRealBulkhead = loadedSymbols.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === br.id);
-      if (hasRealBulkhead) return br;
-      const hasMeasureStation = loadedSymbols.some(s => s.typeId === "measure_station" && s.branchId === br.id);
-      if (!hasMeasureStation) return br;
+      if (branchesWithRealBulkhead.has(br.id)) return br;
+      if (!branchesWithMeasureStation.has(br.id)) return br;
       return { ...br, hasBulkhead: false };
     }));
     if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
@@ -5954,8 +6007,12 @@ export default function CadPage() {
                   // вкладки (syncHandles), поэтому здесь он уже достоверен.
                   // Файл с известным путём (десктоп) открывается всегда —
                   // его читает ядро программы, разрешение браузера не нужно.
+                  // hasRecentData вместо loadRecentData: нужен лишь факт
+                  // наличия копии, а не её содержимое. Прежний вариант ради
+                  // одной галочки разбирал JSON всей схемы — и делал это для
+                  // КАЖДОЙ строки списка при каждой перерисовке.
                   const canOpen = (rf: typeof recentFiles[0]) =>
-                    !!rf.path || rf.hasHandle || !!loadRecentData(rf.name);
+                    !!rf.path || rf.hasHandle || hasRecentData(rf.name);
 
                   return (
                     <>

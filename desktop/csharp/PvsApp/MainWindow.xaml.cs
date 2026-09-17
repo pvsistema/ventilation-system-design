@@ -41,6 +41,9 @@ public partial class MainWindow : Window
 
     private Process?     _serverProcess;
     private string?      _pendingFile;
+    // Содержимое файла, открытого двойным кликом: читается фоном с самого
+    // старта, ещё до того как интерфейс успеет его запросить.
+    private Task<object?>? _pendingRead;
     private UpdateInfo?  _updateInfo;
     // true — установленная сборка ниже минимальной безопасной: в ней осталась
     // устранённая уязвимость, работать нельзя до обновления.
@@ -88,15 +91,66 @@ public partial class MainWindow : Window
 
     private async Task StartupAsync()
     {
-        SetStatus("Проверка обновлений расчётного ядра...");
-        await UpdateServerExeIfNeededAsync();
+        // ── ПОРЯДОК ЗАПУСКА ПЕРЕСОБРАН РАДИ СКОРОСТИ ──────────────────────────
+        // Раньше первым делом шёл поход в интернет за версией ядра: до 8 секунд
+        // ожидания ответа, а при найденном обновлении — ещё и полная закачка
+        // нового ядра (минуты на слабой связи). Всё это ВНУТРИ заставки, до
+        // того как ядро вообще стартовало. Человек, открывший схему двойным
+        // кликом, смотрел на надпись «Обновление расчётного ядра…» и ждал.
+        //
+        // Теперь: сначала поднимаем то ядро, которое уже лежит на диске, —
+        // работать можно немедленно. Проверка и закачка обновления идут фоном
+        // и НИКОГО не задерживают; готовое обновление подставляется при
+        // следующем запуске одним переименованием файла (доли секунды).
+
+        // Файл, открытый двойным кликом, начинаем читать ПРЯМО СЕЙЧАС —
+        // параллельно со стартом ядра и загрузкой интерфейса. Схема на десятки
+        // мегабайт читается с диска заметное время, и раньше это чтение
+        // начиналось только после того, как React смонтировался и спросил файл:
+        // ожидание диска честно прибавлялось к ожиданию запуска.
+        if (_pendingFile is string startFile)
+            _pendingRead = Task.Run(() => ReadPendingFile(startFile));
+
+        // Обновление, скачанное в прошлый сеанс: только переименовать файл.
+        ApplyPendingServerUpdate();
 
         SetStatus("Запуск расчётного ядра...");
-        StartServerProcess();
+        bool started = StartServerProcess();
+
+        if (!started)
+        {
+            // Ядра на диске нет вообще (первый запуск после частичной
+            // установки) — вот тут ждать закачку действительно приходится.
+            SetStatus("Загрузка расчётного ядра...");
+            await UpdateServerExeIfNeededAsync();
+            ApplyPendingServerUpdate();
+            if (!StartServerProcess())
+            {
+                MessageBox.Show("Расчётное ядро не найдено и не удалось его загрузить.\n\n" +
+                                "Проверьте подключение к сети и переустановите программу.",
+                                "ПВ-Система", MessageBoxButton.OK, MessageBoxImage.Error);
+                Application.Current.Shutdown();
+                return;
+            }
+        }
+
+        // Пока ядро поднимается, параллельно готовим браузерный движок: его
+        // создание — это 1–2 секунды, и раньше они шли ПОСЛЕ ожидания ядра,
+        // хотя одно другому не мешает.
+        var webViewReady = PrepareWebViewAsync();
 
         var checkUpdate = CheckForUpdateAsync();
 
-        SetStatus("Ожидание сервера...");
+        // Обновление ядра — строго фоном и НЕ во время запуска. Полминуты
+        // отсрочки: пока грузится интерфейс и открывается схема, сеть и диск
+        // нужны им, а не закачке файла, который понадобится только завтра.
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(30));
+            await UpdateServerExeIfNeededAsync();
+        });
+
+        SetStatus("Ожидание расчётного ядра...");
         bool ready = await WaitForServerAsync();
         if (!ready)
         {
@@ -140,7 +194,44 @@ public partial class MainWindow : Window
         _ = ApplyUpdateInfoWhenReadyAsync(checkUpdate);
 
         SetStatus("Загрузка интерфейса...");
-        await InitWebViewAsync();
+        await webViewReady;          // движок обычно уже готов — ждать нечего
+        NavigateToApp();
+    }
+
+    /// <summary>
+    /// Подставляет ядро, скачанное фоном в прошлый сеанс: server.exe.new →
+    /// server.exe. Это переименование файла, доли секунды, поэтому его не
+    /// страшно делать прямо на старте.
+    ///
+    /// Разделение «скачали фоном → подставили при следующем запуске» и есть
+    /// главная причина, по которой заставка больше не превращается в ожидание
+    /// закачки: работающее ядро никогда не заменяется под запущенной программой.
+    /// </summary>
+    private void ApplyPendingServerUpdate()
+    {
+        try
+        {
+            string serverExe   = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
+            string pending     = serverExe + ".new";
+            string pendingVer  = serverExe + ".newver";
+            if (!File.Exists(pending)) return;
+
+            if (File.Exists(serverExe))
+            {
+                string bak = serverExe + ".old";
+                try { if (File.Exists(bak)) File.Delete(bak); } catch { }
+                File.Move(serverExe, bak, overwrite: true);
+                try { File.Delete(bak); } catch { /* держит антивирус — удалится позже */ }
+            }
+            File.Move(pending, serverExe, overwrite: true);
+
+            if (File.Exists(pendingVer))
+            {
+                string versionFile = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server_version.txt");
+                File.Move(pendingVer, versionFile, overwrite: true);
+            }
+        }
+        catch (Exception ex) { LogIntegrity("Не удалось подставить обновление ядра: " + ex.Message); }
     }
 
     /// <summary>
@@ -186,11 +277,21 @@ public partial class MainWindow : Window
                 new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
 
             string remoteVer = info?.ServerVersion ?? "";
-            if (string.IsNullOrEmpty(remoteVer) || remoteVer == localVer) return;
+            if (string.IsNullOrEmpty(remoteVer)) return;
+            // Версия совпала — качать нечего. Но если самого файла ядра на
+            // диске нет (повреждённая установка), качаем даже при совпадении:
+            // иначе запись о версии осталась бы, а работать было бы нечем.
+            if (remoteVer == localVer && File.Exists(serverExe)) return;
+            // Уже скачано фоном в прошлый раз и ждёт применения — не качаем второй раз.
+            if (File.Exists(serverExe + ".new")
+                && File.Exists(serverExe + ".newver")
+                && File.ReadAllText(serverExe + ".newver").Trim() == remoteVer) return;
 
-            SetStatus($"Обновление расчётного ядра до v{remoteVer}...");
-
-            using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(5) };
+            // Заставку больше НЕ переписываем: закачка идёт фоном, во время
+            // обычной работы. Надпись «Обновление расчётного ядра до vX» на
+            // старте была honest-ложью — она означала «ждите столько, сколько
+            // качается файл», хотя ждать было незачем.
+            using var httpLarge = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
             var bytes = await httpLarge.GetByteArrayAsync($"{VersionCheckUrl}?file=server");
 
             // Базовая проверка: валидный Windows-EXE (сигнатура "MZ") и размер.
@@ -210,26 +311,14 @@ public partial class MainWindow : Window
                 return;
             }
 
+            // КЛАДЁМ РЯДОМ, А НЕ ПОВЕРХ. Работающее ядро не трогаем: оно занято
+            // текущим сеансом, да и подменять его на ходу нельзя. Готовое ядро
+            // ждёт в server.exe.new и встанет на место при следующем запуске
+            // (ApplyPendingServerUpdate) — это переименование файла, мгновенно.
             string tmpPath = serverExe + ".new";
             await File.WriteAllBytesAsync(tmpPath, bytes);
-
-            // ИСПРАВЛЕНИЕ. Раньше подмена server.exe выполнялась .bat-скриптом,
-            // который сам ждал 1 секунду, а C# ждал его максимум 5 с и сразу шёл
-            // запускать сервер. Возникала гонка: StartServerProcess стартовал в
-            // момент, когда move ещё не завершился, — файл был занят или
-            // полуперезаписан, сервер не поднимался, и пользователь видел
-            // «Не удалось запустить расчётный модуль».
-            // На старте приложения сервер ещё НЕ запущен, значит файл никем не
-            // занят — .bat не нужен вовсе. Переименовываем напрямую и синхронно.
-            if (File.Exists(serverExe))
-            {
-                string bakPath = serverExe + ".old";
-                try { if (File.Exists(bakPath)) File.Delete(bakPath); } catch { }
-                File.Move(serverExe, bakPath, overwrite: true);
-                try { File.Delete(bakPath); } catch { /* удалится при следующем старте */ }
-            }
-            File.Move(tmpPath, serverExe, overwrite: true);
-            await File.WriteAllTextAsync(versionFile, remoteVer);
+            await File.WriteAllTextAsync(serverExe + ".newver", remoteVer);
+            LogIntegrity($"Ядро v{remoteVer} загружено фоном, будет применено при следующем запуске");
         }
         catch
         {
@@ -240,6 +329,9 @@ public partial class MainWindow : Window
                 string serverExe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
                 string tmpPath   = serverExe + ".new";
                 if (File.Exists(tmpPath)) File.Delete(tmpPath);
+                // Метку версии тоже убираем: недокачанный файл не должен
+                // выглядеть как готовое к применению обновление.
+                if (File.Exists(serverExe + ".newver")) File.Delete(serverExe + ".newver");
                 string bakPath = serverExe + ".old";
                 if (!File.Exists(serverExe) && File.Exists(bakPath))
                     File.Move(bakPath, serverExe, overwrite: true);
@@ -313,26 +405,32 @@ public partial class MainWindow : Window
         catch { }
     }
 
-    private void StartServerProcess()
+    /// <summary>
+    /// Поднимает расчётное ядро. Возвращает false, если файла ядра на диске нет
+    /// (тогда вызывающий код решает: качать или сдаваться) — раньше метод сам
+    /// показывал ошибку и закрывал программу, из-за чего не было возможности
+    /// попробовать восстановить ядро закачкой.
+    /// </summary>
+    private bool StartServerProcess()
     {
         string serverExe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
-        if (!File.Exists(serverExe))
-        {
-            MessageBox.Show($"Файл не найден:\n{serverExe}", "ПВ-Система", MessageBoxButton.OK, MessageBoxImage.Error);
-            Application.Current.Shutdown();
-            return;
-        }
+        if (!File.Exists(serverExe)) return false;
 
-        _serverProcess = new Process
+        try
         {
-            StartInfo = new ProcessStartInfo
+            _serverProcess = new Process
             {
-                FileName        = serverExe,
-                CreateNoWindow  = true,
-                UseShellExecute = false,
-            }
-        };
-        _serverProcess.Start();
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName        = serverExe,
+                    CreateNoWindow  = true,
+                    UseShellExecute = false,
+                }
+            };
+            _serverProcess.Start();
+            return true;
+        }
+        catch { return false; }
     }
 
     // 40 с вместо 20: PyInstaller-onefile при первом запуске (и особенно после
@@ -342,24 +440,37 @@ public partial class MainWindow : Window
     private async Task<bool> WaitForServerAsync(int timeoutMs = 40_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
+        // Опрос УЧАЩЁН в начале: ядро на обычной машине поднимается за
+        // 300–600 мс, а шаг в 200 мс отъедал до пятой доли секунды уже после
+        // фактической готовности. Первые секунды спрашиваем каждые 50 мс, потом
+        // разрежаем до 250 мс, чтобы не жечь процессор в долгом ожидании.
+        var started = DateTime.UtcNow;
         while (DateTime.UtcNow < deadline)
         {
             // Ядро упало — ждать дальше бессмысленно, выходим сразу с причиной.
             if (_serverProcess != null && _serverProcess.HasExited) return false;
             try
             {
-                var resp = await Http.GetAsync($"{ServerUrl}/api/status");
+                using var probe = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+                var resp = await Http.GetAsync($"{ServerUrl}/api/status", probe.Token);
                 if (resp.IsSuccessStatusCode) return true;
             }
             catch { }
-            await Task.Delay(200);
+            int step = (DateTime.UtcNow - started).TotalSeconds < 3 ? 50 : 250;
+            await Task.Delay(step);
         }
         return false;
     }
 
     // ── WebView2 ──────────────────────────────────────────────────────────────
 
-    private async Task InitWebViewAsync()
+    /// <summary>
+    /// Создаёт и настраивает браузерный движок, но НЕ открывает страницу.
+    /// Разделение нужно, чтобы движок готовился параллельно с запуском ядра:
+    /// раньше эти полторы–две секунды шли строго после ожидания ядра и просто
+    /// складывались с ним.
+    /// </summary>
+    private async Task PrepareWebViewAsync()
     {
         string cacheDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -396,18 +507,34 @@ public partial class MainWindow : Window
 
         WebView.CoreWebView2.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.All);
 
-        // Сбрасываем кэш браузера перед загрузкой, чтобы после обновления программы
-        // всегда открывался свежий интерфейс, а не старые файлы из кэша WebView2.
+        // ── КЭШ ЧИСТИМ ТОЛЬКО ПОСЛЕ ОБНОВЛЕНИЯ ПРОГРАММЫ ─────────────────────
+        // Раньше кэш сбрасывался при КАЖДОМ запуске. Задумка была правильная —
+        // после обновления не показывать старый интерфейс, — но цена оказалась
+        // непомерной: браузер каждый раз заново качал и разбирал весь интерфейс
+        // (несколько мегабайт скриптов), и это ложилось в заставку целиком.
+        // Сравниваем версию, при которой кэш чистили в прошлый раз, с текущей:
+        // совпала — кэш горячий, интерфейс поднимается почти мгновенно; сменилась
+        // (то есть программу обновили) — чистим, как и прежде.
         try
         {
-            await WebView.CoreWebView2.Profile.ClearBrowsingDataAsync(
-                CoreWebView2BrowsingDataKinds.DiskCache |
-                CoreWebView2BrowsingDataKinds.CacheStorage);
+            string stamp = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "PVS", "ui-cache-version.txt");
+            string seen = File.Exists(stamp) ? File.ReadAllText(stamp).Trim() : "";
+            if (seen != AppVersion)
+            {
+                await WebView.CoreWebView2.Profile.ClearBrowsingDataAsync(
+                    CoreWebView2BrowsingDataKinds.DiskCache |
+                    CoreWebView2BrowsingDataKinds.CacheStorage);
+                Directory.CreateDirectory(Path.GetDirectoryName(stamp)!);
+                await File.WriteAllTextAsync(stamp, AppVersion);
+            }
         }
         catch { /* старая версия рантайма WebView2 — не критично, есть no-cache на сервере */ }
-
-        WebView.CoreWebView2.Navigate(ServerUrl);
     }
+
+    /// <summary>Открывает интерфейс. Движок к этому моменту уже готов.</summary>
+    private void NavigateToApp() => WebView.CoreWebView2.Navigate(ServerUrl);
 
     // Ранний бутстрап: только флаг десктопа и мост управления окном.
     // Выполняется до скриптов страницы (document-created), поэтому React сразу
@@ -441,6 +568,44 @@ public partial class MainWindow : Window
     window.__pvsWinDrag     = function() { sendCs('win-drag'); };
     window.__pvsWinClose    = function() { sendCs('win-close'); };
     window.__pvsShowCloseDialog = function() { sendCs('win-close-confirmed'); };
+
+    // ── Схема из проводника запрашивается НЕМЕДЛЕННО ─────────────────────────
+    // Раньше содержимое файла запрашивалось только когда React смонтируется и
+    // зарегистрирует обработчик — то есть после загрузки и разбора всего
+    // интерфейса. Передача схемы на десятки мегабайт из оболочки в страницу
+    // занимает своё время, и оно честно прибавлялось к ожиданию.
+    // Теперь запрос уходит здесь, до единого скрипта страницы: пока грузится
+    // интерфейс, файл уже едет. React потом просто забирает готовое.
+    //
+    // Реестр ответов заводим тут же — полный бутстрап (BuildJsBootstrap)
+    // переиспользует и его, и слушателя: он создаёт их только если их ещё нет.
+    window.__pvsPending = window.__pvsPending || {};
+    window.__pvsCsReply = window.__pvsCsReply || function(reqId, payload) {
+        var p = window.__pvsPending[reqId];
+        if (!p) return;
+        delete window.__pvsPending[reqId];
+        if (p.timer) clearTimeout(p.timer);
+        p.resolve(payload);
+    };
+    if (!window.__pvsReplyHooked) {
+        window.__pvsReplyHooked = true;
+        window.chrome.webview.addEventListener('message', function(e) {
+            var d = e.data;
+            if (!d || typeof d !== 'object' || typeof d.__pvsReply !== 'string') return;
+            if (window.__pvsCsReply) window.__pvsCsReply(d.__pvsReply, d.payload);
+        });
+    }
+    window.__pvsPendingFilePromise = new Promise(function(resolve) {
+        var id = 'openfile_' + Math.random().toString(36).slice(2);
+        // Срок ожидания щедрый: файл может лежать на сетевой папке рудника.
+        var timer = setTimeout(function() {
+            if (!window.__pvsPending[id]) return;
+            delete window.__pvsPending[id];
+            resolve({ error: 'Файл схемы не удалось прочитать за 60 с.' });
+        }, 60000);
+        window.__pvsPending[id] = { resolve: resolve, timer: timer };
+        sendCs('get-pending-file', { reqId: id });
+    });
 })();
 """;
     }
@@ -847,18 +1012,30 @@ public partial class MainWindow : Window
 
         try
         {
-            // File.Exists по сетевому пути тоже умеет ждать — уводим его в фон
-            // вместе с самим чтением, а не оставляем в потоке окна.
-            object? result = await Task.Run<object?>(async () =>
-            {
-                if (!File.Exists(path)) return null;
-                string content = await File.ReadAllTextAsync(path, Encoding.UTF8);
-                return new { path, content };
-            });
-
-            ReplyToJs(reqId, result);
+            // Чтение обычно уже идёт (или закончилось) с самого старта — тогда
+            // здесь ждать нечего. Если задачи нет (страницу перезагрузили),
+            // читаем как раньше, в фоне.
+            var read = _pendingRead ?? Task.Run(() => ReadPendingFile(path));
+            _pendingRead = null;
+            ReplyToJs(reqId, await read);
         }
         catch (Exception ex) { ReplyToJs(reqId, new { error = ex.Message }); }
+    }
+
+    /// <summary>
+    /// Читает файл схемы с диска. Вынесено отдельно, чтобы одно и то же чтение
+    /// можно было запустить заранее (на старте) и переиспользовать, когда
+    /// интерфейс наконец спросит содержимое.
+    /// </summary>
+    private static object? ReadPendingFile(string path)
+    {
+        try
+        {
+            if (!File.Exists(path)) return null;
+            string content = File.ReadAllText(path, Encoding.UTF8);
+            return new { path, content };
+        }
+        catch (Exception ex) { return new { error = ex.Message }; }
     }
 
     // ── Печать ────────────────────────────────────────────────────────────────
@@ -1356,7 +1533,8 @@ public partial class MainWindow : Window
         // camelCase — чтобы JS видел upd.version / upd.downloadUrl (не Version/DownloadUrl)
         var jsOpts = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
         string updateJson  = _updateInfo != null ? JsonSerializer.Serialize(_updateInfo, jsOpts) : "null";
-        string pendingFile = _pendingFile != null ? JsonSerializer.Serialize(_pendingFile) : "null";
+        // Путь к открываемому файлу сюда НЕ подставляется: содержимое едет
+        // отдельным сообщением по запросу из раннего бутстрапа.
         string isMaxStr    = WindowState == WindowState.Maximized ? "true" : "false";
 
         return $$"""
@@ -1408,6 +1586,11 @@ public partial class MainWindow : Window
 
     // Разбор ответа: находим ожидающий запрос и завершаем его. Эту же функцию
     // зовёт цепочка подмен из диалога печати, поэтому она объявлена на window.
+    //
+    // Ранний бутстрап ставит такую же функцию и тот же слушатель (они нужны
+    // ему, чтобы запросить схему ещё до загрузки страницы). Реестр общий —
+    // window.__pvsPending, — поэтому переопределение здесь безопасно: запрос,
+    // отправленный до загрузки, будет завершён этой версией функции.
     window.__pvsCsReply = function(reqId, payload) {
         var reg = window.__pvsPending || {};
         var p = reg[reqId];
@@ -1474,7 +1657,12 @@ public partial class MainWindow : Window
     window.electronAPI = {
         onOpenFile:    function(handler) {
             window._pvs_open_handler = handler;
-            callCs('get-pending-file', {}).then(function(r) {
+            // Берём результат запроса, отправленного ЕЩЁ ДО загрузки страницы
+            // (см. BuildEarlyBootstrap). К этому моменту файл обычно уже
+            // прочитан — схема появляется сразу, без второго похода на диск.
+            var pending = window.__pvsPendingFilePromise || callCs('get-pending-file', {});
+            window.__pvsPendingFilePromise = null;
+            pending.then(function(r) {
                 if (r && r.content) { handler({ path: r.path, content: r.content }); return; }
                 // Файл не прочитался (нет доступа, сетевой диск отвалился,
                 // истёк срок ожидания). Раньше такой случай не показывался
