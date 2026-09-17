@@ -122,14 +122,25 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
     const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[] = [];
     const branchesWithHt = branchesIter.map(b => {
       if (!b.hasFire) return b;
-      // Расход для T_пр — ФАКТИЧЕСКИЙ (как в Аэросети), но не ниже
-      // половины штатного: верхняя защита от разгона обратной
-      // связи «расход↓→T↑→h_t↑→расход↓». Раньше брался только
-      // штатный, и при выросшем расходе (10.5→56.1) температура
-      // завышалась вчетверо (663.8 вместо 140.8°C).
+      // ── РАСХОД ДЛЯ ТЕМПЕРАТУРЫ ПРОДУКТОВ ГОРЕНИЯ ────────────────────
+      //
+      // Берём ШТАТНЫЙ расход (до пожара) — как того требуют формулы
+      // 4.8–4.11 норматива: там Q определён буквально как «расход воздуха
+      // в пожарной выработке ДО возникновения пожара». Вся нормативная
+      // цепочка (l → a → A → Tм) зависит только от геометрии и дожарового
+      // Q; обратной связи по текущему расходу в методике нет вовсе.
+      //
+      // Раньше сюда шёл фактический расход с полом 0,5·Q_штат. Это
+      // замыкало положительную обратную связь: расход упал → T выросла →
+      // тяга выросла → расход упал ещё сильнее. Пол 0,5 лишь ограничивал
+      // разгон вдвое, но петлю не разрывал — отсюда и брались «то
+      // опрокидывается, то нет» и провалы расхода, которых нет в Аэросети.
+      //
+      // Мощность очага (шаг B) уже считается по штатному расходу — теперь
+      // температура согласована с ней, и энергия в сети равна N очага.
       const qOrigA   = Math.abs(originalFlows.get(b.id) ?? b.flow ?? 0);
       const qActualA = Math.abs(currentFlows.get(b.id) ?? b.flow ?? 0);
-      const airQ  = qOrigA > 0 ? Math.max(qActualA, 0.5 * qOrigA) : qActualA;
+      const airQ  = qOrigA > 0 ? qOrigA : qActualA;
       const T_pr  = b.fireMode === "temp"
         ? (Number.isFinite(Number(b.fireTemperature)) && Number(b.fireTemperature) > AMBIENT_TEMP
             ? Math.min(1200, Number(b.fireTemperature))
