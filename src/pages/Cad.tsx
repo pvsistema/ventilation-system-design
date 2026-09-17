@@ -2474,6 +2474,33 @@ export default function CadPage() {
   // ─── БУФЕР КОПИРОВАНИЯ ПАРАМЕТРОВ ВЕТВИ ─────────────────────────────
   const [branchParamBuffer, setBranchParamBuffer] = useState<Partial<TopoBranch> | null>(null);
 
+  /**
+   * Что именно переносит «Копировать параметры ветви» → «Применить».
+   *
+   * ТОЛЬКО СЕЧЕНИЕ: форма, её габариты, площадь и периметр (плюс dh — он есть
+   * 4S/P, то есть то же сечение, и manualSection — признак того, что S и P
+   * заданы вручную, без него применённые S и P тут же затёрлись бы пересчётом
+   * по габаритам, см. recalcBranch в topology.ts).
+   *
+   * Раньше здесь был ОБРАТНЫЙ список: копировалось всё поле за полем, кроме
+   * результатов расчёта. На чужую выработку уезжал вентилятор (hasFan,
+   * fanPressure, fanReverse, fanStopped, характеристика) — а это сразу и
+   * НАПРАВЛЕНИЕ движения воздуха в ветви, и ДОПОЛНИТЕЛЬНАЯ ДЕПРЕССИЯ на ней;
+   * следом — перемычка, очаг пожара, водопровод и воздухопровод, карточка
+   * забоя, подписи индикаторов. Человек хотел размножить сечение по десятку
+   * штреков, а получал десяток вентиляторов и перемычек, каждый из которых
+   * молча менял расчёт всей сети: опрокидывались потоки, ломались результаты.
+   *
+   * Поэтому список БЕЛЫЙ, а не чёрный: новое поле в TopoBranch по умолчанию НЕ
+   * копируется, и его надо добавить сюда осознанно. С чёрным списком любое
+   * новое оснащение ветви начинало бы размножаться само собой.
+   */
+  const BRANCH_COPY_SECTION_FIELDS = [
+    "shape",                                                     // форма сечения
+    "diameter", "rectWidth", "rectHeight", "trapTopWidth", "archHeight", // габариты формы
+    "area", "perimeter", "dh", "manualSection",                  // площадь, периметр, 4S/P
+  ] as const satisfies readonly (keyof TopoBranch)[];
+
   // ─── МЕНЮ ФАЙЛ ──────────────────────────────────────────────────────
   const [fileSectionState, setFileSectionState] = useState("add");
 
@@ -5344,9 +5371,13 @@ export default function CadPage() {
       case "copy_branch_params": {
         const src = branchId ? branches.find((b) => b.id === branchId) : null;
         if (src) {
-          const { id: _id, fromId: _f, toId: _t, flow: _fl, velocity: _v, dP: _d, power: _p,
-            reynolds: _r, resistance: _res, rFriction: _rf, rLocal: _rl, lambda: _l,
-            ...params } = src;
+          // Берём ровно поля сечения (см. BRANCH_COPY_SECTION_FIELDS) и ничего
+          // сверх них: ни вентилятора с его направлением и доп. депрессией, ни
+          // перемычки, ни труб, ни длины с углом — всё это своё у каждой ветви.
+          const params: Partial<TopoBranch> = {};
+          for (const k of BRANCH_COPY_SECTION_FIELDS) {
+            if (src[k] !== undefined) (params as Record<string, unknown>)[k] = src[k];
+          }
           setBranchParamBuffer(params);
         }
         break;
