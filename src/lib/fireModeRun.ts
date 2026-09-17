@@ -13,7 +13,7 @@
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
   calcFireMode, calcFireTemp, fireSourceTempForMethod, computeHotNodeTemps,
-  calcFirePowerFromMaterial,
+  calcFirePowerFromMaterial, calcThermalDepressionUnified,
   type ThermalDepMethod, type FireCalculationResult,
 } from "@/lib/fireCalculator";
 
@@ -112,13 +112,17 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
     });
 
     // Шаг C: температура продуктов горения T_пр для каждого очага
-    // + карта горячих узлов пути дыма (правильная модель тяги).
-    // Тепловая тяга считается решателем через ТЕМПЕРАТУРЫ УЗЛОВ
-    // (natural_draft_h): горячий восходящий столб уравновешивается
-    // встречным холодным столбом выхода на поверхность — соседние
-    // выработки меняются слабо (как в Аэросети). Сосредоточенный
-    // h_fire на одной ветви (старый способ) нефизично опрокидывал
-    // соседей.
+    // + карта горячих узлов пути дыма + тепловая депрессия очага.
+    //
+    // ТЯГА СКЛАДЫВАЕТСЯ ИЗ ДВУХ ЧАСТЕЙ, и обе обязательны:
+    //   1) депрессия ЗОНЫ ГОРЕНИЯ (h_t, формулы 4.5–4.6) — сосредоточенный
+    //      источник в самой ветви очага. Считается по Δz = l·sinβ, то есть по
+    //      длине зоны горения, а не по геометрии ветви;
+    //   2) дымовая труба — горячий столб вдоль ПУТИ ДЫМА за очагом. Её
+    //      решатель выводит сам из температур ветвей (natural_draft_h), и
+    //      встречный холодный столб выхода на поверхность её уравновешивает.
+    // Раньше оставляли только (2), и в нисходящей выработке тормоз зоны
+    // горения терялся — расход рос вместо падения.
     const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[] = [];
     const branchesWithHt = branchesIter.map(b => {
       if (!b.hasFire) return b;
@@ -176,8 +180,43 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
         }, thermalDepMethod);
       }
       fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, reversedConfirmed: reversedSeats.has(b.id), length: b.length, area: b.area, perimeter: b.perimeter });
-      // fireThermalDepression больше НЕ прикладываем как источник.
-      return { ...b, fireThermalDepression: 0 };
+
+      // ── ТЕПЛОВАЯ ДЕПРЕССИЯ — СОСРЕДОТОЧЕННЫЙ ИСТОЧНИК В ВЕТВИ ОЧАГА ────
+      //
+      // Раньше здесь стоял ноль: депрессию считали, показывали в панели, а в
+      // сеть не отдавали — тягу целиком выводил решатель из температур по
+      // формуле natural_draft_h. Это и ломало нисходящее проветривание.
+      //
+      // ПОЧЕМУ. Решатель берёт перепад отметок ПО ГЕОМЕТРИИ ВЕТВИ, а методика
+      // (4.6) — по длине ЗОНЫ ГОРЕНИЯ: Δz = l·sinβ. Зона горения по (4.8) на
+      // порядок длиннее короткой выработки, и тормоз в ней не помещается:
+      // ветвь 15 м с уклоном −10° даёт Δz = −2,6 м и всего −5,8 Па вместо
+      // нормативных −49,4 Па при Δz = −11,1 м. Тормоз занижался в 8,5 раза,
+      // а разгон от горячего столба в исходящем стволе оставался полным — и
+      // расход в нисходящей выработке РОС вместо того, чтобы чуть упасть.
+      //
+      // Теперь депрессия зоны горения прикладывается к ветви очага источником,
+      // как в Аэросети. Знак берётся из flowRelAngle (угол ОТНОСИТЕЛЬНО
+      // потока): нисходящее проветривание → Δz < 0 → h_t < 0 → тормоз.
+      //
+      // Двойного учёта нет: решатель при hasFire не добавляет к этой ветви
+      // тепловой вклад своего столба (см. is_fire_seat в natural_draft_h).
+      const fromN2 = nodes.find(n => n.id === b.fromId);
+      const toN2   = nodes.find(n => n.id === b.toId);
+      const dzGeom2 = (toN2?.z ?? 0) - (fromN2?.z ?? 0);
+      const geomAngle2 = Math.abs(b.angle ?? 0) * Math.sign(dzGeom2 || 1);
+      const dirFlow2 = originalFlows.get(b.id) ?? b.flow ?? 0;
+      const flowRelAngle2 = geomAngle2 * (dirFlow2 >= 0 ? 1 : -1);
+      const h_t = calcThermalDepressionUnified({
+        fireTemp_C: T_pr,
+        ambientTemp_C: AMBIENT_TEMP,
+        length_m: b.length ?? 0,
+        angle_deg: flowRelAngle2,
+        airFlow_m3s: airQ,
+        sectionArea_m2: b.area,
+      }, thermalDepMethod);
+
+      return { ...b, fireThermalDepression: Number.isFinite(h_t) ? h_t : 0 };
     });
 
     // Карта горячих узлов по актуальным расходам.
