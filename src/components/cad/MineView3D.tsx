@@ -28,6 +28,7 @@ import { buildMineScene, disposeScene, recolorScene, pickBranch, setHighlight, t
 import { buildMineLabels, drawMineLabels, type MineLabel } from "@/lib/three/mineLabels";
 import { buildFlowArrows, type FlowArrows } from "@/lib/three/mineArrows";
 import { buildMineSymbols, type MineSymbols } from "@/lib/three/mineSymbols";
+import { buildMineFans, type MineFans } from "@/lib/three/mineFans";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
@@ -162,6 +163,25 @@ export default function MineView3D(p: MineView3DProps) {
   ];
   const [symSize, setSymSize] = useState<"s" | "m" | "l">("m");
   const symSizeK = SYM_SIZES.find(s => s.key === symSize)?.value ?? 1;
+
+  // ── Объёмные вентиляторы ──────────────────────────────────────────────
+  // Единственное обозначение, которому плоской карточки мало. Вентилятор —
+  // источник движения воздуха на схеме: по нему читают, откуда идёт струя, в
+  // какую сторону подана и работает ли машина. Кружок этого не показывает,
+  // объёмная модель с вращающимся колесом — показывает (см. mineFans.ts).
+  //
+  // Выключатель нужен: на слабой видеокарте и на схеме с полусотней машин
+  // вращение требует непрерывной перерисовки, и человек вправе её погасить —
+  // вентиляторы тогда вернутся плоскими значками, как все прочие УО.
+  const fansRef = useRef<MineFans | null>(null);
+  const [showFans3D, setShowFans3D] = useState(true);
+  const [fanCount, setFanCount] = useState(0);
+  // Есть ли что крутить. В ref — цикл отрисовки не должен зависеть от React.
+  const fansSpinRef = useRef(false);
+  // Есть ли на схеме вентиляторы вообще: по этому показывается кнопка. Считаем
+  // по составу знаков, а не по построенному слою, — иначе выключенный показ
+  // прятал бы и собственный выключатель.
+  const hasFanSymbols = (p.schemaSymbols ?? []).some(s => s.typeId === "fan" && !!s.branchId);
 
   // ── Плотность тела выработки ──────────────────────────────────────────
   // Сплошная заливка хороша для показа, но на реальной схеме ближние выработки
@@ -494,6 +514,8 @@ export default function MineView3D(p: MineView3DProps) {
         symbols: p.schemaSymbols,
         xyScale: p.xyScale, zScale: p.zScale,
         sizeK: symSizeK,
+        // Вентилятор показан объёмной машиной — плоский двойник ему не нужен.
+        skipFans: showFans3D,
         // Картинки значков грузятся браузером асинхронно. Режим «Модель»
         // рисует по событию, и без этого сигнала знаки появлялись бы только
         // после первого поворота схемы.
@@ -514,7 +536,59 @@ export default function MineView3D(p: MineView3DProps) {
       s.dispose();
       symbolsRef.current = null;
     };
-  }, [ready, showSymbols, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+  }, [ready, showSymbols, showFans3D, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+
+  // ── Объёмные вентиляторы ──────────────────────────────────────────────
+  // Свой слой, как стрелки и значки: обороты, реверс и остановка меняются в
+  // карточке вентилятора куда чаще, чем геометрия выработок, и пересобирать
+  // ради них всю схему в видеопамяти незачем.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const prev = fansRef.current;
+    if (prev) {
+      scene.remove(prev.group);
+      prev.dispose();
+      fansRef.current = null;
+    }
+    setFanCount(0);
+    fansSpinRef.current = false;
+
+    // Машины показываем только вместе с обозначениями: выключив УО, человек
+    // просит чистую геометрию — вентилятор такое же обозначение, как прочие.
+    if (showSymbols && showFans3D && p.schemaSymbols && p.schemaSymbols.length > 0) {
+      const built = buildMineFans({
+        nodes: p.nodes, branches: p.branches,
+        symbols: p.schemaSymbols,
+        xyScale: p.xyScale, zScale: p.zScale,
+        sizeK: symSizeK,
+        pollutedBranchIds: p.pollutedBranchIds,
+        animSpeed: p.animSpeed,
+      });
+      if (built) {
+        scene.add(built.group);
+        fansRef.current = built;
+        setFanCount(built.count);
+        // Колёса крутим, только пока включена общая кнопка «Анимация»: она
+        // одна на оба режима, и выключенная анимация обязана останавливать
+        // всё движение на схеме, а не одни стрелки.
+        fansSpinRef.current = built.hasSpinning && p.animated !== false;
+        if (!fansSpinRef.current) built.setTime(0);
+      }
+    }
+    needsRenderRef.current = true;
+
+    return () => {
+      const f = fansRef.current;
+      if (!f) return;
+      scene.remove(f.group);
+      f.dispose();
+      fansRef.current = null;
+      fansSpinRef.current = false;
+    };
+  }, [ready, showSymbols, showFans3D, symSizeK, p.schemaSymbols, p.nodes, p.branches,
+      p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
 
   // ── Смена окраски без пересборки ──────────────────────────────────────
   // Переключили заливку (расход / скорость / участки / горизонты) — меняется
@@ -550,6 +624,16 @@ export default function MineView3D(p: MineView3DProps) {
       const arrows = arrowsRef.current;
       if (animatingRef.current && arrows) {
         arrows.setTime(flowTime());
+        needsRenderRef.current = true;
+      }
+
+      // Колёса вентиляторов. Время то же, что у стрелок, — общие часы схемы:
+      // движение воздуха и вращение машины, которая его гонит, обязаны идти в
+      // одном отсчёте. Поворот считает процессор, но это десяток объектов на
+      // схему, а не десятки тысяч, как у стрелок.
+      const fans = fansRef.current;
+      if (fansSpinRef.current && fans) {
+        fans.setTime(flowTime());
         needsRenderRef.current = true;
       }
 
@@ -1257,6 +1341,40 @@ export default function MineView3D(p: MineView3DProps) {
             ))}
           </div>
         )}
+
+        {/* Объёмные вентиляторы.
+
+            Кнопка появляется, только когда на схеме есть вентилятор: на схеме
+            без машин она была бы выключателем в никуда.
+
+            Зачем выключатель вообще. Вращение требует непрерывной
+            перерисовки — на слабой видеокарте это заметно. Погасив её,
+            человек получает вентиляторы обычными плоскими значками, как на
+            чертеже, и схема снова рисуется только по событию. */}
+        {hasFanSymbols && (
+          <button
+            onClick={() => showSymbols && setShowFans3D(v => !v)}
+            disabled={!showSymbols}
+            title={!showSymbols
+              ? "Знаки погашены — включите УО"
+              : showFans3D
+                ? "Вентиляторы объёмной моделью: вращение показывает работу машины и направление подачи"
+                : "Вентиляторы плоским значком, как на чертеже"}
+            className="text-[10px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: showSymbols && showFans3D ? "#0891b2" : "var(--c-b2, #d1d5db)",
+              color: !showSymbols
+                ? "var(--c-t3, #9ca3af)"
+                : showFans3D ? "#0891b2" : "var(--c-t2, #374151)",
+              background: showSymbols && showFans3D ? "rgba(207,250,254,0.95)" : "rgba(255,255,255,0.9)",
+              fontWeight: showSymbols && showFans3D ? 600 : 400,
+              cursor: showSymbols ? "pointer" : "not-allowed",
+              opacity: showSymbols ? 1 : 0.55,
+            }}
+          >
+            Вентилятор 3D
+          </button>
+        )}
       </div>
       </div>
 
@@ -1304,7 +1422,8 @@ export default function MineView3D(p: MineView3DProps) {
         style={{ background: "rgba(255,255,255,0.92)", border: "1px solid var(--c-b1, #e5e7eb)", color: "var(--c-t3, #6b7280)" }}>
         выработок: <b>{stats.branches}</b> · вызовов отрисовки: <b>{stats.drawCalls}</b>
         {arrowCount > 0 && <> · стрелок: <b>{arrowCount}</b></>}
-        {symbolCount > 0 && <> · обозначений: <b>{symbolCount}</b></>} · {stats.fps} кадр/с
+        {symbolCount > 0 && <> · обозначений: <b>{symbolCount}</b></>}
+        {fanCount > 0 && <> · вентиляторов: <b>{fanCount}</b></>} · {stats.fps} кадр/с
       </div>
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"
