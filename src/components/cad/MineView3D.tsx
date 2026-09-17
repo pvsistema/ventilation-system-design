@@ -29,6 +29,10 @@ import { buildMineLabels, drawMineLabels, type MineLabel } from "@/lib/three/min
 import { buildFlowArrows, type FlowArrows } from "@/lib/three/mineArrows";
 import { buildMineSymbols, type MineSymbols } from "@/lib/three/mineSymbols";
 import { buildMineFans, type MineFans } from "@/lib/three/mineFans";
+import {
+  buildMineMeasureStations, MEASURE_STATION_ID,
+  type MineMeasureStations,
+} from "@/lib/three/mineMeasureStations";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
@@ -183,6 +187,18 @@ export default function MineView3D(p: MineView3DProps) {
   // прятал бы и собственный выключатель.
   const hasFanSymbols = (p.schemaSymbols ?? []).some(s => s.typeId === "fan" && !!s.branchId);
 
+  // ── Объёмные замерные станции ─────────────────────────────────────────
+  // Второе обозначение, которому плоской карточки мало, — и по той же
+  // причине, что вентилятору: у знака есть НАПРАВЛЕНИЕ. На чертеже замерная
+  // станция это две красные линии ВДОЛЬ выработки, размечающие участок
+  // замера. Натянутая на сечение карточка вставала поперёк и читалась как
+  // заслонка, хотя станция ничего не перекрывает (см. mineMeasureStations.ts).
+  const msRef = useRef<MineMeasureStations | null>(null);
+  const [showMs3D, setShowMs3D] = useState(true);
+  const [msCount, setMsCount] = useState(0);
+  const hasMsSymbols = (p.schemaSymbols ?? [])
+    .some(s => s.typeId === MEASURE_STATION_ID && !!s.branchId);
+
   // ── Плотность тела выработки ──────────────────────────────────────────
   // Сплошная заливка хороша для показа, но на реальной схеме ближние выработки
   // наглухо закрывают дальние: видно внешнюю оболочку рудника и ничего внутри.
@@ -225,7 +241,19 @@ export default function MineView3D(p: MineView3DProps) {
   // Выработка под курсором: её имя показываем в плашке, а саму — подсвечиваем.
   // Держим в состоянии только то, что видно на экране (id и подпись): сама
   // подсветка живёт в сцене и через React не проходит.
-  const [hover, setHover] = useState<{ id: string; title: string; note: string; x: number; y: number } | null>(null);
+  const [hover, setHover] = useState<{
+    id: string;
+    title: string;
+    note: string;
+    /**
+     * Дополнительные строки плашки. Нужны замерной станции: у неё не одно
+     * число, а карточка замера — номер, расход, сечение, скорость.
+     */
+    lines?: string[];
+    /** Замерная станция: плашка получает красную кромку своего знака. */
+    accent?: boolean;
+    x: number; y: number;
+  } | null>(null);
   const [webglFailed, setWebglFailed] = useState(false);
   // Признак «холст создан». Нужен, чтобы эффект управления мышью перезапустился
   // ПОСЛЕ появления canvas: сам по себе rendererRef.current в списке
@@ -275,6 +303,9 @@ export default function MineView3D(p: MineView3DProps) {
   // на каждое движение курсора.
   const rayRef = useRef(new THREE.Raycaster());
   const hoverIdRef = useRef<string | null>(null);
+  // Замерная станция под курсором — своим признаком: подсветка обоймы живёт в
+  // сцене, а не в React, и сверять её нужно на каждое движение мыши.
+  const msHoverRef = useRef<string | null>(null);
 
   // Имена узлов для подсказки. Без них в плашке у безымянной выработки стояли
   // бы служебные идентификаторы вида «n17f3» — человеку они ничего не говорят.
@@ -516,6 +547,8 @@ export default function MineView3D(p: MineView3DProps) {
         sizeK: symSizeK,
         // Вентилятор показан объёмной машиной — плоский двойник ему не нужен.
         skipFans: showFans3D,
+        // Замерная станция показана обоймой вдоль выработки — то же самое.
+        skipMeasureStations: showMs3D,
         // Картинки значков грузятся браузером асинхронно. Режим «Модель»
         // рисует по событию, и без этого сигнала знаки появлялись бы только
         // после первого поворота схемы.
@@ -536,7 +569,49 @@ export default function MineView3D(p: MineView3DProps) {
       s.dispose();
       symbolsRef.current = null;
     };
-  }, [ready, showSymbols, showFans3D, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+  }, [ready, showSymbols, showFans3D, showMs3D, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+
+  // ── Объёмные замерные станции ─────────────────────────────────────────
+  // Свой слой, как вентиляторы: числа станции (расход, сечение) меняются с
+  // каждым расчётом, а геометрия выработок при этом та же.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const prev = msRef.current;
+    if (prev) {
+      scene.remove(prev.group);
+      prev.dispose();
+      msRef.current = null;
+    }
+    setMsCount(0);
+
+    // Станции показываем только вместе с обозначениями: выключив УО, человек
+    // просит чистую геометрию — замерная станция такое же обозначение.
+    if (showSymbols && showMs3D && p.schemaSymbols && p.schemaSymbols.length > 0) {
+      const built = buildMineMeasureStations({
+        nodes: p.nodes, branches: p.branches,
+        symbols: p.schemaSymbols,
+        xyScale: p.xyScale, zScale: p.zScale,
+        sizeK: symSizeK,
+      });
+      if (built) {
+        scene.add(built.group);
+        msRef.current = built;
+        setMsCount(built.count);
+      }
+    }
+    needsRenderRef.current = true;
+
+    return () => {
+      const s = msRef.current;
+      if (!s) return;
+      scene.remove(s.group);
+      s.dispose();
+      msRef.current = null;
+    };
+  }, [ready, showSymbols, showMs3D, symSizeK, p.schemaSymbols, p.nodes, p.branches,
+      p.xyScale, p.zScale]);
 
   // ── Объёмные вентиляторы ──────────────────────────────────────────────
   // Свой слой, как стрелки и значки: обороты, реверс и остановка меняются в
@@ -848,20 +923,40 @@ export default function MineView3D(p: MineView3DProps) {
       );
     };
 
-    /** Что находится под курсором. null — пусто или сцена ещё не собрана. */
-    const pickAt = (e: MouseEvent) => {
+    /** Наводит луч на точку курсора. false — сцена ещё не собрана. */
+    const aimRay = (e: MouseEvent): boolean => {
       const cam = cameraRef.current;
-      const built = builtRef.current;
-      if (!cam || !built) return null;
+      if (!cam || !builtRef.current) return false;
       const rect = el.getBoundingClientRect();
-      if (!(rect.width > 0) || !(rect.height > 0)) return null;
+      if (!(rect.width > 0) || !(rect.height > 0)) return false;
       // Экранные координаты → нормализованные [-1..1], как ждёт Raycaster.
       const ndc = new THREE.Vector2(
         ((e.clientX - rect.left) / rect.width) * 2 - 1,
         -((e.clientY - rect.top) / rect.height) * 2 + 1,
       );
       rayRef.current.setFromCamera(ndc, cam);
-      return pickBranch(built, rayRef.current);
+      return true;
+    };
+
+    /** Что находится под курсором. null — пусто или сцена ещё не собрана. */
+    const pickAt = (e: MouseEvent) => {
+      if (!aimRay(e)) return null;
+      return pickBranch(builtRef.current, rayRef.current);
+    };
+
+    /**
+     * Замерная станция под курсором.
+     *
+     * Ищется ОТДЕЛЬНО от выработки и имеет над ней приоритет: обойма станции
+     * стоит на стенках своей выработки, и по лучу они всегда рядом. Человек,
+     * подводящий курсор к красной обойме, спрашивает про замер, а не про
+     * выработку, — иначе объёмную станцию нельзя было бы опросить вовсе.
+     */
+    const pickMsAt = (e: MouseEvent) => {
+      const ms = msRef.current;
+      if (!ms) return null;
+      if (!aimRay(e)) return null;
+      return ms.pick(rayRef.current);
     };
 
     const onDown = (e: MouseEvent) => {
@@ -895,6 +990,10 @@ export default function MineView3D(p: MineView3DProps) {
             if (setHighlight(builtRef.current, selectedRef.current, null)) needsRenderRef.current = true;
             el.style.cursor = "default";
           }
+          if (msHoverRef.current !== null) {
+            msHoverRef.current = null;
+            if (msRef.current?.setHover(null)) needsRenderRef.current = true;
+          }
           setHover(prev => (prev ? null : prev));
           return;
         }
@@ -907,6 +1006,47 @@ export default function MineView3D(p: MineView3DProps) {
         const now = performance.now();
         if (now - lastPick < 16) return;
         lastPick = now;
+
+        // ── Замерная станция впереди выработки ──────────────────────────
+        // Её обойма стоит НА стенках своей выработки, и по лучу они всегда
+        // рядом. Курсор, подведённый к красной обойме, спрашивает про замер:
+        // номер станции, расход и сечение — ровно то, ради чего она на схеме.
+        const msHit = pickMsAt(e);
+        const msId = msHit?.info.id ?? null;
+        if (msId !== msHoverRef.current) {
+          msHoverRef.current = msId;
+          if (msRef.current?.setHover(msId)) needsRenderRef.current = true;
+        }
+        if (msHit) {
+          const info = msHit.info;
+          // Подсвечиваем заодно и выработку под станцией: замер относится
+          // именно к ней, и видеть её границы в этот момент полезно.
+          if (info.branchId !== hoverIdRef.current) {
+            hoverIdRef.current = info.branchId;
+            if (setHighlight(builtRef.current, selectedRef.current, info.branchId)) {
+              needsRenderRef.current = true;
+            }
+          }
+          el.style.cursor = "pointer";
+          const lines = [
+            `Q = ${info.flow.toFixed(2)} м³/с — расход воздуха`,
+            `S = ${info.area.toFixed(2)} м² — сечение`,
+            `v = ${info.velocity.toFixed(2)} м/с`,
+          ];
+          const rect = el.getBoundingClientRect();
+          setHover({
+            id: info.id,
+            title: info.number
+              ? `Замерная станция № ${info.number}`
+              : "Замерная станция",
+            note: info.location || info.branchTitle,
+            lines,
+            accent: true,
+            x: e.clientX - rect.left,
+            y: e.clientY - rect.top,
+          });
+          return;
+        }
 
         const hit = pickAt(e);
         const id = hit?.branch.id ?? null;
@@ -1074,6 +1214,10 @@ export default function MineView3D(p: MineView3DProps) {
     // Движений мыши сюда больше не придёт, и без этого выработка осталась бы
     // подсвеченной, хотя курсор давно в другом месте.
     const onLeave = () => {
+      if (msHoverRef.current !== null) {
+        msHoverRef.current = null;
+        if (msRef.current?.setHover(null)) needsRenderRef.current = true;
+      }
       if (hoverIdRef.current === null) return;
       hoverIdRef.current = null;
       if (setHighlight(builtRef.current, selectedRef.current, null)) needsRenderRef.current = true;
@@ -1375,6 +1519,39 @@ export default function MineView3D(p: MineView3DProps) {
             Вентилятор 3D
           </button>
         )}
+
+        {/* Объёмные замерные станции.
+
+            Кнопка появляется, только когда на схеме есть замерная станция.
+
+            Зачем выключатель. Обойма вдоль выработки — правильное чтение
+            знака, но на схеме, где станции стоят вплотную, красные прогоны
+            могут мешать разбирать геометрию. Погасив её, человек получает
+            станции плоским значком, как на чертеже. */}
+        {hasMsSymbols && (
+          <button
+            onClick={() => showSymbols && setShowMs3D(v => !v)}
+            disabled={!showSymbols}
+            title={!showSymbols
+              ? "Знаки погашены — включите УО"
+              : showMs3D
+                ? "Замерная станция объёмом: обойма ВДОЛЬ выработки размечает участок замера. Наведите курсор — номер, расход и сечение"
+                : "Замерная станция плоским значком, как на чертеже"}
+            className="text-[10px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: showSymbols && showMs3D ? "#dc2626" : "var(--c-b2, #d1d5db)",
+              color: !showSymbols
+                ? "var(--c-t3, #9ca3af)"
+                : showMs3D ? "#dc2626" : "var(--c-t2, #374151)",
+              background: showSymbols && showMs3D ? "rgba(254,226,226,0.95)" : "rgba(255,255,255,0.9)",
+              fontWeight: showSymbols && showMs3D ? 600 : 400,
+              cursor: showSymbols ? "pointer" : "not-allowed",
+              opacity: showSymbols ? 1 : 0.55,
+            }}
+          >
+            Замерная станция 3D
+          </button>
+        )}
       </div>
       </div>
 
@@ -1385,17 +1562,35 @@ export default function MineView3D(p: MineView3DProps) {
         <div
           className="absolute text-[11px] px-2 py-1 rounded shadow-sm"
           style={{
-            left: Math.min(hover.x + 14, Math.max(0, p.width - 220)),
-            top: Math.max(0, hover.y - 38),
+            left: Math.min(hover.x + 14, Math.max(0, p.width - 250)),
+            top: Math.max(0, hover.y - (hover.lines ? 74 : 38)),
             pointerEvents: "none",
-            background: "rgba(255,255,255,0.96)",
-            border: "1px solid var(--c-b2, #d1d5db)",
+            background: "rgba(255,255,255,0.97)",
+            // Карточка замерной станции получает красную кромку своего знака:
+            // сразу видно, что подсказка про ЗАМЕР, а не про выработку.
+            border: hover.accent
+              ? "1px solid #dc2626"
+              : "1px solid var(--c-b2, #d1d5db)",
+            borderLeft: hover.accent ? "3px solid #dc2626" : undefined,
             color: "var(--c-t2, #374151)",
-            maxWidth: 220,
+            maxWidth: 250,
           }}
         >
-          <div className="font-semibold truncate">{hover.title}</div>
+          <div
+            className="font-semibold truncate"
+            style={hover.accent ? { color: "#dc2626" } : undefined}
+          >
+            {hover.title}
+          </div>
           <div className="text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>{hover.note}</div>
+          {hover.lines && hover.lines.length > 0 && (
+            <div className="mt-1 pt-1 flex flex-col gap-0.5"
+              style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
+              {hover.lines.map(l => (
+                <div key={l} className="text-[10px] tabular-nums">{l}</div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1423,7 +1618,8 @@ export default function MineView3D(p: MineView3DProps) {
         выработок: <b>{stats.branches}</b> · вызовов отрисовки: <b>{stats.drawCalls}</b>
         {arrowCount > 0 && <> · стрелок: <b>{arrowCount}</b></>}
         {symbolCount > 0 && <> · обозначений: <b>{symbolCount}</b></>}
-        {fanCount > 0 && <> · вентиляторов: <b>{fanCount}</b></>} · {stats.fps} кадр/с
+        {fanCount > 0 && <> · вентиляторов: <b>{fanCount}</b></>}
+        {msCount > 0 && <> · замерных станций: <b>{msCount}</b></>} · {stats.fps} кадр/с
       </div>
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"
