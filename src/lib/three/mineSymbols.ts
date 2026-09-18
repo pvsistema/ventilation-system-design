@@ -215,6 +215,14 @@ export interface SymbolsInput {
    * ошибка чтения схемы: она ничего не перекрывает.
    */
   skipMeasureStations?: boolean;
+  /**
+   * Перемычки и двери показываются объёмными плитами (см. mineBulkheads.ts) —
+   * плоскую карточку тогда ставить нельзя.
+   *
+   * Иначе у каждого сооружения появился бы двойник: карточка со значком,
+   * висящая внутри собственной плиты и просвечивающая сквозь неё.
+   */
+  skipBulkheads?: boolean;
   /** Картинка значка догрузилась — нужен новый кадр. */
   onReady?: () => void;
 }
@@ -290,6 +298,9 @@ export function buildMineSymbols(input: SymbolsInput): MineSymbols | null {
     // Замерная станция в объёме — не карточка поперёк выработки, а обойма
     // ВДОЛЬ неё: участок замера (mineMeasureStations.ts).
     if (input.skipMeasureStations && sym.typeId === "measure_station") continue;
+    // Перемычка в объёме — не карточка, а плита по контуру сечения выработки
+    // (mineBulkheads.ts). Плоский значок ей в этом режиме не нужен.
+    if (input.skipBulkheads && BULKHEAD_SYMBOL_IDS.has(sym.typeId)) continue;
     // Свободные значки (без привязки к выработке) в объёме поставить некуда:
     // их экранные координаты к трёхмерной схеме отношения не имеют.
     if (!sym.branchId) continue;

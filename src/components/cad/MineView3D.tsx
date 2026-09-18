@@ -33,6 +33,8 @@ import {
   buildMineMeasureStations, MEASURE_STATION_ID,
   type MineMeasureStations,
 } from "@/lib/three/mineMeasureStations";
+import { buildMineBulkheads, type MineBulkheads } from "@/lib/three/mineBulkheads";
+import { BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
@@ -198,6 +200,20 @@ export default function MineView3D(p: MineView3DProps) {
   const [msCount, setMsCount] = useState(0);
   const hasMsSymbols = (p.schemaSymbols ?? [])
     .some(s => s.typeId === MEASURE_STATION_ID && !!s.branchId);
+
+  // ── Объёмные перемычки ────────────────────────────────────────────────
+  // Третье обозначение, которому плоской карточки мало. Перемычка — это
+  // СООРУЖЕНИЕ в выработке, а не пометка на линии: у неё есть форма сечения и
+  // толщина. Прямоугольная карточка у арочной выработки торчала углами сквозь
+  // свод, у круглого ствола вылезала за стенки, а при облёте поворачивалась
+  // ребром и исчезала — заглушённый участок выглядел открытым. Объёмная плита
+  // строится по ТОМУ ЖЕ контуру сечения, что и тело выработки, поэтому всегда
+  // вписана в неё (см. mineBulkheads.ts).
+  const bkRef = useRef<MineBulkheads | null>(null);
+  const [showBk3D, setShowBk3D] = useState(true);
+  const [bkCount, setBkCount] = useState(0);
+  const hasBkSymbols = (p.schemaSymbols ?? [])
+    .some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && !!s.branchId);
 
   // ── Плотность тела выработки ──────────────────────────────────────────
   // Сплошная заливка хороша для показа, но на реальной схеме ближние выработки
@@ -554,6 +570,8 @@ export default function MineView3D(p: MineView3DProps) {
         skipFans: showFans3D,
         // Замерная станция показана обоймой вдоль выработки — то же самое.
         skipMeasureStations: showMs3D,
+        // Перемычка показана объёмной плитой по сечению — двойник не нужен.
+        skipBulkheads: showBk3D,
         // Картинки значков грузятся браузером асинхронно. Режим «Модель»
         // рисует по событию, и без этого сигнала знаки появлялись бы только
         // после первого поворота схемы.
@@ -574,7 +592,50 @@ export default function MineView3D(p: MineView3DProps) {
       s.dispose();
       symbolsRef.current = null;
     };
-  }, [ready, showSymbols, showFans3D, showMs3D, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+  }, [ready, showSymbols, showFans3D, showMs3D, showBk3D, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+
+  // ── Объёмные перемычки ────────────────────────────────────────────────
+  // Свой слой, как вентиляторы и станции: перемычки переставляют и меняют им
+  // материал куда чаще, чем правят геометрию выработок, и пересобирать ради
+  // одной двери всю схему в видеопамяти незачем.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+
+    const prev = bkRef.current;
+    if (prev) {
+      scene.remove(prev.group);
+      prev.dispose();
+      bkRef.current = null;
+    }
+    setBkCount(0);
+
+    // Перемычки показываем только вместе с обозначениями: выключив УО, человек
+    // просит чистую геометрию — перемычка такое же обозначение, как прочие.
+    if (showSymbols && showBk3D && p.schemaSymbols && p.schemaSymbols.length > 0) {
+      const built = buildMineBulkheads({
+        nodes: p.nodes, branches: p.branches,
+        symbols: p.schemaSymbols,
+        xyScale: p.xyScale, zScale: p.zScale,
+        sizeK: symSizeK,
+      });
+      if (built) {
+        scene.add(built.group);
+        bkRef.current = built;
+        setBkCount(built.count);
+      }
+    }
+    needsRenderRef.current = true;
+
+    return () => {
+      const s = bkRef.current;
+      if (!s) return;
+      scene.remove(s.group);
+      s.dispose();
+      bkRef.current = null;
+    };
+  }, [ready, showSymbols, showBk3D, symSizeK, p.schemaSymbols, p.nodes, p.branches,
+      p.xyScale, p.zScale]);
 
   // ── Объёмные замерные станции ─────────────────────────────────────────
   // Свой слой, как вентиляторы: числа станции (расход, сечение) меняются с
@@ -1526,6 +1587,40 @@ export default function MineView3D(p: MineView3DProps) {
           </div>
         )}
 
+        {/* Объёмные перемычки.
+
+            Кнопка появляется, только когда на схеме есть перемычка или дверь.
+
+            Зачем выключатель. Плита по сечению — правильное чтение знака: она
+            вписана в выработку и видна с любого ракурса. Но на схеме, где
+            перемычек сотни и они стоят вплотную, сплошные плиты закрывают
+            геометрию за собой. Погасив их, человек получает перемычки плоским
+            значком, как на чертеже. */}
+        {hasBkSymbols && (
+          <button
+            onClick={() => showSymbols && setShowBk3D(v => !v)}
+            disabled={!showSymbols}
+            title={!showSymbols
+              ? "Знаки погашены — включите УО"
+              : showBk3D
+                ? "Перемычки объёмом: плита по контуру сечения выработки, цвет — материал, толщина — тип сооружения"
+                : "Перемычки плоским значком, как на чертеже"}
+            className="text-[10px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: showSymbols && showBk3D ? "#16a34a" : "var(--c-b2, #d1d5db)",
+              color: !showSymbols
+                ? "var(--c-t3, #9ca3af)"
+                : showBk3D ? "#16a34a" : "var(--c-t2, #374151)",
+              background: showSymbols && showBk3D ? "rgba(220,252,231,0.95)" : "rgba(255,255,255,0.9)",
+              fontWeight: showSymbols && showBk3D ? 600 : 400,
+              cursor: showSymbols ? "pointer" : "not-allowed",
+              opacity: showSymbols ? 1 : 0.55,
+            }}
+          >
+            Перемычка 3D
+          </button>
+        )}
+
         {/* Объёмные вентиляторы.
 
             Кнопка появляется, только когда на схеме есть вентилятор: на схеме
@@ -1658,6 +1753,7 @@ export default function MineView3D(p: MineView3DProps) {
         выработок: <b>{stats.branches}</b> · вызовов отрисовки: <b>{stats.drawCalls}</b>
         {arrowCount > 0 && <> · стрелок: <b>{arrowCount}</b></>}
         {symbolCount > 0 && <> · обозначений: <b>{symbolCount}</b></>}
+        {bkCount > 0 && <> · перемычек: <b>{bkCount}</b></>}
         {fanCount > 0 && <> · вентиляторов: <b>{fanCount}</b></>}
         {msCount > 0 && <> · замерных станций: <b>{msCount}</b></>} · {stats.fps} кадр/с
       </div>
