@@ -162,6 +162,50 @@ const THICK: Record<Kind, number> = {
   fire: 0.34,
 };
 
+/**
+ * Цвет полотна паруса — чёрный, при любом исполнении рамы.
+ *
+ * Парус в натуре это тёмное прорезиненное полотно, разрезанное на полосы,
+ * и в шахте он читается именно чёрным пятном в сечении. Материал (дерево,
+ * металл) относится к раме, а не к ткани, поэтому цвет полотна от него не
+ * зависит: зелёный или жёлтый парус спутали бы с перемычкой.
+ */
+const SAIL_COLOR = 0x15171c;
+
+/** На сколько полос разрезано полотно — как в натуре, чтобы люди проходили. */
+function sailStripCount(width: number): number {
+  return Math.max(4, Math.min(9, Math.round(width / 1.1)));
+}
+
+/** Ширина щели между полосами, м: по ней и видно, что полотно разрезано. */
+const SAIL_GAP = 0.05;
+
+/**
+ * Насколько сильно полотно выдувает потоком — доля полуширины сечения.
+ *
+ * Ноль давал бы плоскую тряпку, поэтому даже в стоячем воздухе оставляем
+ * заметный провис: парус висит, а не натянут. Верх предела подобран так,
+ * чтобы выдутое полотно не протыкало стенки выработки.
+ */
+const SAIL_BOW_MAX = 0.55;
+
+/** Скорость воздуха, при которой парус выдут полностью, м/с. */
+const SAIL_V_FULL = 3.5;
+
+/**
+ * Насколько парус выдут в этой ветви: −1…+1.
+ *
+ * Знак — направление выдува: он обязан совпадать с направлением воздуха,
+ * иначе полотно «дуло бы» против струи, и человек прочитал бы схему наоборот.
+ */
+function sailBow(b: TopoBranch): number {
+  const v = Math.abs(b.velocity ?? 0);
+  const t = Math.min(1, Math.pow(v / SAIL_V_FULL, 0.7));
+  const mag = 0.14 + 0.86 * t;
+  const sign = (b.flow ?? 0) < 0 ? -1 : 1;
+  return mag * sign;
+}
+
 /** Габариты контура сечения: ширина, высота и центр по вертикали. */
 function outlineBox(pts: { r: number; u: number }[]) {
   let r0 = Infinity, r1 = -Infinity, u0 = Infinity, u1 = -Infinity;
@@ -171,7 +215,7 @@ function outlineBox(pts: { r: number; u: number }[]) {
     if (p.u < u0) u0 = p.u;
     if (p.u > u1) u1 = p.u;
   }
-  return { w: r1 - r0, h: u1 - u0, cu: (u0 + u1) / 2 };
+  return { w: r1 - r0, h: u1 - u0, cu: (u0 + u1) / 2, r0, r1, u0, u1 };
 }
 
 /**
@@ -234,6 +278,130 @@ function holeSize(kind: Kind): { w: number; h: number; cy: number } | null {
 }
 
 /**
+ * Вертикальный просвет сечения в точке x: от почвы до кровли.
+ *
+ * Полоса паруса обязана быть подрезана по ТОМУ ЖЕ контуру, по которому
+ * построена выработка, иначе у арочной кровли углы полотна торчали бы сквозь
+ * свод — ровно та беда, ради которой перемычки и перевели с плоских карточек
+ * на контур сечения. Ищем пересечения вертикали x со всеми рёбрами контура и
+ * берём крайние: для наших сечений (прямоугольник, трапеция, арка, круг) этого
+ * достаточно, они выпуклые.
+ */
+function spanAt(outline: { r: number; u: number }[], x: number): { u0: number; u1: number } | null {
+  let lo = Infinity, hi = -Infinity;
+  const n = outline.length;
+  for (let i = 0; i < n; i++) {
+    const p = outline[i], q = outline[(i + 1) % n];
+    const pr = p.r * FIT, qr = q.r * FIT;
+    const pu = p.u * FIT, qu = q.u * FIT;
+    if (x < Math.min(pr, qr) - 1e-9 || x > Math.max(pr, qr) + 1e-9) continue;
+    if (Math.abs(qr - pr) < 1e-9) {
+      lo = Math.min(lo, pu, qu); hi = Math.max(hi, pu, qu);
+      continue;
+    }
+    const t = (x - pr) / (qr - pr);
+    const u = pu + t * (qu - pu);
+    if (u < lo) lo = u;
+    if (u > hi) hi = u;
+  }
+  return hi - lo > 1e-6 ? { u0: lo, u1: hi } : null;
+}
+
+/**
+ * Полотно паруса: несколько отдельных полос, подрезанных по сечению.
+ *
+ * Парус — не плита, а занавес из прорезиненных полос, подвешенный к кровле:
+ * полосы расходятся, пропуская людей и вагонетки, и при этом почти не выпускают
+ * воздух. Поэтому геометрия здесь — не выдавленный контур, а набор тонких
+ * сеток: каждая полоса своей ширины, сверху и по бокам обрезана кровлей и
+ * стенками, снизу доходит до почвы.
+ *
+ * Каждой вершине кладём aG — её место на полотне (0…1 поперёк всего сечения и
+ * 0 у кровли … 1 у почвы). По этим двум числам вершинный шейдер выдувает
+ * полотно вдоль выработки: ткань закреплена у стенок и вверху, а низ полосы
+ * свободно отходит по потоку. Считать это на процессоре для сотен парусов
+ * нельзя — поэтому форма живёт в шейдере, а геометрия остаётся неподвижной.
+ */
+function sailGeometry(outline: { r: number; u: number }[]): THREE.BufferGeometry | null {
+  const box = outlineBox(outline);
+  const r0 = box.r0 * FIT, r1 = box.r1 * FIT;
+  const W = r1 - r0;
+  if (!(W > 0.05)) return null;
+
+  const n = sailStripCount(W);
+  const gap = Math.min(SAIL_GAP, W / (n * 4));
+  const sw = (W - gap * (n - 1)) / n;
+  if (!(sw > 0.02)) return null;
+
+  const NX = 4;   // столбцов в полосе
+  const NY = 10;  // рядов по высоте: по ним и складывается провис
+
+  const pos: number[] = [];
+  const gs: number[] = [];
+  const idx: number[] = [];
+
+  for (let s = 0; s < n; s++) {
+    const x0 = r0 + s * (sw + gap);
+    const base = pos.length / 3;
+    let ok = true;
+    for (let i = 0; i <= NX && ok; i++) {
+      const x = x0 + (sw * i) / NX;
+      const sp = spanAt(outline, x);
+      if (!sp) { ok = false; break; }
+      for (let j = 0; j <= NY; j++) {
+        const v = j / NY;                       // 0 — кровля, 1 — почва
+        const u = sp.u1 + (sp.u0 - sp.u1) * v;
+        pos.push(x, u, 0);
+        gs.push((x - r0) / W, v);
+      }
+    }
+    if (!ok) { pos.length = base * 3; gs.length = base * 2; continue; }
+    for (let i = 0; i < NX; i++) {
+      for (let j = 0; j < NY; j++) {
+        const a = base + i * (NY + 1) + j;
+        const b = a + (NY + 1);
+        idx.push(a, b, a + 1, b, b + 1, a + 1);
+      }
+    }
+  }
+
+  if (idx.length === 0) return null;
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+  g.setAttribute("aG", new THREE.Float32BufferAttribute(gs, 2));
+  g.setIndex(idx);
+  g.computeVertexNormals();
+  return orient(g);
+}
+
+/**
+ * Кусок шейдера: куда отходит вершина полотна.
+ *
+ * bow — насколько выдут парус (знак = по какую сторону идёт воздух), phase —
+ * собственный сдвиг полосы, чтобы соседние не колыхались как одно целое, spd —
+ * темп колыхания: чем быстрее струя, тем чаще ходит ткань.
+ */
+const SAIL_GLSL = /* glsl */`
+attribute vec2 aG;
+attribute vec3 aSail;
+uniform float uSailTime;
+float sailDisp(vec2 g, vec3 sp, float t) {
+  float bow = sp.x;
+  // Поперёк сечения: у стенок ткань прижата, в середине выдута сильнее всего.
+  float kx = 1.0 - pow(abs(g.x * 2.0 - 1.0), 2.0);
+  // Своя фаза каждой полосы — берём из её места поперёк выработки.
+  float ph = sp.y + g.x * 7.0;
+  float v = g.y;
+  // Постоянный выдув: вверху ткань подвешена, книзу отходит всё дальше.
+  float base = kx * (0.40 * sin(3.14159 * v) + 0.60 * pow(v, 1.5));
+  // Колыхание: волна бежит сверху вниз, у подвеса её нет, у низа — вся.
+  float wave = 0.22 * sin(uSailTime * sp.z + ph - v * 4.0) * pow(v, 1.6) * kx;
+  return bow * (base + wave);
+}
+`;
+
+/**
  * Плита сооружения: контур сечения, выдавленный на толщину.
  *
  * Фигура строится в местных осях сечения (x — вбок, y — вверх), выдавливается
@@ -256,23 +424,6 @@ function plateGeometry(
     depth: thick, bevelEnabled: false, curveSegments: 1,
   });
   g.translate(0, 0, -thick / 2);
-
-  // Парус — не плита, а полотно, выгнутое потоком. Выгибаем уже готовую
-  // геометрию по параболе от стенки к стенке: у стенок ткань закреплена, в
-  // середине выдута. Без этого парус неотличим от тонкой глухой перемычки, а
-  // разница между ними в схеме принципиальная.
-  if (kind === "sail" && box.w > 0.01) {
-    const bow = box.w * 0.22;
-    const pos = g.attributes.position as THREE.BufferAttribute;
-    const hw = box.w / 2;
-    for (let i = 0; i < pos.count; i++) {
-      const x = pos.getX(i);
-      const k = Math.max(0, 1 - (x / hw) * (x / hw));
-      pos.setZ(i, pos.getZ(i) + bow * k);
-    }
-    pos.needsUpdate = true;
-    g.computeVertexNormals();
-  }
 
   return orient(g);
 }
@@ -393,6 +544,60 @@ function detailGeometry(
   return { frame: merge(frame), accent: merge(accent) };
 }
 
+/**
+ * Материал полотна паруса.
+ *
+ * Стандартный материал берём как есть (свет в сцене один на всё, и парус не
+ * должен выпадать из него чужой закраской), но подменяем вершинную часть: форма
+ * полотна считается на видеокарте. Иначе на схеме с сотней парусов пришлось бы
+ * каждый кадр перебирать тысячи вершин на процессоре.
+ *
+ * Возвращаем и материал, и его uniform времени: по нему полотно колышется.
+ */
+function makeSailMaterial(): { mat: THREE.MeshStandardMaterial; time: { value: number } } {
+  const time = { value: 0 };
+  const mat = new THREE.MeshStandardMaterial({
+    color: SAIL_COLOR,
+    roughness: 0.94,
+    metalness: 0.0,
+    // Полотно тонкое: его видно и с той стороны, откуда идёт воздух, и с
+    // противоположной. Односторонняя ткань пропадала бы при облёте.
+    side: THREE.DoubleSide,
+  });
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uSailTime = time;
+    // Врезаемся в <common>, а не в начало файла: three.js дописывает сверху
+    // свои определения и версию шейдера, и код, поставленный до них, на части
+    // видеокарт не компилируется.
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <common>", "#include <common>\n" + SAIL_GLSL,
+    );
+    // Смещаем и саму вершину, и её нормаль: без поворота нормали выдутое
+    // полотно осталось бы плоско освещённым и провис был бы не виден.
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      /* glsl */`
+      #include <begin_vertex>
+      float sD = sailDisp(aG, aSail, uSailTime);
+      transformed.x += sD;
+      `,
+    );
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <beginnormal_vertex>",
+      /* glsl */`
+      #include <beginnormal_vertex>
+      {
+        float d0 = sailDisp(aG, aSail, uSailTime);
+        float du = sailDisp(aG + vec2(0.0, 0.03), aSail, uSailTime) - d0;
+        float dv = sailDisp(aG + vec2(0.03, 0.0), aSail, uSailTime) - d0;
+        objectNormal = normalize(vec3(1.0, -du * 12.0, -dv * 12.0));
+      }
+      `,
+    );
+  };
+  return { mat, time };
+}
+
 /** Цвет накладных частей: то же исполнение, но темнее полотна. */
 function frameColor(mat: Mat): THREE.Color {
   return new THREE.Color(MAT_COLOR[mat]).multiplyScalar(0.62);
@@ -429,6 +634,12 @@ function groupKey(b: TopoBranch, kind: Kind, mat: Mat): string {
   return `${kind}|${mat}|${geo}:${a}`;
 }
 
+/** Быстрота колыхания полотна, рад/с: чем сильнее струя, тем чаще ходит ткань. */
+function sailFlutter(b: TopoBranch, animSpeed: number | undefined): number {
+  const v = Math.min(8, Math.abs(b.velocity ?? 0));
+  return (0.7 + v * 0.55) * Math.max(0.1, animSpeed ?? 1);
+}
+
 export interface BulkheadsInput {
   nodes: TopoNode[];
   branches: TopoBranch[];
@@ -444,6 +655,8 @@ export interface BulkheadsInput {
    * ТОЛЩИНУ сооружения — насколько массивно оно выглядит вдоль выработки.
    */
   sizeK?: number;
+  /** Множитель темпа анимации — тот же, что у стрелок и вентиляторов. */
+  animSpeed?: number;
 }
 
 /** Готовый слой объёмных перемычек. */
@@ -454,12 +667,18 @@ export interface MineBulkheads {
   count: number;
   /** Сколько вызовов отрисовки они добавили. */
   drawCalls: number;
+  /** Есть ли в слое паруса — только ради них стоит гонять кадры. */
+  hasSail: boolean;
+  /** Время анимации, с: по нему колышутся полотна парусов. */
+  setTime(t: number): void;
 }
 
 /** Одна поставленная перемычка: положение и оси сечения. */
 interface Placed {
   pos: THREE.Vector3;
   dir: THREE.Vector3;
+  /** Ветвь, в которой стоит сооружение: у паруса по ней считается выдув. */
+  branch: TopoBranch;
 }
 
 /**
@@ -513,7 +732,7 @@ export function buildMineBulkheads(input: BulkheadsInput): MineBulkheads | null 
     const key = groupKey(b, kind, mat);
     let g = groups.get(key);
     if (!g) { g = { branch: b, kind, mat, items: [] }; groups.set(key, g); }
-    g.items.push({ pos, dir });
+    g.items.push({ pos, dir, branch: b });
     total++;
   }
 
@@ -522,6 +741,8 @@ export function buildMineBulkheads(input: BulkheadsInput): MineBulkheads | null 
   const group = new THREE.Group();
   const geoms: THREE.BufferGeometry[] = [];
   const mats: THREE.Material[] = [];
+  /** Uniform-ы времени полотен: по ним колышутся паруса. */
+  const sailTimes: { value: number }[] = [];
   let drawCalls = 0;
   const wantEdges = total <= EDGE_LIMIT;
 
@@ -565,6 +786,41 @@ export function buildMineBulkheads(input: BulkheadsInput): MineBulkheads | null 
       drawCalls++;
       return mesh;
     };
+
+    // ── Парус: полотно вместо плиты ──────────────────────────────────────
+    // Парус не заглушает выработку, поэтому плитой его рисовать нельзя — это
+    // занавес из чёрных прорезиненных полос, который выдувается струёй. Каждому
+    // экземпляру кладём свой выдув по РАСХОДУ его ветви: рядом стоящие паруса в
+    // разных выработках должны показывать разную струю, иначе по схеме не
+    // прочитать, где воздух идёт сильнее и в какую сторону.
+    if (g.kind === "sail") {
+      const cloth = sailGeometry(outline);
+      if (cloth) {
+        const { mat: sailMat, time } = makeSailMaterial();
+        sailTimes.push(time);
+        const mesh = new THREE.InstancedMesh(cloth, sailMat, matrices.length);
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 3;
+        const wSec = outlineBox(outline).w;
+        const sp = new Float32Array(matrices.length * 3);
+        matrices.forEach((mm, i) => {
+          mesh.setMatrixAt(i, mm);
+          const b = g.items[i].branch;
+          sp[i * 3] = sailBow(b) * wSec * SAIL_BOW_MAX;
+          sp[i * 3 + 1] = (i * 2.399963) % 6.2832;   // своя фаза каждому парусу
+          sp[i * 3 + 2] = sailFlutter(b, input.animSpeed);
+        });
+        mesh.instanceMatrix.needsUpdate = true;
+        cloth.setAttribute("aSail", new THREE.InstancedBufferAttribute(sp, 3));
+        group.add(mesh);
+        geoms.push(cloth);
+        mats.push(sailMat);
+        drawCalls++;
+        continue;
+      }
+      // Полотно не построилось (вырожденное сечение) — падаем на общий путь:
+      // лучше показать тонкую плиту, чем не показать сооружение вовсе.
+    }
 
     // ── Плита ────────────────────────────────────────────────────────────
     const finish = MAT_FINISH[g.mat];
@@ -641,5 +897,9 @@ export function buildMineBulkheads(input: BulkheadsInput): MineBulkheads | null 
     mats.length = 0;
   };
 
-  return { group, dispose, count: total, drawCalls };
+  const setTime = (t: number) => {
+    for (const u of sailTimes) u.value = t;
+  };
+
+  return { group, dispose, count: total, drawCalls, hasSail: sailTimes.length > 0, setTime };
 }

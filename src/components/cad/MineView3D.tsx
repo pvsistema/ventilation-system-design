@@ -210,6 +210,8 @@ export default function MineView3D(p: MineView3DProps) {
   // строится по ТОМУ ЖЕ контуру сечения, что и тело выработки, поэтому всегда
   // вписана в неё (см. mineBulkheads.ts).
   const bkRef = useRef<MineBulkheads | null>(null);
+  /** Есть ли в слое паруса, которым надо двигать полотно каждый кадр. */
+  const bkSailRef = useRef(false);
   const [showBk3D, setShowBk3D] = useState(true);
   const [bkCount, setBkCount] = useState(0);
   const hasBkSymbols = (p.schemaSymbols ?? [])
@@ -609,6 +611,7 @@ export default function MineView3D(p: MineView3DProps) {
       bkRef.current = null;
     }
     setBkCount(0);
+    bkSailRef.current = false;
 
     // Перемычки показываем только вместе с обозначениями: выключив УО, человек
     // просит чистую геометрию — перемычка такое же обозначение, как прочие.
@@ -618,11 +621,17 @@ export default function MineView3D(p: MineView3DProps) {
         symbols: p.schemaSymbols,
         xyScale: p.xyScale, zScale: p.zScale,
         sizeK: symSizeK,
+        animSpeed: p.animSpeed,
       });
       if (built) {
         scene.add(built.group);
         bkRef.current = built;
         setBkCount(built.count);
+        // Полотна парусов колышутся, только пока включена общая «Анимация»:
+        // выключенная кнопка обязана останавливать всё движение на схеме.
+        // Выдув при этом остаётся — он показывает расход, а не движение.
+        bkSailRef.current = built.hasSail && p.animated !== false;
+        if (!bkSailRef.current) built.setTime(0);
       }
     }
     needsRenderRef.current = true;
@@ -633,9 +642,10 @@ export default function MineView3D(p: MineView3DProps) {
       scene.remove(s.group);
       s.dispose();
       bkRef.current = null;
+      bkSailRef.current = false;
     };
   }, [ready, showSymbols, showBk3D, symSizeK, p.schemaSymbols, p.nodes, p.branches,
-      p.xyScale, p.zScale]);
+      p.xyScale, p.zScale, p.animSpeed, p.animated]);
 
   // ── Объёмные замерные станции ─────────────────────────────────────────
   // Свой слой, как вентиляторы: числа станции (расход, сечение) меняются с
@@ -775,6 +785,15 @@ export default function MineView3D(p: MineView3DProps) {
       const fans = fansRef.current;
       if (fansSpinRef.current && fans) {
         fans.setTime(flowTime());
+        needsRenderRef.current = true;
+      }
+
+      // Полотна парусов. Часы те же, что у стрелок и вентиляторов: ткань ходит
+      // от той же струи, которая гонит стрелки, и жить по своему времени она не
+      // может. Само колыхание считает видеокарта — здесь одно число на слой.
+      const bk = bkRef.current;
+      if (bkSailRef.current && bk) {
+        bk.setTime(flowTime());
         needsRenderRef.current = true;
       }
 
