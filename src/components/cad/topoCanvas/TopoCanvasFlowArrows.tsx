@@ -2,6 +2,9 @@ import React from "react";
 import { type TopoBranch } from "@/lib/topology";
 import { type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
 import { type SymbolItem } from "@/components/cad/topoCanvas/TopoCanvasSymbolNode";
+import {
+  ARROW_TIP_H, ARROW_TIP_W, ARROW_TAIL_LEN, ARROW_TAIL_W,
+} from "@/lib/flowAnim";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Стрелка направления движения воздуха на ветви (canvas-оверлей).
@@ -65,7 +68,10 @@ export function createFlowArrowRenderer(d: FlowArrowDeps) {
     const aDx = aBx - aAx, aDy = aBy - aAy;
     const aLen = Math.hypot(aDx, aDy) || 1;
     const aAng = Math.atan2(aDy, aDx) * 180 / Math.PI;
-    const tipH = uW * 2.2, tipW = uW * 0.5, tailLen = uW * 3.0, tailW = Math.max(0.5, uW * 0.15);
+    // Пропорции — общие с canvasRenderer (см. flowAnim): анимированная и
+    // статичная стрелки на одной выработке обязаны быть одного размера.
+    const tipH = uW * ARROW_TIP_H, tipW = uW * ARROW_TIP_W;
+    const tailLen = uW * ARROW_TAIL_LEN, tailW = Math.max(0.5, uW * ARROW_TAIL_W);
     if (!(aLen >= (tailLen + tipH) * 2)) return null;
     arrowSeenBrOv.add(sym.branchId);
     const arrColor = pollutedBranchIds.has(sym.branchId) ? "#2563eb" : "#dc2626";

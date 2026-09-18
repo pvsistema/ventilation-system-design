@@ -11,7 +11,10 @@ import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics"
 import { branchLabelLines } from "./branchLabelLines";
 import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
 import { buildTube, shadeColor, shouldDrawTube, TUBE_MAX_COUNT, type TubeGeometry } from "./tube3d";
-import { arrowSpeedMps, FLOW_PX_MIN, FLOW_PX_MAX } from "./flowAnim";
+import {
+  arrowSpeedMps, FLOW_PX_MIN, FLOW_PX_MAX,
+  ARROW_TIP_H, ARROW_TIP_W, ARROW_TAIL_LEN, ARROW_TAIL_W,
+} from "./flowAnim";
 
 /**
  * Порог переключения SVG → Canvas по числу видимых ветвей.
@@ -1182,28 +1185,27 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // наконечник с тонким хвостиком и белой обводкой. Цвет по типу струи —
       // КРАСНЫЙ свежая, СИНИЙ исходящая (та же логика, что у стрелок потока).
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      const tipH    = w * 2.2;
-      const tipW    = w * 0.5;
-      const tailLen = w * 3.0;
-      const tailW   = Math.max(0.5, w * 0.15);
-      // Расстояние между стрелками — заметно больше прежнего, чтобы цепочка
-      // читалась как отдельные стрелки, а не сплошная лента.
-      const step = Math.max(70, Math.min(160, (tailLen + tipH) * 3.2));
-      // Сама стрелка занимает tailLen+tipH. Раньше условие требовало ещё и
-      // целый шаг ДО СЛЕДУЮЩЕЙ стрелки — из-за этого короткие выработки
-      // оставались без анимации, хотя одна стрелка на них помещалась. При
-      // отдалении схемы всё больше выработок попадало под этот порог, и
-      // анимация «пропадала» на них до тех пор, пока не приблизишь.
+      const tipH    = w * ARROW_TIP_H;
+      const tipW    = w * ARROW_TIP_W;
+      const tailLen = w * ARROW_TAIL_LEN;
+      const tailW   = Math.max(0.5, w * ARROW_TAIL_W);
+      // ── ОДНА СТРЕЛКА НА ВЕТВЬ ────────────────────────────────────────────
+      //
+      // Раньше здесь шла цепочка с шагом в ЭКРАННЫХ пикселях (70…160 px). Шаг
+      // на экране постоянный, а экранная длина выработки растёт с приближением
+      // — значит при каждом шаге зума в ту же ветвь влезало всё больше стрелок.
+      // На сильном увеличении одна выработка превращалась в ленту из пяти-шести
+      // наконечников, и по схеме уже нельзя было сосчитать, где сколько струй:
+      // число стрелок показывало масштаб показа, а не воздухораспределение.
+      //
+      // Стрелка — это УКАЗАТЕЛЬ НАПРАВЛЕНИЯ, и на выработку его нужно ровно
+      // один, как у статичной стрелки потока ниже. Тогда картинка при зуме не
+      // меняется по смыслу: стрелка растёт вместе со схемой и остаётся одна.
       const arrowLen = tailLen + tipH;
       if (segLen > arrowLen) {
-        const from0 = tailLen, to0 = segLen - tipH - step;
-        // Если места на цепочку не хватает — рисуем одну стрелку по центру.
-        const count = to0 > from0 ? Math.max(1, Math.floor((to0 - from0) / step) + 1) : 1;
-        const single = to0 <= from0;
-        // Одиночная стрелка пробегает свободную длину выработки (от начала до
-        // места, где наконечник упрётся в конец), цепочка — один шаг до
-        // соседней стрелки. runLen — период повтора движения.
-        const runLen = single ? Math.max(1, segLen - arrowLen) : step;
+        // Стрелка пробегает свободную длину выработки — от её начала до места,
+        // где наконечник упрётся в конец. runLen — период повтора движения.
+        const runLen = Math.max(1, segLen - arrowLen);
         // Скорость бега — по общему закону (flowAnim), одному на чертёж и на
         // модель: сначала метры рудника в секунду от натурной скорости
         // воздуха, потом перевод в пиксели через масштаб показа.
@@ -1224,41 +1226,36 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         // при любом масштабе стрелка продолжает путь с того же места.
         const shift = (animOffset * pxPerSec) % runLen;
         const ux = dx / segLen, uy = dy / segLen;
+        // shift уже приведён по модулю runLen: старт + смещение по времени.
+        const d0 = tailLen + shift;
         ctx.save();
         ctx.setLineDash([]);
         ctx.globalAlpha = 1;
-        for (let i = 0; i < count; i++) {
-          // shift уже приведён по модулю runLen — обе ветки считаются одинаково:
-          // старт + смещение по времени (+ позиция в цепочке).
-          const d0 = single ? tailLen + shift : from0 + i * step + shift;
-          ctx.save();
-          ctx.translate(sxA + ux * d0, syA + uy * d0);
-          ctx.rotate(angle);
-          // Белая обводка всей стрелки (контур)
-          ctx.strokeStyle = "white";
-          ctx.lineWidth = tailW + 1.5;
-          ctx.lineCap = "round";
-          ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
-          ctx.lineJoin = "round";
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
-          ctx.stroke();
-          // Хвостик
-          ctx.strokeStyle = arrowColor;
-          ctx.lineWidth = tailW;
-          ctx.lineCap = "round";
-          ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
-          // Наконечник
-          ctx.fillStyle = arrowColor;
-          ctx.strokeStyle = "white";
-          ctx.lineWidth = 0.8;
-          ctx.lineJoin = "round";
-          ctx.beginPath();
-          ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
-          ctx.fill(); ctx.stroke();
-          ctx.restore();
-        }
+        ctx.translate(sxA + ux * d0, syA + uy * d0);
+        ctx.rotate(angle);
+        // Белая обводка всей стрелки (контур)
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = tailW + 1.5;
+        ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
+        ctx.lineJoin = "round";
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
+        ctx.stroke();
+        // Хвостик
+        ctx.strokeStyle = arrowColor;
+        ctx.lineWidth = tailW;
+        ctx.lineCap = "round";
+        ctx.beginPath(); ctx.moveTo(-tailLen, 0); ctx.lineTo(0, 0); ctx.stroke();
+        // Наконечник
+        ctx.fillStyle = arrowColor;
+        ctx.strokeStyle = "white";
+        ctx.lineWidth = 0.8;
+        ctx.lineJoin = "round";
+        ctx.beginPath();
+        ctx.moveTo(0, -tipW); ctx.lineTo(tipH, 0); ctx.lineTo(0, tipW); ctx.closePath();
+        ctx.fill(); ctx.stroke();
         ctx.restore();
       }
     }
@@ -1334,10 +1331,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // Размеры ПОЛНОСТЬЮ пропорциональны w (толщине ветви) → масштабируются вместе со схемой
     if (showFlowArrows && !thinLines && lodArrows && Q > 0.1) {
       const arrowColor = (pollutedBranchIds?.has(b.id) ?? false) ? "#2563eb" : "#dc2626";
-      const tipH    = w * 2.2;
-      const tipW    = w * 0.5;
-      const tailLen = w * 3.0;
-      const tailW   = Math.max(0.5, w * 0.15);
+      const tipH    = w * ARROW_TIP_H;
+      const tipW    = w * ARROW_TIP_W;
+      const tailLen = w * ARROW_TAIL_LEN;
+      const tailW   = Math.max(0.5, w * ARROW_TAIL_W);
       // Не показываем если стрелка не влезает в длину ветви (как в ПО Вентиляция 2.0)
       if (segLen >= (tailLen + tipH) * 2) {
       ctx.save();
