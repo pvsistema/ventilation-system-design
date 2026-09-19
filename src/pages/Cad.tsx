@@ -6467,7 +6467,7 @@ export default function CadPage() {
             <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
               <div className="font-semibold" style={{ color: "var(--c-red, #b91c1c)" }}>T очага: {safeFixed(fireResult.fireTemp, 1)} °C</div>
               <div style={{ color: "var(--c-amber, #c2410c)" }}>h_t = {safeFixed(fireResult.fireThermalDep, 1)} Па</div>
-              <div style={{ color: "var(--c-t2, #374151)" }}>Задымлено: {fireResult.branches.size} вет.</div>
+              <div style={{ color: "var(--c-t2, #374151)" }}>Задымлено: {fireResult.smokedCount ?? fireResult.branches.size} вет.</div>
               {fireResult.reversedBranches.size > 0
                 ? <div className="font-semibold px-1 rounded" style={{ background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #dc2626)", border: "1px solid #fca5a5" }}>⚠ Опрокид.: {fireResult.reversedBranches.size}</div>
                 : <div style={{ color: "var(--c-green, #15803d)" }}>✓ Струя устойчива</div>
@@ -12464,6 +12464,10 @@ export default function CadPage() {
                 fireResult.branches.forEach((fr, bid) => {
                   const branch = branches.find(b => b.id === bid);
                   if (!branch) return;
+                  // В результат попадают и ЧИСТЫЕ ветви, развёрнутые тягой пожара
+                  // (Прил. 7): дым в них не идёт, красить их задымлением нельзя —
+                  // факт разворота показывает синяя аура (reversedBranchIds).
+                  if (!branch.hasFire && fr.smokeDensity <= 0) return;
                   const col = hazardCol(fr.hazardLevel);
 
                   if (branch.hasFire) {

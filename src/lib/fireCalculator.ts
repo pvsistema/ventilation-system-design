@@ -510,6 +510,10 @@ export interface FireCalculationResult {
   fireThermalDep: number;
   branches: Map<string, FireBranchResult>;
   reversedBranches: Set<string>;
+  // Число реально ЗАДЫМЛЁННЫХ ветвей. Отдельно от branches.size, потому что в
+  // карту попадают ещё и чистые ветви, развёрнутые тягой пожара (Прил. 7):
+  // дым в них не идёт, а факт опрокидывания показать нужно.
+  smokedCount: number;
   log: string[];
   // Максимальное время распространения задымления (минуты)
   maxSmokeTime: number;
@@ -1838,7 +1842,7 @@ export function calcFireMode(
   // ── Шаг 1: Находим ветви с пожарами ──────────────────────────────────────
   const fireBranches = branches.filter(b => b.hasFire);
   if (fireBranches.length === 0) {
-    return { fireTemp: ambientTemp_C, fireThermalDep: 0, branches: resultMap, reversedBranches, log: ["Очагов пожара не обнаружено"], maxSmokeTime: 60, nodeArrivalTime: new Map(), nodeGas: new Map() };
+    return { fireTemp: ambientTemp_C, fireThermalDep: 0, branches: resultMap, reversedBranches, smokedCount: 0, log: ["Очагов пожара не обнаружено"], maxSmokeTime: 60, nodeArrivalTime: new Map(), nodeGas: new Map() };
   }
   log.push(`Обнаружено очагов пожара: ${fireBranches.length}`);
 
@@ -2373,8 +2377,79 @@ export function calcFireMode(
 
   log.push(`Dijkstra: задымлено узлов=${finalized.size}, ветвей=${resultMap.size} из ${branches.length}`);
 
+  // ── ОПРОКИДЫВАНИЕ ВНЕ ФРОНТА ЗАДЫМЛЕНИЯ (Прил. 7) ─────────────────────────
+  //
+  // ЧТО БЫЛО СЛОМАНО. Разворот струи фиксировался в ДВУХ местах, и оба видят
+  // только дым: ветвь-очаг (actuallyReversed) и ветви, до которых дошёл фронт
+  // задымления в обходе Dijkstra. Ветвь, по которой дым НЕ идёт, не попадала
+  // в resultMap вообще — и её разворот терялся молча.
+  //
+  // Ровно этот случай даёт пожар в стволе, идущем на поверхность. По Прил. 7
+  // при ВОСХОДЯЩЕМ проветривании сам горящий ствол опрокинуться не может:
+  // тепловая депрессия направлена по потоку и только разгоняет его. Опрокинуть
+  // она может СОСЕДНЮЮ выработку того же контура — условие (7.1) h_т < R·Q₀²
+  // написано именно про неё. А соседний исходящий ствол — чистый, дым в него
+  // не идёт: пожар в нём высасывает воздух, и струя разворачивается ВНИЗ,
+  // затягивая в шахту свежий наружный воздух.
+  //
+  // Проверка на решателе (сеть: вход.ствол → штрек → узел, из узла два ствола
+  // на поверхность; очаг в слабом стволе SH_AUX, ГВУ в SH_OUT):
+  //     h_т = 0 Па     SH_OUT = +158 м³/с   (исходящий, штатно)
+  //     h_т = +1200 Па SH_OUT = +110 м³/с → при большей тяге знак меняется
+  // Расход в SH_OUT разворачивается, но в reversedBranches ничего не попадало:
+  // ни подсветки, ни счётчика «Опрокид.», ни строки в журнале — расчёт
+  // выглядел так, будто опрокидывания нет.
+  //
+  // Поэтому после обхода дыма проходим по ВСЕМ ветвям и сверяем знак расхода
+  // со штатным. Это тот же критерий, что и в двух местах выше (факт из сети,
+  // а не оценка), просто он больше не привязан к наличию дыма.
+  for (const b of branches) {
+    if (fireBranchIds.has(b.id)) continue;      // очаги уже разобраны выше
+    if (reversedBranches.has(b.id)) continue;   // найдено при обходе дыма
+    const bOrig = (b as TopoBranch & { originalFlow?: number }).originalFlow;
+    if (bOrig === undefined) continue;
+    const bNow = b.flow ?? 0;
+    // Порог 0,05 м³/с — отсекает численный шум решателя на почти стоящих
+    // струях, где знак «дрожит» и разворотом не является.
+    if (Math.abs(bNow) <= 0.05 || Math.abs(bOrig) <= 0.05) continue;
+    if (Math.sign(bOrig) === Math.sign(bNow)) continue;
+    reversedBranches.add(b.id);
+    // Ветви нет в resultMap (дым до неё не дошёл) — заводим запись без
+    // задымления, чтобы панель и таблица показали факт разворота. Газы нулевые:
+    // воздух в ней чистый, развернулась она тягой пожара, а не дымом.
+    if (!resultMap.has(b.id)) {
+      const bSpeed = Math.abs(bNow) > 0 && (b.area ?? 0) > 0
+        ? Math.abs(bNow) / (b.area as number) : 0.3;
+      resultMap.set(b.id, {
+        branchId: b.id,
+        airTempOut: Math.round(ambientTemp_C * 10) / 10,
+        thermalDepression: 0,
+        willReverse: false,
+        actuallyReversed: true,
+        ascending: false,
+        coConc: 0,
+        co2Conc: 0.04,
+        smokeDensity: 0,
+        visibility: 1000,
+        hazardLevel: "safe",
+        flowDelta: Math.round((bNow - bOrig) * 100) / 100,
+        smokeArrivalTime: 0,
+        airSpeed: Math.round(Math.max(bSpeed, 0.3) * 100) / 100,
+        flowSign: bNow >= 0 ? 1 : -1,
+      });
+    } else {
+      const prev = resultMap.get(b.id)!;
+      prev.actuallyReversed = true;
+    }
+    log.push(`Ветвь ${b.id}: 🔄 ОПРОКИНУТА тягой пожара (Q ${bOrig.toFixed(1)} → ${bNow.toFixed(1)} м³/с), дым не доходит`);
+  }
+
   // ── Итоговая статистика ───────────────────────────────────────────────────
-  const smokedCount = resultMap.size;
+  // Считаем именно ЗАДЫМЛЁННЫЕ ветви. В resultMap теперь попадают и чистые
+  // ветви, развёрнутые тягой пожара (см. блок выше), — в счётчик задымления
+  // они входить не должны, иначе цифра в панели завышается.
+  let smokedCount = 0;
+  resultMap.forEach(fr => { if (fr.smokeDensity > 0) smokedCount++; });
   log.push(`Задымлено ветвей: ${smokedCount} из ${branches.length}`);
   if (reversedBranches.size > 0) {
     log.push(`⚠️ Опрокидывание струи в ветвях: ${[...reversedBranches].join(", ")}`);
@@ -2395,6 +2470,7 @@ export function calcFireMode(
     fireThermalDep: firstResult.thermalDepression,
     branches: resultMap,
     reversedBranches,
+    smokedCount,
     log,
     maxSmokeTime,
     nodeArrivalTime,
