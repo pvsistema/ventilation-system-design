@@ -60,7 +60,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, getNormativeMouthDistance, setNormativeMouthDistance, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
@@ -1347,17 +1347,15 @@ export default function CadPage() {
   };
   // Данные для увеличенного просмотра h–Q диаграммы (null — окно закрыто)
   const [hqDialogData, setHqDialogData] = useState<(HQDiagramData & { branchName?: string }) | null>(null);
-  // Параметры нормативной методики: t — время с начала пожара (мин, ф. 4.8),
-  // x — расстояние от очага до устья по ходу струи (м, ф. 4.13; 0 = авто).
+  // Параметры нормативной методики: t — время с начала пожара (мин, ф. 4.8).
+  //
+  // x (расстояние очаг→устье, ф. 4.13) здесь БОЛЬШЕ НЕ ХРАНИТСЯ: одно число на
+  // всю схему не может описывать положение очага в конкретной ветви. Теперь оно
+  // считается из fireT (ползунок «Очаг в ветви») и длины выработки.
   const [normFireTime, setNormFireTimeState] = useState<number>(getNormativeFireTime());
-  const [normMouthDist, setNormMouthDistState] = useState<number>(getNormativeMouthDistance());
   const changeNormFireTime = (v: number) => {
     const t = Math.min(NORMATIVE_TIME_MAX_MIN, Math.max(1, v || 1));
     setNormativeFireTime(t); setNormFireTimeState(t);
-  };
-  const changeNormMouthDist = (v: number) => {
-    const x = Math.max(0, v || 0);
-    setNormativeMouthDistance(x); setNormMouthDistState(x);
   };
   // Анимация воспроизведения шкалы
   const [smokeAnimating, setSmokeAnimating] = useState(false);
@@ -8536,6 +8534,51 @@ export default function CadPage() {
                   {/* Параметры очага */}
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-red-ink, #991b1b)" }}>Параметры очага пожара</div>
 
+                  {/* ── Положение очага в ветви (как в ПО «Вентиляция») ──
+                      Ползунок двигает очаг от начала к концу выработки. Именно
+                      он задаёт x (ф. 4.13) = расстояние от очага до устья по
+                      ходу струи, а значит высоту столба горячих газов Δz (4.6)
+                      и тепловую депрессию h_т (4.5). Очаг у входа нисходящей
+                      выработки — максимальная тяга и опрокидывание, у выхода —
+                      тяги практически нет. */}
+                  {(() => {
+                    const ft = b.fireT ?? 0.5;
+                    const L = b.length ?? 0;
+                    const pct = Math.round(ft * 100);
+                    // Двигаем и символ на схеме, и расчётное поле ветви разом,
+                    // иначе картинка разъедется с расчётом.
+                    const moveFire = (v: number) => {
+                      const t = Math.min(1, Math.max(0, v / 100));
+                      updateBranch(b.id, { fireT: t });
+                      if (fireSymId) {
+                        setSchemaSymbols(prev => prev.map(s =>
+                          s.id === fireSymId.id ? { ...s, t } : s));
+                      }
+                    };
+                    const outFrac = (b.flow ?? 0) >= 0 ? (1 - ft) : ft;
+                    return (
+                      <>
+                        <div className="flex items-center gap-1 px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
+                          title="Положение очага вдоль выработки: 0 % — у начального узла, 100 % — у конечного. Задаёт расстояние «очаг→устье» в формуле 4.13.">
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Очаг в ветви:</span>
+                          <input type="range" min={0} max={100} step={1}
+                            value={pct}
+                            onChange={e => moveFire(Number(e.target.value))}
+                            className="flex-1" style={{ accentColor: "#dc2626" }} />
+                          <input type="number" min={0} max={100} step={1}
+                            value={pct}
+                            onChange={e => moveFire(Number(e.target.value) || 0)}
+                            className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                            style={{ fontSize: 11, height: 18 }} />
+                          <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
+                        </div>
+                        <div className="px-1 py-0.5 text-[10px]" style={{ color: "var(--c-t3, #6b7280)", borderBottom: "1px solid #ebebeb" }}>
+                          От начала ветви: {(L * ft).toFixed(1)} м · до устья по потоку: {(L * outFrac).toFixed(1)} м
+                        </div>
+                      </>
+                    );
+                  })()}
+
                   {/* ── Масштаб УО ── */}
                   {fireSymId && (() => {
                     const fireSym = schemaSymbols.find(s => s.id === fireSymId.id);
@@ -8759,15 +8802,23 @@ export default function CadPage() {
                           className="flex-1 text-[11px] text-right px-1"
                           style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
                       </div>
-                      <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
-                        title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). 0 — авто по положению очага.">
-                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Очаг→устье x, м:</span>
-                        <input type="number" min={0} step={10}
-                          value={normMouthDist}
-                          onChange={e => changeNormMouthDist(parseFloat(e.target.value))}
-                          className="flex-1 text-[11px] text-right px-1"
-                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white" }} />
-                      </div>
+                      {/* x (ф. 4.13) больше НЕ вводится вручную: он однозначно
+                          следует из положения очага в ветви (ползунок «Очаг в
+                          ветви» выше) и направления струи. Ручное поле давало
+                          противоречие — очаг двигают, а x стоит на месте. */}
+                      {(() => {
+                        const ft = b.fireT ?? 0.5;
+                        const outFrac = (b.flow ?? 0) >= 0 ? (1 - ft) : ft;
+                        const xAuto = (b.length ?? 0) * outFrac;
+                        return (
+                          <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
+                            title="x — расстояние от очага до устья выработки по ходу струи (ф. 4.13). Считается автоматически по положению очага в ветви.">
+                            <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Очаг→устье x, м:</span>
+                            <span className="flex-1 text-[11px] text-right px-1 text-gray-700">{xAuto.toFixed(1)}</span>
+                            <span className="text-[10px] text-gray-400 flex-shrink-0 ml-1">авто</span>
+                          </div>
+                        );
+                      })()}
                     </>
                   )}
                   <div className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
