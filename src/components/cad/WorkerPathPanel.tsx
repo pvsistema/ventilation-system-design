@@ -34,6 +34,8 @@ interface BranchLite {
   hasBulkhead?: boolean;
   bulkheadId?: string;
   isLeakage?: boolean;
+  /** Нить вентрубопровода — по трубе человек не идёт */
+  isVentPipeBranch?: boolean;
   fireComputedSmokeDens?: number;
   fireComputedCO?: number;
 }

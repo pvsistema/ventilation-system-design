@@ -206,7 +206,27 @@ export interface TopoBranchLite {
   bulkheadR?: number;
   bulkheadAirPerm?: number;
   isLeakage?: boolean;
+  /**
+   * Ветвь САМА является нитью вентиляционного трубопровода (става труб).
+   * Человек по трубе не идёт — такие ветви в маршрутном графе не участвуют.
+   */
+  isVentPipeBranch?: boolean;
   resistance?: number;
+}
+
+/**
+ * Ветвь, по которой человек физически НЕ может идти.
+ *
+ * Раньше отсекались только утечки, и в граф попадала нить вентрубопровода:
+ * она идёт параллельно выработке, дыма в ней нет (расчёт пожара считает дым по
+ * выработкам), поэтому Дейкстра охотно «проводила» отделение по трубе в обход
+ * задымлённого участка. В итоге маршрут шёл по ставу труб, а длина пути в дыму
+ * оказывалась заниженной — задымление на маршруте фактически не учитывалось.
+ */
+export function isVirtualBranch(b: TopoBranchLite): boolean {
+  if (b.isLeakage) return true;        // перетечка через перемычку/целик — не выработка
+  if (b.isVentPipeBranch) return true; // нить вентрубопровода — по трубе не ходят
+  return false;
 }
 
 /**
@@ -364,6 +384,14 @@ export interface RescueRouteVariant {
   totalTime: number;
   /** Протяжённость участков в задымлённой атмосфере, м */
   smokeLength: number;
+  /** Протяжённость слабого задымления (Рв 5–10 м, k3=1,43), м */
+  smokeLengthLow: number;
+  /** Протяжённость густого задымления (Рв < 5 м, k3=2,0), м */
+  smokeLengthHigh: number;
+  /** Время хода по задымлённым участкам «туда», мин */
+  smokeTime: number;
+  /** Минимальная дальность видимости на маршруте, м */
+  minVisibility: number;
   /** Максимальная плотность дыма на маршруте, м⁻¹ */
   maxSmokeDensity: number;
   /** Худшая зона задымления на маршруте */
@@ -386,6 +414,9 @@ function summarizeVariant(
   let totalLength = 0;
   let totalTime = 0;
   let smokeLength = 0;
+  let smokeLengthLow = 0;
+  let smokeLengthHigh = 0;
+  let smokeTime = 0;
   let maxSmokeDensity = 0;
   let bulkheadCount = 0;
   const branchDirs = new Map<string, boolean>();
@@ -403,9 +434,18 @@ function summarizeVariant(
     const dens = b.fireComputedSmokeDens ?? 0;
     const zone = getZone(dens);
     const speed = Math.max(1, getSpeed(zone, signedAngle));
+    const t = len / speed;
     totalLength += len;
-    totalTime += len / speed;
-    if (zone !== "clean") smokeLength += len;
+    totalTime += t;
+    // Дым учитывается по КАЖДОЙ зоне отдельно: раньше в сводке варианта была
+    // только общая длина «в дыму», и маршрут через 300 м густого дыма выглядел
+    // так же, как через 300 м слабого — хотя k3 отличается в полтора раза.
+    if (zone !== "clean") {
+      smokeLength += len;
+      smokeTime += t;
+      if (zone === "smoky_high") smokeLengthHigh += len;
+      else smokeLengthLow += len;
+    }
     if (dens > maxSmokeDensity) maxSmokeDensity = dens;
     if (b.hasBulkhead) bulkheadCount++;
   }
@@ -413,7 +453,10 @@ function summarizeVariant(
   const worstZone = getZone(maxSmokeDensity);
   return {
     index, edges, branchDirs, branchIds,
-    totalLength, totalTime, smokeLength, maxSmokeDensity,
+    totalLength, totalTime,
+    smokeLength, smokeLengthLow, smokeLengthHigh, smokeTime,
+    minVisibility: visibilityFromDensity(maxSmokeDensity),
+    maxSmokeDensity,
     worstZone, bulkheadCount, ok,
   };
 }
@@ -442,7 +485,7 @@ export function findRescueRoutes(
   const adj = new Map<string, Edge[]>();
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
-    if (b.isLeakage) continue;
+    if (isVirtualBranch(b)) continue;
     if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
@@ -513,7 +556,7 @@ export function calcRescue(
   const adj = new Map<string, Edge[]>();
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
-    if (b.isLeakage) continue;
+    if (isVirtualBranch(b)) continue;
     // NaN-длина не отсекалась `<= 0` (NaN <= 0 === false) и ломала Дейкстру
     if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
@@ -919,7 +962,7 @@ export function calcWorkerPath(
   const adj = new Map<string, Edge[]>();
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
-    if (b.isLeakage) continue;
+    if (isVirtualBranch(b)) continue;
     // Узлы ветви обязаны существовать в графе (иначе adj.get вернёт undefined)
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     // Горнорабочий проходит через двери, паруса, регуляторы; глухие перемычки — нет

@@ -197,7 +197,8 @@ export function calcEvacuationRisk(
     fireComputedCO: b.fireComputedCO,
     flow: b.flow,
     hasBulkhead: b.hasBulkhead, bulkheadId: b.bulkheadId,
-    isLeakage: b.isLeakage, resistance: b.resistance,
+    isLeakage: b.isLeakage, isVentPipeBranch: b.isVentPipeBranch,
+    resistance: b.resistance,
   }));
 
   const nodeLabel = (n: TopoNode): string =>

@@ -55,6 +55,8 @@ interface BranchLite {
   bulkheadName?: string;
   bulkheadR?: number;
   isLeakage?: boolean;
+  /** Нить вентрубопровода — в маршрутном графе не участвует */
+  isVentPipeBranch?: boolean;
   resistance?: number;
 }
 
@@ -1197,6 +1199,25 @@ export default function RescuePanel({
                     {v.smokeLength === 0 && <span className="text-green-600">без дыма</span>}
                     {v.bulkheadCount > 0 && <span>перемычек: {v.bulkheadCount}</span>}
                   </div>
+                  {/* Разбивка дыма по зонам: 300 м густого дыма и 300 м слабого —
+                      разные маршруты (k3 = 2,0 против 1,43), общей цифрой их
+                      не различить. Показываем и худшую видимость на пути. */}
+                  {v.smokeLength > 0 && (
+                    <div className="flex items-center gap-2 mt-0.5 ml-4 text-[9px] text-gray-500">
+                      {v.smokeLengthHigh > 0 && (
+                        <span className="text-red-600">
+                          густой {Math.round(v.smokeLengthHigh)} м
+                        </span>
+                      )}
+                      {v.smokeLengthLow > 0 && (
+                        <span className="text-orange-600">
+                          слабый {Math.round(v.smokeLengthLow)} м
+                        </span>
+                      )}
+                      <span>в дыму {v.smokeTime.toFixed(1)} мин</span>
+                      <span>Рв {v.minVisibility >= 999 ? "—" : `${v.minVisibility.toFixed(1)} м`}</span>
+                    </div>
+                  )}
                 </button>
               );
             })}

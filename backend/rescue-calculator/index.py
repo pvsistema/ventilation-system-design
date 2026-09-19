@@ -37,7 +37,7 @@ CORS = {
 #   подъём:  0°=45, 5°=37.5, 10°=30, 15°=24, 20°=20, 30°=14, 45°=10, 90°=6
 #   спуск:   0°=45, 5°=42,   10°=39, 15°=34, 20°=28, 30°=22, 45°=15, 90°=10
 #
-# Коэффициент k3 по зонам задымления (Рв = 2 / smoke_density):
+# Коэффициент k3 по зонам задымления (Рв = VIS_K / smoke_density):
 #   k3 = 1.00 — чистый воздух (Рв > 10 м)
 #   k3 = 1.43 — слабое задымление (Рв 5–10 м)
 #   k3 = 2.00 — густое задымление (Рв < 5 м)
@@ -72,10 +72,25 @@ def get_speed(zone: str, angle_deg: float) -> float:
     return v / 2.0
 
 
+# Коэффициент различимости в законе Бугера–Ламберта–Бера (светящийся объект).
+# ДОЛЖЕН совпадать с VIS_K из src/lib/smokeVisibility.ts: раньше здесь стояло 2,
+# а во фронтенде 3 — одна и та же ветвь попадала в разные зоны задымления, и
+# серверный расчёт давал другое время и расход O₂, чем локальный.
+VIS_K = 3.0
+CLEAN_AIR_DENS = 0.001
+VIS_MAX_M = 1000.0
+
+
+def visibility_from_density(smoke_density: float) -> float:
+    if not (smoke_density > 0):
+        return VIS_MAX_M
+    return min(VIS_MAX_M, VIS_K / smoke_density)
+
+
 def get_zone(smoke_density: float) -> str:
-    if smoke_density <= 0.001:
+    if smoke_density <= CLEAN_AIR_DENS:
         return "clean"
-    vis = 2.0 / smoke_density
+    vis = visibility_from_density(smoke_density)
     if vis >= 10: return "clean"
     if vis >= 5:  return "smoky_low"
     return "smoky_high"
@@ -192,7 +207,7 @@ def build_segments(edges, branch_map, node_map, o2c):
         # Расход O₂ на 100 м при чистом воздухе (k3=1) — как в ПО Вентиляция
         o2_per_100m    = o2c * 100.0 / speed_cl if speed_cl > 0 else 0.0
 
-        vis = 2.0 / smoke_dens if smoke_dens > 0 else 999
+        vis = visibility_from_density(smoke_dens)
 
         from_node_id = b["fromId"] if is_forward else b["toId"]
         to_node_id   = b["toId"]   if is_forward else b["fromId"]
@@ -260,7 +275,11 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
     branch_map = {}
     for b in branches:
         branch_map[b["id"]] = b
-        if b.get("isLeakage"):
+        # Утечка через перемычку/целик — не выработка, по ней не ходят.
+        # Нить вентрубопровода (isVentPipeBranch) — тоже: она идёт параллельно
+        # выработке и дыма в ней нет, поэтому раньше маршрут «обходил» дым
+        # по ставу труб, а длина пути в дыму занижалась.
+        if b.get("isLeakage") or b.get("isVentPipeBranch"):
             continue
         _len = float(b.get("length") or 0)
         if not math.isfinite(_len) or _len <= 0:
