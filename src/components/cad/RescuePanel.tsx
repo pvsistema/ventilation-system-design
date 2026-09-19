@@ -719,10 +719,23 @@ export default function RescuePanel({
   }, [nodes]);
 
   const nodeName = (id: string) => {
+    if (!id) return "";
     const n = nodes.find(n2 => n2.id === id);
     if (!n) return id.slice(0, 8);
     return nodeLabel(n);
   };
+
+  // Проверка корректности промежуточных узлов (пустые / дубли / совпадение со стартом и целью)
+  const waypointIssue = useMemo(() => {
+    if (!useWaypoints) return "";
+    if (waypointIds.some(id => !id)) return "Есть незаполненные промежуточные узлы";
+    const dup = waypointIds.find((id, i) => waypointIds.indexOf(id) !== i);
+    if (dup) return `Узел «${nodeName(dup)}» указан дважды`;
+    const edge = waypointIds.find(id => id === startNodeId || id === targetNodeId);
+    if (edge) return `Узел «${nodeName(edge)}» совпадает с начальным или целевым`;
+    return "";
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [useWaypoints, waypointIds, startNodeId, targetNodeId, nodes]);
 
   async function handleCalc() {
     if (!startNodeId || !targetNodeId) {
@@ -731,6 +744,10 @@ export default function RescuePanel({
     }
     if (startNodeId === targetNodeId) {
       alert("Начальный и конечный узлы совпадают");
+      return;
+    }
+    if (waypointIssue) {
+      alert(`Промежуточные узлы: ${waypointIssue}`);
       return;
     }
     const activeWaypoints = useWaypoints ? waypointIds.filter(Boolean) : [];
@@ -874,40 +891,97 @@ export default function RescuePanel({
         </label>
         {useWaypoints && (
           <div className="mt-1 flex flex-col gap-1">
-            {waypointIds.map((wpId, idx) => {
-              const wpPickMode = `wp:${idx}` as `wp:${number}`;
-              const isPickingThis = pickMode === wpPickMode;
-              return (
-                <div key={idx} className="flex gap-1 items-center">
-                  <span className="text-[10px] text-orange-600 font-medium w-4 flex-shrink-0">{idx + 1}</span>
-                  <select value={wpId}
-                    onChange={e => setWaypointIds(prev => prev.map((v, i) => i === idx ? e.target.value : v))}
-                    className="flex-1 min-w-0 rounded border border-orange-300 text-[11px] px-1 py-0.5 bg-orange-50">
-                    <option value="">— выберите узел —</option>
-                    {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
-                  </select>
-                  <button
-                    onClick={() => onPickModeChange(isPickingThis ? null : wpPickMode)}
-                    title="Кликните на узел схемы"
-                    className={`h-6 px-1.5 rounded border text-[10px] flex items-center gap-0.5 flex-shrink-0 ${
-                      isPickingThis ? "bg-orange-500 text-white border-orange-600" : "bg-white text-gray-600 border-gray-300 hover:border-orange-400"
-                    }`}>
-                    <Icon name="MousePointer2" size={10} />
-                  </button>
-                  <button onClick={() => setWaypointIds(prev => prev.filter((_, i) => i !== idx))}
-                    className="text-red-400 hover:text-red-600 px-0.5 text-[13px] leading-none flex-shrink-0"
-                    title="Удалить">×</button>
-                </div>
-              );
-            })}
-            <button
-              onClick={() => setWaypointIds(prev => [...prev, ""])}
-              className="mt-0.5 text-[10px] text-orange-700 border border-orange-300 rounded px-2 py-0.5 hover:bg-orange-50 flex items-center gap-1">
-              <Icon name="Plus" size={10} /> Добавить промежуточный узел
-            </button>
+            <div className="flex flex-col gap-1 max-h-[168px] overflow-y-auto pr-0.5">
+              {waypointIds.map((wpId, idx) => {
+                const wpPickMode = `wp:${idx}` as `wp:${number}`;
+                const isPickingThis = pickMode === wpPickMode;
+                const isDup = !!wpId && waypointIds.indexOf(wpId) !== idx;
+                const isEdge = !!wpId && (wpId === startNodeId || wpId === targetNodeId);
+                const bad = isDup || isEdge;
+                return (
+                  <div key={idx} className="flex gap-1 items-center">
+                    <span className="text-[10px] text-orange-600 font-medium w-4 flex-shrink-0">{idx + 1}</span>
+                    <select value={wpId}
+                      onChange={e => setWaypointIds(prev => prev.map((v, i) => i === idx ? e.target.value : v))}
+                      title={isDup ? "Узел уже указан выше" : isEdge ? "Совпадает с начальным или целевым узлом" : nodeName(wpId)}
+                      className={`flex-1 min-w-0 rounded border text-[11px] px-1 py-0.5 ${
+                        bad ? "border-red-400 bg-red-50" : wpId ? "border-orange-300 bg-orange-50" : "border-amber-400 bg-amber-50"
+                      }`}>
+                      <option value="">— выберите узел —</option>
+                      {nodeOptions.map(n => <option key={n.id} value={n.id}>{n.label}</option>)}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => setWaypointIds(prev => idx === 0 ? prev
+                        : prev.map((v, i) => i === idx - 1 ? prev[idx] : i === idx ? prev[idx - 1] : v))}
+                      disabled={idx === 0}
+                      title="Переместить выше"
+                      className="h-6 px-1 rounded border border-gray-300 bg-white text-gray-500 text-[10px] flex-shrink-0 disabled:opacity-30 hover:border-orange-400">
+                      <Icon name="ChevronUp" size={10} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setWaypointIds(prev => idx >= prev.length - 1 ? prev
+                        : prev.map((v, i) => i === idx ? prev[idx + 1] : i === idx + 1 ? prev[idx] : v))}
+                      disabled={idx >= waypointIds.length - 1}
+                      title="Переместить ниже"
+                      className="h-6 px-1 rounded border border-gray-300 bg-white text-gray-500 text-[10px] flex-shrink-0 disabled:opacity-30 hover:border-orange-400">
+                      <Icon name="ChevronDown" size={10} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onPickModeChange(isPickingThis ? null : wpPickMode)}
+                      title="Кликните на узел схемы"
+                      className={`h-6 px-1.5 rounded border text-[10px] flex items-center gap-0.5 flex-shrink-0 ${
+                        isPickingThis ? "bg-orange-500 text-white border-orange-600" : "bg-white text-gray-600 border-gray-300 hover:border-orange-400"
+                      }`}>
+                      <Icon name="MousePointer2" size={10} />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (isPickingThis) onPickModeChange(null);
+                        setWaypointIds(prev => prev.filter((_, i) => i !== idx));
+                      }}
+                      className="text-red-400 hover:text-red-600 px-0.5 text-[13px] leading-none flex-shrink-0"
+                      title="Удалить">×</button>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setWaypointIds(prev => [...prev, ""])}
+                disabled={waypointIds.some(id => !id)}
+                title={waypointIds.some(id => !id) ? "Сначала заполните пустой промежуточный узел" : "Добавить промежуточный узел"}
+                className="mt-0.5 text-[10px] text-orange-700 border border-orange-300 rounded px-2 py-0.5 hover:bg-orange-50 disabled:opacity-40 flex items-center gap-1">
+                <Icon name="Plus" size={10} /> Добавить промежуточный узел
+              </button>
+              {waypointIds.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => { if (String(pickMode ?? "").startsWith("wp:")) onPickModeChange(null); setWaypointIds([]); }}
+                  className="mt-0.5 text-[10px] text-gray-500 border border-gray-300 rounded px-2 py-0.5 hover:bg-gray-50">
+                  Очистить все
+                </button>
+              )}
+            </div>
+            {waypointIssue && (
+              <div className="text-[10px] text-red-700 bg-red-50 border border-red-200 rounded px-1.5 py-1">
+                ⚠ {waypointIssue}
+              </div>
+            )}
+            {waypointIds.length === 0 && (
+              <div className="text-[9px] text-gray-400">
+                Маршрут пойдёт кратчайшим путём. Добавьте узлы, через которые отделение обязано пройти.
+              </div>
+            )}
             {waypointIds.length > 0 && (
-              <div className="text-[9px] text-gray-400 mt-0.5">
-                Маршрут: Старт → {waypointIds.filter(Boolean).map(id => nodeName(id)).join(" → ")} → Цель
+              <div className="text-[9px] text-gray-500 mt-0.5 leading-snug">
+                Маршрут: {nodeName(startNodeId) || "Старт"}
+                {waypointIds.map((id, i) => ` → ${id ? nodeName(id) : `(узел ${i + 1} не выбран)`}`).join("")}
+                {` → ${nodeName(targetNodeId) || "Цель"}`}
               </div>
             )}
           </div>
@@ -981,7 +1055,8 @@ export default function RescuePanel({
       {/* Кнопки */}
       <div className="border-t border-gray-200 mt-2 pt-2 flex flex-col gap-1">
         <button onClick={handleCalc}
-          disabled={!startNodeId || !targetNodeId}
+          disabled={!startNodeId || !targetNodeId || !!waypointIssue}
+          title={waypointIssue || undefined}
           className="w-full py-1.5 rounded text-[12px] font-semibold disabled:opacity-40"
           style={{ background: "var(--c-blue-bg, #1d4ed8)", color: "white" }}>
           Рассчитать
@@ -1000,6 +1075,7 @@ export default function RescuePanel({
               onPickedStartChange("");
               onPickedTargetChange("");
               onPickModeChange(null);
+              setWaypointIds([]);
               onRouteChange(new Set(), new Set(), new Map());
             }}
             className="w-full py-1 rounded text-[11px] text-gray-600 border border-gray-300 hover:bg-gray-50">
