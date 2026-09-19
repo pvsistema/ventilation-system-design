@@ -4502,13 +4502,23 @@ export default function CadPage() {
           physicalFireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
           angle_deg: flowRelAngle, airFlow_m3s: airQ0, sectionArea_m2: target.area,
         }, thermalDepMethod);
-        // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
+        // Модель тяги — та же, что в аварийном режиме (см. fireModeRun.ts):
+        //  • «Норматив (4.5)» — СОСРЕДОТОЧЕННЫЙ источник h_т на ветви очага
+        //    (как в ПО «Вентиляция»): зависит от положения очага в ветви;
+        //  • «Методика» — РАСПРЕДЕЛЁННАЯ через температуры узлов пути дыма.
+        // Одновременно применять нельзя — тяга учлась бы дважды. Бэкенд берёт
+        // thermalDepression только когда hotNodeTemps пуст, поэтому при
+        // нормативном методе карту узлов не передаём вовсе.
+        const useNormativeSeat = thermalDepMethod === "normative";
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
-        const hotNodeTemps = computeHotNodeTemps(
+        const hotNodeTemps = useNormativeSeat ? undefined : computeHotNodeTemps(
           [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: T_src, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, reversedConfirmed: s.reversedConfirmed, length: target.length, area: target.area, perimeter: target.perimeter }],
           branchesForHot, ambientTemp, baseNodeTemps,
         );
-        scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
+        // Знак: s.thermalDep посчитан ОТНОСИТЕЛЬНО ПОТОКА, а решателю источник
+        // нужен в ориентации ветви from→to.
+        const seatDep = useNormativeSeat ? s.thermalDep * flowSignA : s.thermalDep;
+        scenarios.push({ id: target.id, thermalDepression: seatDep, hotNodeTemps });
       }
 
       // 2) Один запрос на весь раунд. Базовая сеть — с расходами первого

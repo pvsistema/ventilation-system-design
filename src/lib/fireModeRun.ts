@@ -13,7 +13,7 @@
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
   calcFireMode, calcFireTemp, fireSourceTempForMethod, computeHotNodeTemps,
-  calcFirePowerFromMaterial,
+  calcFirePowerFromMaterial, calcFireSeatDepression,
   type ThermalDepMethod, type FireCalculationResult,
 } from "@/lib/fireCalculator";
 
@@ -112,13 +112,25 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
     });
 
     // Шаг C: температура продуктов горения T_пр для каждого очага
-    // + карта горячих узлов пути дыма (правильная модель тяги).
-    // Тепловая тяга считается решателем через ТЕМПЕРАТУРЫ УЗЛОВ
-    // (natural_draft_h): горячий восходящий столб уравновешивается
-    // встречным холодным столбом выхода на поверхность — соседние
-    // выработки меняются слабо (как в Аэросети). Сосредоточенный
-    // h_fire на одной ветви (старый способ) нефизично опрокидывал
-    // соседей.
+    // + модель тепловой тяги. Моделей ДВЕ, выбор за пользователем:
+    //
+    //  • «Методика» — РАСПРЕДЕЛЁННАЯ: горячий газ разносится по пути
+    //    дыма и нагревает УЗЛЫ, а решатель считает тягу как замкнутый
+    //    интеграл плотности по высоте контура (natural_draft_h).
+    //    Горячий восходящий столб уравновешивается встречным холодным
+    //    столбом выхода на поверхность — соседние выработки меняются
+    //    слабо (как в Аэросети).
+    //
+    //  • «Норматив (4.5)» — СОСРЕДОТОЧЕННАЯ: тяга очага выражается
+    //    одним числом h_т (ф. 4.5) и прикладывается к ветви очага как
+    //    источник напора (fireThermalDepression). Так считает ПО
+    //    «Вентиляция»: Δz в ф. 4.6 — высота столба ОТ ОЧАГА ДО УСТЬЯ,
+    //    поэтому положение очага в ветви реально меняет результат
+    //    (очаг у входа → опрокидывание, у выхода → почти нет влияния).
+    //
+    // Модели ВЗАИМОИСКЛЮЧАЮЩИЕ: применять обе сразу нельзя, иначе одна
+    // и та же тепловая тяга учитывается дважды.
+    const useNormativeSeat = thermalDepMethod === "normative";
     const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[] = [];
     const branchesWithHt = branchesIter.map(b => {
       if (!b.hasFire) return b;
@@ -155,16 +167,40 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
         }, thermalDepMethod);
       }
       fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, reversedConfirmed: reversedSeats.has(b.id), length: b.length, area: b.area, perimeter: b.perimeter });
-      // fireThermalDepression больше НЕ прикладываем как источник.
-      return { ...b, fireThermalDepression: 0 };
+
+      // При «Норативе 4.5» тяга очага идёт в решатель СОСРЕДОТОЧЕННЫМ
+      // источником на ветви очага — как в ПО «Вентиляция». При «Методике»
+      // поле обнуляем: там тяга уже заложена в температуры узлов.
+      if (!useNormativeSeat) return { ...b, fireThermalDepression: 0 };
+
+      const fromN = nodes.find(n => n.id === b.fromId);
+      const toN   = nodes.find(n => n.id === b.toId);
+      const { h_t } = calcFireSeatDepression({
+        fireTemp_C: T_pr, ambientTemp_C: AMBIENT_TEMP,
+        airFlow_m3s: airQ, sectionArea_m2: b.area,
+        length_m: b.length, angle_deg: b.angle,
+        fromZ: fromN?.z, toZ: toN?.z,
+        fireT: b.fireT,
+        // Направление струи — по ШТАТНОМУ расходу: уже опрокинутый на
+        // итерации поток не должен сам себя подтверждать.
+        dirFlow: originalFlows.get(b.id) ?? b.flow ?? 0,
+      }, thermalDepMethod);
+      return { ...b, fireThermalDepression: Number.isFinite(h_t) ? h_t : 0 };
     });
 
-    // Карта горячих узлов по актуальным расходам.
+    // Карта горячих узлов. При «Норативе 4.5» узлы всё равно греем — дым,
+    // задымление и температуры в выработках показываются одинаково в обоих
+    // методах, — но на ТЯГУ они там не работают: в solveIteration карта
+    // передаётся только для «Методики». Иначе тепловая тяга учлась бы дважды
+    // (и узлами, и сосредоточенным h_т) и снова опрокидывала бы ветвь.
     const branchesForHot = branchesIter.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: currentFlows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
     const hotNodeTemps = computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP, baseNodeTemps);
 
-    // Шаг D: пересчитать сеть с горячими узлами
-    const newFlows = await solveIteration(branchesWithHt, AMBIENT_TEMP, hotNodeTemps);
+    // Шаг D: пересчитать сеть.
+    const newFlows = await solveIteration(
+      branchesWithHt, AMBIENT_TEMP,
+      useNormativeSeat ? undefined : hotNodeTemps,
+    );
     if (newFlows.size === 0) break; // ошибка сети — прерываем
 
     // Шаг E: адаптивная релаксация + проверка сходимости.

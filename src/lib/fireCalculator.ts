@@ -1441,6 +1441,99 @@ export function calcThermalDepressionUnified(
   return calcThermalDepression(args.fireTemp_C, args.ambientTemp_C, args.length_m, args.angle_deg);
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ТЕПЛОВАЯ ДЕПРЕССИЯ ОЧАГА ДЛЯ РЕШАТЕЛЯ (метод «Норматив 4.5»).
+//
+// Зачем отдельная функция. В программе уживаются ДВЕ модели тепловой тяги:
+//
+//   • «Методика» — распределённая: горячий газ разносится по пути дыма и
+//     НАГРЕВАЕТ УЗЛЫ (computeHotNodeTemps), а решатель сам считает тягу как
+//     замкнутый интеграл плотности по высоте контура (natural_draft_h).
+//     Физично для смежных выработок, но положение очага в ветви на неё почти
+//     не влияет: нагрев узла считается по геометрии ветви, а не по отрезку
+//     «очаг → устье».
+//
+//   • «Норматив (4.5)» — СОСРЕДОТОЧЕННАЯ: вся тяга очага выражается ОДНИМ
+//     числом h_т = k₁·Δz·(0.766 + a·ln(Tм/Tк)) и прикладывается к ветви очага
+//     как источник напора (поле fireThermalDepression, бэкенд складывает его с
+//     естественной тягой). Так считает ПО «Вентиляция»: Δz там — высота столба
+//     от очага до устья, поэтому очаг у входа / в середине / у выхода даёт
+//     принципиально разный результат.
+//
+// Раньше при ОБОИХ методах в решатель уходили только горячие узлы, а h_т
+// вычислялась «в стол» — попадала в панель и в акт, но на расход не влияла
+// вовсе (fireThermalDepression принудительно обнулялся). Из-за этого при методе
+// «Норматив 4.5» нисходящая ветвь опрокидывалась независимо от положения очага.
+//
+// Возвращает h_т в Па со знаком ОТНОСИТЕЛЬНО ОРИЕНТАЦИИ ВЕТВИ from→to — именно
+// в таком виде его ждёт решатель (там оно складывается с naturalDraft).
+export interface FireSeatDepressionInput {
+  /** Температура продуктов горения / очага, °C. */
+  fireTemp_C: number;
+  ambientTemp_C: number;
+  /** Расход воздуха в ветви очага (для ф. 4.8), м³/с. */
+  airFlow_m3s: number;
+  sectionArea_m2?: number;
+  length_m?: number;
+  /** Угол наклона ветви (модуль), град. */
+  angle_deg?: number;
+  /** z начального узла ветви, м. */
+  fromZ?: number;
+  /** z конечного узла ветви, м. */
+  toZ?: number;
+  /** Позиция очага вдоль ветви 0..1 (0 = у fromId, 1 = у toId). */
+  fireT?: number;
+  /** ШТАТНЫЙ (дожаровый) расход — задаёт направление струи. */
+  dirFlow: number;
+}
+
+export function calcFireSeatDepression(
+  inp: FireSeatDepressionInput,
+  method: ThermalDepMethod = getThermalDepMethod(),
+): { h_t: number; detail: NormativeDepressionResult | null } {
+  // Сосредоточенный источник применяем ТОЛЬКО для нормативного метода.
+  // У «Методики» тяга живёт в температурах узлов — иначе учли бы дважды.
+  if (method !== "normative") return { h_t: 0, detail: null };
+
+  const S = Number(inp.sectionArea_m2) || 0;
+  const Q = Math.abs(Number(inp.airFlow_m3s) || 0);
+  if (!(S > 0) || !(Q > 0)) return { h_t: 0, detail: null };
+
+  // Знаковый угол ПО ГЕОМЕТРИИ ветви (to выше from → +).
+  const dzGeom = (Number(inp.toZ) || 0) - (Number(inp.fromZ) || 0);
+  const geomAngle = Math.abs(Number(inp.angle_deg) || 0)
+    * (dzGeom !== 0 ? Math.sign(dzGeom) : 1);
+
+  // Знак относительно НАПРАВЛЕНИЯ СТРУИ: тёплый газ всегда идёт вверх, поэтому
+  // тормозить поток (и опрокидывать его) тяга может только в НИСХОДЯЩЕЙ ветви.
+  const flowSign = inp.dirFlow >= 0 ? 1 : -1;
+  const flowRelAngle = geomAngle * flowSign;
+
+  // x (4.13) — расстояние от очага до устья ПО ХОДУ струи. Именно оно задаёт
+  // высоту столба горячих газов: ниже очага идёт холодный свежий воздух.
+  const fireTpos = Number.isFinite(Number(inp.fireT)) ? Number(inp.fireT) : 0.5;
+  const L = Number(inp.length_m) || 0;
+  const mouthDist = L * (flowSign >= 0 ? (1 - fireTpos) : fireTpos);
+
+  const userMouth = getNormativeMouthDistance();
+  const detail = calcThermalDepressionNormative({
+    airFlow_m3s: Q,
+    sectionArea_m2: S,
+    angle_deg: flowRelAngle,
+    distanceToMouth_m: userMouth > 0 ? userMouth : mouthDist,
+    fireTime_min: getNormativeFireTime(),
+    actualFireTemp_C: inp.fireTemp_C,
+    ambientTemp_C: inp.ambientTemp_C,
+    branchLength_m: L,
+    elevationDrop_m: Math.abs(dzGeom),
+  });
+
+  // detail.h_t знаковая ОТНОСИТЕЛЬНО ПОТОКА (нисходящая → минус, тормозит).
+  // Решателю источник нужен в системе координат ВЕТВИ (from→to), поэтому
+  // возвращаем знак обратно в геометрическую ориентацию.
+  return { h_t: detail.h_t * flowSign, detail };
+}
+
 // Температура ИСТОЧНИКА горячего плюма (°C) для карты горячих узлов —
 // зависит от выбранного метода тепловой депрессии:
 //   • "aeroseti" ("Методика") — реальная температура продуктов горения
