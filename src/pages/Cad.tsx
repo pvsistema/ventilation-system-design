@@ -4481,10 +4481,15 @@ export default function CadPage() {
         const dirFlow = originalFlows.get(target.id) ?? target.flow ?? 0;
         const flowSignA = dirFlow >= 0 ? 1 : -1;
         const flowRelAngle = geomAngle * flowSignA;
+        // x — расстояние от очага до устья ПО ХОДУ струи: задаёт высоту столба
+        // горячих газов, поэтому очаг у входа и у выхода дают разную депрессию.
+        const fireTpos = target.fireT ?? 0.5;
+        const mouthDist = (target.length ?? 0) * (flowSignA >= 0 ? (1 - fireTpos) : fireTpos);
         s.thermalDep = calcThermalDepressionUnified({
           fireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
           length_m: target.length, angle_deg: flowRelAngle,
           airFlow_m3s: airQ0, sectionArea_m2: target.area,
+          distanceToMouth_m: mouthDist,
           // Высота теплового столба не может превышать перепад отметок концов
           // выработки — иначе нормативная зона горения (до 260 м) даёт столб
           // выше самой ветви и завышает депрессию в разы.
@@ -8803,7 +8808,9 @@ export default function CadPage() {
                         <>
                           <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-t2, #374151)" }}>Норматив (формулы 4.5–4.13)</div>
                           <Row label="Длина зоны горения l, м:" value={safeFixed(fr.normative.l, 1)} />
-                          <Row label="Δz = l·sinβ, м:" value={safeFixed(fr.normative.dz, 1)} />
+                          <Row label="Очаг→устье x, м:" value={safeFixed(fr.normative.x, 1)} />
+                          <Row label="Столб горячих газов, м:" value={safeFixed(fr.normative.lCol, 1)} />
+                          <Row label="Δz = l_ст·sinβ, м:" value={safeFixed(fr.normative.dz, 1)} />
                           {fr.normative.clampedByGeometry && (
                             <>
                               <Row label="по ф. 4.8 без огранич. l, м:" value={safeFixed(fr.normative.lNorm, 1)} />

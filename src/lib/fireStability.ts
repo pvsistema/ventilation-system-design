@@ -20,7 +20,7 @@ import type { TopoBranch, TopoNode } from "./topology";
 import { calcBranchAngle } from "./topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire,
-  calcFireTemp, calcThermalDepression, calcCriticalDepression, FLAT_ANGLE_DEG,
+  calcFireTemp, calcThermalDepressionUnified, calcCriticalDepression, FLAT_ANGLE_DEG,
   calcCriticalFlow,
 } from "./fireCalculator";
 import { PA_PER_MM_H2O } from "./aerodynamics";
@@ -264,9 +264,28 @@ export function calcFireStability(
 
     // Тепловая депрессия пожара. С фактом — из итеративного расчёта; без факта —
     // локальная оценка по знаковому углу в направлении потока.
+    //
+    // ВАЖНО: оценка идёт через calcThermalDepressionUnified — ту же точку входа,
+    // что и аварийный режим, поэтому учитывается ВЫБРАННЫЙ метод («Норматив 4.5»
+    // / «Методика») и положение очага в ветви. Раньше здесь жёстко вызывалась
+    // calcThermalDepression (только физика столба) по ПОЛНОЙ длине ветви: акт
+    // расходился с вкладкой «Аварии», а очаг у входа и у выхода давали одну и ту
+    // же депрессию, хотя столб горячих газов в этих случаях разной высоты.
+    //
+    // x — расстояние от очага до устья ПО ХОДУ струи: очаг в fireT (доля ветви
+    // от fromId), при flow>0 выход у toId, при flow<0 — у fromId.
+    const fireTpos = b.fireT ?? 0.5;
+    const mouthDist = (b.length ?? 0) * (flowSign >= 0 ? (1 - fireTpos) : fireTpos);
+    // Перепад отметок концов ветви — ограничивает высоту теплового столба.
+    const elevDrop = Math.abs((to?.z ?? 0) - (from?.z ?? 0));
     const thermalDep = fact
       ? fact.thermalDep
-      : Math.abs(calcThermalDepression(fireTemp, ambientTemp, b.length ?? 0, signedAngleFlow));
+      : Math.abs(calcThermalDepressionUnified({
+          fireTemp_C: fireTemp, ambientTemp_C: ambientTemp,
+          length_m: b.length ?? 0, angle_deg: signedAngleFlow,
+          airFlow_m3s: dojarFlow, sectionArea_m2: b.area,
+          distanceToMouth_m: mouthDist, elevationDrop_m: elevDrop,
+        }));
     // ОБЩАЯ депрессия ветви (выработка + перемычка/окно − напор вентилятора).
     // b.dP содержит депрессию только выработки и на ветви с перемычкой занижена
     // в сотни раз — по ней критерий опрокидывания давал ложный результат.

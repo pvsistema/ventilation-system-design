@@ -481,6 +481,8 @@ export interface FireBranchResult {
   normative?: {
     l: number;      // длина зоны горения, м (4.8) — обрезана длиной выработки
     lNorm: number;  // длина зоны горения по (4.8) без ограничения геометрией
+    lCol: number;   // длина столба горячих газов min(l, x), м — она задаёт Δz
+    x: number;      // расстояние от очага до устья по ходу струи, м (4.13)
     A: number;      // коэффициент A (4.9)
     a: number;      // коэффициент a (4.10)
     Tm: number;     // макс. температура в очаге, К (4.11)
@@ -648,6 +650,10 @@ export interface NormativeDepressionResult {
   h_t: number;   // тепловая депрессия, Па (со знаком угла)
   l: number;     // длина зоны горения, м — ФАКТИЧЕСКАЯ (обрезана длиной выработки)
   lNorm: number; // длина зоны горения по формуле (4.8), без ограничения геометрией
+  // Длина столба горячих газов min(l, x), м — от очага до устья по ходу струи.
+  // Именно она, а не l, задаёт высоту столба Δz и, значит, тепловую депрессию.
+  lCol: number;
+  x: number;     // расстояние от очага до устья по ходу струи, м (4.13)
   A: number;     // коэффициент A, доли ед.
   a: number;     // коэффициент a, доли ед.
   Tm: number;    // максимальная температура в очаге, К
@@ -672,7 +678,7 @@ export function calcThermalDepressionNormative(
   // фактическая T₀, иначе при T₀ ≠ 15 °C расчёт даёт тягу даже без пожара.
   const Tamb = 273 + (Number.isFinite(inp.ambientTemp_C as number) ? (inp.ambientTemp_C as number) : 15);
   const empty: NormativeDepressionResult = {
-    h_t: 0, l: 0, lNorm: 0, A: 0, a: 0, Tm: Tamb, Tk: Tamb,
+    h_t: 0, l: 0, lNorm: 0, lCol: 0, x: 0, A: 0, a: 0, Tm: Tamb, Tk: Tamb,
     dz: 0, dzNorm: 0, clampedByGeometry: false,
   };
 
@@ -704,27 +710,53 @@ export function calcThermalDepressionNormative(
   const Tm = TmFact !== undefined
     ? Math.max(Tamb, Math.min(TmNorm, TmFact))
     : TmNorm;
-  const x = inp.distanceToMouth_m ?? l;   // если устье не задано — берём длину зоны
+  // x (4.13) — расстояние от очага до устья выработки ПО ХОДУ струи.
+  // ВАЖНО: 0 — допустимое значение (очаг у самого устья), поэтому проверяем
+  // именно на конечность числа, а не на «истинность» (0 ?? l вернул бы 0, но
+  // раньше вызывающий код подменял 0 на undefined и сюда приходила вся зона l).
+  const xRaw = Number(inp.distanceToMouth_m);
+  const x = Number.isFinite(xRaw) && xRaw >= 0 ? xRaw : l;
   const xBar = x / l;                      // (4.13) относительное расстояние
   // (4.12) Tк = T₀ + (Tм−T₀)·e^(−x̄/A). В нормативе T₀ = 288 К; здесь берётся
   // фактическая температура струи, поэтому при Tм = T₀ получаем Tк = T₀.
   const Tk = Tamb + (Tm - Tamb) * Math.exp(-xBar / A);
   if (!(Tk > 1) || !(Tm > 1)) return empty;
 
-  // (4.6) Δz = l·sinβ  (знак β задаёт направление тяги)
+  // ── (4.6) Δz = l·sinβ — ВЫСОТА СТОЛБА ГОРЯЧИХ ГАЗОВ ──────────────────────
+  //
+  // ГЛАВНОЕ. Тягу создаёт не «зона горения» сама по себе, а столб горячих
+  // продуктов, который тянется ОТ ОЧАГА ДО УСТЬЯ по ходу струи. Ниже очага
+  // (против потока) идёт холодный свежий воздух — он в тепловой столб не
+  // входит. Поэтому высота столба определяется длиной участка min(l, x), где
+  // x — расстояние от очага до устья, а НЕ полной длиной зоны горения l.
+  //
+  // Раньше здесь стояло dz = l·sinβ, то есть положение очага в ветви на тягу
+  // не влияло вовсе (fireT входил только в Tк под логарифмом с множителем
+  // a ≈ 0.03 — влияние ~1 %). Из-за этого h_т получалась одинаковой, куда бы
+  // ни ставили очаг, и нисходящая струя опрокидывалась всегда. В ПО
+  // «Вентиляция» ключевой параметр диалога — «расстояние от очага до конца
+  // ветви», и очаг у входа / в середине / у выхода даёт принципиально разный
+  // результат (опрокидывание / 33→17 / 33→31 м³/с).
+  const lCol = Math.min(l, x);    // длина столба горячих газов, м
   const sinB = Math.sin((beta * Math.PI) / 180);
-  const dzNorm = lNorm * sinB;   // как даёт норматив, без учёта геометрии
-  let dz = l * sinB;             // уже с обрезанной по длине выработки зоной
+  const dzNorm = lNorm * sinB;    // как даёт норматив, без учёта геометрии
+  let dz = lCol * sinB;           // столб от очага до устья
 
   // ВТОРОЕ ОГРАНИЧЕНИЕ — по фактическому перепаду отметок узлов ветви.
-  // Угол β и длина l — независимые входные величины, и их произведение может
+  // Угол β и длина — независимые входные величины, и их произведение может
   // разойтись с реальной геометрией (например, β=−90° при пологой ветви или
-  // неточный угол в импортированной схеме). Высота столба горячего воздуха
-  // физически ограничена перепадом высот концов выработки, поэтому |Δz| не
-  // может быть больше |z_кон − z_нач|. Знак (направление тяги) сохраняется.
+  // неточный угол в импортированной схеме). Высота столба физически ограничена
+  // перепадом высот, но ПРОПОРЦИОНАЛЬНО занимаемой столбом доле выработки:
+  // столб длиной lCol из выработки L может поднять не больше drop·(lCol/L).
+  // Раньше сравнивали с ПОЛНЫМ перепадом ветви, и столб в треть выработки
+  // всё равно получал полный перепад — положение очага снова не влияло.
   const drop = Math.abs(Number(inp.elevationDrop_m));
-  if (Number.isFinite(drop) && drop > 0 && Math.abs(dz) > drop) {
-    dz = Math.sign(dz) * drop;
+  const branchLen = Number(inp.branchLength_m);
+  if (Number.isFinite(drop) && drop > 0) {
+    const dropCol = (Number.isFinite(branchLen) && branchLen > 0.001)
+      ? drop * Math.min(1, lCol / branchLen)
+      : drop;
+    if (Math.abs(dz) > dropCol) dz = Math.sign(dz) * dropCol;
   }
   // Зона горения не поместилась в выработку либо столб обрезан по отметкам.
   const clampedByGeometry = Math.abs(dz) + 1e-9 < Math.abs(dzNorm);
@@ -768,7 +800,7 @@ export function calcThermalDepressionNormative(
   const h_t = NORMATIVE_K1 * dz * bracket;
   return {
     h_t: Number.isFinite(h_t) ? h_t : 0,
-    l, lNorm, A, a, Tm, Tk, dz, dzNorm, clampedByGeometry,
+    l, lNorm, lCol, x, A, a, Tm, Tk, dz, dzNorm, clampedByGeometry,
   };
 }
 
@@ -1374,6 +1406,11 @@ export function calcThermalDepressionUnified(
     angle_deg: number;
     airFlow_m3s?: number;
     sectionArea_m2?: number;
+    /**
+     * x (4.13) — расстояние от очага до устья ПО ХОДУ струи, м.
+     * Задаёт длину столба горячих газов и потому напрямую влияет на тягу.
+     * 0 (очаг у самого устья) — законное значение, тяги нет.
+     */
     distanceToMouth_m?: number;
     fireTime_min?: number;
     /** |z_кон − z_нач| по узлам ветви, м — ограничивает высоту теплового столба. */
@@ -1382,11 +1419,16 @@ export function calcThermalDepressionUnified(
   method: ThermalDepMethod = getThermalDepMethod(),
 ): number {
   if (method === "normative" && (args.airFlow_m3s ?? 0) > 0 && (args.sectionArea_m2 ?? 0) > 0) {
+    // x: явно переданное значение (в т.ч. 0) главнее пользовательской настройки.
+    const userMouth = getNormativeMouthDistance();
+    const mouth = Number.isFinite(Number(args.distanceToMouth_m))
+      ? Number(args.distanceToMouth_m)
+      : (userMouth > 0 ? userMouth : undefined);
     return calcThermalDepressionNormative({
       airFlow_m3s: args.airFlow_m3s!,
       sectionArea_m2: args.sectionArea_m2!,
       angle_deg: args.angle_deg,
-      distanceToMouth_m: args.distanceToMouth_m ?? (getNormativeMouthDistance() || undefined),
+      distanceToMouth_m: mouth,
       fireTime_min: args.fireTime_min ?? getNormativeFireTime(),
       actualFireTemp_C: args.fireTemp_C,
       ambientTemp_C: args.ambientTemp_C,
@@ -1798,7 +1840,11 @@ export function calcFireMode(
     const outFrac = dirFlow >= 0 ? (1 - fireTpos) : fireTpos;
     const autoMouthDist = (fb.length ?? 0) * outFrac;
     const userMouthDist = getNormativeMouthDistance();
-    const mouthDist = userMouthDist > 0 ? userMouthDist : (autoMouthDist > 0.1 ? autoMouthDist : undefined);
+    // x = 0 — ЗАКОННОЕ значение: очаг стоит у самого устья, столб горячих газов
+    // вырождается, тяги нет. Раньше стоял порог `autoMouthDist > 0.1`, и нулевое
+    // расстояние подменялось на undefined → внутри бралась вся зона горения l.
+    // Самый безопасный случай (очаг в конце ветви) считался как самый тяжёлый.
+    const mouthDist = userMouthDist > 0 ? userMouthDist : autoMouthDist;
     const normDetail = useNormative
       ? calcThermalDepressionNormative({
           airFlow_m3s: airQ, sectionArea_m2: fb.area, angle_deg: flowRelAngle,
@@ -1971,6 +2017,8 @@ export function calcFireMode(
       normative: normDetail ? {
         l:  Math.round(normDetail.l  * 10) / 10,
         lNorm: Math.round(normDetail.lNorm * 10) / 10,
+        lCol: Math.round(normDetail.lCol * 10) / 10,
+        x:    Math.round(normDetail.x * 10) / 10,
         A:  Math.round(normDetail.A  * 1000) / 1000,
         a:  Math.round(normDetail.a  * 1000) / 1000,
         Tm: Math.round(normDetail.Tm),
