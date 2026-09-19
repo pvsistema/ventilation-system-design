@@ -4485,6 +4485,10 @@ export default function CadPage() {
           fireTemp_C: s.fireTemp, ambientTemp_C: ambientTemp,
           length_m: target.length, angle_deg: flowRelAngle,
           airFlow_m3s: airQ0, sectionArea_m2: target.area,
+          // Высота теплового столба не может превышать перепад отметок концов
+          // выработки — иначе нормативная зона горения (до 260 м) даёт столб
+          // выше самой ветви и завышает депрессию в разы.
+          elevationDrop_m: Math.abs(dz),
         }, thermalDepMethod);
         // Температура источника плюма по выбранному методу («Норматив 4.5» → Tм
         // из геометрии, «Методика» → реальная T_пр) — чтобы факты устойчивости
@@ -8800,6 +8804,15 @@ export default function CadPage() {
                           <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-t2, #374151)" }}>Норматив (формулы 4.5–4.13)</div>
                           <Row label="Длина зоны горения l, м:" value={safeFixed(fr.normative.l, 1)} />
                           <Row label="Δz = l·sinβ, м:" value={safeFixed(fr.normative.dz, 1)} />
+                          {fr.normative.clampedByGeometry && (
+                            <>
+                              <Row label="по ф. 4.8 без огранич. l, м:" value={safeFixed(fr.normative.lNorm, 1)} />
+                              <Row label="по ф. 4.6 без огранич. Δz, м:" value={safeFixed(fr.normative.dzNorm, 1)} />
+                              <div className="px-1 py-0.5 text-[9px]" style={{ color: "var(--c-t3, #6b7280)", borderBottom: "1px solid #ebebeb" }}>
+                                Зона горения по ф. 4.8 не помещается в выработку — l и Δz ограничены её длиной и перепадом отметок узлов.
+                              </div>
+                            </>
+                          )}
                           <Row label="Коэффициент A:" value={safeFixed(fr.normative.A, 3)} />
                           <Row label="Коэффициент a:" value={safeFixed(fr.normative.a, 3)} />
                           <Row label="Tм в очаге, K:" value={`${fr.normative.Tm} (${safeFixed(fr.normative.Tm - 273, 0)} °C)`} />

@@ -479,12 +479,16 @@ export interface FireBranchResult {
   // Промежуточные величины НОРМАТИВНОЙ методики (формулы 4.5–4.13) —
   // для ручной проверки расчёта. Заполняются только при method="normative".
   normative?: {
-    l: number;   // длина зоны горения, м (4.8)
-    A: number;   // коэффициент A (4.9)
-    a: number;   // коэффициент a (4.10)
-    Tm: number;  // макс. температура в очаге, К (4.11)
-    Tk: number;  // температура струи на устье, К (4.12)
-    dz: number;  // разность высотных отметок, м (4.6)
+    l: number;      // длина зоны горения, м (4.8) — обрезана длиной выработки
+    lNorm: number;  // длина зоны горения по (4.8) без ограничения геометрией
+    A: number;      // коэффициент A (4.9)
+    a: number;      // коэффициент a (4.10)
+    Tm: number;     // макс. температура в очаге, К (4.11)
+    Tk: number;     // температура струи на устье, К (4.12)
+    dz: number;     // разность высотных отметок, м (4.6) — с учётом геометрии
+    dzNorm: number; // Δz по (4.6) без ограничения геометрией
+    // Нормативная зона горения не поместилась в выработку и была обрезана.
+    clampedByGeometry: boolean;
   };
   // Критическая депрессия наклонной выработки (Прил. 5, формула 5.3).
   // Заполняется, только если у горящей ветви есть параллельная выработка.
@@ -630,16 +634,28 @@ export interface NormativeDepressionInput {
   // тепловую депрессию 470 Па и ложно опрокидывал струю.
   actualFireTemp_C?: number;
   ambientTemp_C?: number;  // температура вентиляционной струи до пожара, °C
+  // ГЕОМЕТРИЯ ВЫРАБОТКИ, в которой стоит очаг. Нормативная длина зоны горения l
+  // (4.8) считается ТОЛЬКО по времени и расходу и о сети не знает: при t=150 мин
+  // она легко даёт 260 м. В ветви длиной 64 м это означало столб горячего
+  // воздуха 260 м — вчетверо выше самой выработки, и депрессия завышалась во
+  // столько же раз. Физически зона горения не длиннее выработки, а высота
+  // столба не больше перепада отметок её концов.
+  branchLength_m?: number;      // L — длина выработки, м
+  elevationDrop_m?: number;     // |z_кон − z_нач| по узлам ветви, м
 }
 
 export interface NormativeDepressionResult {
   h_t: number;   // тепловая депрессия, Па (со знаком угла)
-  l: number;     // длина зоны горения, м
+  l: number;     // длина зоны горения, м — ФАКТИЧЕСКАЯ (обрезана длиной выработки)
+  lNorm: number; // длина зоны горения по формуле (4.8), без ограничения геометрией
   A: number;     // коэффициент A, доли ед.
   a: number;     // коэффициент a, доли ед.
   Tm: number;    // максимальная температура в очаге, К
   Tk: number;    // температура струи на устье, К
-  dz: number;    // разность высотных отметок зоны горения, м
+  dz: number;    // разность высотных отметок зоны горения, м (ограничена геометрией)
+  dzNorm: number;// Δz = l·sinβ по формуле (4.6), без ограничения геометрией
+  // Признак: нормативная зона горения не помещается в выработку и была обрезана.
+  clampedByGeometry: boolean;
 }
 
 export const NORMATIVE_K1 = 12.0; // Н/м³ — коэффициент физ. свойств воздуха
@@ -655,10 +671,21 @@ export function calcThermalDepressionNormative(
   // константой 288 К (15 °C) — это частный случай. Здесь используется
   // фактическая T₀, иначе при T₀ ≠ 15 °C расчёт даёт тягу даже без пожара.
   const Tamb = 273 + (Number.isFinite(inp.ambientTemp_C as number) ? (inp.ambientTemp_C as number) : 15);
-  const empty: NormativeDepressionResult = { h_t: 0, l: 0, A: 0, a: 0, Tm: Tamb, Tk: Tamb, dz: 0 };
+  const empty: NormativeDepressionResult = {
+    h_t: 0, l: 0, lNorm: 0, A: 0, a: 0, Tm: Tamb, Tk: Tamb,
+    dz: 0, dzNorm: 0, clampedByGeometry: false,
+  };
 
-  // (4.8) длина зоны горения
-  const l = t * (0.28 + 0.07 * (Q / S));
+  // (4.8) длина зоны горения — нормативная, по времени и расходу.
+  const lNorm = t * (0.28 + 0.07 * (Q / S));
+  if (!(lNorm > 0.001)) return empty;
+
+  // ОГРАНИЧЕНИЕ ГЕОМЕТРИЕЙ. Формула (4.8) не знает длины выработки: при t=150 мин
+  // она легко даёт 260 м. Зона горения физически не может быть длиннее самой
+  // выработки, в которой стоит очаг, поэтому l обрезается её длиной, если та
+  // передана. Все производные (a, A, Tм, Tк) считаются уже по фактической l.
+  const lGeom = Number(inp.branchLength_m);
+  const l = (Number.isFinite(lGeom) && lGeom > 0.001) ? Math.min(lNorm, lGeom) : lNorm;
   if (!(l > 0.001)) return empty;
 
   // (4.10) a = √S / l ; (4.9) A
@@ -685,7 +712,22 @@ export function calcThermalDepressionNormative(
   if (!(Tk > 1) || !(Tm > 1)) return empty;
 
   // (4.6) Δz = l·sinβ  (знак β задаёт направление тяги)
-  const dz = l * Math.sin((beta * Math.PI) / 180);
+  const sinB = Math.sin((beta * Math.PI) / 180);
+  const dzNorm = lNorm * sinB;   // как даёт норматив, без учёта геометрии
+  let dz = l * sinB;             // уже с обрезанной по длине выработки зоной
+
+  // ВТОРОЕ ОГРАНИЧЕНИЕ — по фактическому перепаду отметок узлов ветви.
+  // Угол β и длина l — независимые входные величины, и их произведение может
+  // разойтись с реальной геометрией (например, β=−90° при пологой ветви или
+  // неточный угол в импортированной схеме). Высота столба горячего воздуха
+  // физически ограничена перепадом высот концов выработки, поэтому |Δz| не
+  // может быть больше |z_кон − z_нач|. Знак (направление тяги) сохраняется.
+  const drop = Math.abs(Number(inp.elevationDrop_m));
+  if (Number.isFinite(drop) && drop > 0 && Math.abs(dz) > drop) {
+    dz = Math.sign(dz) * drop;
+  }
+  // Зона горения не поместилась в выработку либо столб обрезан по отметкам.
+  const clampedByGeometry = Math.abs(dz) + 1e-9 < Math.abs(dzNorm);
 
   // (4.5) h_т = k₁·Δz·(0.766 + a·ln(Tм/Tк))
   //
@@ -724,7 +766,10 @@ export function calcThermalDepressionNormative(
   const bracket = Math.min(Math.max(0, bracketRaw), bracketMax);
 
   const h_t = NORMATIVE_K1 * dz * bracket;
-  return { h_t: Number.isFinite(h_t) ? h_t : 0, l, A, a, Tm, Tk, dz };
+  return {
+    h_t: Number.isFinite(h_t) ? h_t : 0,
+    l, lNorm, A, a, Tm, Tk, dz, dzNorm, clampedByGeometry,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1331,6 +1376,8 @@ export function calcThermalDepressionUnified(
     sectionArea_m2?: number;
     distanceToMouth_m?: number;
     fireTime_min?: number;
+    /** |z_кон − z_нач| по узлам ветви, м — ограничивает высоту теплового столба. */
+    elevationDrop_m?: number;
   },
   method: ThermalDepMethod = getThermalDepMethod(),
 ): number {
@@ -1343,6 +1390,10 @@ export function calcThermalDepressionUnified(
       fireTime_min: args.fireTime_min ?? getNormativeFireTime(),
       actualFireTemp_C: args.fireTemp_C,
       ambientTemp_C: args.ambientTemp_C,
+      // Геометрия выработки: зона горения не длиннее выработки, высота столба
+      // не больше перепада отметок её концов.
+      branchLength_m: args.length_m,
+      elevationDrop_m: args.elevationDrop_m,
     }).h_t;
   }
   return calcThermalDepression(args.fireTemp_C, args.ambientTemp_C, args.length_m, args.angle_deg);
@@ -1755,6 +1806,10 @@ export function calcFireMode(
           // Фактическая температура продуктов по выбранной пожарной нагрузке —
           // ограничивает нормативную Tм (см. calcThermalDepressionNormative).
           actualFireTemp_C: fireTemp, ambientTemp_C,
+          // Геометрия выработки: зона горения не длиннее самой выработки, а
+          // высота столба не больше перепада отметок её концов (dz выше).
+          branchLength_m: fb.length,
+          elevationDrop_m: Math.abs(dz),
         })
       : null;
     const thermalDep = normDetail
@@ -1915,11 +1970,14 @@ export function calcFireMode(
       thermalDepMethod: depMethod,
       normative: normDetail ? {
         l:  Math.round(normDetail.l  * 10) / 10,
+        lNorm: Math.round(normDetail.lNorm * 10) / 10,
         A:  Math.round(normDetail.A  * 1000) / 1000,
         a:  Math.round(normDetail.a  * 1000) / 1000,
         Tm: Math.round(normDetail.Tm),
         Tk: Math.round(normDetail.Tk),
         dz: Math.round(normDetail.dz * 10) / 10,
+        dzNorm: Math.round(normDetail.dzNorm * 10) / 10,
+        clampedByGeometry: normDetail.clampedByGeometry,
       } : undefined,
       critical,
     });
