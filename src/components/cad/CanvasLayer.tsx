@@ -99,6 +99,8 @@ interface CanvasLayerProps {
   rescueNodeLetters?: Map<string, string>;
   rescuePathBranchIds?: Set<string>;
   rescuePathBranchDirs?: Map<string, boolean>;
+  /** Альтернативные варианты маршрута: branchId → цвет варианта */
+  altRouteBranchColors?: Map<string, string>;
 
   /** Линия построения новой выработки: узел-начало и текущая точка курсора */
   buildFromNodeId?: string | null;
@@ -255,6 +257,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
         rescueNodeLetters: p.rescueNodeLetters,
         rescuePathBranchIds: p.rescuePathBranchIds,
         rescuePathBranchDirs: p.rescuePathBranchDirs,
+        altRouteBranchColors: p.altRouteBranchColors,
       });
     } catch (err) {
       console.error("[CanvasLayer] renderCanvas error:", err);
@@ -356,7 +359,7 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     props.velColorMin, props.velColorMax, props.velColorHue,
     props.posInnerColors,
     props.rescuePathNodeIds, props.rescueNodeLetters,
-    props.rescuePathBranchIds, props.rescuePathBranchDirs,
+    props.rescuePathBranchIds, props.rescuePathBranchDirs, props.altRouteBranchColors,
     props.width, props.height,
   ]);
 

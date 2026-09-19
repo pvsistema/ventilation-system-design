@@ -279,16 +279,26 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
     all_path_edges = []
     route_ok = True
 
-    for i in range(len(checkpoints) - 1):
-        frm = checkpoints[i]
-        to  = checkpoints[i + 1]
-        dist, prev = build_dijkstra(nodes, branch_map, adj, frm)
-        if dist.get(to, math.inf) == math.inf:
-            warnings.append(f"Маршрут от узла {frm} до узла {to} не найден — проверьте связность сети")
-            route_ok = False
-            continue
-        seg_edges = build_path(prev, to)
-        all_path_edges.extend(seg_edges)
+    # Пользователь выбрал вариант маршрута на схеме — считаем строго по нему,
+    # кратчайший путь не ищем. Иначе отчёт показал бы не ту трассу, которая
+    # подсвечена на схеме.
+    forced = params.get("forcedRouteEdges") or []
+    if forced:
+        all_path_edges = [
+            {"nodeId": e.get("nodeId"), "branchId": e.get("branchId"), "forward": bool(e.get("forward"))}
+            for e in forced if e.get("branchId") in branch_map
+        ]
+    else:
+        for i in range(len(checkpoints) - 1):
+            frm = checkpoints[i]
+            to  = checkpoints[i + 1]
+            dist, prev = build_dijkstra(nodes, branch_map, adj, frm)
+            if dist.get(to, math.inf) == math.inf:
+                warnings.append(f"Маршрут от узла {frm} до узла {to} не найден — проверьте связность сети")
+                route_ok = False
+                continue
+            seg_edges = build_path(prev, to)
+            all_path_edges.extend(seg_edges)
 
     segments = build_segments(all_path_edges, branch_map, node_map, o2c)
     back_edges = [{"nodeId": e["nodeId"], "branchId": e["branchId"], "forward": not e["forward"]}

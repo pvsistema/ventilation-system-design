@@ -268,6 +268,8 @@ export interface CanvasRenderOptions {
   reversedBranchIds?: Set<string>;
   /** Карта branchId → цвет сравнения схем (#f59e0b=изменена, #22c55e=добавлена, #ef4444=удалена) */
   compareBranchColors?: Map<string, string>;
+  /** Альтернативные варианты маршрута: branchId → цвет варианта */
+  altRouteBranchColors?: Map<string, string>;
   /** ID узлов маршрута горноспасателей — рисуются зелёным кольцом */
   rescuePathNodeIds?: Set<string>;
   /** Буквенные метки узлов горноспасателей: nodeId → «А»/«Б»/«В» */
@@ -631,7 +633,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     pollutedBranchIds, reversedBranchIds,
     compareBranchColors,
     rescuePathNodeIds, rescueNodeLetters,
-    rescuePathBranchIds, rescuePathBranchDirs,
+    rescuePathBranchIds, rescuePathBranchDirs, altRouteBranchColors,
     highlightHorizonId = null,
     xyScale,
     hiddenBranchIds,
@@ -1145,6 +1147,22 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // ── Подсветка маршрута/пути: аура + штрих — рисуется ПОД основной линией
     //    (как в SVG). Основная линия ложится поверх, зелёная аура видна по краям.
     //    Стрелки направления рисуются ПОСЛЕ основной линии (ниже).
+    // ── Альтернативные варианты маршрута (как серые объезды в навигаторе).
+    //    Рисуются ПОД выбранным маршрутом бледной широкой линией, чтобы было
+    //    видно, какие ещё пути есть от А до Б, и по какой из них кликнуть.
+    const altColor = altRouteBranchColors?.get(b.id);
+    if (altColor && !rescuePathBranchIds?.has(b.id)) {
+      ctx.save();
+      ctx.setLineDash([]);
+      ctx.strokeStyle = altColor; ctx.globalAlpha = 0.28;
+      ctx.lineWidth = Math.max(w + 12, 9); ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      ctx.strokeStyle = altColor; ctx.globalAlpha = 0.65;
+      ctx.lineWidth = Math.max(w + 2, 2.5); ctx.setLineDash([9, 7]);
+      ctx.beginPath(); ctx.moveTo(p.fromSx, p.fromSy); ctx.lineTo(p.toSx, p.toSy); ctx.stroke();
+      ctx.restore();
+    }
+
     if (rescuePathBranchIds?.has(b.id)) {
       ctx.save();
       ctx.setLineDash([]);

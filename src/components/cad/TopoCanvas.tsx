@@ -94,6 +94,7 @@ export default function TopoCanvas(props: Props) {
     reversedBranchIds,
     rescuePathBranchIds,
     rescuePathBranchDirs,
+    altRouteBranchColors,
     rescuePathNodeIds,
     rescueNodeLetters,
     onRescueNodePick,
@@ -1785,6 +1786,7 @@ export default function TopoCanvas(props: Props) {
           rescueNodeLetters={rescueNodeLetters}
           rescuePathBranchIds={rescuePathBranchIds}
           rescuePathBranchDirs={rescuePathBranchDirs}
+          altRouteBranchColors={altRouteBranchColors}
           onMouseDown={onMouseDownCanvas}
           onMouseMove={onMouseMoveCanvas}
           onMouseUp={onMouseUpCanvas}
@@ -2266,6 +2268,16 @@ export default function TopoCanvas(props: Props) {
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
                   stroke={expSeg.color} strokeWidth={Math.max(w + 8, 6)} strokeLinecap="round"
                   opacity="0.3" />
+              </>)}
+              {/* Альтернативные варианты маршрута — бледные линии-объезды,
+                  как серые варианты пути в навигаторе. Клик выбирает вариант. */}
+              {altRouteBranchColors?.get(b.id) && !rescuePathBranchIds?.has(b.id) && (<>
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={altRouteBranchColors.get(b.id)} strokeWidth={Math.max(w + 12, 9)}
+                  strokeLinecap="round" opacity="0.28" />
+                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
+                  stroke={altRouteBranchColors.get(b.id)} strokeWidth={Math.max(w + 2, 2.5)}
+                  strokeLinecap="round" opacity="0.65" strokeDasharray="9 7" />
               </>)}
               {/* Подсветка маршрута горноспасателей + стрелки направления */}
               {rescuePathBranchIds?.has(b.id) && (() => {

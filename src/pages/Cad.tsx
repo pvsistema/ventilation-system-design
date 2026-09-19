@@ -1279,6 +1279,11 @@ export default function CadPage() {
   const [rescuePathBranchDirs, setRescuePathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [rescuePathNodeIds, setRescuePathNodeIds] = useState<Set<string>>(new Set());
   const [rescueWaypointIds, setRescueWaypointIds] = useState<string[]>([]);
+  // Альтернативные варианты маршрута ВГСЧ: branchId → цвет варианта.
+  // Рисуются бледными линиями-объездами рядом с выбранным маршрутом.
+  const [rescueAltRouteColors, setRescueAltRouteColors] = useState<Map<string, string>>(new Map());
+  // Клик по линии варианта на схеме — выбирает этот вариант
+  const rescueBranchPickHandlerRef = React.useRef<((branchId: string) => void) | null>(null);
   // Буквенные метки узлов маршрута горноспасателей: А — начальный (база ВГСЧ),
   // Б — целевой (место аварии), В — промежуточные узлы. Рисуются на схеме поверх узлов.
   const rescueNodeLetters = React.useMemo(() => {
@@ -11286,6 +11291,8 @@ export default function CadPage() {
                   setRescuePathBranchDirs(bDirs);
                 }}
                 onWaypointsChange={setRescueWaypointIds}
+                onAltRoutesChange={setRescueAltRouteColors}
+                onRegisterBranchPickHandler={(fn) => { rescueBranchPickHandlerRef.current = fn; }}
               />
               </PanelErrorBoundary>
             )}
@@ -12706,6 +12713,10 @@ export default function CadPage() {
                 : rescuePathBranchDirs.size > 0 ? rescuePathBranchDirs
                 : undefined
               }
+              altRouteBranchColors={
+                activeSide === "rescue" && rescueAltRouteColors.size > 0
+                  ? rescueAltRouteColors : undefined
+              }
               rescuePathNodeIds={
                 workerPathNodeIds.size > 0 ? workerPathNodeIds
                 : rescuePathNodeIds.size > 0 ? rescuePathNodeIds
@@ -12722,6 +12733,11 @@ export default function CadPage() {
                 else if (workerPickMode) workerPickHandlerRef.current?.(nodeId);
               }}
               onRescueBranchPick={(branchId) => {
+                // Клик по линии варианта маршрута ВГСЧ выбирает этот вариант
+                if (rescuePickMode === "route") {
+                  rescueBranchPickHandlerRef.current?.(branchId);
+                  return;
+                }
                 if (depressogramPickMode) setDepressogramManualBranches(prev => {
                   const next = new Set(prev);
                   if (next.has(branchId)) { next.delete(branchId); } else { next.add(branchId); }

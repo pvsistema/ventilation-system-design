@@ -230,6 +230,12 @@ export interface Props {
   rescuePathBranchIds?: Set<string>;
   /** Направление движения по ветви маршрута: true = fromId→toId, false = toId→fromId */
   rescuePathBranchDirs?: Map<string, boolean>;
+  /**
+   * Альтернативные варианты маршрута горноспасателей: branchId → цвет.
+   * Рисуются под выбранным маршрутом бледной широкой линией — как серые
+   * варианты объезда в навигаторе. Клик по такой линии выбирает вариант.
+   */
+  altRouteBranchColors?: Map<string, string>;
   /** ID узлов маршрута горноспасателей (старт/финиш) — подсвечиваются */
   rescuePathNodeIds?: Set<string>;
   /** Буквенные метки узлов горноспасателей: nodeId → «А»/«Б»/«В» */

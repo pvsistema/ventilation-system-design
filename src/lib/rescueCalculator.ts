@@ -31,6 +31,12 @@ export interface RescueParams {
   oxygenVolume: number;         // л объём баллона ИДА
   /** Промежуточные узлы маршрута (вайпоинты), порядок — от старта к цели */
   waypointNodeIds?: string[];
+  /**
+   * Готовый маршрут, выбранный пользователем из вариантов (см. findRescueRoutes).
+   * Если задан — расчёт идёт ИМЕННО по нему, поиск кратчайшего пути не
+   * выполняется. Так выбор трассы «как в навигаторе» попадает в отчёт.
+   */
+  forcedRouteEdges?: Array<{ nodeId: string; branchId: string; forward: boolean }>;
 }
 
 export interface RescueSegment {
@@ -277,6 +283,14 @@ function buildDijkstra(
   branches: TopoBranchLite[],
   adj: Map<string, Edge[]>,
   startNodeId: string,
+  /**
+   * Штрафы за выработки (branchId → множитель времени ≥ 1). Нужны для поиска
+   * ОБХОДНЫХ вариантов маршрута: уже использованные выработки становятся
+   * «дороже», и Дейкстра вынужденно ищет другой путь. Сам маршрут при этом
+   * остаётся честным — штраф влияет только на выбор, а время каждого участка
+   * считается потом заново по реальным скоростям.
+   */
+  penalty?: Map<string, number>,
 ): { dist: Map<string, number>; prev: Map<string, { nodeId: string; branchId: string; forward: boolean } | null> } {
   const dist = new Map<string, number>();
   const prev = new Map<string, { nodeId: string; branchId: string; forward: boolean } | null>();
@@ -305,7 +319,7 @@ function buildDijkstra(
       const zone = getZone(smokeDens);
       const speed = Math.max(1, getSpeed(zone, signedAngle));
       const len = Number.isFinite(b.length) ? b.length : 0;
-      const t = len > 0 ? len / speed : 0;
+      const t = (len > 0 ? len / speed : 0) * (penalty?.get(b.id) ?? 1);
       const nd = curD + t;
       if (nd < (dist.get(edge.toId) ?? Infinity)) {
         dist.set(edge.toId, nd);
@@ -330,6 +344,157 @@ function buildPath(
     cur = p.nodeId;
   }
   return path;
+}
+
+// ─── Поиск нескольких вариантов маршрута ────────────────────────────────────
+
+/** Один вариант маршрута от А до Б (через промежуточные узлы, если заданы). */
+export interface RescueRouteVariant {
+  /** Порядковый номер варианта: 0 — самый быстрый */
+  index: number;
+  /** Рёбра маршрута по порядку движения */
+  edges: Array<{ nodeId: string; branchId: string; forward: boolean }>;
+  /** Направление движения по каждой выработке: true = fromId→toId */
+  branchDirs: Map<string, boolean>;
+  /** Уникальные выработки маршрута */
+  branchIds: string[];
+  /** Суммарная протяжённость, м */
+  totalLength: number;
+  /** Время хода «туда» с учётом задымления, мин */
+  totalTime: number;
+  /** Протяжённость участков в задымлённой атмосфере, м */
+  smokeLength: number;
+  /** Максимальная плотность дыма на маршруте, м⁻¹ */
+  maxSmokeDensity: number;
+  /** Худшая зона задымления на маршруте */
+  worstZone: "clean" | "smoky_low" | "smoky_high";
+  /** Число выработок с проходимой перемычкой на пути */
+  bulkheadCount: number;
+  /** Маршрут построен полностью (все участки между точками найдены) */
+  ok: boolean;
+}
+
+/** Цвета вариантов маршрута — как в навигаторе: выбранный зелёный, прочие серо-синие. */
+export const ROUTE_VARIANT_COLORS = ["#16a34a", "#2563eb", "#9333ea", "#ea580c", "#0891b2"];
+
+function summarizeVariant(
+  index: number,
+  edges: Array<{ nodeId: string; branchId: string; forward: boolean }>,
+  branchMap: Map<string, TopoBranchLite>,
+  ok: boolean,
+): RescueRouteVariant {
+  let totalLength = 0;
+  let totalTime = 0;
+  let smokeLength = 0;
+  let maxSmokeDensity = 0;
+  let bulkheadCount = 0;
+  const branchDirs = new Map<string, boolean>();
+  const seen = new Set<string>();
+  const branchIds: string[] = [];
+
+  for (const e of edges) {
+    const b = branchMap.get(e.branchId);
+    if (!b) continue;
+    branchDirs.set(b.id, e.forward);
+    if (!seen.has(b.id)) { seen.add(b.id); branchIds.push(b.id); }
+    const len = Number.isFinite(b.length) && b.length > 0 ? b.length : 0;
+    const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
+    const signedAngle = e.forward ? rawAngle : -rawAngle;
+    const dens = b.fireComputedSmokeDens ?? 0;
+    const zone = getZone(dens);
+    const speed = Math.max(1, getSpeed(zone, signedAngle));
+    totalLength += len;
+    totalTime += len / speed;
+    if (zone !== "clean") smokeLength += len;
+    if (dens > maxSmokeDensity) maxSmokeDensity = dens;
+    if (b.hasBulkhead) bulkheadCount++;
+  }
+
+  const worstZone = getZone(maxSmokeDensity);
+  return {
+    index, edges, branchDirs, branchIds,
+    totalLength, totalTime, smokeLength, maxSmokeDensity,
+    worstZone, bulkheadCount, ok,
+  };
+}
+
+/**
+ * Ищет несколько РАЗНЫХ маршрутов от А до Б — как варианты пути в навигаторе.
+ *
+ * Первый вариант — самый быстрый (обычная Дейкстра). Каждый следующий ищется
+ * заново, но выработки, уже занятые найденными маршрутами, получают штраф ко
+ * времени: поиск обходит их стороной и находит объезд. Штраф влияет ТОЛЬКО на
+ * выбор трассы — время и кислород по выбранному варианту считаются потом
+ * заново по реальным нормативным скоростям.
+ *
+ * Возвращает варианты, отсортированные по времени хода (быстрейший первым).
+ */
+export function findRescueRoutes(
+  nodes: TopoNodeLite[],
+  branches: TopoBranchLite[],
+  startNodeId: string,
+  targetNodeId: string,
+  opts?: { waypointNodeIds?: string[]; maxVariants?: number },
+): RescueRouteVariant[] {
+  const waypointNodeIds = (opts?.waypointNodeIds ?? []).filter(Boolean);
+  const maxVariants = Math.max(1, Math.min(5, opts?.maxVariants ?? 4));
+
+  const adj = new Map<string, Edge[]>();
+  for (const n of nodes) adj.set(n.id, []);
+  for (const b of branches) {
+    if (b.isLeakage) continue;
+    if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
+    if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
+    if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
+    adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
+    adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
+  }
+
+  const branchMap = new Map(branches.map(b => [b.id, b]));
+  const checkpoints = [startNodeId, ...waypointNodeIds, targetNodeId];
+
+  /** Строит маршрут целиком (через все контрольные точки) с данными штрафами. */
+  const buildRoute = (penalty: Map<string, number>) => {
+    const edges: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
+    let ok = true;
+    for (let i = 0; i < checkpoints.length - 1; i++) {
+      const from = checkpoints[i];
+      const to   = checkpoints[i + 1];
+      const { dist, prev } = buildDijkstra(nodes, branches, adj, from, penalty);
+      if ((dist.get(to) ?? Infinity) === Infinity) { ok = false; continue; }
+      edges.push(...buildPath(prev, to));
+    }
+    return { edges, ok };
+  };
+
+  const variants: RescueRouteVariant[] = [];
+  const seenKeys = new Set<string>();
+  const penalty = new Map<string, number>();
+
+  // Штраф подбирается по нарастающей: слабый даёт близкие варианты
+  // (объезд одного перекрёстка), сильный — принципиально другую трассу.
+  const penaltySteps = [1, 1.6, 2.6, 4.5, 8, 14];
+
+  for (let attempt = 0; attempt < penaltySteps.length && variants.length < maxVariants; attempt++) {
+    const { edges, ok } = buildRoute(attempt === 0 ? new Map() : penalty);
+    if (edges.length === 0) { if (attempt === 0) break; continue; }
+
+    const key = edges.map(e => e.branchId).join(">");
+    if (!seenKeys.has(key)) {
+      seenKeys.add(key);
+      variants.push(summarizeVariant(variants.length, edges, branchMap, ok));
+    }
+
+    // Удорожаем только что пройденные выработки — следующий поиск ищет объезд
+    const factor = penaltySteps[Math.min(attempt + 1, penaltySteps.length - 1)];
+    for (const e of edges) {
+      penalty.set(e.branchId, Math.max(penalty.get(e.branchId) ?? 1, factor));
+    }
+  }
+
+  variants.sort((a, b) => a.totalTime - b.totalTime);
+  variants.forEach((v, i) => { v.index = i; });
+  return variants;
 }
 
 // ─── Основная функция расчёта ──────────────────────────────────────────────────
@@ -362,6 +527,13 @@ export function calcRescue(
   const allPathEdges: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
   let routeOk = true;
 
+  // Пользователь выбрал вариант маршрута на схеме — считаем строго по нему,
+  // кратчайший путь не ищем. Иначе расчёт показал бы другую трассу, чем та,
+  // что подсвечена на схеме.
+  const forced = params.forcedRouteEdges;
+  if (forced && forced.length > 0) {
+    allPathEdges.push(...forced);
+  } else {
   for (let i = 0; i < checkpoints.length - 1; i++) {
     const from = checkpoints[i];
     const to   = checkpoints[i + 1];
@@ -373,6 +545,7 @@ export function calcRescue(
     }
     const segEdges = buildPath(prev, to);
     allPathEdges.push(...segEdges);
+  }
   }
 
   // ── Карта ветвей и узлов ──────────────────────────────────────────────────

@@ -6,6 +6,9 @@ import {
   RescueOperationType,
   RescueResult,
   RescueSegment,
+  findRescueRoutes,
+  RescueRouteVariant,
+  ROUTE_VARIANT_COLORS,
 } from "@/lib/rescueCalculator";
 import { API_URLS } from "@/lib/api-urls";
 import { withLicense } from "@/lib/license";
@@ -56,7 +59,12 @@ interface BranchLite {
 }
 
 /** null = выкл, "start" = выбор старта, "target" = выбор цели, "wp:N" = выбор вайпоинта #N */
-export type RescuePickMode = "start" | "target" | `wp:${number}` | null;
+/**
+ * Режим выбора на схеме.
+ * "route" — показаны варианты маршрута, клик по подсвеченной выработке
+ * выбирает тот вариант, которому она принадлежит (как в навигаторе).
+ */
+export type RescuePickMode = "start" | "target" | "route" | `wp:${number}` | null;
 
 interface Props {
   nodes: NodeLite[];
@@ -75,6 +83,13 @@ interface Props {
   onRouteChange: (branchIds: Set<string>, nodeIds: Set<string>, branchDirs: Map<string, boolean>) => void;
   /** Актуальный список выбранных промежуточных узлов (для подписи «В» на схеме) */
   onWaypointsChange?: (waypointIds: string[]) => void;
+  /**
+   * Альтернативные варианты маршрута для подсветки на схеме: branchId → цвет.
+   * Пустая карта — вариантов нет / подсветка выключена.
+   */
+  onAltRoutesChange?: (branchColors: Map<string, string>) => void;
+  /** Регистрирует обработчик клика по выработке: выбор варианта маршрута на схеме */
+  onRegisterBranchPickHandler?: (fn: (branchId: string) => void) => void;
 }
 
 const OP_LABELS: Record<RescueOperationType, string> = {
@@ -657,6 +672,7 @@ export default function RescuePanel({
   pickedStartId, pickedTargetId,
   onPickedStartChange, onPickedTargetChange,
   onRouteChange, onWaypointsChange,
+  onAltRoutesChange, onRegisterBranchPickHandler,
 }: Props) {
   const [operationType, setOperationType] = useState<RescueOperationType>("scout_and_transport");
   const [useAirTemp, setUseAirTemp] = useState(false);
@@ -675,6 +691,15 @@ export default function RescuePanel({
   // Промежуточные узлы (вайпоинты)
   const [useWaypoints, setUseWaypoints] = useState(false);
   const [waypointIds, setWaypointIds] = useState<string[]>([]);
+
+  // ─── Варианты маршрута (как в навигаторе) ──────────────────────────────────
+  // Найденные пути от А до Б: первый — самый быстрый, остальные — объезды.
+  const [routeVariants, setRouteVariants] = useState<RescueRouteVariant[]>([]);
+  // Номер варианта, по которому пойдёт расчёт
+  const [selectedVariant, setSelectedVariant] = useState(0);
+  // Вариант под курсором в списке — подсвечивается на схеме ярче
+  const [hoverVariant, setHoverVariant] = useState<number | null>(null);
+  const [routesSearching, setRoutesSearching] = useState(false);
 
   // Сообщаем родителю актуальные промежуточные узлы — для подписи «В» на схеме
   React.useEffect(() => {
@@ -737,6 +762,112 @@ export default function RescuePanel({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [useWaypoints, waypointIds, startNodeId, targetNodeId, nodes]);
 
+  // ─── Поиск и выбор вариантов маршрута ─────────────────────────────────────
+
+  const activeWaypoints = useWaypoints ? waypointIds.filter(Boolean) : [];
+  const activeWaypointsKey = activeWaypoints.join(",");
+
+  /** Сбрасывает найденные варианты — точки маршрута изменились. */
+  const clearVariants = React.useCallback(() => {
+    setRouteVariants([]);
+    setSelectedVariant(0);
+    setHoverVariant(null);
+    onAltRoutesChange?.(new Map());
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Сменили точку А/Б или промежуточный узел — старые варианты больше не о том
+  React.useEffect(() => {
+    clearVariants();
+    if (pickMode === "route") onPickModeChange(null);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startNodeId, targetNodeId, activeWaypointsKey, useWaypoints]);
+
+  /** Ищет варианты маршрута от А до Б и показывает их на схеме. */
+  function handleFindRoutes() {
+    if (!startNodeId || !targetNodeId) {
+      alert("Укажите начальный узел (база ВГСЧ) и целевой узел (место аварии)");
+      return;
+    }
+    if (startNodeId === targetNodeId) {
+      alert("Начальный и конечный узлы совпадают");
+      return;
+    }
+    if (waypointIssue) {
+      alert(`Промежуточные узлы: ${waypointIssue}`);
+      return;
+    }
+    setRoutesSearching(true);
+    // Поиск синхронный и на больших схемах занимает заметное время — даём
+    // браузеру кадр, чтобы успела отрисоваться надпись «Ищем...» на кнопке.
+    setTimeout(() => {
+      try {
+        const found = findRescueRoutes(nodes, branches, startNodeId, targetNodeId, {
+          waypointNodeIds: activeWaypoints,
+          maxVariants: 4,
+        });
+        setRouteVariants(found);
+        setSelectedVariant(0);
+        setHoverVariant(null);
+        if (found.length === 0) {
+          alert("Маршрут от А до Б не найден — проверьте связность сети и перемычки");
+          onPickModeChange(null);
+        } else {
+          // Показываем выбранный вариант зелёным основным маршрутом
+          applyVariant(found[0]);
+          onPickModeChange("route");
+        }
+      } finally {
+        setRoutesSearching(false);
+      }
+    }, 0);
+  }
+
+  /** Делает вариант основным: зелёная подсветка со стрелками на схеме. */
+  const applyVariant = React.useCallback((v: RescueRouteVariant) => {
+    const nodeIds = new Set([startNodeId, targetNodeId, ...activeWaypoints]);
+    onRouteChange(new Set(v.branchIds), nodeIds, v.branchDirs);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [startNodeId, targetNodeId, activeWaypointsKey]);
+
+  // Подсветка вариантов на схеме: выбранный — зелёным основным маршрутом,
+  // остальные — бледными цветными линиями-объездами.
+  React.useEffect(() => {
+    if (routeVariants.length === 0) return;
+    const shown = routeVariants[hoverVariant ?? selectedVariant] ?? routeVariants[0];
+    applyVariant(shown);
+
+    const alt = new Map<string, string>();
+    // Рисуем от последнего к первому: если выработка общая для нескольких
+    // вариантов, поверх ляжет цвет более быстрого из них.
+    for (let i = routeVariants.length - 1; i >= 0; i--) {
+      if (i === (hoverVariant ?? selectedVariant)) continue;
+      const color = ROUTE_VARIANT_COLORS[i % ROUTE_VARIANT_COLORS.length];
+      for (const id of routeVariants[i].branchIds) alt.set(id, color);
+    }
+    onAltRoutesChange?.(alt);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeVariants, selectedVariant, hoverVariant]);
+
+  // Клик по выработке на схеме выбирает вариант, которому она принадлежит.
+  // Если выработка общая для нескольких — берём ближайший по номеру следующий,
+  // чтобы повторные клики по общему участку перебирали варианты по кругу.
+  const branchPickRef = React.useRef<(branchId: string) => void>(() => {});
+  branchPickRef.current = (branchId: string) => {
+    if (pickMode !== "route" || routeVariants.length === 0) return;
+    const owners = routeVariants
+      .filter(v => v.branchIds.includes(branchId))
+      .map(v => v.index);
+    if (owners.length === 0) return;
+    const next = owners.find(i => i > selectedVariant) ?? owners[0];
+    setSelectedVariant(next);
+    setHoverVariant(null);
+  };
+  React.useEffect(() => {
+    onRegisterBranchPickHandler?.((branchId: string) => branchPickRef.current(branchId));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleCalc() {
     if (!startNodeId || !targetNodeId) {
       alert("Укажите начальный узел (база ВГСЧ) и целевой узел (место аварии)");
@@ -750,12 +881,16 @@ export default function RescuePanel({
       alert(`Промежуточные узлы: ${waypointIssue}`);
       return;
     }
-    const activeWaypoints = useWaypoints ? waypointIds.filter(Boolean) : [];
+    // Пользователь выбрал вариант маршрута на схеме — считаем строго по нему.
+    // Без этого расчёт ушёл бы по кратчайшему пути, а на схеме был бы
+    // подсвечен выбранный: цифры и картинка разошлись бы.
+    const chosen = routeVariants[selectedVariant];
     const params: RescueParams = {
       operationType, useAirTemp, useIdaTime, idaWorkTime,
       provideCare, careTime, useInterpolation,
       oxygenConsumption, oxygenVolume,
       waypointNodeIds: activeWaypoints,
+      ...(chosen ? { forcedRouteEdges: chosen.edges } : {}),
     };
 
     let res: RescueResult;
@@ -1001,6 +1136,80 @@ export default function RescuePanel({
         <div className="text-[10px] text-green-700 ml-1 mt-0.5">✓ {nodeName(targetNodeId)}</div>
       )}
 
+      {/* ─── Варианты маршрута (как в навигаторе) ───────────────────────── */}
+      <div className="border-t border-gray-200 mt-2 pt-1">
+        <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">
+          Маршрут:
+        </div>
+        <button
+          type="button"
+          onClick={handleFindRoutes}
+          disabled={!startNodeId || !targetNodeId || !!waypointIssue || routesSearching}
+          title="Показать все возможные пути от А до Б и выбрать нужный"
+          className="w-full py-1 rounded text-[11px] font-medium border border-blue-300 text-blue-700 hover:bg-blue-50 disabled:opacity-40 flex items-center justify-center gap-1">
+          <Icon name={routesSearching ? "Loader" : "Route"} size={11} />
+          {routesSearching ? "Ищем варианты..." : "Показать варианты маршрута"}
+        </button>
+
+        {routeVariants.length > 0 && (
+          <div className="mt-1.5 flex flex-col gap-1">
+            <div className="text-[9px] text-gray-500 leading-snug">
+              Найдено вариантов: {routeVariants.length}. Выберите нужный в списке
+              или кликните по линии маршрута на схеме.
+            </div>
+            {routeVariants.map(v => {
+              const isSel = v.index === selectedVariant;
+              const color = ROUTE_VARIANT_COLORS[v.index % ROUTE_VARIANT_COLORS.length];
+              const best = routeVariants[0];
+              const dT = v.totalTime - best.totalTime;
+              return (
+                <button
+                  key={v.index}
+                  type="button"
+                  onClick={() => { setSelectedVariant(v.index); setHoverVariant(null); }}
+                  onMouseEnter={() => setHoverVariant(v.index)}
+                  onMouseLeave={() => setHoverVariant(null)}
+                  className={`w-full text-left rounded border px-1.5 py-1 transition-colors ${
+                    isSel ? "border-green-500 bg-green-50" : "border-gray-200 bg-white hover:bg-gray-50"
+                  }`}>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                      style={{ background: isSel ? "#16a34a" : color }} />
+                    <span className="text-[11px] font-semibold text-gray-800">
+                      {v.index === 0 ? "Быстрейший" : `Вариант ${v.index + 1}`}
+                    </span>
+                    <span className="text-[11px] text-gray-700 ml-auto">
+                      {v.totalTime.toFixed(1)} мин
+                    </span>
+                    {v.index > 0 && dT > 0.05 && (
+                      <span className="text-[9px] text-orange-600">+{dT.toFixed(1)}</span>
+                    )}
+                    {isSel && <Icon name="Check" size={11} className="text-green-600" />}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5 ml-4 text-[9px] text-gray-500">
+                    <span>{(v.totalLength / 1000).toFixed(2)} км</span>
+                    <span>{v.branchIds.length} выраб.</span>
+                    {v.smokeLength > 0 && (
+                      <span className={v.worstZone === "smoky_high" ? "text-red-600" : "text-orange-600"}>
+                        дым {Math.round(v.smokeLength)} м
+                      </span>
+                    )}
+                    {v.smokeLength === 0 && <span className="text-green-600">без дыма</span>}
+                    {v.bulkheadCount > 0 && <span>перемычек: {v.bulkheadCount}</span>}
+                  </div>
+                </button>
+              );
+            })}
+            {!fireCalcDone && (
+              <div className="text-[9px] text-gray-400 leading-snug">
+                Задымление не рассчитано — варианты сравниваются только по
+                длине и уклонам. Выполните расчёт пожара, чтобы учесть дым.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       {/* Параметры расчёта */}
       <div className="border-t border-gray-200 mt-2 pt-1">
         <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Расчёт:</div>
@@ -1076,6 +1285,7 @@ export default function RescuePanel({
               onPickedTargetChange("");
               onPickModeChange(null);
               setWaypointIds([]);
+              clearVariants();
               onRouteChange(new Set(), new Set(), new Map());
             }}
             className="w-full py-1 rounded text-[11px] text-gray-600 border border-gray-300 hover:bg-gray-50">
