@@ -131,7 +131,10 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
       const qActualA = Math.abs(currentFlows.get(b.id) ?? b.flow ?? 0);
       const airQ  = qOrigA > 0 ? Math.max(qActualA, 0.5 * qOrigA) : qActualA;
       const T_pr  = b.fireMode === "temp"
-        ? (Number.isFinite(Number(b.fireTemperature)) && Number(b.fireTemperature) > AMBIENT_TEMP
+        // «≥», а не «>»: температура очага, равная температуре воздуха, — это
+        // корректное значение (очаг не греет струю), а не «битое». Раньше оно
+        // подменялось на T₀+500 °C и создавало тепловую тягу из ничего.
+        ? (Number.isFinite(Number(b.fireTemperature)) && Number(b.fireTemperature) >= AMBIENT_TEMP
             ? Math.min(1200, Number(b.fireTemperature))
             : AMBIENT_TEMP + 500)
         : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQ, AMBIENT_TEMP);

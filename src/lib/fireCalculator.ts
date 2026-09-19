@@ -532,6 +532,10 @@ export function calcFireTemp(
   airFlow_m3s: number,
   ambientTemp_C = 20,
 ): number {
+  // Нет тепловыделения — нет и нагрева: температура струи равна температуре
+  // воздуха. Проверка стоит ПЕРЕД веткой «нет расхода», иначе очаг нулевой
+  // мощности в застойной выработке получал фиктивные T₀+500 °C.
+  if (!(Number(heatRelease_MW) > 0)) return ambientTemp_C;
   if (airFlow_m3s <= 0) return ambientTemp_C + 500;
   // Δt = Q×10⁶ / (L × 1.25 × 1005) — методика ВНИМИ (как в Аэросети).
   // Вся тепловая мощность идёт в нагрев струи (без коэффициента теплопотерь) —
@@ -647,7 +651,11 @@ export function calcThermalDepressionNormative(
   const S = Math.max(0.001, Number(inp.sectionArea_m2) || 0);
   const beta = Number(inp.angle_deg) || 0;
   const t = Math.min(150, Math.max(0, inp.fireTime_min ?? 150)); // (4.8): t≤150 мин
-  const empty: NormativeDepressionResult = { h_t: 0, l: 0, A: 0, a: 0, Tm: 288, Tk: 288, dz: 0 };
+  // Температура вентиляционной струи ДО пожара (К). В нормативе она зашита
+  // константой 288 К (15 °C) — это частный случай. Здесь используется
+  // фактическая T₀, иначе при T₀ ≠ 15 °C расчёт даёт тягу даже без пожара.
+  const Tamb = 273 + (Number.isFinite(inp.ambientTemp_C as number) ? (inp.ambientTemp_C as number) : 15);
+  const empty: NormativeDepressionResult = { h_t: 0, l: 0, A: 0, a: 0, Tm: Tamb, Tk: Tamb, dz: 0 };
 
   // (4.8) длина зоны горения
   const l = t * (0.28 + 0.07 * (Q / S));
@@ -663,7 +671,6 @@ export function calcThermalDepressionNormative(
   // Ограничение по ФАКТИЧЕСКОЙ пожарной нагрузке: очаг не может нагреть струю
   // выше температуры, которую даёт его тепловая мощность. Берём минимум из
   // нормативной оценки и фактической температуры продуктов горения.
-  const Tamb = 273 + (Number.isFinite(inp.ambientTemp_C as number) ? (inp.ambientTemp_C as number) : 15);
   const TmFact = Number.isFinite(inp.actualFireTemp_C as number)
     ? 273 + (inp.actualFireTemp_C as number)
     : undefined;
@@ -672,7 +679,9 @@ export function calcThermalDepressionNormative(
     : TmNorm;
   const x = inp.distanceToMouth_m ?? l;   // если устье не задано — берём длину зоны
   const xBar = x / l;                      // (4.13) относительное расстояние
-  const Tk = 288 + (Tm - 288) * Math.exp(-xBar / A);
+  // (4.12) Tк = T₀ + (Tм−T₀)·e^(−x̄/A). В нормативе T₀ = 288 К; здесь берётся
+  // фактическая температура струи, поэтому при Tм = T₀ получаем Tк = T₀.
+  const Tk = Tamb + (Tm - Tamb) * Math.exp(-xBar / A);
   if (!(Tk > 1) || !(Tm > 1)) return empty;
 
   // (4.6) Δz = l·sinβ  (знак β задаёт направление тяги)
@@ -698,10 +707,20 @@ export function calcThermalDepressionNormative(
   // Множителем при логарифме в (4.5) входит именно a из (4.10).
   const bracketRaw = 0.766 + a * Math.log(Tm / Tk);
 
-  // Страховка от выхода за физический предел: доля вытеснения не может быть
-  // больше (1 − T₀/Tм) — тяги сильнее, чем даёт сама температура очага, не
-  // бывает ни при какой комбинации входных данных.
-  const bracketMax = Math.max(0, 1 - 288 / Math.max(289, Tm));
+  // ГЛАВНОЕ ИСПРАВЛЕНИЕ. Нормативное слагаемое 0.766 — константа, выведенная
+  // для РАЗВИТОГО пожара (T₀ = 288 К). При Tм = Tк = T₀, то есть когда очаг не
+  // греет струю (пожар не разгорелся, мощность 0, температура очага равна
+  // температуре воздуха), логарифм обращается в 0, а скобка остаётся 0.766 —
+  // и формула выдавала h_т = 12·Δz·0.766 (сотни Па тяги на ровном месте, в
+  // наклонной выработке без всякого пожара). Физически скобка — это доля
+  // вытеснения (ρ₀ − ρ_г)/ρ₀ = 1 − T₀/T_г, и при T_г = T₀ она строго равна 0.
+  //
+  // Поэтому нормативная скобка ограничивается сверху физическим пределом,
+  // посчитанным по ФАКТИЧЕСКОЙ температуре струи до пожара (а не по зашитым
+  // 288 К): bracketMax = 1 − T₀/Tм. При Tм → T₀ предел → 0, значит h_т → 0,
+  // как и должно быть. При развитом пожаре (Tм ≫ T₀) предел выше нормативной
+  // скобки не режет её и поведение остаётся нормативным.
+  const bracketMax = Tm > Tamb ? 1 - Tamb / Tm : 0;
   const bracket = Math.min(Math.max(0, bracketRaw), bracketMax);
 
   const h_t = NORMATIVE_K1 * dz * bracket;
@@ -1674,7 +1693,11 @@ export function calcFireMode(
     let fireTemp: number;
     if (fb.fireMode === "temp") {
       const tRaw = Number(fb.fireTemperature);
-      fireTemp = Number.isFinite(tRaw) && tRaw > ambientTemp_C
+      // ВАЖНО: условие именно «≥ T воздуха», а не «>». Раньше при заданной
+      // температуре очага, РАВНОЙ температуре воздуха, значение считалось
+      // «битым» и молча подменялось на T₀+500 °C — то есть нулевой по теплу
+      // очаг превращался в пожар 500° и давал тепловую депрессию.
+      fireTemp = Number.isFinite(tRaw) && tRaw >= ambientTemp_C
         ? Math.min(1200, tRaw)
         : ambientTemp_C + 500; // дефолт, если температура не задана/битая
       // Эквивалентная мощность из температуры — чтобы концентрации газов
