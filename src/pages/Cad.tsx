@@ -4035,17 +4035,6 @@ export default function CadPage() {
         fanStopped:  b.fanStopped ?? false,
         fanParallel: Math.max(1, b.fanParallel ?? 1),
         fireThermalDepression: b.fireThermalDepression ?? 0,
-        // Температуры концов ветви при пожаре (°C, ориентация from→to).
-        // Решатель считает по ним вес столба вместо температур узлов —
-        // см. FireThermalField в fireCalculator.ts.
-        fireTFrom: b.fireTFrom,
-        fireTTo: b.fireTTo,
-        // Признак «в этой выработке очаг». Решателю он нужен для веса горячего
-        // столба: в ветви очага нагрев идёт СКАЧКОМ в середине выработки (до
-        // очага холодный воздух, после — продукты горения), а в ветвях за ней
-        // газ входит горячим и плавно остывает. Профили разные, и без этого
-        // признака тормозящая тяга нисходящего съезда считалась заниженной.
-        hasFire: b.hasFire ?? false,
         ...(curve ? {
           // Угол лопаток масштабирует характеристику по ОБЕИМ осям (закон
           // подобия): H(Q) = af·H_ном(Q/af). Раскрыв скобки, получаем
@@ -4346,13 +4335,12 @@ export default function CadPage() {
   // пересчитывает. Возвращает Map<targetId, Map<branchId, Q>>.
   // Это заменяет сотни последовательных запросов одним.
   // ─────────────────────────────────────────────────────────────────────────
-  // Сценарий батч-расчёта пожара. branchTemps — температуры концов ветвей
-  // (°C, ориентация from→to); именно по ним решатель считает вес столба.
+  // Сценарий батч-расчёта пожара. hotNodeTemps — температуры узлов пути дыма:
+  // по ним решатель считает тепловую тягу замкнутым контуром (natural_draft_h).
   type FireScenario = {
     id: string;
     thermalDepression: number;
     hotNodeTemps?: Record<string, number>;
-    branchTemps?: Record<string, { tFrom: number; tTo: number }>;
   };
 
   const solveFireBatch = async (
@@ -4502,13 +4490,11 @@ export default function CadPage() {
         }, thermalDepMethod);
         // Горячие узлы пути дыма — тяга через температуры узлов (как в Аэросети).
         const branchesForHot = branches.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: s.flows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
-        const { hot: hotNodeTemps, branchTemps } = computeHotNodeTemps(
+        const hotNodeTemps = computeHotNodeTemps(
           [{ id: target.id, fromId: target.fromId, toId: target.toId, fireTemp: T_src, flow: s.flows.get(target.id) ?? target.flow ?? 0, originalFlow: originalFlows.get(target.id) ?? target.flow ?? 0, reversedConfirmed: s.reversedConfirmed, length: target.length, area: target.area, perimeter: target.perimeter }],
           branchesForHot, ambientTemp, baseNodeTemps,
         );
-        // Температуры концов ветвей — по ним решатель считает вес столба
-        // (узловая схема давала фиктивную тягу в свежих выработках).
-        scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps, branchTemps });
+        scenarios.push({ id: target.id, thermalDepression: s.thermalDep, hotNodeTemps });
       }
 
       // 2) Один запрос на весь раунд. Базовая сеть — с расходами первого
@@ -6467,7 +6453,7 @@ export default function CadPage() {
             <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
               <div className="font-semibold" style={{ color: "var(--c-red, #b91c1c)" }}>T очага: {safeFixed(fireResult.fireTemp, 1)} °C</div>
               <div style={{ color: "var(--c-amber, #c2410c)" }}>h_t = {safeFixed(fireResult.fireThermalDep, 1)} Па</div>
-              <div style={{ color: "var(--c-t2, #374151)" }}>Задымлено: {fireResult.smokedCount ?? fireResult.branches.size} вет.</div>
+              <div style={{ color: "var(--c-t2, #374151)" }}>Задымлено: {fireResult.branches.size} вет.</div>
               {fireResult.reversedBranches.size > 0
                 ? <div className="font-semibold px-1 rounded" style={{ background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #dc2626)", border: "1px solid #fca5a5" }}>⚠ Опрокид.: {fireResult.reversedBranches.size}</div>
                 : <div style={{ color: "var(--c-green, #15803d)" }}>✓ Струя устойчива</div>

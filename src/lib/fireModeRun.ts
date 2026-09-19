@@ -13,7 +13,7 @@
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
   calcFireMode, calcFireTemp, fireSourceTempForMethod, computeHotNodeTemps,
-  calcFirePowerFromMaterial, calcThermalDepressionUnified,
+  calcFirePowerFromMaterial,
   type ThermalDepMethod, type FireCalculationResult,
 } from "@/lib/fireCalculator";
 
@@ -112,57 +112,29 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
     });
 
     // Шаг C: температура продуктов горения T_пр для каждого очага
-    // + карта горячих узлов пути дыма + тепловая депрессия очага.
-    //
-    // ТЯГА СКЛАДЫВАЕТСЯ ИЗ ДВУХ ЧАСТЕЙ, и обе обязательны:
-    //   1) депрессия ЗОНЫ ГОРЕНИЯ (h_t, формулы 4.5–4.6) — сосредоточенный
-    //      источник в самой ветви очага. Считается по Δz = l·sinβ, то есть по
-    //      длине зоны горения, а не по геометрии ветви;
-    //   2) дымовая труба — горячий столб вдоль ПУТИ ДЫМА за очагом. Её
-    //      решатель выводит сам из температур ветвей (natural_draft_h), и
-    //      встречный холодный столб выхода на поверхность её уравновешивает.
-    // Раньше оставляли только (2), и в нисходящей выработке тормоз зоны
-    // горения терялся — расход рос вместо падения.
+    // + карта горячих узлов пути дыма (правильная модель тяги).
+    // Тепловая тяга считается решателем через ТЕМПЕРАТУРЫ УЗЛОВ
+    // (natural_draft_h): горячий восходящий столб уравновешивается
+    // встречным холодным столбом выхода на поверхность — соседние
+    // выработки меняются слабо (как в Аэросети). Сосредоточенный
+    // h_fire на одной ветви (старый способ) нефизично опрокидывал
+    // соседей.
     const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[] = [];
     const branchesWithHt = branchesIter.map(b => {
       if (!b.hasFire) return b;
-      // ── ДВА РАЗНЫХ РАСХОДА — ДВЕ РАЗНЫЕ ТЕМПЕРАТУРЫ ─────────────────
-      //
-      // Их НЕЛЬЗЯ путать, и именно на этом расчёт дважды ошибался.
-      //
-      // 1) НОРМАТИВНЫЙ расход (Q до пожара) — для формул 4.8–4.11, где Q
-      //    определён буквально как «расход воздуха в пожарной выработке ДО
-      //    возникновения пожара». По нему считаются l, a, A, Tм, h_т и то,
-      //    что показано в панели. Обратной связи по текущему расходу в
-      //    методике нет — поэтому здесь именно дожаровой Q.
-      //
-      // 2) ТРАНСПОРТНЫЙ расход (фактический) — для температуры струи,
-      //    которая разносит тепло по сети. Здесь работает не методика, а
-      //    закон сохранения энергии: очаг отдаёт ровно N Вт, поэтому
-      //        T = T_фон + N / (ρ · Q_факт · cp).
-      //    Масса струи в узловом балансе тоже берётся по Q_факт, и только
-      //    при таком согласовании энергия, попавшая в сеть, равна мощности
-      //    очага при ЛЮБОМ расходе.
-      //
-      // ЧТО БЫЛО СЛОМАНО. В прошлой правке я подставил штатный Q и сюда —
-      // температура считалась по Q_штат, а масса в computeHotNodeTemps по
-      // Q_факт. Энергия в сети стала равна N·(Q_факт/Q_штат): при разгоне
-      // струи 106,8 → 198,7 м³/с очаг 8,52 МВт грел сеть как 15,85 МВт.
-      // Это замкнуло новую петлю в обратную сторону: расход вырос → тепла
-      // «стало больше» → тяга выросла → расход вырос ещё. Отсюда и
-      // ΔQ = +91,9 м³/с с опрокидыванием семи ветвей.
+      // Расход для T_пр — ФАКТИЧЕСКИЙ (как в Аэросети), но не ниже
+      // половины штатного: верхняя защита от разгона обратной
+      // связи «расход↓→T↑→h_t↑→расход↓». Раньше брался только
+      // штатный, и при выросшем расходе (10.5→56.1) температура
+      // завышалась вчетверо (663.8 вместо 140.8°C).
       const qOrigA   = Math.abs(originalFlows.get(b.id) ?? b.flow ?? 0);
       const qActualA = Math.abs(currentFlows.get(b.id) ?? b.flow ?? 0);
-      // Для нормативных формул (4.8–4.11) и панели.
-      const airQ  = qOrigA > 0 ? qOrigA : qActualA;
-      // Для переноса тепла по сети. Ниже 0,5 м³/с не опускаем — деление на
-      // почти ноль дало бы фиктивные тысячи градусов на стоящей струе.
-      const airQTransport = Math.max(0.5, qActualA > 0 ? qActualA : qOrigA);
+      const airQ  = qOrigA > 0 ? Math.max(qActualA, 0.5 * qOrigA) : qActualA;
       const T_pr  = b.fireMode === "temp"
         ? (Number.isFinite(Number(b.fireTemperature)) && Number(b.fireTemperature) > AMBIENT_TEMP
             ? Math.min(1200, Number(b.fireTemperature))
             : AMBIENT_TEMP + 500)
-        : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQTransport, AMBIENT_TEMP);
+        : calcFireTemp(Number.isFinite(b.fireHeatRelease) ? b.fireHeatRelease : 0, airQ, AMBIENT_TEMP);
       // Температура источника горячего плюма зависит от метода:
       // "Норматив 4.5" → Tм из геометрии (форм. 4.11), "Методика" →
       // реальная T_пр. Ручную температуру ("temp") не трогаем.
@@ -180,59 +152,16 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
         }, thermalDepMethod);
       }
       fireSeats.push({ id: b.id, fromId: b.fromId, toId: b.toId, fireTemp: T_src, flow: currentFlows.get(b.id) ?? b.flow ?? 0, originalFlow: originalFlows.get(b.id) ?? b.flow ?? 0, reversedConfirmed: reversedSeats.has(b.id), length: b.length, area: b.area, perimeter: b.perimeter });
-
-      // ── ТЕПЛОВАЯ ДЕПРЕССИЯ — СОСРЕДОТОЧЕННЫЙ ИСТОЧНИК В ВЕТВИ ОЧАГА ────
-      //
-      // Раньше здесь стоял ноль: депрессию считали, показывали в панели, а в
-      // сеть не отдавали — тягу целиком выводил решатель из температур по
-      // формуле natural_draft_h. Это и ломало нисходящее проветривание.
-      //
-      // ПОЧЕМУ. Решатель берёт перепад отметок ПО ГЕОМЕТРИИ ВЕТВИ, а методика
-      // (4.6) — по длине ЗОНЫ ГОРЕНИЯ: Δz = l·sinβ. Зона горения по (4.8) на
-      // порядок длиннее короткой выработки, и тормоз в ней не помещается:
-      // ветвь 15 м с уклоном −10° даёт Δz = −2,6 м и всего −5,8 Па вместо
-      // нормативных −49,4 Па при Δz = −11,1 м. Тормоз занижался в 8,5 раза,
-      // а разгон от горячего столба в исходящем стволе оставался полным — и
-      // расход в нисходящей выработке РОС вместо того, чтобы чуть упасть.
-      //
-      // Теперь депрессия зоны горения прикладывается к ветви очага источником,
-      // как в Аэросети. Знак берётся из flowRelAngle (угол ОТНОСИТЕЛЬНО
-      // потока): нисходящее проветривание → Δz < 0 → h_t < 0 → тормоз.
-      //
-      // Двойного учёта нет: решатель при hasFire не добавляет к этой ветви
-      // тепловой вклад своего столба (см. is_fire_seat в natural_draft_h).
-      const fromN2 = nodes.find(n => n.id === b.fromId);
-      const toN2   = nodes.find(n => n.id === b.toId);
-      const dzGeom2 = (toN2?.z ?? 0) - (fromN2?.z ?? 0);
-      const geomAngle2 = Math.abs(b.angle ?? 0) * Math.sign(dzGeom2 || 1);
-      const dirFlow2 = originalFlows.get(b.id) ?? b.flow ?? 0;
-      const flowRelAngle2 = geomAngle2 * (dirFlow2 >= 0 ? 1 : -1);
-      const h_t = calcThermalDepressionUnified({
-        fireTemp_C: T_pr,
-        ambientTemp_C: AMBIENT_TEMP,
-        length_m: b.length ?? 0,
-        angle_deg: flowRelAngle2,
-        airFlow_m3s: airQ,
-        sectionArea_m2: b.area,
-      }, thermalDepMethod);
-
-      return { ...b, fireThermalDepression: Number.isFinite(h_t) ? h_t : 0 };
+      // fireThermalDepression больше НЕ прикладываем как источник.
+      return { ...b, fireThermalDepression: 0 };
     });
 
     // Карта горячих узлов по актуальным расходам.
     const branchesForHot = branchesIter.map(b => ({ id: b.id, fromId: b.fromId, toId: b.toId, flow: currentFlows.get(b.id) ?? b.flow, length: b.length, area: b.area, perimeter: b.perimeter }));
-    const { hot: hotNodeTemps, branchTemps } =
-      computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP, baseNodeTemps);
+    const hotNodeTemps = computeHotNodeTemps(fireSeats, branchesForHot, AMBIENT_TEMP, baseNodeTemps);
 
-    // Шаг D: пересчитать сеть с горячими узлами.
-    // Температуры КОНЦОВ ветвей кладём в сами ветви: решатель считает вес
-    // столба по струе, а не по узлу, поэтому свежая (холодная) выработка,
-    // впадающая в задымлённый узел, больше не превращается в тяговый столб.
-    const branchesWithT = branchesWithHt.map(b => {
-      const t = branchTemps[b.id];
-      return t ? { ...b, fireTFrom: t.tFrom, fireTTo: t.tTo } : b;
-    });
-    const newFlows = await solveIteration(branchesWithT, AMBIENT_TEMP, hotNodeTemps);
+    // Шаг D: пересчитать сеть с горячими узлами
+    const newFlows = await solveIteration(branchesWithHt, AMBIENT_TEMP, hotNodeTemps);
     if (newFlows.size === 0) break; // ошибка сети — прерываем
 
     // Шаг E: адаптивная релаксация + проверка сходимости.
