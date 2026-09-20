@@ -16,18 +16,9 @@
 // НОВОЙ ФИЗИКИ ЗДЕСЬ НЕТ — формулы, пороги и порядок ветвлений перенесены
 // дословно из Cad.tsx.
 // ─────────────────────────────────────────────────────────────────────────────
-//
-// ЕДИНИЦЫ (важно). Функции *RkMurg в lib/bulkheads.ts откалиброваны по
-// эталонам «АэроСети» и возвращают РУДНИЧНЫЕ кМюрг — такими они и остаются,
-// потому что именно в кМюрг сверяются с эталонами и показываются в панели.
-// А наружу этот модуль отдаёт СИ (Н·с²/м⁸): его результат складывается с
-// сопротивлением выработки и уходит в решатель, где ΔP=R·Q² в паскалях.
-// Перевод выполняется ровно здесь, в одном месте — раньше его не было вовсе,
-// и в одной сумме лежали слагаемые, отличающиеся множителем g.
 import type { TopoBranch } from "@/lib/topology";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg } from "@/lib/bulkheads";
-import { kmurgToSi, murgToSi, resistanceFromSurvey } from "@/lib/resistanceUnits";
 import { BULKHEAD_SYMBOL_IDS, OPEN_DOOR_IDS } from "@/lib/schemaSymbols";
 
 /** Запись справочника перемычек рудника — нужны только эти поля. */
@@ -39,7 +30,7 @@ export interface BulkheadRef {
 }
 
 /**
- * Сопротивление ОДНОГО значка вентсооружения, Н·с²/м⁸ (СИ).
+ * Сопротивление ОДНОГО значка вентсооружения, кМюрг.
  *
  * Три режима задания (bkResMode) неравноправны: «вручную» и «по съёмке» берут
  * готовое число и площадь окна игнорируют, и только «по проекту» считает R из
@@ -54,13 +45,11 @@ export function symbolBulkheadR(
 ): number {
   const mode = s.bkResMode ?? "project";
 
-  // Введено вручную в кМюрг (так подписано поле) → в СИ.
-  if (mode === "manual") return kmurgToSi(s.bkManualR ?? 0);
-  // По съёмке: ΔP замерено в паскалях, значит R=ΔP/Q² выходит сразу в СИ.
-  // Деления на g, которое здесь стояло раньше, быть не должно — оно занижало
-  // сопротивление замеренной перемычки почти на порядок.
+  if (mode === "manual") return s.bkManualR ?? 0; // кМюрг = Па·с²/м⁶, коэффициент = 1
   if (mode === "survey") {
-    return resistanceFromSurvey(s.bkSurveyDP ?? 0, s.bkSurveyQ ?? 0);
+    const q = s.bkSurveyQ ?? 0;
+    const dp = s.bkSurveyDP ?? 0;
+    return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
   }
 
   const sw = s.bkWindowArea ?? 0;
@@ -73,23 +62,21 @@ export function symbolBulkheadR(
   if (isFullyOpen) return 0;
 
   // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-  if (sw > 0.001) return kmurgToSi(windowBulkheadRkMurg(sw, branchArea, s.typeId));
+  if (sw > 0.001) return windowBulkheadRkMurg(sw, branchArea, s.typeId);
 
   const bkEntry = s.bkBulkheadId ? bulkheadsMap.get(s.bkBulkheadId) : undefined;
   const kAir = s.bkManualAirPerm
     ? (s.bkCustomAirPerm ?? 0)
     : (s.bkAirPerm ?? bkEntry?.airPermeability ?? branch.bulkheadAirPerm ?? 0);
-  // Глухая/парус — калиброванная формула, её результат в кМюрг.
-  if (kAir > 0) return kmurgToSi(solidBulkheadRkMurg(kAir, branchArea));
-  // Запасной путь — готовое число из справочника. Эти поля хранятся в МЮРГ
-  // (см. TopoBranch.bulkheadR), а не в кМюрг: раньше их брали как кМюрг, и
-  // перемычка из справочника получалась в тысячу раз жёстче, чем заявлено.
-  const rRefMurg = bkEntry?.rMkyurg ?? 0;
-  return murgToSi(s.bkBulkheadR ?? rRefMurg ?? branch.bulkheadR ?? 0);
+  const rRef = bkEntry?.rMkyurg ?? 0;
+  // Глухая: R=1/A²/1000; парус — калиброванная формула.
+  return kAir > 0
+    ? solidBulkheadRkMurg(kAir, branchArea)
+    : (s.bkBulkheadR ?? rRef ?? branch.bulkheadR ?? 0);
 }
 
 /**
- * Сопротивление перемычки, заданной во вкладке ветви, Н·с²/м⁸ (СИ).
+ * Сопротивление перемычки, заданной во вкладке ветви, кМюрг.
  *
  * Такой способ остался от схем без значков: если на ветви есть значок,
  * он главнее и это поле не учитывается (иначе одна перемычка посчиталась бы
@@ -97,19 +84,20 @@ export function symbolBulkheadR(
  */
 export function branchOwnBulkheadR(b: TopoBranch): number {
   const mode = b.bulkheadResMode ?? "project";
-  if (mode === "manual") return kmurgToSi(b.bulkheadManualR ?? 0);
-  // По съёмке ΔP в паскалях → R=ΔP/Q² сразу в СИ (см. symbolBulkheadR).
+  if (mode === "manual") return b.bulkheadManualR ?? 0; // кМюрг = Па·с²/м⁶
   if (mode === "survey") {
-    return resistanceFromSurvey(b.bulkheadSurveyDP ?? 0, b.bulkheadSurveyQ ?? 0);
+    const q = b.bulkheadSurveyQ ?? 0;
+    const dp = b.bulkheadSurveyDP ?? 0;
+    return q > 0 ? dp / (q * q * 9.81) : 0; // ΔP/(Q²·9.81) кМюрг, как в АэроСети
   }
   const winA = b.bulkheadWindowArea ?? 0;
-  if (winA > 0.001) return kmurgToSi(windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId));
-  const rSolid = (A: number) => kmurgToSi(solidBulkheadRkMurg(A, b.area ?? 0));
+  if (winA > 0.001) return windowBulkheadRkMurg(winA, b.area ?? 0, b.bulkheadId);
+  const rSolid = (A: number) => solidBulkheadRkMurg(A, b.area ?? 0);
   if (b.bulkheadManualAirPerm && (b.bulkheadCustomAirPerm ?? 0) > 0) {
     return rSolid(b.bulkheadCustomAirPerm as number);
   }
   if ((b.bulkheadAirPerm ?? 0) > 0) return rSolid(b.bulkheadAirPerm);
-  return kmurgToSi(b.bulkheadR ?? 0);
+  return b.bulkheadR ?? 0;
 }
 
 /** Значки вентсооружений, привязанные к ветви. */
@@ -118,10 +106,9 @@ export function bulkheadSymbolsOf(b: TopoBranch, symbols: SchemaSymbol[]): Schem
 }
 
 /**
- * Полное сопротивление вентсооружений ветви (значки + вкладка), Н·с²/м⁸.
+ * Полное сопротивление вентсооружений ветви (значки + вкладка), кМюрг.
  *
- * Именно эта величина складывается с b.resistance и уходит в решатель —
- * поэтому она обязана быть в тех же единицах, что и b.resistance (СИ).
+ * Именно эта величина складывается с b.resistance и уходит в решатель.
  */
 export function bulkheadROfBranch(
   b: TopoBranch,
@@ -135,7 +122,7 @@ export function bulkheadROfBranch(
 }
 
 /**
- * Карта «ветвь → сопротивление её вентсооружений», Н·с²/м⁸.
+ * Карта «ветвь → сопротивление её вентсооружений», кМюрг.
  *
  * В карту попадают только ветви, где сооружение действительно есть: нулевое
  * значение у ветви без перемычки и отсутствие записи — разные вещи для тех,

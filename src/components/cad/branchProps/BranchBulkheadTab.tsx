@@ -3,8 +3,7 @@ import { type MineBulkheadExport } from "@/components/cad/EquipmentRefDialog";
 import { WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, getUnit } from "@/lib/unitsConfig";
-import { symbolBulkheadR, branchOwnBulkheadR } from "@/lib/bulkheadResistance";
-import { depressionPa, siToBaseUnit } from "@/lib/resistanceUnits";
+import { solidBulkheadRkMurg, windowBulkheadRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import {
   SectionHeader, EditInput, ComputedInput, InlineLabel,
 } from "@/components/cad/BranchPropsPrimitives";
@@ -27,8 +26,6 @@ export default function BranchBulkheadTab({
   branch, onUpdate, mineBulkheads, bulkheadSymTypeId, bulkheadSymbol,
   onUpdateBulkheadSym, unitsConfig,
 }: Props) {
-  // Справочник перемычек рудника в виде Map — его ждут общие функции расчёта R.
-  const bulkheadsMap = new Map((mineBulkheads ?? []).map(b => [b.id, b]));
   return (
     <div>
       <SectionHeader title="Перемычка в выработке" />
@@ -85,14 +82,35 @@ export default function BranchBulkheadTab({
             <span className="text-[13px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
               R = {(() => {
                 const uRes = getUnit(unitsConfig, "resistance");
-                // R считаем ТЕМИ ЖЕ функциями, что уходят в решатель, — здесь
-                // была их дословная копия со своими единицами. Значок перемычки
-                // главнее полей ветви (если он есть, поля не учитываются).
-                const rSi = bulkheadSymbol
-                  ? symbolBulkheadR(bulkheadSymbol, branch, bulkheadsMap)
-                  : branchOwnBulkheadR(branch);
-                if (rSi === 0) return `— ${uRes.symbol}`;
-                return `${uRes.fromBase(siToBaseUnit(rSi)).toFixed(uRes.decimals)} ${uRes.symbol}`;
+                // Читаем параметры из символа перемычки (приоритет) или из полей ветви
+                const sym = bulkheadSymbol;
+                const mode = sym?.bkResMode ?? branch.bulkheadResMode ?? "project";
+                let rBase = 0; // в Мюрг (baseUnit resistance)
+                if (mode === "manual") {
+                  const r = sym?.bkManualR ?? branch.bulkheadManualR ?? 0;
+                  rBase = r * 1e3; // кМюрг → Мюрг
+                } else if (mode === "survey") {
+                  const q = sym?.bkSurveyQ ?? branch.bulkheadSurveyQ ?? 0;
+                  const dp = sym?.bkSurveyDP ?? branch.bulkheadSurveyDP ?? 0;
+                  // R = ΔP/(Q²·9.81) кМюрг (ΔP в Па → кгс/м²), как в АэроСети.
+                  rBase = q > 0 ? (dp / (q * q * 9.81)) * 1e3 : 0;
+                } else {
+                  // Перемычка с окном: R = ρ/(2·μ²·S²·g) кМюрг → ×1000 → Мюрг.
+                  const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
+                  const winA = sym?.bkWindowArea ?? branch.bulkheadWindowArea ?? 0;
+                  if (isWindow && winA > 0.001) {
+                    rBase = windowBulkheadRkMurg(winA, branch.area ?? 0, bulkheadSymTypeId ?? branch.bulkheadId) * 1e3;
+                  } else {
+                    const A = (sym?.bkManualAirPerm ?? branch.bulkheadManualAirPerm)
+                      ? (sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0)
+                      : (sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0);
+                    const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
+                    // Глухая/парус: R = 1/(A·S)²/SCALE кМюрг → ×1000 → Мюрг (учёт сечения).
+                    rBase = A > 0 ? solidBulkheadRkMurg(A, branch.area ?? 0) * 1e3 : rFallback * 1e3;
+                  }
+                }
+                if (rBase === 0) return `— ${uRes.symbol}`;
+                return `${uRes.fromBase(rBase).toFixed(uRes.decimals)} ${uRes.symbol}`;
               })()}
             </span>
           </div>
@@ -174,13 +192,30 @@ export default function BranchBulkheadTab({
               <InlineLabel label="ΔP:">
                 <ComputedInput value={(() => {
                   const u = getUnit(unitsConfig, "pressure");
-                  // ΔP = R·Q² в паскалях; R — общей функцией (см. выше).
-                  const rSi = bulkheadSymbol
-                    ? symbolBulkheadR(bulkheadSymbol, branch, bulkheadsMap)
-                    : branchOwnBulkheadR(branch);
+                  const sym = bulkheadSymbol;
+                  const isManualAirPerm = sym?.bkManualAirPerm ?? branch.bulkheadManualAirPerm;
+                  const customAirPerm = sym?.bkCustomAirPerm ?? branch.bulkheadCustomAirPerm ?? 0;
+                  const airPerm = sym?.bkAirPerm ?? branch.bulkheadAirPerm ?? 0;
+                  const rFallback = sym?.bkBulkheadR ?? branch.bulkheadR ?? 0;
+                  const isWindow = (bulkheadSymTypeId && WINDOW_BULKHEAD_IDS.has(bulkheadSymTypeId));
+                  const winA = sym?.bkWindowArea ?? branch.bulkheadWindowArea ?? 0;
+                  // Глухая/парус: R = 1/(A·S)²/SCALE кМюрг (учёт сечения).
+                  const rSolid = (A: number) => solidBulkheadRkMurg(A, branch.area ?? 0);
+                  let rBulk = 0;
+                  if (isWindow && winA > 0.001) {
+                    rBulk = windowBulkheadRkMurg(winA, branch.area ?? 0, bulkheadSymTypeId ?? branch.bulkheadId); // кМюрг
+                  } else if (isManualAirPerm && customAirPerm > 0) {
+                    rBulk = rSolid(customAirPerm);
+                  } else if (airPerm > 0) {
+                    rBulk = rSolid(airPerm);
+                  } else {
+                    rBulk = rFallback; // кМюрг = Па·с²/м⁶
+                  }
                   const Q = branch.flow ?? 0;
-                  if (rSi === 0 || Q === 0) return "—";
-                  return `${u.fromBase(depressionPa(rSi, Q)).toFixed(u.decimals)} ${u.symbol}`;
+                  // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
+                  const dpCalc = rBulk * Q * Math.abs(Q) * G_ACCEL;
+                  if (rBulk === 0 || Q === 0) return "—";
+                  return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                 })()} />
               </InlineLabel>
               <InlineLabel label="P разр., МПа:">
@@ -224,13 +259,17 @@ export default function BranchBulkheadTab({
               <InlineLabel label="ΔP:">
                 <ComputedInput value={(() => {
                   const u = getUnit(unitsConfig, "pressure");
-                  // Режим «по съёмке»: R=ΔP_зам/Q_зам² (Н·с²/м⁸), ΔP=R·Q² в Па.
-                  const rSi = bulkheadSymbol
-                    ? symbolBulkheadR(bulkheadSymbol, branch, bulkheadsMap)
-                    : branchOwnBulkheadR(branch);
+                  const sym = bulkheadSymbol;
+                  const q = sym?.bkSurveyQ ?? branch.bulkheadSurveyQ ?? 0;
+                  const dp = sym?.bkSurveyDP ?? branch.bulkheadSurveyDP ?? 0;
+                  // R = ΔP/(Q²·9.81) кМюрг (как в АэроСети). ΔP = R·Q²
+                  // (та же свёртка кМюрг→ΔP, что в расчёте сети).
+                  const rBulk = q > 0 ? dp / (q * q * 9.81) : 0;
                   const Q = branch.flow ?? 0;
-                  if (rSi === 0 || Q === 0) return "—";
-                  return `${u.fromBase(depressionPa(rSi, Q)).toFixed(u.decimals)} ${u.symbol}`;
+                  // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
+                  const dpCalc = rBulk * Q * Math.abs(Q) * G_ACCEL;
+                  if (rBulk === 0 || Q === 0) return "—";
+                  return `${u.fromBase(dpCalc).toFixed(u.decimals)} ${u.symbol}`;
                 })()} />
               </InlineLabel>
               <InlineLabel label="P разр., МПа:">
@@ -246,11 +285,7 @@ export default function BranchBulkheadTab({
           {/* Режим: Вручную */}
           {(branch.bulkheadResMode ?? "project") === "manual" && (
             <>
-              {/* Поле хранит РУДНИЧНЫЕ кМюрг — в них же перемычки задают в
-                  «АэроСети» и в них лежат числа старых проектов. Подпись была
-                  «Н·с²/м⁸» и вводила в заблуждение: значение уходило в расчёт
-                  как СИ, то есть перемычка оказывалась в 9,81 раза слабее. */}
-              <InlineLabel label="R (кМюрг):">
+              <InlineLabel label="R (Н·с²/м⁸):">
                 <EditInput
                   type="number" step="0.0001"
                   value={branch.bulkheadManualR ?? 0}
@@ -267,14 +302,13 @@ export default function BranchBulkheadTab({
               <InlineLabel label="ΔP:">
                 <ComputedInput value={(() => {
                   const u = getUnit(unitsConfig, "pressure");
-                  // Режим «вручную»: R из значка (bkManualR) или из поля ветви,
-                  // перевод кМюрг→СИ внутри общей функции. ΔP=R·Q² в Па.
-                  const rSi = bulkheadSymbol
-                    ? symbolBulkheadR(bulkheadSymbol, branch, bulkheadsMap)
-                    : branchOwnBulkheadR(branch);
+                  // R берём из символа перемычки (bkManualR) если он есть, иначе из поля ветви
+                  const rBulk = (bulkheadSymbol?.bkManualR ?? branch.bulkheadManualR ?? 0);
                   const Q = branch.flow ?? 0;
-                  if (rSi === 0 || Q === 0) return "—";
-                  return `${u.fromBase(depressionPa(rSi, Q)).toFixed(u.decimals)} ${u.symbol}`;
+                  // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
+                  const dp = rBulk * Q * Math.abs(Q) * G_ACCEL;
+                  if (rBulk === 0 || Q === 0) return "—";
+                  return `${u.fromBase(dp).toFixed(u.decimals)} ${u.symbol}`;
                 })()} />
               </InlineLabel>
               <InlineLabel label="P разр., МПа:">

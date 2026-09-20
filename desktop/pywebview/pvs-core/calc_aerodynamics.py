@@ -1,8 +1,5 @@
 import math
 
-# Переводной множитель рудничных кМюрг (кгс·с²/м⁸) в расчётные Н·с²/м⁸.
-G_ACCEL = 9.80665
-
 def calc_section(b: dict) -> dict:
     shape = b.get("shape", "custom")
     area = perimeter = 0.0
@@ -67,10 +64,7 @@ def calc_resistance(b, S, P, L, rho, Q):
     mode = b.get("resistanceMode", "alpha")
     alpha = float(b.get("alphaCoef") or 35)
     roughness = float(b.get("roughness") or 50)
-    # manualR приходит в рудничных кМюрг (так подписано поле ввода), а считаем
-    # мы в Н·с²/м⁸: R_расч = R_кМюрг · g. Значение g — стандартное 9,80665,
-    # как в backend/aerodynamics и во фронте, чтобы три реализации совпадали.
-    manual_r = float(b.get("manualR") or 0) * G_ACCEL
+    manual_r = float(b.get("manualR") or 0) * 9.81
     local_xi = float(b.get("localXi") or 0)
     Re = None
     if Q and S > 0 and Dh > 0:

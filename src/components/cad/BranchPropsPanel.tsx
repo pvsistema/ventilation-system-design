@@ -4,7 +4,6 @@ import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
-import { siToBaseUnit } from "@/lib/resistanceUnits";
 import { type VentSection, type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 // Вкладки панели вынесены в отдельные файлы (перенос 1:1, без правок логики)
@@ -148,11 +147,11 @@ export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, 
     ? branch.resistance / branch.length
     : 0;
 
-  // Единица отображения аэродинамического сопротивления (по умолчанию кМюрг).
-  // branch.resistance хранится в Н·с²/м⁸ (СИ), базовая единица справочника —
-  // Мюрг, поэтому перевод идёт через siToBaseUnit (см. lib/resistanceUnits.ts).
+  // Единица отображения аэродинамического сопротивления (по умолчанию кМюрг)
   const uRes = getUnit(unitsConfig, "resistance");
-  const rToDisplay = (rSi: number) => uRes.fromBase(siToBaseUnit(rSi));
+  // branch.resistance хранится в кМюрг (= Па·с²/м⁶). BaseUnit = Мюрг = кМюрг/1000.
+  // Перевод: кМюрг → Мюрг (* 1000) → fromBase → выбранная единица
+  const rToDisplay = (rKmurg: number) => uRes.fromBase(rKmurg * 1000);
 
 
   return (

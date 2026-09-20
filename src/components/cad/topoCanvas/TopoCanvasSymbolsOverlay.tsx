@@ -1,4 +1,3 @@
-import { type BulkheadRef } from "@/lib/bulkheadResistance";
 import React from "react";
 import { type TopoBranch } from "@/lib/topology";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
@@ -70,8 +69,6 @@ export interface SymbolsOverlayDeps {
   selectedNodeIds?: Set<string>;
   infoConfig: Props["infoConfig"];
   unitsConfig: NonNullable<Props["unitsConfig"]>;
-  /** Справочник перемычек рудника по id — см. TopoCanvasSymbolNode. */
-  bulkheadsMapInd: Map<string, BulkheadRef>;
   branchFireColors?: Props["branchFireColors"];
   xyScale: number;
   onSelectSymbol?: Props["onSelectSymbol"];
@@ -111,7 +108,7 @@ export default function TopoCanvasSymbolsOverlay(deps: SymbolsOverlayDeps) {
     branchWidth, thinLines, bulkheadScale, fanScale,
     flowDisplay, animSpeed, showFlowArrows, rescuePickMode,
     selectedSymbolId, selectedSymbolIds, selectedNodeId, selectedNodeIds,
-    infoConfig, unitsConfig, bulkheadsMapInd, branchFireColors, xyScale,
+    infoConfig, unitsConfig, branchFireColors, xyScale,
     onSelectSymbol, onSymbolMove, onSymbolMoveAlongBranch, onSymbolOffset,
     onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart,
     draggingSymbolId, setDraggingSymbolId,
@@ -163,7 +160,7 @@ export default function TopoCanvasSymbolsOverlay(deps: SymbolsOverlayDeps) {
         _branchObjSF, _indZoomSF,
         branchWidth, thinLines, bulkheadScale, fanScale,
         rescuePickMode, selectedSymbolId, selectedSymbolIds,
-        infoConfig, unitsConfig, bulkheadsMapInd,
+        infoConfig, unitsConfig,
         ovMinX, ovMaxX, ovMinY, ovMaxY,
         onSelectSymbol, onSymbolMove, onSymbolMoveAlongBranch, onSymbolOffset,
         onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart,
