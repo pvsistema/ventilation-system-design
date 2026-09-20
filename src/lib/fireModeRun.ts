@@ -13,7 +13,7 @@
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
   calcFireMode, calcFireTemp, fireSourceTempForMethod, computeHotNodeTemps,
-  calcFirePowerFromMaterial, calcFireSeatDepression,
+  calcFirePowerFromMaterial, calcFireSeatDepression, isSignificantReversal,
   type ThermalDepMethod, type FireCalculationResult,
 } from "@/lib/fireCalculator";
 
@@ -21,6 +21,18 @@ import {
 const FIRE_ITERS = 4;
 /** Допуск сходимости по расходу, м³/с — на уровне шума сети. */
 const FIRE_Q_TOL = 0.3;
+
+/**
+ * Сколько итераций подряд должен держаться обратный знак расхода, чтобы
+ * считать струю действительно опрокинутой.
+ *
+ * Одной итерации мало: решатель на промежуточном шаге может «перелететь»
+ * через ноль и вернуться. Раньше разворот фиксировался с первого раза,
+ * тут же снималось демпфирование — и ложный переворот закреплялся навсегда.
+ */
+const REVERSAL_CONFIRM_ITERS = 2;
+
+
 
 export interface FireModeRunParams {
   branches: TopoBranch[];
@@ -91,6 +103,10 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
   // горячий плюм идёт по новому направлению и разгоняет
   // реверсивную струю (иначе тяга душит её до единиц м³/с).
   const reversedSeats = new Set<string>();
+  // Сколько итераций подряд у очага держится обратный знак расхода.
+  // Подтверждаем разворот только при REVERSAL_CONFIRM_ITERS подряд —
+  // одиночный «перелёт» через ноль опрокидыванием не считается.
+  const reversalStreak = new Map<string, number>();
 
   await yieldToUI();
 
@@ -143,14 +159,25 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
     const fireSeats: { id: string; fromId: string; toId: string; fireTemp: number; flow: number; originalFlow?: number; reversedConfirmed?: boolean; length?: number; area?: number; perimeter?: number }[] = [];
     const branchesWithHt = branchesIter.map(b => {
       if (!b.hasFire) return b;
-      // Расход для T_пр — ФАКТИЧЕСКИЙ (как в Аэросети), но не ниже
-      // половины штатного: верхняя защита от разгона обратной
-      // связи «расход↓→T↑→h_t↑→расход↓». Раньше брался только
-      // штатный, и при выросшем расходе (10.5→56.1) температура
-      // завышалась вчетверо (663.8 вместо 140.8°C).
+      // Расход для T_пр — ШТАТНЫЙ (до пожара), как в ПО «Вентиляция».
+      //
+      // ПОЧЕМУ НЕ ФАКТИЧЕСКИЙ. Раньше сюда шёл текущий расход итерации (с полом
+      // в половину штатного), и получалась замкнутая петля: расход падает →
+      // T считается по упавшему расходу → T растёт → растёт h_т → расход падает
+      // ещё сильнее. Пол 0.5·Q_шт её тормозил, но не разрывал: h_т успевала
+      // вырасти примерно вдвое. На ветви 432 (кабель, 0.88 МВт) это давало
+      // 38 Па → ~76 Па против депрессии 53.9 Па, и струя переворачивалась,
+      // хотя норматив (Прил. 5) давал «устойчиво»: h_кр=57.1 Па, p_у=1.50.
+      // Эталон ПО «Вентиляция» на той же ветви — снижение 33→17 м³/с БЕЗ
+      // опрокидывания.
+      //
+      // Физически мощность очага (горящий кабель, лента, крепь) от вентиляции
+      // не зависит — значит и температура продуктов не должна пересчитываться
+      // по расходу, который сама же тяга и уменьшила. Штатный расход убирает
+      // первопричину: h_т считается один раз и по итерациям не разгоняется.
       const qOrigA   = Math.abs(originalFlows.get(b.id) ?? b.flow ?? 0);
       const qActualA = Math.abs(currentFlows.get(b.id) ?? b.flow ?? 0);
-      const airQ  = qOrigA > 0 ? Math.max(qActualA, 0.5 * qOrigA) : qActualA;
+      const airQ  = qOrigA > 0 ? qOrigA : qActualA;
       const T_pr  = b.fireMode === "temp"
         // «≥», а не «>»: температура очага, равная температуре воздуха, — это
         // корректное значение (очаг не греет струю), а не «битое». Раньше оно
@@ -214,11 +241,8 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
 
     // Шаг E: адаптивная релаксация + проверка сходимости.
     // 1-я итерация — без демпфирования (быстрый честный ответ).
-    // Релаксацию 0.5 включаем ТОЛЬКО если поток нестабилен (резко
-    // упал/сменил знак): тогда обратная связь «расход↓→T↑→h_t↑→
-    // расход↓» иначе расходится (поток схлопывается, T упирается в
-    // 1200°C, ложное опрокидывание). Устойчивый режим сходится
-    // за 1-2 пересчёта — как раньше, без лишних запросов к серверу.
+    // Релаксацию 0.5 включаем, если поток нестабилен (резко упал или сменил
+    // знак): тогда остаточная обратная связь через сеть иначе расходится.
     const fireBr = branchesWithHt.find(b => b.hasFire);
     const qPrevF = fireBr ? (currentFlows.get(fireBr.id) ?? 0) : 0;
     const qNewF  = fireBr ? (newFlows.get(fireBr.id) ?? 0) : 0;
@@ -226,19 +250,40 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
       && Math.sign(qPrevF || 1) !== Math.sign(qNewF || 1);
     const unstable = fireBr != null && (
       signFlippedF || Math.abs(qNewF) < Math.abs(qPrevF) * 0.5);
-    // Фиксируем опрокидывание всех очагов относительно ШТАТНОГО
-    // направления — со следующего раунда плюм пойдёт «по новому».
+
+    // Фиксируем опрокидывание очагов относительно ШТАТНОГО направления —
+    // со следующего раунда плюм пойдёт «по новому».
+    //
+    // РАЗВОРОТ ПОДТВЕРЖДАЕТСЯ НЕ С ПЕРВОГО РАЗА. Смена знака на одной итерации
+    // — ещё не опрокидывание: решатель может «перелететь» через ноль на
+    // промежуточном шаге и вернуться обратно. Требуем, чтобы знак держался
+    // REVERSAL_CONFIRM_ITERS итераций подряд и чтобы обратный расход был
+    // ЗНАЧИМЫМ (см. isSignificantReversal) — иначе в reversedSeats попадал
+    // численный шум, а он разворачивал плюм и закреплял ложный переворот.
     for (const seat of fireSeats) {
       const qOrig = originalFlows.get(seat.id) ?? 0;
       const qNew  = newFlows.get(seat.id) ?? 0;
-      if (Math.sign(qOrig || 1) !== Math.sign(qNew || 1) && Math.abs(qNew) > 0.05) {
-        reversedSeats.add(seat.id);
+      if (isSignificantReversal(qOrig, qNew)) {
+        const streak = (reversalStreak.get(seat.id) ?? 0) + 1;
+        reversalStreak.set(seat.id, streak);
+        if (streak >= REVERSAL_CONFIRM_ITERS) reversedSeats.add(seat.id);
+      } else {
+        // Знак вернулся к штатному — счётчик обнуляем, чтобы «мигание»
+        // через ноль не накапливалось до подтверждения.
+        reversalStreak.set(seat.id, 0);
+        reversedSeats.delete(seat.id);
       }
     }
-    // При РАЗВОРОТЕ струи релаксация вредна: усреднение с прежним
-    // (противоположным) расходом держит поток у нуля — 8 м³/с
-    // вместо 57. Демпфируем только обеднение потока без разворота.
-    const relax = (iter === 0 || !unstable || signFlippedF) ? 1.0 : 0.5;
+
+    // Демпфирование. Раньше при signFlippedF релаксация СНИМАЛАСЬ (relax=1):
+    // логика писалась под реальное опрокидывание, чтобы струя успела
+    // разогнаться в обратную сторону. Но при ложном срабатывании то же
+    // условие мгновенно закрепляло переворот — гасить его было нечем.
+    // Теперь снимаем демпфирование только когда разворот уже ПОДТВЕРЖДЁН
+    // (устойчив несколько итераций): до этого момента переход через ноль
+    // сглаживается, и ветвь, устойчивая по Прил. 5, к нулю не схлопывается.
+    const seatConfirmed = fireBr != null && reversedSeats.has(fireBr.id);
+    const relax = (iter === 0 || !unstable || seatConfirmed) ? 1.0 : 0.5;
 
     let maxDQ = 0;
     const nextFlows = new Map<string, number>();

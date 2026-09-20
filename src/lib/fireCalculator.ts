@@ -71,6 +71,46 @@ export function branchRTotal(b?: { resistance?: number; rTotal?: number } | null
   return Number(b.resistance) || 0;
 }
 
+/**
+ * Порог значимости обратного расхода — абсолютный, м³/с.
+ *
+ * Раньше смена знака фиксировалась при 0.05 м³/с (очаг) и 0.01 м³/с (соседние
+ * ветви). В эти величины укладывается обычный численный шум увязки сети:
+ * на маловоздушной сбойке решатель легко возвращает +0.02 вместо −0.02, и
+ * ветвь формально «опрокидывалась». На схеме Джусинского так набиралось
+ * 36 «опрокинутых» ветвей при полном отсутствии реального разворота струи.
+ */
+const REVERSAL_MIN_FLOW_M3S = 0.5;
+/** Либо не меньше этой доли штатного расхода — для сильно проветриваемых ветвей. */
+const REVERSAL_MIN_FRACTION = 0.05;
+/**
+ * Абсолютный пол: поток меньше этого не считается опрокидыванием НИКОГДА.
+ * Нужен для слабопроветриваемых ветвей (сбойки, тупики): там 5 % от штатного
+ * расхода — это сотые доли м³/с, то есть ровно тот шум, который мы отсекаем.
+ */
+const REVERSAL_ABS_FLOOR_M3S = 0.05;
+
+/**
+ * Значима ли смена знака расхода (штатный → текущий)?
+ *
+ * Требуется И смена знака, И заметная величина встречного потока. Порог —
+ * меньшее из 0,5 м³/с и 5 % штатного расхода, но не ниже абсолютного пола
+ * 0,05 м³/с. Два условия вместе: на мощной ветви достаточно 5 % (чтобы не
+ * пропустить реальный разворот), на слабой — работает пол (чтобы не ловить
+ * шум). Встречный поток в сотые доли кубометра — это погрешность увязки,
+ * а не опрокидывание вентиляционной струи.
+ */
+export function isSignificantReversal(origFlow: number, newFlow: number): boolean {
+  const qOrig = Number(origFlow) || 0;
+  const qNew  = Number(newFlow) || 0;
+  if (Math.sign(qOrig || 1) === Math.sign(qNew || 1)) return false;
+  const byFraction = Math.abs(qOrig) * REVERSAL_MIN_FRACTION;
+  const threshold = byFraction > 0
+    ? Math.max(REVERSAL_ABS_FLOOR_M3S, Math.min(REVERSAL_MIN_FLOW_M3S, byFraction))
+    : REVERSAL_MIN_FLOW_M3S;
+  return Math.abs(qNew) >= threshold;
+}
+
 // Коэффициент теплоотдачи продуктов горения в стенки выработки, Вт/(м²·К).
 // По мере движения по выработке горячий воздух остывает, отдавая тепло породе,
 // и его температура экспоненциально приближается к температуре стенок (≈ ambient):
@@ -2226,9 +2266,23 @@ export function calcFireMode(
     // и плоских ветвей его гасим. Опрокидывание оставляем только нисходящим.
     const isAscending = flowRelAngle > FLAT_ANGLE_DEG;
     const rawReversed = origFlow !== undefined
-      ? (Math.sign(origFlow || 1) !== Math.sign(flowNow || 1)) && Math.abs(flowNow) > 0.05
+      ? isSignificantReversal(origFlow, flowNow)
       : willReverse;
-    const actuallyReversed = (isAscending || isFlat) ? false : rawReversed;
+    // СОГЛАСОВАНИЕ С НОРМАТИВОМ (Прил. 5). Если критическая депрессия
+    // посчитана и тепловая депрессия её НЕ достигает (|h_т| < h_кр, то есть
+    // p_у > 1 — «устойчивая выработка»), смену знака от решателя считаем
+    // артефактом увязки, а не опрокидыванием. Ровно так же уже гасится
+    // переворот на восходящих и плоских ветвях.
+    //
+    // Зачем. На ветви 432 (кабель, 0.88 МВт) панель показывала одновременно
+    // «h_т=38 Па, h_кр=57.1 Па, p_у=1.50, устойчивая» и «опрокидывание
+    // подтверждено расчётом»: нормативный вердикт и результат решателя жили
+    // независимо, а в счётчик шёл более пугающий. Эталон ПО «Вентиляция» на
+    // этой же ветви — снижение расхода 33→17 м³/с без переворота.
+    const normativeSaysStable = critical != null && !critical.exceedsCritical;
+    const actuallyReversed = (isAscending || isFlat || normativeSaysStable)
+      ? false
+      : rawReversed;
 
     // smokeArrivalTime самой ветви-очага = 0 (горит сразу, видна всегда)
     const fbFlow = fb.flow ?? 0;
@@ -2459,10 +2513,14 @@ export function calcFireMode(
       // ветвь НЕ задымляется и дальше по ней распространение не идёт.
       if (smokeOut < SMOKE_DENS_THRESHOLD) continue;
 
-      // Реальное опрокидывание: знак расхода изменился по сравнению с исходным
+      // Реальное опрокидывание: знак расхода изменился по сравнению с исходным.
+      // Порог значимости — общий с очагом (isSignificantReversal). Прежние
+      // 0.01 м³/с ловили обычный численный шум увязки: на схеме Джусинского
+      // счётчик набирал 36 «опрокинутых» ветвей, хотя реального разворота
+      // струи там не было.
       const bOrigFlow = (b as TopoBranch & { originalFlow?: number }).originalFlow;
       const bActuallyReversed = bOrigFlow !== undefined
-        ? (Math.sign(bOrigFlow || 1) !== Math.sign(flow || 1)) && Math.abs(flow) > 0.01
+        ? isSignificantReversal(bOrigFlow, flow)
         : false;
       if (bActuallyReversed) reversedBranches.add(b.id);
 
