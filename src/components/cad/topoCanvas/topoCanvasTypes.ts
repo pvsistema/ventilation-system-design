@@ -9,6 +9,7 @@ import {
   type Horizon,
 } from "@/lib/topology";
 import { type UnitsConfig } from "@/lib/unitsConfig";
+import { type BulkheadRef } from "@/lib/bulkheadResistance";
 
 export type CadTool = "select" | "node" | "branch" | "pan" | "rotate" | "symbol" | "textblock";
 
@@ -197,6 +198,12 @@ export interface Props {
   onPendingSymbolPlace?: (branchId: string, t: number, x: number, y: number) => void;
   /** Конфигурация единиц измерения для отображения меток на схеме */
   unitsConfig?: UnitsConfig;
+  /**
+   * Справочник перемычек рудника — нужен, чтобы подпись R у значка
+   * вентсооружения считалась той же функцией, что и расчёт сети. Без него
+   * канва вынуждена была держать собственную копию формул.
+   */
+  mineBulkheads?: BulkheadRef[];
   /** Смещение блока индикаторов ветви (перетаскивание пользователем) */
   onBranchLabelOffset?: (id: string, ox: number, oy: number) => void;
   /** Колбэк: зарегистрировать функцию получения SVG для печати */

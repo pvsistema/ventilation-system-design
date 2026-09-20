@@ -18,6 +18,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
+import { kmurgToSi, siToKmurg } from "@/lib/resistanceUnits";
 
 import {
   type CsvImportResult, type RawFan, type RawBulkhead, type RawPosition,
@@ -414,11 +415,11 @@ function buildResult(
 
     const newBranchId = `B${ts}_${bi++}`;
     branchOriginalIdMap[rb.id] = newBranchId;
-    // Перевод R из единиц CSV в кМюрг (для manualR):
-    // "kmu" (кмю, АэроСеть): уже в кМюрг → берём как есть
-    // "si": в Н·с²/м⁸ → делим на 9.81 чтобы перевести в кМюрг
+    // Перевод R из единиц CSV в РУДНИЧНЫЕ кМюрг — в них хранится manualR:
+    //   "kmu" (кмю, АэроСеть) — уже кМюрг, берём как есть;
+    //   "si"  (Н·с²/м⁸)       — делим на g.
     const importedR = rb.resistance > 0
-      ? rb.resistance * (resistanceUnit === "kmu" ? 1 : 1 / 9.81)
+      ? (resistanceUnit === "kmu" ? rb.resistance : siToKmurg(rb.resistance))
       : 0;
 
     // Определяем тип выработки из CSV
@@ -443,8 +444,8 @@ function buildResult(
       //   R = 0, S задана → alpha с дефолтным коэффициентом (пересчитается из геометрии)
       //   R = 0, S не задана → alpha (R будет 0 пока не задана геометрия)
       resistanceMode: importedR > 0 ? "manual" : "alpha",
-      manualR: importedR,
-      resistance: importedR,
+      manualR: importedR,                 // кМюрг (как вводит пользователь)
+      resistance: kmurgToSi(importedR),   // Н·с²/м⁸ (в этих единицах считает сеть)
       alphaCoef: importedR > 0 ? 9 : defaultAlpha,
       manualSection: rb.area > 0, shape,
     }));

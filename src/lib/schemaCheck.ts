@@ -8,7 +8,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { TopoNode, TopoBranch } from "./topology";
-import { branchBulkheadRkMurg } from "./bulkheads";
+import { branchOwnBulkheadR } from "./bulkheadResistance";
+import { siToKmurg } from "./resistanceUnits";
 
 export interface NearPair { a: TopoNode; b: TopoNode; dist: number }
 /**
@@ -58,7 +59,7 @@ export interface SchemaCheckResult {
 
 export interface SchemaCheckOptions {
   nearThreshold?: number;   // м, порог «близких» узлов
-  highRThreshold?: number;  // Н·с²/м⁸ (кМюрг), порог большого R ветви
+  highRThreshold?: number;  // кМюрг, порог большого R ветви
   bulkRThreshold?: number;  // кМюрг, порог R перемычки
   /** ограничение на длину каждого списка (защита от зависания UI) */
   maxItems?: number;
@@ -185,7 +186,10 @@ export function checkSchema(
   const bulkBranches: BulkCheck[] = [];
   const manualLenBranches: TopoBranch[] = [];
   for (const b of branches) {
-    const r = b.resistance ?? 0;
+    // Пороги пользователь задаёт в РУДНИЧНЫХ кМюрг (в них же написан
+    // норматив 686), а b.resistance хранится в СИ — поэтому сравниваем
+    // в кМюрг. Без перевода порог срабатывал почти на каждой ветви.
+    const r = siToKmurg(b.resistance ?? 0);
     if (r <= 0) {
       if (!capReached(zeroRBranches.length)) zeroRBranches.push(b); else truncated = true;
     } else if (r > highRThreshold) {
@@ -197,7 +201,7 @@ export function checkSchema(
       if (!capReached(zeroLenBranches.length)) zeroLenBranches.push(b); else truncated = true;
     }
     if (b.hasBulkhead) {
-      const rKmu = branchBulkheadRkMurg(b);
+      const rKmu = siToKmurg(branchOwnBulkheadR(b));
       if (rKmu > bulkRThreshold) {
         if (!capReached(bulkBranches.length)) bulkBranches.push({ branch: b, rKmu }); else truncated = true;
       }

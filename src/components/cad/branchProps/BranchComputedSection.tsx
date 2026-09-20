@@ -6,7 +6,7 @@
 // Вынесено из BranchTopologyTab.tsx БЕЗ изменений разметки, формул и подписей.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
-import { G_ACCEL } from "@/lib/bulkheads";
+import { depressionPa, fanCrossingRsi } from "@/lib/resistanceUnits";
 import {
   SectionHeader, ParamRow, EditInput, ComputedInput,
 } from "@/components/cad/BranchPropsPrimitives";
@@ -76,10 +76,8 @@ export default function BranchComputedSection({
       {(() => {
         // Общее R ветви = сопротивление выработки + сопротивление
         // перемычки (если установлена) + сопротивление вентилятора,
-        // установленного «Внутри перемычки». Единицы: Н·с²/м⁸ (= кМюрг).
-        const fanCrossingKmu = (branch.hasFan && (branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
-          ? (branch.fanCrossingR ?? 0) / 1000 : 0;
-        const totalNsm8 = branch.resistance + (bulkheadRKmu ?? 0) + fanCrossingKmu;
+        // установленного «Внутри перемычки». Все слагаемые — Н·с²/м⁸.
+        const totalNsm8 = branch.resistance + (bulkheadRKmu ?? 0) + fanCrossingRsi(branch);
         return <ComputedInput value={fmtR(rToDisplay(totalNsm8), uRes.decimals)} />;
       })()}
     </ParamRow>
@@ -119,16 +117,13 @@ export default function BranchComputedSection({
 
     <ParamRow id="v_dep_total" label="Общая депрессия, Па" visible={visible.has("v_dep_total")} onToggle={toggle}>
       {(() => {
-        // Общая депрессия = R_общее · Q² · 9,81 − H вентилятора, где
-        // R_общее = выработка + перемычка/окно + окно ГВУ (та же сумма,
-        // что в строке «Общее сопротивление»). Именно эта величина
-        // считается решателем сети и используется в расчёте пожара.
-        const fanCrossingKmu = (branch.hasFan && (branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
-          ? (branch.fanCrossingR ?? 0) / 1000 : 0;
-        const totalR = branch.resistance + (bulkheadRKmu ?? 0) + fanCrossingKmu;
-        const Q = branch.flow ?? 0;
+        // Общая депрессия = R_общее·Q² − H вентилятора, где R_общее =
+        // выработка + перемычка/окно + окно ГВУ (та же сумма, что в строке
+        // «Общее сопротивление»). Именно эта величина считается решателем
+        // сети и используется в расчёте пожара.
+        const totalR = branch.resistance + (bulkheadRKmu ?? 0) + fanCrossingRsi(branch);
         const fanH = branch.hasFan ? (branch.fanPressure ?? 0) : 0;
-        const dpTotal = totalR * Math.abs(Q) * Q * G_ACCEL - fanH;
+        const dpTotal = depressionPa(totalR, branch.flow ?? 0) - fanH;
         const hasBk = (bulkheadRKmu ?? 0) > 0;
         return (
           <div className="flex items-center flex-1 min-w-0">

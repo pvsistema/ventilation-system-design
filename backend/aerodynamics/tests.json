@@ -22,11 +22,21 @@
         ]
       },
       "expectedStatus": 200,
-      "expectedBody": {"branches": [{"id": "B1", "area": 9.621, "dh": 3.5}]},
+      "expectedBody": {
+        "branches": [
+          {
+            "id": "B1",
+            "area": 9.621,
+            "dh": 3.5,
+            "resistance": 0.008646,
+            "dP": 1.9
+          }
+        ]
+      },
       "bodyMatcher": "partial"
     },
     {
-      "name": "Прямоугольное сечение, roughness-режим",
+      "name": "Прямоугольное сечение, roughness-режим + местные ξ",
       "method": "POST",
       "path": "/",
       "body": {
@@ -48,7 +58,51 @@
         ]
       },
       "expectedStatus": 200,
-      "expectedBody": {"branches": [{"id": "B2", "area": 12.0, "perimeter": 14.0}]},
+      "expectedBody": {
+        "branches": [
+          {
+            "id": "B2",
+            "area": 12.0,
+            "perimeter": 14.0,
+            "rLocal": 0.002083,
+            "dP": 3.5
+          }
+        ]
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Ручное R вводится в кМюрг: 1 кМюрг = g Н·с²/м⁸, dP = R·Q² в Па",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "branches": [
+          {
+            "id": "B3",
+            "shape": "custom",
+            "area": 10.0,
+            "perimeter": 12.0,
+            "resistanceMode": "manual",
+            "alphaCoef": 35,
+            "roughness": 50,
+            "manualR": 1,
+            "localXi": 0,
+            "length": 100,
+            "flow": 10,
+            "rho": 1.2
+          }
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "branches": [
+          {
+            "id": "B3",
+            "resistance": 9.80665,
+            "dP": 980.7
+          }
+        ]
+      },
       "bodyMatcher": "partial"
     }
   ]

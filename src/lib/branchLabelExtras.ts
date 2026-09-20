@@ -13,18 +13,21 @@
 // три режима показывали ОДНО И ТО ЖЕ число и совпадали с панелью свойств.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "./topology";
-import { branchBulkheadRkMurg } from "./bulkheads";
+import { branchOwnBulkheadR } from "./bulkheadResistance";
+import { fanCrossingRsi } from "./resistanceUnits";
 
 /**
- * Суммарное (общее) сопротивление ветви, кМюрг (Н·с²/м⁸).
+ * Суммарное (общее) сопротивление ветви, Н·с²/м⁸.
  * Та же сумма, что в строке «Общее сопр. R» свойств ветви:
  * сопротивление выработки + перемычки/окна + окна ГВУ (вентилятор,
  * установленный «Внутри перемычки»).
+ *
+ * Перемычку считаем общей функцией из bulkheadResistance — той же, что уходит
+ * в решатель. Прежняя branchBulkheadRkMurg была её четвёртой копией и жила в
+ * рудничных единицах, поэтому подпись «Rсум» на схеме не совпадала с панелью.
  */
 export function branchTotalR(b: TopoBranch): number {
-  const fanCrossingKmu = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
-    ? (b.fanCrossingR ?? 0) / 1000 : 0;
-  return (b.resistance ?? 0) + branchBulkheadRkMurg(b) + fanCrossingKmu;
+  return (b.resistance ?? 0) + branchOwnBulkheadR(b) + fanCrossingRsi(b);
 }
 
 /**

@@ -29,6 +29,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { gunzipSync } from "fflate";
+import { siToKmurg } from "@/lib/resistanceUnits";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { countNetworkParts } from "@/lib/import/ventsimCsvImport";
 
@@ -229,9 +230,11 @@ export function parseVentsimVsm(buf: ArrayBuffer): VentsimVsmResult {
       perimeter: b.perimeter > 0 ? b.perimeter : (b.area > 0 ? Math.round(3.84 * Math.sqrt(b.area) * 100) / 100 : 0),
       dh: dh > 0 ? dh : 0,
       manualSection: b.area > 0,
-      // Сопротивление и расход Ventsim хранит в СИ — переносим как есть.
+      // Сопротивление Ventsim хранит в СИ (Н·с²/м⁸) — в них и считает наша
+      // сеть, поэтому resistance переносим как есть. Поле manualR рудничное
+      // (кМюрг), туда кладём пересчитанное значение.
       resistanceMode: b.resistance > 0 ? "manual" : "alpha",
-      manualR: b.resistance,
+      manualR: siToKmurg(b.resistance),
       resistance: b.resistance,
       alphaCoef: 12,
       flow: Math.abs(b.flow),

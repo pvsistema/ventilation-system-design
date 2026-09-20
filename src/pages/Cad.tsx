@@ -46,8 +46,11 @@ import { exportErp } from "@/lib/erpExport";
 import { exportVent2Cdf3 } from "@/lib/vent2Cdf3Export";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
-import { BULKHEAD_CATALOG, airPermToR, solidBulkheadRkMurg, windowBulkheadRkMurg, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
-import { bulkheadROfBranch, buildBulkheadRMap } from "@/lib/bulkheadResistance";
+import { BULKHEAD_CATALOG, airPermToR, fanWindowRkMurg } from "@/lib/bulkheads";
+import { bulkheadROfBranch, buildBulkheadRMap, symbolBulkheadR } from "@/lib/bulkheadResistance";
+import { migrateProject, PROJECT_VERSION } from "@/lib/projectMigrations";
+// Единицы сопротивления — одно соглашение на весь проект (Н·с²/м⁸, ΔP=R·Q² в Па).
+import { kmurgToSi, siToKmurg, siToBaseUnit, depressionPa as depression, fanCrossingRsi } from "@/lib/resistanceUnits";
 import { type EvaluateContext, type VariantResult } from "@/lib/fireControl/evaluate";
 import { applyActions, describeActions, toRdCommand, type FireAction } from "@/lib/fireControl/actions";
 import { checkSchema } from "@/lib/schemaCheck";
@@ -56,7 +59,7 @@ import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData }
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
 import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -286,7 +289,7 @@ export default function CadPage() {
       name: item.name,
       type: item.type,
       airPermeability: item.airPermeability,
-      rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
+      rMkyurg: airPermToR(item.airPermeability), // Мюрг (базовая единица справочника)
       failurePressure: item.failurePressure,
       note: item.note,
       color: item.color,
@@ -1722,7 +1725,15 @@ export default function CadPage() {
     [branches, schemaSymbols, mineBulkheads],
   );
 
-  // ОБЩАЯ депрессия ветви (Па) = R_общее·Q²·9,81 − H вентилятора, где
+  // Справочник перемычек рудника как Map — его просят и payload решателя,
+  // и подбор режима при пожаре, и панель значка. Раньше каждый строил свою
+  // копию на каждом рендере.
+  const mineBulkheadsMap = useMemo(
+    () => new Map(mineBulkheads.map(mb => [mb.id, mb])),
+    [mineBulkheads],
+  );
+
+  // ОБЩАЯ депрессия ветви (Па) = R_общее·Q² − H вентилятора, где
   // R_общее = выработка + перемычка/окно + окно ГВУ. Поле b.dP содержит
   // депрессию ТОЛЬКО выработки (локальный пересчёт recalcBranchAero не знает
   // о перемычках-символах), поэтому для пожара и устойчивости берём эту карту.
@@ -1733,12 +1744,10 @@ export default function CadPage() {
     const map = new Map<string, number>();
     for (const b of branches) {
       const bkR = bulkheadRByBranch.get(b.id) ?? 0;
-      const fanCrossingKmu = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
-        ? (b.fanCrossingR ?? 0) / 1000 : 0;
-      const totalR = b.resistance + bkR + fanCrossingKmu;
+      const totalR = b.resistance + bkR + fanCrossingRsi(b);
       const Q = b.flow ?? 0;
       const fanH = b.hasFan ? (b.fanPressure ?? 0) : 0;
-      map.set(b.id, totalR * Math.abs(Q) * Q * G_ACCEL - fanH);
+      map.set(b.id, depression(totalR, Q) - fanH);
     }
     return map;
   }, [branches, bulkheadRByBranch]);
@@ -3140,7 +3149,9 @@ export default function CadPage() {
   const [savedViewState, setSavedViewState] = useState<{ scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number } | null>(null);
 
   const buildProjectData = () => ({
-    version: 2,
+    // Версия формата. 3 — единое соглашение о единицах сопротивления
+    // (см. lib/projectMigrations.ts): файлы версии ниже мигрируются при чтении.
+    version: PROJECT_VERSION,
     name: projectFileName,
     savedAt: new Date().toISOString(),
     nodes,
@@ -3502,7 +3513,13 @@ export default function CadPage() {
   // fromDisk=true — проект открыт из РЕАЛЬНОГО файла на диске (проводник,
   // диалог «Открыть», «Последние»). Тогда название берём строго из имени файла,
   // иначе схема показывалась бы под старым именем, записанным внутри JSON.
-  const applyProjectData = (data: Record<string, unknown>, fileName: string, fromDisk?: boolean) => {
+  const applyProjectData = (dataRaw: Record<string, unknown>, fileName: string, fromDisk?: boolean) => {
+    // Единицы сопротивления. Файлы версии < 3 писались, когда ручное R
+    // перемычки хранилось в Н·с²/м⁸, а не в рудничных кМюрг. Приводим такие
+    // поля к текущему соглашению ДО всех остальных разборов — дальше по
+    // функции данные читаются уже как современные (см. lib/projectMigrations).
+    const data = migrateProject(dataRaw);
+
     // Блокируем начальный пресет вида — файл загружен
     initialFileLoadedRef.current = true;
     // Режим заливки, выбранный до открытия файла. Нужен для схем, сохранённых
@@ -3707,7 +3724,7 @@ export default function CadPage() {
           return {
             ...mb,
             airPermeability: cat.airPermeability,
-            rMkyurg: airPermToR(cat.airPermeability) / 1000,
+            rMkyurg: airPermToR(cat.airPermeability), // Мюрг
             failurePressure: cat.failurePressure,
           };
         }));
@@ -3717,7 +3734,7 @@ export default function CadPage() {
           name: item.name,
           type: item.type,
           airPermeability: item.airPermeability,
-          rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
+          rMkyurg: airPermToR(item.airPermeability), // Мюрг (базовая единица справочника)
           failurePressure: item.failurePressure,
           note: item.note,
           color: item.color,
@@ -3933,7 +3950,7 @@ export default function CadPage() {
       name: item.name,
       type: item.type,
       airPermeability: item.airPermeability,
-      rMkyurg: airPermToR(item.airPermeability) / 1000, // Мюрг → кМюрг
+      rMkyurg: airPermToR(item.airPermeability), // Мюрг (базовая единица справочника)
       failurePressure: item.failurePressure,
       note: item.note,
       color: item.color,
@@ -3986,7 +4003,7 @@ export default function CadPage() {
     branchesList: typeof branches,
     symbolsList: SchemaSymbol[] = schemaSymbols,
   ) => {
-    const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
+    const bulkheadsMap = mineBulkheadsMap;
     const curve_map = new Map(branchesList.map(b => {
       const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
       const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
@@ -4004,7 +4021,8 @@ export default function CadPage() {
       const { total: rBulkheadsTotal } = bulkheadROfBranch(b, symbolsList, bulkheadsMap);
 
       // R вентиляционного окна ГВУ «Внутри перемычки»: диафрагма (окно вентсооружения).
-      // R = ρ/(2·μ²·ΔS²) [Па·с²/м⁶ = кМюрг в системе расчёта], μ=0.8 — коэф. расхода окна.
+      // R = ρ/(2·μ²·ΔS²), формула калибрована по «АэроСети» и даёт кМюрг,
+      // поэтому переводим в СИ — R ветви и R перемычек здесь уже в Н·с²/м⁸.
       // ВАЖНО: раньше площадь окна вообще НЕ уходила в решатель (backend), поэтому окно
       // не создавало сопротивления → завышенный расход. Сверено с «АэроСеть»: ΔS=1.8 →
       // R≈0.29 кМюрг → Q≈53.6 м³/с (как в АэроСети).
@@ -4014,12 +4032,13 @@ export default function CadPage() {
         ? Math.PI * fanCurveForWin.diameter * fanCurveForWin.diameter / 4 : 0;
       const winA = (b.fanWindowArea ?? 0) > 0.001 ? (b.fanWindowArea ?? 0) : autoWinA;
       const fanWindowR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && winA > 0.001)
-        ? fanWindowRkMurg(winA, b.area ?? 0) : 0;
+        ? kmurgToSi(fanWindowRkMurg(winA, b.area ?? 0)) : 0;
 
       return {
         id: b.id,
         fromId: b.fromId,
         toId: b.toId,
+        // Всё в Н·с²/м⁸: решатель считает ΔP=R·Q² прямо в паскалях.
         R: b.resistance + rBulkheadsTotal + fanWindowR, // fanCrossingR Python добавляет сам в get_R
         area: b.area,
         angle: b.angle ?? 0,
@@ -4033,7 +4052,7 @@ export default function CadPage() {
         fanMode: b.fanMode,
         fanPressure: b.fanPressure,
         fanInstall:  b.fanInstall ?? "Внутри перемычки",
-        fanCrossingR: (b.fanCrossingR ?? 0) / 1000, // Мюрг → кМюрг (для get_R в Python)
+        fanCrossingR: fanCrossingRsi(b), // Мюрг → Н·с²/м⁸ (Python складывает с R в get_R)
         fanReverse:  b.fanReverse ?? false,
         fanStopped:  b.fanStopped ?? false,
         fanParallel: Math.max(1, b.fanParallel ?? 1),
@@ -4167,16 +4186,13 @@ export default function CadPage() {
       // Запоминаем значки варианта для solveIteration выше: runFireMode
       // прокинуть их не может — он о значках схемы ничего не знает.
       fireControlSymbolsRef.current = syms;
-      const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
+      const bulkheadsMap = mineBulkheadsMap;
       const totalDep = new Map<string, number>();
       for (const b of brs) {
         const { total: bkR } = bulkheadROfBranch(b, syms, bulkheadsMap);
-        const fanCrossingKmu = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
-          ? (b.fanCrossingR ?? 0) / 1000 : 0;
-        const totalR = b.resistance + bkR + fanCrossingKmu;
-        const Q = b.flow ?? 0;
+        const totalR = b.resistance + bkR + fanCrossingRsi(b);
         const fanH = b.hasFan ? (b.fanPressure ?? 0) : 0;
-        totalDep.set(b.id, totalR * Math.abs(Q) * Q * G_ACCEL - fanH);
+        totalDep.set(b.id, depression(totalR, b.flow ?? 0) - fanH);
       }
       return { branches: brs, totalDepByBranch: totalDep };
     },
@@ -9468,47 +9484,15 @@ export default function CadPage() {
               const isWindowBulkhead = WINDOW_BULKHEAD_IDS.has(sym.typeId);
               const isFanSym = FAN_SYMBOL_IDS.has(sym.typeId);
               const brForSym = sym.branchId ? branches.find(b => b.id === sym.branchId) : null;
-              // ΔP перемычки = R_sym × Q × |Q| (не dP всей ветви, а только вклад этого символа)
+              // ΔP перемычки = R_sym·Q·|Q| в Па (вклад ТОЛЬКО этого символа,
+              // а не депрессия всей ветви). R берём общей функцией — той же,
+              // что собирает payload для решателя: здесь стояла её дословная
+              // копия, и после правки единиц панель показывала бы одно, а
+              // расчёт вёл по другому.
               const symDeltaP = (() => {
                 if (!brForSym) return null;
-                const q = brForSym.flow ?? 0;
-                const mode = sym.bkResMode ?? "project";
-                if (mode === "manual") {
-                  // кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
-                  const r = (sym.bkManualR ?? 0);
-                  return r * q * Math.abs(q) * G_ACCEL;
-                }
-                if (mode === "survey") {
-                  const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                  // R = ΔP/(Q²·9.81) кМюрг (как в АэроСети). Дальше ΔP=R·q²·g в Па.
-                  const r = sq > 0 ? dp / (sq * sq * 9.81) : 0;
-                  return r * q * Math.abs(q) * G_ACCEL;
-                }
-                // project
-                const sw = sym.bkWindowArea ?? 0;
-                const branchArea = brForSym.area ?? 0;
-                const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
-                  || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-                if (isFullyOpen) return 0;
-                let r = 0;
-                if (sw > 0.001) {
-                  // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-                  r = windowBulkheadRkMurg(sw, branchArea, sym.typeId);
-                } else {
-                  const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
-                    : (sym.bkAirPerm
-                      ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
-                      ?? brForSym.bulkheadAirPerm ?? 0);
-                  const rRefSym = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                  // Глухая: R=1/A²/1000; парус — калиброванная формула.
-                  if (kAir > 0) {
-                    r = solidBulkheadRkMurg(kAir, branchArea);
-                  } else {
-                    r = sym.bkBulkheadR ?? rRefSym ?? brForSym.bulkheadR ?? 0;
-                  }
-                }
-                // R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети).
-                return r * q * Math.abs(q) * G_ACCEL;
+                const rSi = symbolBulkheadR(sym, brForSym, mineBulkheadsMap);
+                return depression(rSi, brForSym.flow ?? 0);
               })();
               const updSym = (patch: Partial<SchemaSymbol>) =>
                 setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
@@ -9889,53 +9873,18 @@ export default function CadPage() {
                       <div className="flex items-center justify-center py-1 mb-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                         <span className="text-[13px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
                           R = {(() => {
-                            const mode = sym.bkResMode ?? "project";
-                            const fnFrom = nodes.find(n => n.id === brForSym.fromId);
-                            const fnTo   = nodes.find(n => n.id === brForSym.toId);
-                            const tF = fnFrom ? (fnFrom.atmosphereLink ? surfaceTemp : (fnFrom.airTemp ?? surfaceTemp)) : surfaceTemp;
-                            const tT = fnTo   ? (fnTo.atmosphereLink   ? surfaceTemp : (fnTo.airTemp   ?? surfaceTemp)) : surfaceTemp;
-                            const rho = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF + tT) / 2)));
-                            // Все R в кМюрг = Па·с²/м⁶ (коэффициент = 1)
-                            let rKmu = 0;
-                            if (mode === "manual") {
-                              rKmu = sym.bkManualR ?? 0; // кМюрг
-                            } else if (mode === "survey") {
-                              // R = ΔP/(Q²·9.81) кМюрг (ΔP в Па → кгс/м²), как в АэроСети
-                              const q = sym.bkSurveyQ ?? 0;
-                              const dp = sym.bkSurveyDP ?? 0;
-                              rKmu = q > 0 ? dp / (q * q * 9.81) : 0;
-                            } else {
-                              const sw = sym.bkWindowArea ?? 0;
-                              const branchArea = brForSym?.area ?? 0;
-                              const isFullyOpen = (OPEN_DOOR_IDS.has(sym.typeId) && sw <= 0.001)
-                                || (sw > 0.001 && branchArea > 0 && sw >= branchArea * 0.999);
-                              if (isFullyOpen) {
-                                rKmu = 0;
-                              } else if (sw > 0.001) {
-                                // Регулируемое окно: формула диафрагмы с учётом сечения (АэроСеть).
-                                rKmu = windowBulkheadRkMurg(sw, branchArea, sym.typeId);
-                              } else {
-                                const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0)
-                                  : (sym.bkAirPerm
-                                    ?? (sym.bkBulkheadId ? mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.airPermeability : undefined)
-                                    ?? brForSym?.bulkheadAirPerm ?? 0);
-                                const rRefKmu = sym.bkBulkheadId ? (mineBulkheads.find(mb => mb.id === sym.bkBulkheadId)?.rMkyurg ?? 0) : 0;
-                                // Глухая: R=1/A²/1000; парус — калиброванная формула.
-                                rKmu = kAir > 0
-                                  ? solidBulkheadRkMurg(kAir, branchArea)
-                                  : (sym.bkBulkheadR ?? rRefKmu ?? brForSym?.bulkheadR ?? 0);
-                              }
-                            }
-                            if (rKmu === 0) return "0 кМюрг";
+                            // R считаем ТОЙ ЖЕ функцией, что уходит в решатель
+                            // (symbolBulkheadR, Н·с²/м⁸) — здесь была её третья
+                            // дословная копия. Показываем рудничные кМюрг, как в
+                            // «АэроСети» (кирпичная перемычка = 65 кМюрг), и рядом
+                            // расчётные Н·с²/м⁸, в которых ΔP=R·Q² сразу в Па.
+                            const rSi = symbolBulkheadR(sym, brForSym, mineBulkheadsMap);
+                            if (rSi === 0) return "0 кМюрг";
                             const fmt = (v: number) => {
                               const mag = Math.floor(Math.log10(Math.abs(v)));
                               return v.toFixed(Math.max(4, -mag + 2));
                             };
-                            // rKmu уже в кМюрг (рудничные, кгс·с²/м⁸) — как в АэроСети
-                            // (кирпичная перемычка = 65 кМюрг). Рядом показываем
-                            // эквивалент в Н·с²/м⁸ = кМюрг × g (ΔP=R·Q² в Па).
-                            const rNsm8 = rKmu * 9.80665;
-                            return `${fmt(rKmu)} кМюрг  (${fmt(rNsm8)} Н·с²/м⁸)`;
+                            return `${fmt(siToKmurg(rSi))} кМюрг  (${fmt(rSi)} Н·с²/м⁸)`;
                           })()}
                         </span>
                       </div>
@@ -10187,26 +10136,10 @@ export default function CadPage() {
 
                       {/* Значения для справки */}
                       {brForSym && (sym.indResistance || sym.indDeltaP || sym.indLeakage) && (() => {
-                        // Вычисляем R в кМюрг из sym.bk* (те же данные что в панели настройки)
-                        // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
-                        const mode = sym.bkResMode ?? "project";
-                        let rMkyurg = 0;
-                        if (mode === "manual") {
-                          rMkyurg = sym.bkManualR ?? 0; // уже в кМюрг
-                        } else if (mode === "survey") {
-                          const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                          // R = ΔP/(Q²·9.81) кМюрг (ΔP в Па → кгс/м²), как в АэроСети
-                          rMkyurg = sq > 0 ? dp / (sq * sq * 9.81) : 0;
-                        } else {
-                          const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
-                          if (kAir > 0) {
-                            // Глухая: R=1/A²/1000; парус — калиброванная формула.
-                            rMkyurg = solidBulkheadRkMurg(kAir, brForSym.area ?? 0);
-                          } else {
-                            rMkyurg = (sym.bkBulkheadR ?? brForSym.bulkheadR ?? 0) / 1000; // Мюрг → кМюрг
-                          }
-                        }
-                        if (rMkyurg === 0 && brForSym.bulkheadR > 0) rMkyurg = brForSym.bulkheadR / 1000;
+                        // R этой перемычки — общей функцией (Н·с²/м⁸), показываем
+                        // в рудничных кМюрг. Здесь была ещё одна копия расчёта,
+                        // причём с собственным способом достать запасное значение.
+                        const rMkyurg = siToKmurg(symbolBulkheadR(sym, brForSym, mineBulkheadsMap));
                         return (
                           <div className="mt-2 p-1.5 rounded text-[10px] space-y-0.5"
                             style={{ background: "var(--c-tint-blue, #f0f4ff)", border: "1px solid #c8d8f0" }}>
@@ -11028,7 +10961,7 @@ export default function CadPage() {
                     <PropGroup title="Вычисленные параметры">
                       {(() => {
                         const uR = getUnit(unitsConfig, "resistance");
-                        const rDisp = uR.fromBase(selectedBranch.resistance / 9.81e-3);
+                        const rDisp = uR.fromBase(siToBaseUnit(selectedBranch.resistance));
                         return <FieldRow label={`Сопротив-ие, ${uR.symbol}:`} value={rDisp.toFixed(uR.decimals)} computed />;
                       })()}
                       <FieldRow label="Расход:" value={`${selectedBranch.flow.toFixed(1)} м³/с`} computed />
@@ -12169,6 +12102,7 @@ export default function CadPage() {
             <TopoCanvas
               nodes={nodes}
               branches={previewBranches}
+              mineBulkheads={mineBulkheads}
               selectedNodeId={selectedNodeId}
               selectedBranchId={selectedBranchId}
               tool={tool}

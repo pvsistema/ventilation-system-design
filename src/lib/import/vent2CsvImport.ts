@@ -25,6 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
+import { kmurgToSi, siToKmurg } from "@/lib/resistanceUnits";
 import {
   type CsvImportResult, type RawFan, type RawBulkhead, type RawPosition,
   parseNum, splitRow, buildHorizonsFromLayers,
@@ -265,7 +266,8 @@ export function parseVent2Csv(
     const fn = nodeMap.get(rb.from);
     const tn = nodeMap.get(rb.to);
     if (!fn || !tn) { warnings.push(`Ветвь ${rb.id}: узлы не найдены`); continue; }
-    const rNsm8 = rUnit === "kmu" ? rb.resistance * 9.81e-3 : rb.resistance;
+    // В файле либо кМюрг, либо СИ; внутри держим Н·с²/м⁸.
+    const rNsm8 = rUnit === "kmu" ? kmurgToSi(rb.resistance) : rb.resistance;
     const brId = `BV2_${ts}_${bi++}`;
     branchOriginalIdMap[rb.id] = brId;
     branches.push(makeBranch(brId, fn.id, tn.id, {
@@ -277,7 +279,7 @@ export function parseVent2Csv(
       manualSection: rb.area > 0,
       flow:         rb.flow,
       resistanceMode: rNsm8 > 0 ? "manual" : "surface",
-      manualR:      rNsm8 > 0 ? rNsm8 / 9.81 : 0,
+      manualR:      rNsm8 > 0 ? siToKmurg(rNsm8) : 0,  // поле хранится в кМюрг
       resistance:   rNsm8,
       layer:        rb.layer,
     }));

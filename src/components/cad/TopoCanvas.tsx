@@ -15,7 +15,8 @@ import {
   type ApproverFieldKey,
 } from "@/lib/approverTemplate";
 import { DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
-import { solidBulkheadRkMurg } from "@/lib/bulkheads";
+import { symbolBulkheadR, type BulkheadRef } from "@/lib/bulkheadResistance";
+import { siToBaseUnit } from "@/lib/resistanceUnits";
 import { branchTotalR, branchExtraPressure, branchSectionHeight, branchPeopleCount } from "@/lib/branchLabelExtras";
 import { medianSection, widthBySection as widthBySectionFn } from "@/lib/branchWidthBySection";
 import CanvasLayer from "@/components/cad/CanvasLayer";
@@ -77,6 +78,7 @@ export default function TopoCanvas(props: Props) {
     pendingSymbolTypeId, onPendingSymbolPlace,
     restoreView, onRestoreViewDone, onViewStateChange,
     unitsConfig = DEFAULT_UNITS_CONFIG,
+    mineBulkheads = EMPTY_ARRAY as BulkheadRef[],
     onBranchLabelOffset,
     onRegisterGetSvg,
     onRegisterCanvasEl,
@@ -147,6 +149,12 @@ export default function TopoCanvas(props: Props) {
     onRegisterSvgEl?.(el);
    
   }, [onRegisterSvgEl]);
+
+  // Справочник перемычек по id — для подписи R у значков вентсооружений.
+  const bulkheadsMapInd = useMemo(
+    () => new Map(mineBulkheads.map(b => [b.id, b])),
+    [mineBulkheads],
+  );
 
   // Карта горизонтов по id (для быстрых lookups)
   const horizonMap = useMemo(() => {
@@ -2600,8 +2608,8 @@ export default function TopoCanvas(props: Props) {
                   if (ic.branchLength) dataLines.push(`L=${uLen.fromBase(len).toFixed(uLen.decimals)}${uLen.symbol}`);
                   if (ic.branchAngle) dataLines.push(`A=${(b.angle ?? 0).toFixed(1)}°`);
                   if (ic.branchSection) dataLines.push(`S=${uArea.fromBase(b.area).toFixed(uArea.decimals)}${uArea.symbol}`);
-                  if (ic.branchResistance) dataLines.push(`R=${fmtR(b.resistance * 1000, uRes)}`);
-                  if (ic.branchResistanceSum) dataLines.push(`Rсум=${fmtR(branchTotalR(b) * 1000, uRes)}`);
+                  if (ic.branchResistance) dataLines.push(`R=${fmtR(siToBaseUnit(b.resistance), uRes)}`);
+                  if (ic.branchResistanceSum) dataLines.push(`Rсум=${fmtR(siToBaseUnit(branchTotalR(b)), uRes)}`);
                   if (ic.branchAlpha) dataLines.push(`α=${(b.alphaCoef ?? 0).toFixed(0)}·10⁻⁴`);
                   if (ic.branchVMax) dataLines.push(`Vmax=${uVel.fromBase(b.vMax ?? 0).toFixed(uVel.decimals)}${uVel.symbol}`);
                   if (ic.branchVelocity && hasCalc) dataLines.push(`V=${uVel.fromBase(b.velocity).toFixed(uVel.decimals)}${uVel.symbol}${overV ? "⚠" : ""}`);
@@ -3691,32 +3699,14 @@ export default function TopoCanvas(props: Props) {
                 const uFlowInd = getUnit(unitsConfig, "flow");
                 if (sym.indDescription && sym.description) lines.push(sym.description);
                 if (sym.indResistance) {
-                  // Вычисляем R в базовых единицах (Мюрг) из параметров символа.
-                  // Соглашение: 1 кМюрг = 9.81 Н·с²/м⁸, 1 Мюрг = 9.81e-3 Н·с²/м⁸
-                  // bkManualR хранится в кМюрг → *1000 = Мюрг
-                  // rNsm8 (Н·с²/м⁸) → / 9.81e-3 = Мюрг
-                  // bkBulkheadR / br.bulkheadR хранятся в Мюрг
-                  const mode = sym.bkResMode ?? "project";
-                  let rBase = 0; // в Мюрг (базовых единицах)
-                  if (mode === "manual") {
-                    rBase = (sym.bkManualR ?? 0) * 1000; // кМюрг → Мюрг
-                  } else if (mode === "survey") {
-                    const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-                    // R = ΔP/(Q²·9.81) кМюрг → ×1000 → Мюрг (как в АэроСети)
-                    rBase = sq > 0 ? (dp / (sq * sq * 9.81)) * 1000 : 0;
-                  } else {
-                    // project: используем bkAirPerm или bkBulkheadR
-                    const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
-                    if (kAir > 0) {
-                      // Глухая/парус: R = 1/(A·S)²/SCALE кМюрг → ×1000 → Мюрг (учёт сечения).
-                      rBase = solidBulkheadRkMurg(kAir, br.area ?? 0) * 1000;
-                    } else {
-                      rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
-                    }
-                  }
-                  // Fallback: если sym.bk* не заполнены
-                  if (rBase === 0 && br.bulkheadR > 0) rBase = br.bulkheadR;
-                  if (rBase === 0) rBase = br.resistance / 9.81e-3; // Н·с²/м⁸ → Мюрг
+                  // R перемычки — общей функцией (Н·с²/м⁸), далее в базовые
+                  // Мюрг для fromBase. Здесь была копия расчёта со своими
+                  // переводами, и подпись на схеме расходилась с панелью.
+                  // Если у значка параметры не заданы вовсе — показываем R
+                  // самой выработки, как и раньше.
+                  const rSi = symbolBulkheadR(sym, br, bulkheadsMapInd);
+
+                  const rBase = siToBaseUnit(rSi > 0 ? rSi : br.resistance);
                   lines.push(`R=${uResInd.fromBase(rBase).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
                 }
                 if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${uPresInd.fromBase(Math.abs(br.dP)).toFixed(uPresInd.decimals)} ${uPresInd.symbol}`);
@@ -4080,6 +4070,7 @@ export default function TopoCanvas(props: Props) {
           в canvas-режиме схема рисуется на холсте, а символы УО остаются
           интерактивным SVG поверх него — иначе по ним нельзя было бы кликать. */}
       <TopoCanvasSymbolsOverlay
+        bulkheadsMapInd={bulkheadsMapInd}
         useCanvas={useCanvas} size={size} view={view} cursorStyle={cursorStyle}
         panStart={panStart} rotStart={rotStart} isZooming={isZooming}
         fixedObjectScale={fixedObjectScale} branchBorder={branchBorder} scaleLimits={scaleLimits}

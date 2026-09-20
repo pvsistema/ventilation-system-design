@@ -2,6 +2,12 @@
 // Аэродинамические расчёты горных выработок (АэроСеть / Вентиляция 2.0)
 // ─────────────────────────────────────────────────────────────────────────────
 
+//
+// ЕДИНИЦЫ. Сопротивление R здесь и далее — Н·с²/м⁸ (СИ), депрессия ΔP=R·Q² в
+// паскалях без переводных множителей. Соглашение и переводы в рудничные кМюрг
+// для интерфейса живут в одном месте — lib/resistanceUnits.ts.
+import { kmurgToSi } from "./resistanceUnits";
+
 export type SectionShape = "round" | "rect" | "trap" | "arch" | "custom";
 
 export interface SectionParams {
@@ -155,13 +161,15 @@ export type ResistanceMode =
 //   α — коэффициент аэродинамического сопротивления, ×10⁻⁴ Н·с²/м⁴
 //   L — длина трубопровода, м
 //   D — диаметр трубопровода, м
-// Формула даёт результат в кМюрг (рудничные единицы).
-// Перевод в Н·с²/м⁸ (внутренние единицы кода): × 9.81
+// Формула 10.2 — рудничная: её результат выходит в кМюрг (кгс·с²/м⁸), поэтому
+// здесь он переводится в расчётные Н·с²/м⁸ множителем g. Раньше перевода не
+// было, и сопротивление става оказывалось в 9,81 раза меньше истинного.
 export function resistanceFromPipe(alphaPipe: number, L: number, D: number): number {
   if (D <= 0 || L <= 0) return 0;
   const a = alphaPipe * 1e-4;
   const rKmurg = (6.48 * a * L) / Math.pow(D, 5);
-  return isFinite(rKmurg) ? Math.min(rKmurg, 1e6) : 0;
+  const rSi = kmurgToSi(rKmurg);
+  return isFinite(rSi) ? Math.min(rSi, 1e6) : 0;
 }
 
 export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
@@ -196,18 +204,14 @@ export function velocity(Q: number, S: number): number {
   return Q / S;
 }
 
-// Перевод кгс/м² (мм вод. ст.) → Па. Сопротивление R хранится в кМюрг, т.е.
-// кгс·с²/м⁸, поэтому произведение R·Q² выходит в мм вод. ст., а не в паскалях.
-export const PA_PER_MM_H2O = 9.81;
-
 // Депрессия ΔP = R·Q² (Па). Знак сохраняется (R·|Q|·Q).
-// R задаётся в кМюрг (кгс·с²/м⁸), поэтому R·Q² даёт мм вод. ст. — домножаем
-// на 9,81, чтобы вернуть паскали. В этих же единицах работают тепловая
-// депрессия пожара, естественная тяга и напор вентилятора.
-export function depression(R: number, Q: number): number {
-  const dp = R * Math.abs(Q) * Q * PA_PER_MM_H2O;
-  return isFinite(dp) ? dp : 0;
-}
+//
+// ЕДИНИЦЫ. R хранится в Н·с²/м⁸ (СИ), поэтому R·Q² выходит в паскалях СРАЗУ —
+// никакого множителя 9,81 здесь нет и быть не должно (см. resistanceUnits.ts:
+// раньше он стоял и завышал депрессию выработки ровно в g раз).
+// В этих же паскалях работают тепловая депрессия пожара, естественная тяга
+// и напор вентилятора, поэтому величины складываются напрямую.
+export { depressionPa as depression, G_ACCEL } from "./resistanceUnits";
 
 // Энергозатраты ΔP·Q (Вт)
 export function airPower(dP: number, Q: number): number {
@@ -225,7 +229,7 @@ export interface ResistanceInput {
   mode: ResistanceMode;
   alpha: number;          // ×10⁻⁴ Н·с²/м⁴
   roughness: number;      // мм
-  manualR: number;        // Н·с²/м⁸
+  manualR: number;        // кМюрг — как вводит пользователь (переводится внутри)
   localXi: number;        // суммарный ξ местных сопротивлений
   S: number;              // м²
   P: number;              // м
@@ -267,7 +271,12 @@ export function calcResistance(i: ResistanceInput): {
       break;
     }
     case "manual":
-      Rfriction = i.manualR;
+      // manualR — то, что человек ввёл в поле «Сопротивление R» в РУДНИЧНЫХ
+      // кМюрг (так подписано поле и так хранят это число старые проекты),
+      // поэтому переводим в расчётные Н·с²/м⁸. Раньше число уходило в расчёт
+      // как есть и ручное сопротивление оказывалось в 9,81 раза меньше того,
+      // что показывала панель свойств.
+      Rfriction = kmurgToSi(i.manualR);
       break;
     case "pipe":
       Rfriction = resistanceFromPipe(i.pipeAlpha ?? 9, i.L, i.pipeDiameter ?? 0.5);

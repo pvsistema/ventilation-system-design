@@ -5,6 +5,7 @@ import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
+import { siToBaseUnit } from "@/lib/resistanceUnits";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -602,7 +603,10 @@ function drawBulkheadIndicators(
   const uFlow = getUnit(unitsConfig, "flow");
   if (sym.indDescription && sym.description) lines.push(sym.description);
   if (sym.indResistance) {
-    const rVal = br.bulkheadR > 0 ? br.bulkheadR : br.resistance / 1e6;
+    // R в базовых Мюрг: у ветви с перемычкой — её сопротивление (поле
+    // хранится в Мюрг), иначе сопротивление самой выработки (Н·с²/м⁸ → Мюрг).
+    // Раньше вместо перевода стояло деление на 1e6, и подпись занижалась.
+    const rVal = br.bulkheadR > 0 ? br.bulkheadR : siToBaseUnit(br.resistance);
     lines.push(`R=${uRes.fromBase(rVal).toFixed(uRes.decimals)} ${uRes.symbol}`);
   }
   if (sym.indDeltaP && br.dP !== 0)

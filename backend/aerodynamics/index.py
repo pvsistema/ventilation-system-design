@@ -2,6 +2,15 @@
 Аэродинамические расчёты горных выработок (формулы Аткинсона/Альтшуля).
 Источник: АэроСеть / Вентиляция 2.0, справочник ВНИИГД / Воронина.
 
+ЕДИНИЦЫ СОПРОТИВЛЕНИЯ (единые для всего проекта, см. src/lib/resistanceUnits.ts):
+    R — Н·с²/м⁸ (СИ), депрессия ΔP = R·Q² выходит в ПАСКАЛЯХ без переводных
+    множителей. В тех же паскалях работают напор вентилятора, естественная
+    тяга и тепловая депрессия пожара, поэтому решатель складывает их напрямую.
+
+    Рудничные кМюрг (кгс·с²/м⁸) остаются единицей ИНТЕРФЕЙСА: в них приходит
+    поле manualR и в них же формулы перемычек сверяются с эталонами АэроСети.
+    Перевод — ровно в одном месте на входе (manual_r ниже), R_расч = R_кМюрг·g.
+
 POST: {
   branches: [{
     id, shape, diameter?, width?, height?, topWidth?, archHeight?,
@@ -16,6 +25,11 @@ POST: {
 """
 import json, math
 from license_guard import license_gate
+
+# Ускорение свободного падения — переводной множитель кМюрг → Н·с²/м⁸.
+# Значение стандартное (ГОСТ 8.417) и совпадает с G_ACCEL во фронте: раньше
+# здесь стояло округлённое 9.81, и расчёт на сервере чуть расходился с местным.
+G_ACCEL = 9.80665
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -99,7 +113,7 @@ def calc_resistance(b: dict, S: float, P: float, L: float, rho: float, Q: float)
     mode = b.get("resistanceMode", "alpha")
     alpha = float(b.get("alphaCoef") or 35)
     roughness = float(b.get("roughness") or 50)
-    manual_r = float(b.get("manualR") or 0) * 9.81  # кмюрг → Н·с²/м⁸
+    manual_r = float(b.get("manualR") or 0) * G_ACCEL  # кМюрг → Н·с²/м⁸
     local_xi = float(b.get("localXi") or 0)
 
     # Число Рейнольдса
@@ -133,6 +147,7 @@ def calc_velocity(Q, S):
 
 
 def calc_depression(R, Q):
+    """Депрессия ΔP = R·|Q|·Q, Па (R в Н·с²/м⁸ — множитель g не нужен)."""
     dp = R * abs(Q) * Q
     return dp if math.isfinite(dp) else 0.0
 

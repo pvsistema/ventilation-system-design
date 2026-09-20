@@ -32,6 +32,7 @@
 //   расстояние между концами совпадает с записанной длиной выработки.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { siToKmurg } from "@/lib/resistanceUnits";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
 
 export interface VentsimCsvResult {
@@ -698,14 +699,10 @@ export function parseVentsimCsv(content: string, mergeTol = DEFAULT_MERGE_TOL): 
       angle = Math.round(Math.asin(Math.min(1, dz / Math.max(length, 0.01))) * 180 / Math.PI * 10) / 10;
     }
 
-    // Сопротивление в кМюрг → Н·с²/м⁸ (manualR хранится в кМюрг, resistance в Н·с²/м⁸)
-    // Но в makeBranch manualR принимает Н·с²/м⁸, а потом resistance = manualR
-    // Ventsim: R в кМюрг (×10⁻³ Нс²/м⁸) → ×1000 = Нс²/м⁸... нет, это не так.
-    // Вентсим хранит R в нс²/м⁸ (SI). 1 кМюрг = 9.81 × 10⁻³ кН·с²/м⁸ = 9.81 Нс²/м⁸
-    // Но при экспорте Ventsim пишет сопротивление в своих единицах (обычно Н/м³·с²)
-    // Из строки: колонка 14 = 1E-11 и т.д. — очень маленькие числа, значит в СИ (Нс²/м⁸)
-    const rSi = rb.resistance; // Нс²/м⁸
-    const importedR = rSi > 0 ? rSi : 0;
+    // Ventsim пишет сопротивление в СИ (Н·с²/м⁸) — в тех же единицах, в
+    // которых считает наша сеть, поэтому resistance берём как есть, а в поле
+    // manualR (оно рудничное, кМюрг) кладём переведённое значение.
+    const rSi = rb.resistance > 0 ? rb.resistance : 0;
 
     const hasFan = rb.fanPressure > 0 || rb.fanName.length > 0;
     if (hasFan) fanCount++;
@@ -721,9 +718,9 @@ export function parseVentsimCsv(content: string, mergeTol = DEFAULT_MERGE_TOL): 
       dh: dh > 0 ? dh : 0,
       manualSection: area > 0,
       flow: rb.flow,
-      resistanceMode: importedR > 0 ? "manual" : "alpha",
-      manualR: importedR,
-      resistance: importedR,
+      resistanceMode: rSi > 0 ? "manual" : "alpha",
+      manualR: siToKmurg(rSi),   // поле хранится в кМюрг
+      resistance: rSi,           // расчётные Н·с²/м⁸
       alphaCoef: 12,
       hasFan,
       fanMode: "constant" as const,

@@ -6,6 +6,8 @@
 
 import * as XLSX from "xlsx";
 import type { TopoBranch, TopoNode, Horizon } from "./topology";
+import { siToBaseUnit } from "./resistanceUnits";
+import { branchTotalR } from "./branchLabelExtras";
 
 // ─── Типы ────────────────────────────────────────────────────────────────────
 
@@ -166,9 +168,9 @@ function getBranchValue(
     case "vMin":           return 0;
     case "velocity":       return +b.velocity.toFixed(3);
     case "vMaxCalc":       return +b.vMax.toFixed(3);
-    case "resistance":     return +(b.resistance / 9.81e-3).toFixed(6);
+    case "resistance":     return +siToBaseUnit(b.resistance).toFixed(6);
     case "resistanceFan":  return 0;
-    case "rTotal":         return +(b.resistance / 9.81e-3).toFixed(6);
+    case "rTotal":         return +siToBaseUnit(branchTotalR(b)).toFixed(6);
     case "dP":             return +b.dP.toFixed(2);
     case "dPFan":          return b.hasFan ? +b.fanPressure.toFixed(2) : 0;
     case "flowDeviation":  return 0;

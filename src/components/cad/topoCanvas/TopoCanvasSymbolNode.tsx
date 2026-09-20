@@ -2,7 +2,8 @@ import React from "react";
 import { type TopoBranch } from "@/lib/topology";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolContentBox } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
-import { solidBulkheadRkMurg } from "@/lib/bulkheads";
+import { symbolBulkheadR, type BulkheadRef } from "@/lib/bulkheadResistance";
+import { siToBaseUnit } from "@/lib/resistanceUnits";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
@@ -45,6 +46,8 @@ export interface SymbolNodeDeps {
   selectedSymbolIds?: Set<string>;
   infoConfig: Props["infoConfig"];
   unitsConfig: NonNullable<Props["unitsConfig"]>;
+  /** Справочник перемычек рудника по id — для подписи R у значка. */
+  bulkheadsMapInd: Map<string, BulkheadRef>;
   /** Границы отсечения символов вне экрана (viewport culling). */
   ovMinX: number;
   ovMaxX: number;
@@ -79,7 +82,7 @@ export function renderSymbolNode(
     _branchObjSF, _indZoomSF,
     branchWidth, thinLines, bulkheadScale, fanScale,
     rescuePickMode, selectedSymbolId, selectedSymbolIds,
-    infoConfig, unitsConfig,
+    infoConfig, unitsConfig, bulkheadsMapInd,
     ovMinX, ovMaxX, ovMinY, ovMaxY,
     onSelectSymbol, onSymbolMove, onSymbolMoveAlongBranch, onSymbolOffset,
     onSymbolIndOffset, onSymbolMsIndOffset, onSymbolFanIndOffset, onSymbolDragStart,
@@ -665,25 +668,11 @@ export function renderSymbolNode(
         const uFlowInd = getUnit(unitsConfig, "flow");
         if (sym.indDescription && sym.description) lines.push(sym.description);
         if (sym.indResistance) {
-          const mode = sym.bkResMode ?? "project";
-          let rBase = 0; // в Мюрг (базовых единицах)
-          if (mode === "manual") {
-            rBase = (sym.bkManualR ?? 0) * 1000; // кМюрг → Мюрг
-          } else if (mode === "survey") {
-            const sq = sym.bkSurveyQ ?? 0; const dp = sym.bkSurveyDP ?? 0;
-            // R = ΔP/(Q²·9.81) кМюрг → ×1000 → Мюрг (как в АэроСети)
-            rBase = sq > 0 ? (dp / (sq * sq * 9.81)) * 1000 : 0;
-          } else {
-            const kAir = sym.bkManualAirPerm ? (sym.bkCustomAirPerm ?? 0) : (sym.bkAirPerm ?? 0);
-            if (kAir > 0) {
-              // Глухая/парус: R = 1/(A·S)²/SCALE кМюрг → ×1000 → Мюрг (учёт сечения).
-              rBase = solidBulkheadRkMurg(kAir, br.area ?? 0) * 1000;
-            } else {
-              rBase = sym.bkBulkheadR ?? br.bulkheadR ?? 0; // уже в Мюрг
-            }
-          }
-          if (rBase === 0 && br.bulkheadR > 0) rBase = br.bulkheadR;
-          if (rBase === 0) rBase = br.resistance / 9.81e-3; // Н·с²/м⁸ → Мюрг
+          // R перемычки — общей функцией (Н·с²/м⁸), затем в базовые Мюрг.
+          // Копия этого расчёта жила здесь и в TopoCanvas, из-за чего подписи
+          // на схеме и в панели свойств могли разойтись.
+          const rSi = symbolBulkheadR(sym, br, bulkheadsMapInd);
+          const rBase = siToBaseUnit(rSi > 0 ? rSi : br.resistance);
           lines.push(`R=${uResInd.fromBase(rBase).toFixed(uResInd.decimals)} ${uResInd.symbol}`);
         }
         if (sym.indDeltaP && br.dP !== 0) lines.push(`ΔP=${uPresInd.fromBase(Math.abs(br.dP)).toFixed(uPresInd.decimals)} ${uPresInd.symbol}`);
