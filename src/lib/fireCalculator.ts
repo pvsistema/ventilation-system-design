@@ -309,6 +309,90 @@ export function calcFirePowerFromMaterial(b: FireMaterialProps): number | null {
   return null;
 }
 
+// ─── Итог по горючему материалу очага (единый для всех видов) ────────────────
+// Раньше сводка «Мощность — Расход — t прод. — время горения» рисовалась только
+// для техники, а кабель/лента/крепь/масло/произвольный показывали лишь поля
+// ввода: пользователь не видел, во что превращаются его цифры, пока не нажмёт
+// «Расчёт пожара». Считаем ту же тройку для любого материала одной функцией,
+// чтобы UI просто рисовал таблицу, а формулы жили в одном месте.
+export interface FireMaterialSummary {
+  power_MW: number;        // МВт — мощность очага (0, если авто-расчёт невозможен)
+  airFlow_m3s: number;     // м³/с — расход воздуха из расчёта сети
+  temp_C: number;          // °C — температура продуктов горения
+  burnTime_h: number;      // ч — время горения (0, если модель его не даёт)
+  burnTime_min: number;    // мин
+  hasBurnTime: boolean;    // есть ли осмысленное время горения
+}
+
+export function calcFireMaterialSummary(
+  b: FireMaterialProps,
+  ambientTemp_C = 20,
+): FireMaterialSummary | null {
+  const kind = b.fireCombustible ?? "coal";
+  const airFlow = Math.abs(b.flow ?? 0);
+  const lenStr = b.length && b.length > 0 ? String(b.length) : "";
+
+  let power = 0;
+  let burnTime_h = 0;
+  let hasBurnTime = false;
+
+  if (kind === "vehicle") {
+    const vfr = calcVehicleFire([
+      b.fireVehicleMassRubber ?? 1200,
+      b.fireVehicleMassDiesel ?? 400,
+      b.fireVehicleMassOil    ?? 200,
+    ], airFlow);
+    power = vfr.power_MW; burnTime_h = vfr.burnTime_h; hasBurnTime = vfr.burnTime_h > 0;
+  } else if (kind === "cable") {
+    const r = calcLinearFire({
+      heatValue:    b.fireCableHeatValue ?? "25",
+      burnRate:     b.fireCableBurnRate  ?? "0.007",
+      density:      b.fireCableDensity   ?? "900",
+      length:       b.fireCableLength    ?? (lenStr || "100"),
+      sectionWidth: b.fireCableWidth     ?? "0.05",
+      sectionThick: b.fireCableThick     ?? "0.05",
+    }, airFlow);
+    if (r) { power = r.powerMW; burnTime_h = r.burnTime_h; hasBurnTime = r.burnTime_h > 0; }
+  } else if (kind === "timber") {
+    const r = calcLinearFire({
+      heatValue:    b.fireWoodHeatValue   ?? "13.8",
+      burnRate:     b.fireWoodBurnRate    ?? "0.027",
+      density:      b.fireWoodDensity     ?? "500",
+      length:       b.fireWoodLength      ?? (lenStr || "50"),
+      sectionWidth: b.fireWoodWidth       ?? "8.9",
+      sectionThick: b.fireWoodThick       ?? "0.08",
+      flameSpeed:   b.fireWoodFlameSpeed  ?? "0.024",
+      calcTime:     b.fireWoodCalcTime    ?? "10",
+    }, airFlow);
+    if (r) { power = r.powerMW; burnTime_h = r.burnTime_h; hasBurnTime = r.burnTime_h > 0; }
+  } else if (kind === "conveyor") {
+    const r = calcBelt({
+      burnRate:   b.fireBeltBurnRate   ?? "0.0125",
+      density:    b.fireBeltDensity    ?? "1100",
+      width:      b.fireBeltWidth      ?? "1.2",
+      length:     b.fireBeltLength     ?? (lenStr || "100"),
+      thickness:  b.fireBeltThickness  ?? "0.016",
+      flameSpeed: b.fireBeltFlameSpeed ?? "0.013",
+    }, airFlow);
+    if (r) { power = r.powerMax; burnTime_h = r.burnTime_h; hasBurnTime = r.burnTime_h > 0; }
+  } else {
+    // coal / oil / custom — модель «площадь очага»: времени горения модель не
+    // даёт (масса горючего не задаётся), поэтому строку времени не показываем.
+    power = calcAreaFire(kind, b.fireSourceArea ?? 0, b.fireSourceBurnRate) ?? 0;
+  }
+
+  if (!Number.isFinite(power) || power <= 0) return null;
+
+  return {
+    power_MW: power,
+    airFlow_m3s: airFlow,
+    temp_C: calcFireTemp(power, airFlow, ambientTemp_C),
+    burnTime_h: hasBurnTime ? burnTime_h : 0,
+    burnTime_min: hasBurnTime ? burnTime_h * 60 : 0,
+    hasBurnTime,
+  };
+}
+
 // ─── Расчёт пожара конвейерной ленты ─────────────────────────────────────────
 
 export interface BeltInputs {

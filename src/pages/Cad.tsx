@@ -60,7 +60,7 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_I
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
+import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
@@ -8785,6 +8785,46 @@ export default function CadPage() {
                           </>
                         )}
                       </>
+                    );
+                  })()}
+
+                  {/* ── Итог по горючему материалу (кроме техники — у неё своя
+                      таблица выше). Кабель, лента, крепь, масло и произвольный
+                      материал раньше показывали только поля ввода, и цифры
+                      «Мощность / Расход / t прод.» приходилось угадывать до
+                      нажатия «Расчёт пожара». Показываем их сразу — тем же
+                      форматом, что и у техники. */}
+                  {(b.fireCombustible ?? "coal") !== "vehicle" && (() => {
+                    const sum = calcFireMaterialSummary(b);
+                    if (!sum) return null;
+                    const airQ = sum.airFlow_m3s;
+                    return (
+                      <div className="px-1 pt-1 pb-0.5">
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 10 }}>
+                          <thead>
+                            <tr style={{ background: "var(--c-tint-amber2, #fef3c7)" }}>
+                              <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Мощность, МВт</th>
+                              <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>Расход, м³/с</th>
+                              <th style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>t прод., °C</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr>
+                              <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700, color: "var(--c-red, #b91c1c)" }}>{safeFixed(sum.power_MW, 2)}</td>
+                              <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", color: "var(--c-green, #15803d)" }}>{airQ > 0 ? safeFixed(airQ, 1) : "—"}</td>
+                              <td style={{ border: "1px solid var(--c-b2, #d1d5db)", padding: "2px 4px", textAlign: "center", fontWeight: 700 }}>{airQ > 0 ? safeFixed(sum.temp_C, 1) : "—"}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                        {sum.hasBurnTime && (
+                          <div className="flex items-center gap-3 mt-0.5 px-0.5">
+                            <span style={{ fontSize: 10, color: "var(--c-t3, #6b7280)" }}>Время горения:</span>
+                            <span style={{ fontSize: 10, fontWeight: 700 }}>{safeFixed(sum.burnTime_h, 2)} ч</span>
+                            <span style={{ fontSize: 10, color: "var(--c-t3, #6b7280)" }}>или</span>
+                            <span style={{ fontSize: 10, fontWeight: 700 }}>{safeFixed(sum.burnTime_min, 1)} мин</span>
+                          </div>
+                        )}
+                      </div>
                     );
                   })()}
 
