@@ -19,7 +19,7 @@
 import type { TopoBranch, TopoNode } from "./topology";
 import { calcBranchAngle } from "./topology";
 import {
-  calcVehicleFire, calcBelt, calcLinearFire,
+  calcVehicleFire, calcBelt, calcLinearFire, calcCableFire, cableInputsOf,
   calcFireTemp, calcThermalDepressionUnified, calcCriticalDepression, FLAT_ANGLE_DEG,
   calcCriticalFlow, branchRTotal,
 } from "./fireCalculator";
@@ -142,11 +142,9 @@ export function calcBranchFirePower(b: TopoBranch, airFlow: number): number {
     if (r) power += r.powerMax;
   }
   if (b.fireLoadCable) {
-    const r = calcLinearFire({
-      heatValue: b.fireCableHeatValue ?? "25", burnRate: b.fireCableBurnRate ?? "0.007",
-      density: b.fireCableDensity ?? "900", length: b.fireCableLength ?? (branchLenStr || "100"),
-      sectionWidth: b.fireCableWidth ?? "0.05", sectionThick: b.fireCableThick ?? "0.05",
-    }, airFlow);
+    // Собственная модель кабеля (π·d·L, пучок, нарастание пламени) — общей
+    // функцией с аварийным режимом, чтобы акт и вкладка «Аварии» не разошлись.
+    const r = calcCableFire(cableInputsOf(b, branchLenStr), airFlow);
     if (r) power += r.powerMW;
   }
   if (b.fireLoadWoodSupport) {

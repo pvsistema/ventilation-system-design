@@ -266,6 +266,12 @@ export interface FireMaterialProps {
   // Кабель
   fireCableHeatValue?: string; fireCableBurnRate?: string; fireCableDensity?: string;
   fireCableLength?: string; fireCableWidth?: string; fireCableThick?: string;
+  // Собственная модель кабеля (см. calcCableFire): диаметр, толщина изоляции,
+  // число кабелей в пучке, скорость распространения пламени и время расчёта.
+  // fireCableWidth/fireCableThick — наследие общей модели с крепью: если новые
+  // поля не заполнены, диаметр и толщина берутся из них (см. cableInputsOf).
+  fireCableDiameter?: string; fireCableInsulThick?: string;
+  fireCableCount?: string; fireCableFlameSpeed?: string; fireCableCalcTime?: string;
   // Деревянная крепь
   fireWoodHeatValue?: string; fireWoodBurnRate?: string; fireWoodDensity?: string;
   fireWoodLength?: string; fireWoodWidth?: string; fireWoodThick?: string;
@@ -276,6 +282,31 @@ export interface FireMaterialProps {
   // Уголь / масло / произвольный — модель «площадь очага»
   fireSourceArea?: number;   // м² — площадь горения очага
   fireSourceBurnRate?: number; // кг/(м²·с) — скорость выгорания (переопределение)
+}
+
+/**
+ * Входные данные кабеля для calcCableFire — единая точка значений по умолчанию.
+ *
+ * СОВМЕСТИМОСТЬ СО СТАРЫМИ ПРОЕКТАМИ. До появления собственной модели кабель
+ * считался как деревянная крепь, и в схемах сохранены поля fireCableWidth
+ * («ширина сечения») и fireCableThick («толщина сечения»). По смыслу для
+ * кабеля это были диаметр и толщина изоляции, поэтому если новые поля пустые —
+ * берём значения оттуда. Так открытая старая схема не обнулит пожарную
+ * нагрузку и не потребует переввода данных.
+ */
+export function cableInputsOf(b: FireMaterialProps, branchLen?: string): CableInputs {
+  const lenStr = branchLen ?? (b.length && b.length > 0 ? String(b.length) : "");
+  return {
+    heatValue:  b.fireCableHeatValue  ?? "25",
+    burnRate:   b.fireCableBurnRate   ?? "0.007",
+    density:    b.fireCableDensity    ?? "900",
+    length:     b.fireCableLength     ?? (lenStr || "100"),
+    diameter:   b.fireCableDiameter   ?? b.fireCableWidth ?? "0.05",
+    insulThick: b.fireCableInsulThick ?? b.fireCableThick ?? "0.005",
+    count:      b.fireCableCount      ?? CABLE_DEFAULT_COUNT,
+    flameSpeed: b.fireCableFlameSpeed ?? CABLE_DEFAULT_FLAME_SPEED,
+    calcTime:   b.fireCableCalcTime   ?? CABLE_DEFAULT_CALC_TIME,
+  };
 }
 
 // Мощность пожара по площади очага: N = ψ × S × Q_н [МВт]
@@ -304,14 +335,9 @@ export function calcFirePowerFromMaterial(b: FireMaterialProps): number | null {
   }
 
   if (kind === "cable") {
-    const r = calcLinearFire({
-      heatValue:    b.fireCableHeatValue ?? "25",
-      burnRate:     b.fireCableBurnRate  ?? "0.007",
-      density:      b.fireCableDensity   ?? "900",
-      length:       b.fireCableLength    ?? (lenStr || "100"),
-      sectionWidth: b.fireCableWidth     ?? "0.05",
-      sectionThick: b.fireCableThick     ?? "0.05",
-    }, airFlow);
+    // Собственная модель кабеля: площадь по π·d·L с учётом пучка и нарастания
+    // пламени (раньше кабель считался как деревянная крепь — см. calcCableFire).
+    const r = calcCableFire(cableInputsOf(b, lenStr), airFlow);
     return r && r.powerMW > 0 ? r.powerMW : null;
   }
 
@@ -384,14 +410,7 @@ export function calcFireMaterialSummary(
     ], airFlow);
     power = vfr.power_MW; burnTime_h = vfr.burnTime_h; hasBurnTime = vfr.burnTime_h > 0;
   } else if (kind === "cable") {
-    const r = calcLinearFire({
-      heatValue:    b.fireCableHeatValue ?? "25",
-      burnRate:     b.fireCableBurnRate  ?? "0.007",
-      density:      b.fireCableDensity   ?? "900",
-      length:       b.fireCableLength    ?? (lenStr || "100"),
-      sectionWidth: b.fireCableWidth     ?? "0.05",
-      sectionThick: b.fireCableThick     ?? "0.05",
-    }, airFlow);
+    const r = calcCableFire(cableInputsOf(b, lenStr), airFlow);
     if (r) { power = r.powerMW; burnTime_h = r.burnTime_h; hasBurnTime = r.burnTime_h > 0; }
   } else if (kind === "timber") {
     const r = calcLinearFire({
@@ -430,6 +449,120 @@ export function calcFireMaterialSummary(
     burnTime_h: hasBurnTime ? burnTime_h : 0,
     burnTime_min: hasBurnTime ? burnTime_h * 60 : 0,
     hasBurnTime,
+  };
+}
+
+// ─── Расчёт пожара электрокабеля ─────────────────────────────────────────────
+//
+// ЗАЧЕМ ОТДЕЛЬНАЯ МОДЕЛЬ. Раньше кабель считался функцией calcLinearFire —
+// той же, что и деревянная крепь. У крепи поле sectionWidth означает ПЕРИМЕТР
+// ВЫРАБОТКИ (доски идут по всему контуру), и площадь горения выходила как
+// S = периметр × длина. Для кабеля туда по умолчанию подставлялись 0,05 м, то
+// есть кабель моделировался как «крепь с периметром 5 см»:
+//
+//   S = 0,05 × 76 = 3,8 м²   →   N = 0,007 · 3,8 · 25 = 0,67 МВт
+//
+// Физически у кабеля горит БОКОВАЯ ПОВЕРХНОСТЬ цилиндра: S = π·d·L. При том же
+// диаметре 50 мм это π·0,05·76 ≈ 11,9 м² — втрое больше. Плюс кабели почти
+// всегда идут пучком (силовой + связи + заземление), а прежняя модель считала
+// ровно одну нитку и не знала про скорость распространения пламени: кабель
+// сразу считался охваченным по всей длине, без нарастания во времени.
+//
+// Здесь модель кабеля как у ленты (calcBelt): фронт пламени идёт со скоростью
+// v_пл, за ним материал успевает выгорать, поэтому площадь активного горения
+// выходит на «полку», а не растёт бесконечно.
+
+export interface CableInputs {
+  heatValue: string;    // Q_н, МДж/кг — низшая теплота сгорания изоляции
+  burnRate: string;     // ψ, кг/(м²·с) — скорость выгорания
+  density: string;      // ρ, кг/м³ — плотность горючей части (изоляция/оболочка)
+  length: string;       // L, м — длина кабельной трассы
+  diameter: string;     // d, м — наружный диаметр ОДНОГО кабеля
+  insulThick: string;   // δ, м — толщина горючей изоляции (для массы)
+  count?: string;       // n — число кабелей в пучке (по умолчанию 1)
+  flameSpeed?: string;  // v_пл, м/с — скорость распространения пламени
+  calcTime?: string;    // t, мин — время расчёта (для «полки» мощности)
+}
+
+export interface CableFireResult {
+  mass: number;          // кг — масса горючей части
+  heatTotal: number;     // МДж — теплозапас
+  surfaceFull: number;   // м² — полная боковая поверхность пучка
+  surfaceArea: number;   // м² — площадь АКТИВНОГО горения на момент t
+  lengthBurning: number; // м — длина охваченного пламенем участка
+  powerMW: number;       // МВт — мощность пожара
+  deltaT_C: number;      // °C — нагрев воздушного потока
+  burnTime_h: number;    // ч — время полного выгорания
+  burnTime_min: number;  // мин
+}
+
+/** Число кабелей в пучке по умолчанию — одиночная нитка. */
+export const CABLE_DEFAULT_COUNT = "1";
+/** Скорость распространения пламени по кабелю, м/с (≈0,3 м/мин — справочная). */
+export const CABLE_DEFAULT_FLAME_SPEED = "0.005";
+/** Время расчёта мощности, мин — как у ленты (30/60 мин наблюдения). */
+export const CABLE_DEFAULT_CALC_TIME = "30";
+
+export function calcCableFire(inp: CableInputs, airFlow: number): CableFireResult | null {
+  const Q_н  = parseFloat((inp.heatValue  ?? "").replace(",", "."));
+  const psi  = parseFloat((inp.burnRate   ?? "").replace(",", "."));
+  const rho  = parseFloat((inp.density    ?? "").replace(",", "."));
+  const L    = parseFloat((inp.length     ?? "").replace(",", "."));
+  const d    = parseFloat((inp.diameter   ?? "").replace(",", "."));
+  const delta= parseFloat((inp.insulThick ?? "").replace(",", "."));
+  const nRaw = parseFloat((inp.count ?? CABLE_DEFAULT_COUNT).replace(",", "."));
+  const n    = Number.isFinite(nRaw) && nRaw >= 1 ? Math.floor(nRaw) : 1;
+
+  if ([Q_н, psi, rho, L, d, delta].some(v => !Number.isFinite(v) || v <= 0)) return null;
+  // Изоляция не может быть толще радиуса — иначе «горючего» больше, чем кабеля.
+  const dIns = Math.min(delta, d / 2);
+
+  // Боковая поверхность пучка: π·d·L на каждый кабель.
+  const surfaceFull = Math.PI * d * L * n;
+
+  // Масса горючей части — кольцо изоляции толщиной δ по всей длине:
+  //   V = π·(R² − (R−δ)²)·L,  R = d/2
+  const R = d / 2;
+  const ringArea = Math.PI * (R * R - (R - dIns) * (R - dIns));
+  const mass = ringArea * L * rho * n;
+  const heatTotal = mass * Q_н;
+
+  // ── Площадь активного горения ──────────────────────────────────────────────
+  // Фронт пламени проходит v_пл·t, но материал за фронтом выгорает за время
+  // τ = ρ·δ/ψ. Поэтому активно горит «кольцо» длиной не больше v_пл·τ — та же
+  // логика, что в calcBelt, только через явное время выгорания стенки.
+  const vRaw = parseFloat((inp.flameSpeed ?? CABLE_DEFAULT_FLAME_SPEED).replace(",", "."));
+  const tRaw = parseFloat((inp.calcTime   ?? CABLE_DEFAULT_CALC_TIME).replace(",", "."));
+  const v_пл = Number.isFinite(vRaw) && vRaw > 0 ? vRaw : 0;
+  const t_мин = Number.isFinite(tRaw) && tRaw > 0 ? tRaw : 0;
+
+  let lengthBurning: number;
+  if (v_пл > 0 && t_мин > 0) {
+    const reached = Math.min(v_пл * t_мин * 60, L);      // докуда дошло пламя, м
+    const burnoutSec = (rho * dIns) / psi;               // время выгорания стенки, с
+    const steady = Math.min(v_пл * burnoutSec, L);       // длина «полки» горения, м
+    lengthBurning = Math.min(reached, steady);
+  } else {
+    // Скорость не задана — консервативно: горит вся трасса.
+    lengthBurning = L;
+  }
+
+  const surfaceArea = Math.PI * d * lengthBurning * n;
+
+  // Мощность: N = ψ·S·Q_н [МВт] (ψ кг/(м²·с) × м² × МДж/кг = МВт)
+  const powerMW = psi * surfaceArea * Q_н;
+
+  const deltaTRaw = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
+  const deltaT_C  = Math.min(deltaTRaw, 1200);
+
+  // Полное выгорание всей трассы при активной площади surfaceArea.
+  const burnBase = psi * (surfaceArea > 0 ? surfaceArea : surfaceFull);
+  const burnTime_h   = burnBase > 0 ? mass / burnBase / 3600 : 0;
+  const burnTime_min = burnTime_h * 60;
+
+  return {
+    mass, heatTotal, surfaceFull, surfaceArea, lengthBurning,
+    powerMW, deltaT_C, burnTime_h, burnTime_min,
   };
 }
 

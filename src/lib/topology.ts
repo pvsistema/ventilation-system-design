@@ -273,8 +273,16 @@ export interface TopoBranch {
   fireCableBurnRate: string;       // ψ, кг/(м²·с)
   fireCableDensity: string;        // ρ, кг/м³
   fireCableLength: string;         // длина, м
-  fireCableWidth: string;          // диаметр/ширина, м
-  fireCableThick: string;          // толщина, м
+  fireCableWidth: string;          // диаметр/ширина, м (наследие общей модели)
+  fireCableThick: string;          // толщина, м (наследие общей модели)
+  // Собственная модель кабеля (calcCableFire): площадь горения S = π·d·L·n
+  // с нарастанием фронта пламени. Поля необязательные — если пусты, диаметр и
+  // толщина изоляции берутся из fireCableWidth/fireCableThick (старые схемы).
+  fireCableDiameter?: string;      // d — наружный диаметр кабеля, м
+  fireCableInsulThick?: string;    // δ — толщина горючей изоляции, м
+  fireCableCount?: string;         // n — число кабелей в пучке, шт
+  fireCableFlameSpeed?: string;    // v_пл — скорость распространения пламени, м/с
+  fireCableCalcTime?: string;      // t — время расчёта мощности, мин
   // Параметры для горючего материала «Деревянная крепь»
   fireWoodName: string;            // пользовательское название
   fireWoodHeatValue: string;       // Q_н, МДж/кг
@@ -797,6 +805,13 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireCableLength: "100",
     fireCableWidth: "0.05",
     fireCableThick: "0.05",
+    // Собственная модель кабеля: диаметр 50 мм, изоляция 5 мм, одиночная
+    // нитка, скорость пламени 0,005 м/с (≈0,3 м/мин), окно расчёта 30 мин.
+    fireCableDiameter: "0.05",
+    fireCableInsulThick: "0.005",
+    fireCableCount: "1",
+    fireCableFlameSpeed: "0.005",
+    fireCableCalcTime: "30",
     fireWoodName: "Деревянная крепь",
     fireWoodHeatValue: "18.5",
     fireWoodBurnRate: "0.027",

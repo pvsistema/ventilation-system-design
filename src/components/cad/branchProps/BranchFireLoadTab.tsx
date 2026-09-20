@@ -6,7 +6,10 @@
 // Вынесено из BranchPropsPanel.tsx БЕЗ изменений разметки, формул и текстов.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
-import { calcVehicleFire, calcBelt, calcLinearFire } from "@/lib/fireCalculator";
+import {
+  calcVehicleFire, calcBelt, calcLinearFire, calcCableFire, cableInputsOf,
+  CABLE_DEFAULT_COUNT, CABLE_DEFAULT_FLAME_SPEED, CABLE_DEFAULT_CALC_TIME,
+} from "@/lib/fireCalculator";
 import {
   SectionHeader, EditInput, CheckField, InlineLabel,
 } from "@/components/cad/BranchPropsPrimitives";
@@ -41,15 +44,10 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
         flameSpeed: branch.fireBeltFlameSpeed ?? "0.013",
       }, airFlow)
     : null;
+  // Кабель считается СОБСТВЕННОЙ моделью (S = π·d·L, пучок, нарастание
+  // пламени) — той же функцией, что аварийный режим и акт устойчивости.
   const cableResult = (branch.fireLoadCable ?? false)
-    ? calcLinearFire({
-        heatValue:    branch.fireCableHeatValue ?? "25",
-        burnRate:     branch.fireCableBurnRate  ?? "0.007",
-        density:      branch.fireCableDensity   ?? "900",
-        length:       branch.fireCableLength    ?? (branchLenStr || "100"),
-        sectionWidth: branch.fireCableWidth     ?? "0.05",
-        sectionThick: branch.fireCableThick     ?? "0.05",
-      }, airFlow)
+    ? calcCableFire(cableInputsOf(branch, branchLenStr), airFlow)
     : null;
   const woodResult = (branch.fireLoadWoodSupport ?? false)
     ? calcLinearFire({
@@ -262,12 +260,18 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
             </thead>
             <tbody>
               {([
-                { label: "Q_н, МДж/кг",       key: "fireCableHeatValue" as const, def: "25"   },
-                { label: "ψ, кг/(м²·с)",      key: "fireCableBurnRate"  as const, def: "0.007"},
-                { label: "ρ, кг/м³",          key: "fireCableDensity"   as const, def: "900"  },
-                { label: "Длина, м",           key: "fireCableLength"    as const, def: branchLenStr || "100" },
-                { label: "Ширина сеч., м",     key: "fireCableWidth"     as const, def: "0.05" },
-                { label: "Толщина сеч., м",    key: "fireCableThick"     as const, def: "0.05" },
+                { label: "Q_н, МДж/кг",        key: "fireCableHeatValue"  as const, def: "25"   },
+                { label: "ψ, кг/(м²·с)",       key: "fireCableBurnRate"   as const, def: "0.007"},
+                { label: "ρ, кг/м³",           key: "fireCableDensity"    as const, def: "900"  },
+                { label: "Длина трассы, м",    key: "fireCableLength"     as const, def: branchLenStr || "100" },
+                // Диаметр и толщина изоляции — параметры СОБСТВЕННОЙ модели
+                // кабеля (S = π·d·L). Если поля пустые, расчёт берёт значения
+                // из прежних fireCableWidth/fireCableThick (старые проекты).
+                { label: "Диаметр кабеля d, м", key: "fireCableDiameter"   as const, def: branch.fireCableWidth ?? "0.05" },
+                { label: "Толщина изоляции, м", key: "fireCableInsulThick" as const, def: branch.fireCableThick ?? "0.005" },
+                { label: "Кабелей в пучке, шт", key: "fireCableCount"      as const, def: CABLE_DEFAULT_COUNT },
+                { label: "v пламени, м/с",      key: "fireCableFlameSpeed" as const, def: CABLE_DEFAULT_FLAME_SPEED },
+                { label: "Время расчёта, мин",  key: "fireCableCalcTime"   as const, def: CABLE_DEFAULT_CALC_TIME },
               ]).map(({ label, key, def }) => (
                 <tr key={key}>
                   <td className="px-1 py-0.5 text-gray-700" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>{label}</td>
@@ -298,6 +302,13 @@ export default function BranchFireLoadTab({ branch, onUpdate }: BranchFireLoadTa
               </table>
               <div className="text-[10px] text-gray-500 mt-0.5 px-0.5">
                 Масса: {cableResult.mass.toFixed(0)} кг · Теплозапас: {cableResult.heatTotal.toFixed(0)} МДж
+              </div>
+              {/* Площадь горения — главная величина модели: именно она задаёт
+                  мощность N = ψ·S·Q_н. Показываем активную и полную, чтобы
+                  было видно, охвачена ли трасса целиком или фронт ещё идёт. */}
+              <div className="text-[10px] text-gray-500 px-0.5">
+                Площадь горения: {cableResult.surfaceArea.toFixed(2)} м² из {cableResult.surfaceFull.toFixed(2)} м²
+                {" · "}охвачено {cableResult.lengthBurning.toFixed(1)} м
               </div>
               {!isNaN(cableResult.burnTime_h) && isFinite(cableResult.burnTime_h) && (
                 <div className="text-[10px] text-gray-500 px-0.5">
