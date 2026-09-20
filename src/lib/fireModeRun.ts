@@ -33,8 +33,17 @@ export interface FireModeRunParams {
   smokeVisThreshold: number;
   /** Базовые температуры узлов до пожара. */
   baseNodeTemps: Record<string, number>;
-  /** Общая депрессия ветви (выработка + перемычка/окно). */
+  /** Общая депрессия ветви (выработка + перемычка/окно), Па. */
   totalDepByBranch: Map<string, number>;
+  /**
+   * Общее сопротивление ветви (выработка + перемычка/окно + окно ГВУ), кМюрг.
+   *
+   * Нужно формулам Приложения 5: по голому b.resistance ветвь с закрытой
+   * дверью считалась пустой выработкой, и критическая депрессия h_кр выходила
+   * заниженной. Карта необязательна — без неё расчёт откатывается на
+   * b.resistance, как было раньше.
+   */
+  totalRByBranch?: Map<string, number>;
   /** Пересчёт сети с горячими узлами. Пустая карта = ошибка сети. */
   solveIteration: (
     branchesWithFire: TopoBranch[],
@@ -69,7 +78,7 @@ export interface FireModeRunResult {
 export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResult> {
   const {
     branches, nodes, ambientTemp: AMBIENT_TEMP, thermalDepMethod,
-    smokeVisThreshold, baseNodeTemps, totalDepByBranch,
+    smokeVisThreshold, baseNodeTemps, totalDepByBranch, totalRByBranch,
     solveIteration, log, yieldToUI,
   } = p;
 
@@ -258,11 +267,14 @@ export async function runFireMode(p: FireModeRunParams): Promise<FireModeRunResu
     // dPTotal — ОБЩАЯ депрессия ветви (выработка + перемычка/окно).
     // Без неё расчёт брал депрессию одной выработки и на ветви
     // с перемычкой занижал порог опрокидывания в сотни раз.
+    // rTotal — ОБЩЕЕ сопротивление ветви, по той же причине: формулы
+    // Приложения 5 (h_кр) без него считают перемычку пустой выработкой.
     const bUpdated = {
       ...b,
       flow: finalQ,
       originalFlow: originalFlows.get(b.id) ?? b.flow,
       dPTotal: totalDepByBranch.get(b.id) ?? b.dPTotal,
+      rTotal: totalRByBranch?.get(b.id) ?? b.rTotal,
     };
     if (!b.hasFire) return bUpdated;
     // Режим «Температурой» — оставляем ручную T (не пересчитываем).

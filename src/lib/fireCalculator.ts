@@ -46,6 +46,31 @@ function branchDepPa(b?: { dP?: number; dPTotal?: number } | null): number {
   return Math.abs(Number(b.dP) || 0);
 }
 
+/**
+ * ОБЩЕЕ сопротивление ветви, кМюрг: выработка + перемычка/окно + окно ГВУ.
+ *
+ * Ровно та же история, что и с депрессией выше. Поле b.resistance содержит
+ * сопротивление ТОЛЬКО выработки: перемычка почти всегда задана значком на
+ * схеме, и её R живёт в SchemaSymbol.bk*, а в ветвь не попадает. Решатель сети
+ * складывает их сам (buildBranchPayload), а формулы Приложения 5 брали голое
+ * b.resistance — то есть ветвь с закрытой дверью считалась пустой выработкой.
+ *
+ * Последствия были двоякие: приведённое сопротивление обхода r_п занижалось
+ * (h_кр выходила меньше реальной → ложное «опрокинется»), а сбойка с перемычкой
+ * в формуле (5.4) выглядела как обычная выработка — порог ×300, отделяющий
+ * (5.3) от (5.4), почти никогда не срабатывал.
+ *
+ * Поле rTotal проставляет Cad.tsx перед передачей ветвей в аварийные расчёты.
+ * Если его нет (ветвь пришла из места, где карта не строилась) — откатываемся
+ * на resistance, чтобы расчёт не обнулился.
+ */
+export function branchRTotal(b?: { resistance?: number; rTotal?: number } | null): number {
+  if (!b) return 0;
+  const total = Number(b.rTotal);
+  if (Number.isFinite(total) && total > 0) return total;
+  return Number(b.resistance) || 0;
+}
+
 // Коэффициент теплоотдачи продуктов горения в стенки выработки, Вт/(м²·К).
 // По мере движения по выработке горячий воздух остывает, отдавая тепло породе,
 // и его температура экспоненциально приближается к температуре стенок (≈ ambient):
@@ -851,7 +876,10 @@ export interface CriticalDepInput {
   fireToId: string;
   fireFlow_m3s: number;    // Q — расход в аварийной выработке
   fireDP_pa?: number;      // ΔP аварийной ветви (для случая «уклонное поле»)
-  branches: { id: string; fromId: string; toId: string; resistance?: number; flow?: number; dP?: number }[];
+  // Ветви сети. Сопротивление берётся через branchRTotal: rTotal (выработка +
+  // перемычка/окно) при наличии, иначе resistance. Для формул Прил. 5 это
+  // принципиально — сбойка в (5.4) это именно сбойка С ПЕРЕМЫЧКОЙ.
+  branches: { id: string; fromId: string; toId: string; resistance?: number; rTotal?: number; flow?: number; dP?: number; dPTotal?: number }[];
   // Высотные отметки узлов (z, м) — нужны формуле (5.4), чтобы различать сбойки
   // ВЫШЕ и НИЖЕ очага (R₁ vs R₂). Если не переданы — геометрия не восстанавливается
   // и берутся две сбойки минимального сопротивления как раньше.
@@ -1014,13 +1042,15 @@ interface ParallelPath {
 // находит. Здесь — ограниченный по глубине DFS по неориентированному графу.
 function findParallelPaths(
   a: string, b: string, fireBranchId: string,
-  branches: { id: string; fromId: string; toId: string; resistance?: number; flow?: number }[],
+  branches: { id: string; fromId: string; toId: string; resistance?: number; rTotal?: number; flow?: number }[],
 ): ParallelPath[] {
   // adj: узел → список смежных ветвей
   const adj = new Map<string, { id: string; other: string; resistance: number; flow: number }[]>();
   for (const br of branches) {
     if (br.id === fireBranchId) continue;
-    const R = Number(br.resistance) || 0;
+    // ПОЛНОЕ сопротивление ветви (с перемычкой). По голому resistance обход
+    // считал закрытую дверь пустой выработкой и занижал r_п — а значит и h_кр.
+    const R = branchRTotal(br);
     if (!(R > 0)) continue;
     const F = Math.abs(Number(br.flow) || 0);
     if (!adj.has(br.fromId)) adj.set(br.fromId, []);
@@ -1251,11 +1281,15 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   const pathBranchIds = new Set<string>();
   for (const p of paths) for (const id of p.branchIds) pathBranchIds.add(id);
   const nodePair = new Set([a, b]);
+  // R сбойки — ПОЛНЫЙ (с перемычкой): именно перемычка и делает сбойку сбойкой.
+  // По голому resistance закрытая дверь выглядела обычной выработкой, порог
+  // ×300 почти не срабатывал, и вместо (5.3) расчёт уходил в (5.4) с заниженными
+  // R₁/R₂ — то есть с завышенным вкладом сбоек в h_кр.
   const crossings = inp.branches.filter(br =>
     br.id !== inp.fireBranchId && !pathBranchIds.has(br.id) &&
     ((nodePair.has(br.fromId) && !nodePair.has(br.toId)) ||
      (nodePair.has(br.toId) && !nodePair.has(br.fromId))) &&
-    (Number(br.resistance) || 0) > 0,
+    branchRTotal(br) > 0,
   );
 
   let formula: CriticalDepFormula = paths.length > 1 ? "5.5" : "5.3";
@@ -1264,10 +1298,10 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
   if (crossings.length >= 1) {
     // Порог ×300: если ВСЕ сбойки имеют сопротивление ≥ 300× сопр. участков —
     // влиянием сбоек пренебрегаем и применяем (5.3)/(5.5).
-    const rSelfBranch = Math.max(1e-9, Number(inp.branches.find(x => x.id === inp.fireBranchId)?.resistance) || r_p);
+    const rSelfBranch = Math.max(1e-9, branchRTotal(inp.branches.find(x => x.id === inp.fireBranchId)) || r_p);
     const rBase = Math.max(1e-9, Math.min(r_p, rSelfBranch));
     const allHighResistance = crossings.every(br =>
-      (Number(br.resistance) || 0) >= BULKHEAD_NEGLECT_RATIO * rBase);
+      branchRTotal(br) >= BULKHEAD_NEGLECT_RATIO * rBase);
 
     if (allHighResistance) {
       h_kr = CRITICAL_DEP_K * r_p * Math.pow(Q + Q_p, 2);
@@ -1280,7 +1314,7 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
       // снизу; r_п′,r_п″ — параллельного пути сверху/снизу. Точку подключения на
       // аварийной/параллельной ветви в общем графе восстановить нельзя, поэтому
       // сопротивление ветви делим пополам между верхним и нижним участком.
-      const rSelf = Math.max(1e-9, Number(inp.branches.find(x => x.id === inp.fireBranchId)?.resistance) || r_p);
+      const rSelf = Math.max(1e-9, branchRTotal(inp.branches.find(x => x.id === inp.fireBranchId)) || r_p);
       const rParSelf = Math.max(1e-9, Number(mainPar.resistance) || r_p);
 
       // Высота узла подключения сбойки (тот узел пары a/b, к которому она примыкает).
@@ -1296,25 +1330,25 @@ export function calcCriticalDepression(inp: CriticalDepInput): CriticalDepResult
       // сопротивления сильнее «шунтирует» тягу → сильнее влияет на h_кр).
       const minByR = (arr: typeof crossings) =>
         arr.reduce((best, br) =>
-          (Number(br.resistance) || Infinity) < (Number(best.resistance) || Infinity) ? br : best, arr[0]);
+          (branchRTotal(br) || Infinity) < (branchRTotal(best) || Infinity) ? br : best, arr[0]);
 
       let R1 = 0, R2 = 0; // верхняя / нижняя сбойка
       if (zFire !== undefined && elev) {
         const upper = crossings.filter(br => { const z = crossingZ(br); return z !== undefined && z > zFire; });
         const lower = crossings.filter(br => { const z = crossingZ(br); return z !== undefined && z < zFire; });
-        if (upper.length) R1 = Number(minByR(upper).resistance) || 0;
-        if (lower.length) R2 = Number(minByR(lower).resistance) || 0;
+        if (upper.length) R1 = branchRTotal(minByR(upper));
+        if (lower.length) R2 = branchRTotal(minByR(lower));
         // Сбойки на уровне очага (z ≈ zFire) или без отметок — добираем в пустые слоты.
         const rest = crossings.filter(br => { const z = crossingZ(br); return z === undefined || z === zFire; });
         for (const br of rest) {
-          const R = Number(br.resistance) || 0;
+          const R = branchRTotal(br);
           if (R1 === 0) R1 = R; else if (R2 === 0) R2 = R;
         }
       } else {
         // Нет высотных отметок — две сбойки минимального сопротивления (как раньше).
-        const sorted = [...crossings].sort((x, y) => (Number(x.resistance) || 0) - (Number(y.resistance) || 0));
-        R1 = Number(sorted[0]?.resistance) || 0;
-        R2 = Number(sorted[1]?.resistance) || 0;
+        const sorted = [...crossings].sort((x, y) => branchRTotal(x) - branchRTotal(y));
+        R1 = branchRTotal(sorted[0]);
+        R2 = branchRTotal(sorted[1]);
       }
 
       // r₁,r₂ — половины сопротивления аварийной ветви (верх/низ от очага);

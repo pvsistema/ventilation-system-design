@@ -21,7 +21,7 @@ import { calcBranchAngle } from "./topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire,
   calcFireTemp, calcThermalDepressionUnified, calcCriticalDepression, FLAT_ANGLE_DEG,
-  calcCriticalFlow,
+  calcCriticalFlow, branchRTotal,
 } from "./fireCalculator";
 import { PA_PER_MM_H2O } from "./aerodynamics";
 
@@ -358,7 +358,14 @@ export function calcFireStability(
     let Q0_74: number | null = null;
     let Q0_a: number | null = null;
     let Q0_source: "7.3" | "7.4" | null = null;
-    const R_fact = (b.resistance ?? 0) > 0 ? +(b.resistance ?? 0).toFixed(6) : null;
+    // ФАКТИЧЕСКОЕ сопротивление ветви для Прил. 7 — ПОЛНОЕ: выработка +
+    // перемычка/окно + окно ГВУ (branchRTotal читает b.rTotal, проставленный
+    // в Cad.tsx, с откатом на b.resistance). Раньше бралось голое resistance,
+    // то есть ветвь с закрытой дверью входила в (7.1), (7.5) и (7.6) как
+    // пустая выработка: удерживающая депрессия R·Q₀² занижалась на порядки,
+    // а требуемое R_доп (7.6) выходило завышенным.
+    const rFactRaw = branchRTotal(b);
+    const R_fact = rFactRaw > 0 ? +rFactRaw.toFixed(6) : null;
 
     if (!descending && absAngle > FLAT_ANGLE_DEG && thermalDep > 0) {
       // Критический расход двумя ориентировочными способами норматива:
@@ -366,7 +373,9 @@ export function calcFireStability(
       // Принимается МЕНЬШЕЕ значение: Q₀ входит в условие (7.1) в квадрате,
       // меньший Q₀ даёт меньшую удерживающую депрессию R·Q₀² → более строгую
       // оценку устойчивости (в запас безопасности).
-      const cf = calcCriticalFlow(dojarFlow, branchDep, b.resistance ?? 0);
+      // R для таблицы 7.1 (коэффициент a в формуле 7.4) — тоже полное:
+      // сопротивление ветви там служит признаком «тяжести» выработки.
+      const cf = calcCriticalFlow(dojarFlow, branchDep, rFactRaw);
       Q0_73 = cf.Q0_73;
       Q0_74 = cf.Q0_74;
       Q0_a = cf.a;

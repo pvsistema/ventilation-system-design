@@ -1722,26 +1722,43 @@ export default function CadPage() {
     [branches, schemaSymbols, mineBulkheads],
   );
 
-  // ОБЩАЯ депрессия ветви (Па) = R_общее·Q²·9,81 − H вентилятора, где
-  // R_общее = выработка + перемычка/окно + окно ГВУ. Поле b.dP содержит
-  // депрессию ТОЛЬКО выработки (локальный пересчёт recalcBranchAero не знает
-  // о перемычках-символах), поэтому для пожара и устойчивости берём эту карту.
-  // Считаем локально по тем же слагаемым, что строка «Общее сопротивление» в
-  // свойствах ветви, — иначе панель и расчёт показывали бы разные числа после
-  // правки перемычки (значение сервера устаревало бы до следующего F9).
-  const totalDepByBranch = useMemo(() => {
+  // ОБЩЕЕ сопротивление ветви (кМюрг) = выработка + перемычка/окно + окно ГВУ.
+  // Ровно та сумма, которая уходит в решатель (buildBranchPayload) и стоит в
+  // строке «Общее сопротивление» свойств ветви.
+  //
+  // ЗАЧЕМ ОТДЕЛЬНОЙ КАРТОЙ. Поле b.resistance содержит сопротивление ТОЛЬКО
+  // выработки: перемычка почти всегда задана значком на схеме, и её R живёт в
+  // SchemaSymbol.bk*, а не в ветви. Воздухораспределение это учитывает, а
+  // пожарные расчёты брали голое b.resistance — то есть считали ветвь с
+  // закрытой дверью как пустую выработку. На порядки заниженное R искажало
+  // и критическую депрессию h_кр (Прил. 5), и условия Прил. 7.
+  const totalRByBranch = useMemo(() => {
     const map = new Map<string, number>();
     for (const b of branches) {
       const bkR = bulkheadRByBranch.get(b.id) ?? 0;
       const fanCrossingKmu = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
         ? (b.fanCrossingR ?? 0) / 1000 : 0;
-      const totalR = b.resistance + bkR + fanCrossingKmu;
+      map.set(b.id, b.resistance + bkR + fanCrossingKmu);
+    }
+    return map;
+  }, [branches, bulkheadRByBranch]);
+
+  // ОБЩАЯ депрессия ветви (Па) = R_общее·Q²·9,81 − H вентилятора.
+  // Поле b.dP содержит депрессию ТОЛЬКО выработки (локальный пересчёт
+  // recalcBranchAero не знает о перемычках-символах), поэтому для пожара и
+  // устойчивости берём эту карту. Считаем по той же сумме R, что выше, —
+  // иначе панель и расчёт показывали бы разные числа после правки перемычки
+  // (значение сервера устаревало бы до следующего F9).
+  const totalDepByBranch = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const b of branches) {
+      const totalR = totalRByBranch.get(b.id) ?? b.resistance;
       const Q = b.flow ?? 0;
       const fanH = b.hasFan ? (b.fanPressure ?? 0) : 0;
       map.set(b.id, totalR * Math.abs(Q) * Q * G_ACCEL - fanH);
     }
     return map;
-  }, [branches, bulkheadRByBranch]);
+  }, [branches, totalRByBranch]);
 
   // БАЗОВАЯ (дожаровая) температура узлов, °C — ровно та, которую решатель
   // присваивает непрогретым узлам (см. backend/airflow/index.py, патч узлов):
@@ -1790,12 +1807,19 @@ export default function CadPage() {
     return map;
   }, [nodes, useHumidity, surfaceHumidity, mineHumidity]);
 
-  // Ветви с проставленной общей депрессией — передаются в аварийные расчёты
-  // (Акт устойчивости, расчёт пожара), где порог опрокидывания должен
-  // сравниваться с ПОЛНОЙ депрессией ветви, а не с депрессией одной выработки.
+  // Ветви с проставленными ОБЩИМИ величинами — передаются в аварийные расчёты
+  // (Акт устойчивости, расчёт пожара), где и порог опрокидывания, и формулы
+  // Прил. 5 / Прил. 7 должны работать с ПОЛНОЙ ветвью (вместе с перемычкой),
+  // а не с одной выработкой:
+  //   • dPTotal — полная депрессия, Па;
+  //   • rTotal  — полное сопротивление, кМюрг.
   const branchesWithTotalDep = useMemo(
-    () => branches.map(b => ({ ...b, dPTotal: totalDepByBranch.get(b.id) ?? b.dPTotal })),
-    [branches, totalDepByBranch],
+    () => branches.map(b => ({
+      ...b,
+      dPTotal: totalDepByBranch.get(b.id) ?? b.dPTotal,
+      rTotal: totalRByBranch.get(b.id) ?? b.rTotal,
+    })),
+    [branches, totalDepByBranch, totalRByBranch],
   );
   // Пользовательские модели насосов (сохраняются в проекте)
   const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
@@ -4155,6 +4179,7 @@ export default function CadPage() {
       smokeVisThreshold,
       baseNodeTemps,
       totalDepByBranch,
+      totalRByBranch,
       // Значки варианта прокидываются в решатель — иначе изменение двери
       // не повлияет на расчёт сети.
       solveIteration: (brs, temp, hotTemps) => solveFireIteration(brs, temp, hotTemps, fireControlSymbolsRef.current),
@@ -4169,7 +4194,10 @@ export default function CadPage() {
       fireControlSymbolsRef.current = syms;
       const bulkheadsMap = new Map(mineBulkheads.map(mb => [mb.id, mb]));
       const totalDep = new Map<string, number>();
-      for (const b of brs) {
+      // Ветви варианта получают ПОЛНОЕ сопротивление (rTotal) — при подборе
+      // режима вариант как раз и меняет перемычки/двери, поэтому пожарные
+      // формулы обязаны видеть их сопротивление, а не голую выработку.
+      const brsWithR = brs.map(b => {
         const { total: bkR } = bulkheadROfBranch(b, syms, bulkheadsMap);
         const fanCrossingKmu = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки")
           ? (b.fanCrossingR ?? 0) / 1000 : 0;
@@ -4177,8 +4205,9 @@ export default function CadPage() {
         const Q = b.flow ?? 0;
         const fanH = b.hasFan ? (b.fanPressure ?? 0) : 0;
         totalDep.set(b.id, totalR * Math.abs(Q) * Q * G_ACCEL - fanH);
-      }
-      return { branches: brs, totalDepByBranch: totalDep };
+        return { ...b, rTotal: totalR };
+      });
+      return { branches: brsWithR, totalDepByBranch: totalDep };
     },
   });
 
@@ -6197,6 +6226,7 @@ export default function CadPage() {
                   smokeVisThreshold,
                   baseNodeTemps,
                   totalDepByBranch,
+                  totalRByBranch,
                   solveIteration: solveFireIteration,
                   log: (m) => addLog("info", m),
                   yieldToUI: () => new Promise(r => setTimeout(r, 0)),

@@ -194,6 +194,11 @@ export async function evaluateVariant(
   const fire = await runFireMode({
     ...ctx.fireParams,
     totalDepByBranch: totalDep,
+    // Если вариант пересобран (двери/окна изменены), сопротивления уже
+    // проставлены в самих ветвях полем rTotal. Карту из fireParams при этом
+    // не передаём: она построена по ИСХОДНОЙ схеме и перебила бы значения
+    // варианта — закрытая в варианте дверь снова считалась бы открытой.
+    totalRByBranch: rebuilt ? undefined : ctx.fireParams.totalRByBranch,
     branches,
     nodes: ctx.nodes,
   });
