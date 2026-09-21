@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -9391,9 +9391,14 @@ export default function CadPage() {
                     {(() => {
                       const expl = EXPLOSIVE_TYPES.find(ex => ex.id === (b.explosionExplosiveId ?? "ammonit"));
                       if (!expl) return null;
+                      const k = tntEquivalent(expl);
+                      const mass = b.explosionExplosiveMass ?? 10;
                       return (
                         <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]" style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#713f12" }}>
-                          k_тнт = {expl.tntEq} · Q_уд = {expl.qSpec} кДж/кг
+                          Q_уд = {expl.qSpec} кДж/кг · k_тнт = {expl.qSpec} / 4520 = {k}
+                          <div style={{ marginTop: 2 }}>
+                            Тротиловый эквивалент: {mass} × {k} = {Math.round(mass * k * 100) / 100} кг ТНТ
+                          </div>
                         </div>
                       );
                     })()}

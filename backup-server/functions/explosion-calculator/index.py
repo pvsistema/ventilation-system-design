@@ -53,15 +53,25 @@ Z_DEFAULT  = Z_CONFINED
 # Коэффициенты Садовского дают ΔP в кгс/см² — переводим в кПа
 KGF_CM2_TO_KPA = 98.07
 
+# ВВ задаётся ОДНИМ параметром — удельной теплотой взрыва, кДж/кг.
+# Тротиловый эквивалент вычисляется из неё: k = q_ВВ / q_ТНТ (Методика №415).
+# Раньше хранились два независимых числа, причём qSpec в расчёте не
+# участвовал, а tntEq был с ним не согласован (аммонит: q=3700, k=0.97,
+# хотя из этой теплоты следует k=0.82).
 EXPLOSIVE_TYPES = {
-    "tnt":       {"tntEq": 1.00},
-    "ammonit":   {"tntEq": 0.97},
-    "granulite": {"tntEq": 0.85},
-    "igdanit":   {"tntEq": 0.90},
-    "anfo":      {"tntEq": 0.82},
-    "emulsion":  {"tntEq": 0.80},
-    "custom":    {"tntEq": 1.00},
+    "tnt":       {"qSpec": 4520},
+    "ammonit":   {"qSpec": 4312},
+    "granulite": {"qSpec": 4290},
+    "igdanit":   {"qSpec": 3810},
+    "anfo":      {"qSpec": 3700},
+    "emulsion":  {"qSpec": 3000},
+    "custom":    {"qSpec": 4520},
 }
+
+
+def tnt_equivalent(expl):
+    """Тротиловый эквивалент ВВ: k = q_ВВ / q_ТНТ."""
+    return round(expl["qSpec"] / Q_TNT, 2)
 
 HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "safe": 5.99}
 # "safe": 5.99 кПа — граница безопасной зоны, как в ПО «Аэросеть».
@@ -198,8 +208,10 @@ def calc_one(body: dict) -> dict:
         expl_id = body.get("explosiveId", "ammonit")
         expl    = EXPLOSIVE_TYPES.get(expl_id, EXPLOSIVE_TYPES["ammonit"])
         mass_kg = float(body.get("explosiveMass_kg", 10))
-        q_tnt   = mass_kg * expl["tntEq"]
-        log.append(f"ВВ: {expl_id}, масса: {mass_kg} кг, k_тнт = {expl['tntEq']}")
+        k_tnt   = tnt_equivalent(expl)
+        q_tnt   = mass_kg * k_tnt
+        log.append(f"ВВ: {expl_id}, масса: {mass_kg} кг, Q_уд = {expl['qSpec']} кДж/кг")
+        log.append(f"Тротиловый эквивалент: k = {expl['qSpec']} / {Q_TNT:.0f} = {k_tnt}")
 
     if q_tnt <= 0:
         warnings.append("Тротиловый эквивалент = 0 — расчёт невозможен")

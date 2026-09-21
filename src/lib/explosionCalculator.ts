@@ -36,22 +36,39 @@ const P0      = 101.3;  // кПа    — атмосферное давление
 const C0      = 340;    // м/с    — скорость звука
 
 // ─── Типы взрывчатых веществ (метод «по массе») ───────────────────────────────
+/**
+ * ВВ задаётся ОДНИМ параметром — удельной теплотой взрыва.
+ *
+ * Тротиловый эквивалент из неё вычисляется: k = q_ВВ / q_ТНТ (Методика №415).
+ * Раньше qSpec и tntEq хранились как два независимых числа, причём qSpec
+ * в расчёте не участвовал вообще, а tntEq был с ним не согласован: у
+ * аммонита 6ЖВ стояло q = 3700 кДж/кг и k = 0.97, хотя из этой теплоты
+ * следует k = 0.82. Теперь источник правды один — теплота.
+ */
 export interface ExplosiveType {
   id: string;
   name: string;
-  qSpec: number;   // кДж/кг — удельная теплота взрыва
-  tntEq: number;   // коэффициент тротилового эквивалента
+  qSpec: number;   // кДж/кг — удельная теплота взрыва (единственный исходный параметр)
 }
 
+// Справочные теплоты взрыва промышленных ВВ, кДж/кг.
 export const EXPLOSIVE_TYPES: ExplosiveType[] = [
-  { id: "tnt",       name: "ТНТ",                       qSpec: 4520, tntEq: 1.00 },
-  { id: "ammonit",   name: "Аммонит 6ЖВ",               qSpec: 3700, tntEq: 0.97 },
-  { id: "granulite", name: "Гранулит АС-8",              qSpec: 3800, tntEq: 0.85 },
-  { id: "igdanit",   name: "Игданит",                    qSpec: 3900, tntEq: 0.90 },
-  { id: "anfo",      name: "ANFO",                       qSpec: 3800, tntEq: 0.82 },
-  { id: "emulsion",  name: "Эмульсионное ВВ",            qSpec: 3500, tntEq: 0.80 },
-  { id: "custom",    name: "Произвольное ВВ",            qSpec: 4520, tntEq: 1.00 },
+  { id: "tnt",       name: "ТНТ",              qSpec: 4520 },
+  { id: "ammonit",   name: "Аммонит 6ЖВ",      qSpec: 4312 },
+  { id: "granulite", name: "Гранулит АС-8",    qSpec: 4290 },
+  { id: "igdanit",   name: "Игданит",          qSpec: 3810 },
+  { id: "anfo",      name: "ANFO",             qSpec: 3700 },
+  { id: "emulsion",  name: "Эмульсионное ВВ",  qSpec: 3000 },
+  { id: "custom",    name: "Произвольное ВВ",  qSpec: 4520 },
 ];
+
+/**
+ * Тротиловый эквивалент ВВ: k = q_ВВ / q_ТНТ.
+ * Округление до сотых — как в справочных таблицах.
+ */
+export function tntEquivalent(expl: ExplosiveType): number {
+  return Math.round((expl.qSpec / Q_TNT) * 100) / 100;
+}
 
 // ─── Виды горючих газов и пыли (метод «по газу») ─────────────────────────────
 /**
@@ -186,7 +203,7 @@ function gasToTnt(gas: GasType, volume_m3: number, concentration: number, z: num
 
 /** Тротиловый эквивалент из массы ВВ */
 function massToTnt(expl: ExplosiveType, mass_kg: number): number {
-  return mass_kg * expl.tntEq;
+  return mass_kg * tntEquivalent(expl);
 }
 
 /** Перевод кгс/см² → кПа (коэффициенты Садовского даны в кгс/см²) */
@@ -326,7 +343,8 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   } else {
     const expl = EXPLOSIVE_TYPES.find(e => e.id === params.explosiveId) ?? EXPLOSIVE_TYPES[0];
     q_tnt = massToTnt(expl, params.explosiveMass_kg);
-    log.push(`ВВ: ${expl.name}, масса: ${params.explosiveMass_kg} кг, k_тнт = ${expl.tntEq}`);
+    log.push(`ВВ: ${expl.name}, масса: ${params.explosiveMass_kg} кг, Q_уд = ${expl.qSpec} кДж/кг`);
+    log.push(`Тротиловый эквивалент: k = Q_уд / Q_ТНТ = ${expl.qSpec} / ${Q_TNT} = ${tntEquivalent(expl)}`);
     log.push(`Тротиловый эквивалент: Q_tnt = ${Math.round(q_tnt * 100) / 100} кг ТНТ`);
   }
 
