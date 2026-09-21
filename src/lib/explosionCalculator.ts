@@ -247,8 +247,15 @@ export function minValidRadius(q_tnt: number): number {
  */
 function sadovskyDeltaP(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
-  const rBar = r_m / Math.pow(q_tnt, 1 / 3);
-  if (rBar < 0.1) return 10000; // очень близко к эпицентру
+  // ГРАНИЦА ПРИМЕНИМОСТИ соблюдается здесь, а не только при выводе ΔP_max.
+  // Ближе r̄ = 1 формула расходится: на 1 м от заряда 95 кг она давала
+  // 72 500 кПа, на 0.5 м — 555 700 кПа. Прежняя отсечка `rBar < 0.1 → 10000`
+  // не спасала, а вносила разрыв: при r̄ = 0.1001 выходило 726 350 кПа,
+  // при r̄ = 0.0999 — сразу 10 000, то есть ближе к заряду давление
+  // оказывалось МЕНЬШЕ, чем дальше от него.
+  // Внутри этой зоны методика параметры волны не определяет, поэтому
+  // давление принимается равным значению на самой границе (плато).
+  const rBar = Math.max(r_m / Math.pow(q_tnt, 1 / 3), R_BAR_MIN);
   const dP_kgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
   return Math.round(dP_kgf * KGF_CM2_TO_KPA * 10) / 10;
 }
@@ -264,7 +271,10 @@ function sadovskyDeltaP(r_m: number, q_tnt: number): number {
  */
 function sadovskyImpulse(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
-  const i_Pa_s = 123 * Math.pow(q_tnt, 0.66) / r_m;
+  // Та же граница применимости, что и у давления: 123·m^0.66/r при r → 0
+  // растёт неограниченно. Внутри границы берём значение на ней (плато).
+  const r = Math.max(r_m, minValidRadius(q_tnt));
+  const i_Pa_s = 123 * Math.pow(q_tnt, 0.66) / r;
   return Math.round(i_Pa_s * 10) / 10;
 }
 
@@ -484,6 +494,10 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     return emptyExplosionResult(th, noExplosionReason, log, warnings);
   }
 
+  // Граница применимости формулы для этого заряда, м (r̄ = 1).
+  // Ниже её параметры волны методикой не определяются.
+  const rMinValid = minValidRadius(q_tnt);
+
   // 2. Коэффициент эффекта выработки (канализирование волны)
   const wallFactor = params.considerWalls
     ? wallReflectionFactor(params.excavationArea_m2)
@@ -492,14 +506,18 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     log.push(`Коэффициент отражения от стенок выработки: k = ${wallFactor}`);
   }
 
-  // 3. Функции давления и импульса
+  // 3. Функции давления и импульса.
+  // Обе ограничены снизу границей применимости (см. sadovskyDeltaP):
+  // внутри r̄ = 1 возвращается значение на границе, а не расходящееся.
+  // r = 0 (точка установки очага) — тоже максимум, а не ноль: раньше
+  // ветка `r_m <= 0` давала 0 кПа, и эпицентр взрыва попадал в «безопасно».
   const pressureAtDistance = (r: number) => {
-    const dP = sadovskyDeltaP(r, q_tnt);
+    const dP = sadovskyDeltaP(Math.max(r, rMinValid), q_tnt);
     return Math.round(dP * wallFactor * 10) / 10;
   };
 
   const impulseAtDistance = (r: number) => {
-    const i = sadovskyImpulse(r, q_tnt);
+    const i = sadovskyImpulse(Math.max(r, rMinValid), q_tnt);
     return Math.round(i * wallFactor * 10) / 10;
   };
 
@@ -508,7 +526,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // это r̄ = 0.22, то есть глубоко внутри зоны, где формула Садовского уже
   // не работает: получалось 74 000 кПа и скорость фронта 8 500 м/с.
   // Ближе к заряду параметры волны этой методикой не определяются.
-  const rMin = minValidRadius(q_tnt);
+  const rMin = rMinValid;
   const maxDeltaP = pressureAtDistance(rMin);
   const maxImpulse = impulseAtDistance(rMin);
   const waveFrontSpeed_ms = waveFrontSpeed(maxDeltaP);

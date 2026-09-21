@@ -148,10 +148,15 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       // расходилась с расчётом по схеме.
       const _wf   = _considerWalls ? wallReflectionFactor(area) : 1.0;
       // Формулы согласованы с explosionCalculator.ts
+      // Граница применимости формулы (r̄ = 1) — та же, что в ядре.
+      const _rMin = Math.pow(_qTnt, 1 / 3);
       const sadovsky = (r: number): number => {
-        if (_qTnt <= 0 || r <= 0) return 0;
-        const rBar = r / Math.pow(_qTnt, 1 / 3);
-        if (rBar < 0.1) return 10000;
+        if (_qTnt <= 0) return 0;
+        // Ближе границы формула расходится (на 1 м от 95 кг — 72 500 кПа),
+        // а прежняя отсечка `rBar < 0.1 → 10000` вносила разрыв в 73 раза.
+        // Внутри границы берём значение на ней. r = 0 — тоже максимум:
+        // иначе эпицентр взрыва попадал в зону «безопасно».
+        const rBar = Math.max(r, _rMin) / Math.pow(_qTnt, 1 / 3);
         // Коэффициенты Садовского дают кгс/см² — переводим в кПа (×98.07)
         const dpKgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
         return Math.round(dpKgf * 98.07 * 10) / 10;
@@ -162,9 +167,11 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
           return Math.round(sadovsky(r) * _wf * 10) / 10;
         },
         impulseAtDistance: (r: number) => {
-          if (_qTnt <= 0 || r <= 0) return 0;
-          // Импульс по Методике №415: i = 123·m^0.66/r (Па·с)
-          return Math.round(123 * Math.pow(_qTnt, 0.66) / r * _wf * 10) / 10;
+          if (_qTnt <= 0) return 0;
+          // Импульс по Методике №415: i = 123·m^0.66/r (Па·с).
+          // Ограничен той же границей применимости — при r → 0 растёт
+          // неограниченно.
+          return Math.round(123 * Math.pow(_qTnt, 0.66) / Math.max(r, _rMin) * _wf * 10) / 10;
         },
       };
     } catch {
