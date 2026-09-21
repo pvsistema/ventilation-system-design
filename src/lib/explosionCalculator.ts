@@ -26,7 +26,6 @@
 // ─── Константы ────────────────────────────────────────────────────────────────
 const Q_TNT   = 4520;   // кДж/кг — теплота взрыва ТНТ
 const P0      = 101.3;  // кПа    — атмосферное давление
-const RHO_AIR = 1.2;    // кг/м³  — плотность воздуха
 const C0      = 340;    // м/с    — скорость звука
 
 // ─── Типы взрывчатых веществ (метод «по массе») ───────────────────────────────
@@ -55,16 +54,23 @@ export interface GasType {
   lowerLimit: number; // % — нижний концентрационный предел взрываемости
   upperLimit: number; // % — верхний концентрационный предел взрываемости
   stoichConc: number; // % — стехиометрическая концентрация
-  efficiency: number; // коэффициент преобразования хим. энергии → механическая
 }
 
 export const GAS_TYPES: GasType[] = [
-  { id: "methane",   name: "Метан (CH₄)",       qCombust: 33.8, lowerLimit: 5.0,  upperLimit: 15.0, stoichConc: 9.5,  efficiency: 0.08 },
-  { id: "hydrogen",  name: "Водород (H₂)",       qCombust: 10.8, lowerLimit: 4.0,  upperLimit: 75.0, stoichConc: 29.5, efficiency: 0.10 },
-  { id: "propane",   name: "Пропан (C₃H₈)",      qCombust: 93.2, lowerLimit: 2.1,  upperLimit: 9.5,  stoichConc: 4.0,  efficiency: 0.07 },
-  { id: "acetylene", name: "Ацетилен (C₂H₂)",    qCombust: 56.0, lowerLimit: 2.5,  upperLimit: 80.0, stoichConc: 7.7,  efficiency: 0.12 },
-  { id: "coal_dust", name: "Угольная пыль",       qCombust: 22.0, lowerLimit: 60.0, upperLimit: 400.0,stoichConc: 200,  efficiency: 0.05 },
+  { id: "methane",   name: "Метан (CH₄)",       qCombust: 33.8, lowerLimit: 5.0,  upperLimit: 15.0, stoichConc: 9.5  },
+  { id: "hydrogen",  name: "Водород (H₂)",       qCombust: 10.8, lowerLimit: 4.0,  upperLimit: 75.0, stoichConc: 29.5 },
+  { id: "propane",   name: "Пропан (C₃H₈)",      qCombust: 93.2, lowerLimit: 2.1,  upperLimit: 9.5,  stoichConc: 4.0  },
+  { id: "acetylene", name: "Ацетилен (C₂H₂)",    qCombust: 56.0, lowerLimit: 2.5,  upperLimit: 80.0, stoichConc: 7.7  },
+  { id: "coal_dust", name: "Угольная пыль",       qCombust: 22.0, lowerLimit: 60.0, upperLimit: 400.0,stoichConc: 200  },
 ];
+
+// ─── Коэффициент участия Z (Методика №415, прил. по ТВС) ─────────────────────
+// Z — доля горючего вещества, участвующая во взрывном превращении.
+//   0.1 — дефлаграция в открытом пространстве;
+//   0.5 — взрыв в замкнутом/загромождённом объёме (горная выработка).
+export const Z_OPEN     = 0.1;
+export const Z_CONFINED = 0.5;
+export const Z_DEFAULT  = Z_CONFINED; // выработка — замкнутый объём
 
 // ─── Параметры расчёта ────────────────────────────────────────────────────────
 export type ExplosionMethod = "gas_dynamics" | "fnip_494";
@@ -86,6 +92,9 @@ export interface ExplosionParams {
   // Дополнительно
   ambientPressure_kPa: number; // кПа — атмосферное давление (высота)
   considerWalls: boolean;      // учёт отражения от стенок выработки
+  /** Коэффициент участия Z по Методике №415: 0.1 — открытое пространство,
+   *  0.5 — замкнутый объём (горная выработка). По умолчанию 0.5. */
+  zParticipation?: number;
 }
 
 // ─── Результаты расчёта ───────────────────────────────────────────────────────
@@ -118,15 +127,20 @@ export interface ExplosionResult {
 
 // ─── Вспомогательные функции ─────────────────────────────────────────────────
 
-/** Тротиловый эквивалент из объёма газа и его параметров */
-function gasToTnt(gas: GasType, volume_m3: number, concentration_pct: number): number {
+/**
+ * Тротиловый эквивалент из объёма газа (Методика №415, прил. по ТВС):
+ *   m_пр = (q_г / q_ТНТ) · m · Z
+ * где Z — коэффициент участия горючего во взрывном превращении
+ * (0.1 — дефлаграция в открытом пространстве, 0.5 — замкнутый объём).
+ */
+function gasToTnt(gas: GasType, volume_m3: number, concentration_pct: number, z: number): number {
   // Эффективный объём горючего газа (только горючая фракция)
   const fuelFraction = concentration_pct / 100;
   const fuelVol = volume_m3 * fuelFraction;
   // Химическая энергия (МДж)
   const E_chem = fuelVol * gas.qCombust;
-  // Механическая энергия взрыва с учётом КПД газовой детонации
-  const E_mech = E_chem * gas.efficiency * 1000; // → кДж
+  // Энергия, участвующая во взрывном превращении (коэффициент Z по №415)
+  const E_mech = E_chem * z * 1000; // → кДж
   // Тротиловый эквивалент
   return E_mech / Q_TNT;
 }
@@ -136,29 +150,33 @@ function massToTnt(expl: ExplosiveType, mass_kg: number): number {
   return mass_kg * expl.tntEq;
 }
 
+/** Перевод кгс/см² → кПа (коэффициенты Садовского даны в кгс/см²) */
+const KGF_CM2_TO_KPA = 98.07;
+
 /**
  * Давление во фронте ударной волны по формуле Садовского (Методика ГД):
- * ΔP = 0.84/r̄ + 2.7/r̄² + 7.15/r̄³  (кПа, коэффициенты эмпирические)
- * где r̄ = r / Q_tnt^(1/3) — приведённое расстояние
- * Источник: Садовский М.А., Садовский В.М. «Механическое действие взрыва»
- * Результат согласован с Аэросетью / ВНИМИ
+ * ΔP = 0.84/r̄ + 2.7/r̄² + 7.15/r̄³  [кгс/см²]
+ * где r̄ = r / Q_tnt^(1/3) — приведённое расстояние.
+ * ВАЖНО: исходные коэффициенты дают результат в кгс/см², поэтому
+ * результат переводится в кПа умножением на 98.07.
+ * Источник: Садовский М.А. «Механическое действие взрыва».
+ * Согласуется с Методикой №415 (ТВС) при Z = 0.1.
  */
 function sadovskyDeltaP(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
   const rBar = r_m / Math.pow(q_tnt, 1 / 3);
   if (rBar < 0.1) return 10000; // очень близко к эпицентру
-  // Формула Садовского: коэффициенты уже дают ΔP в кПа — P0 НЕ умножаем
-  const dP = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
-  return Math.round(dP * 10) / 10;
+  const dP_kgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
+  return Math.round(dP_kgf * KGF_CM2_TO_KPA * 10) / 10;
 }
 
 /**
  * Импульс положительной фазы (кПа·мс → Па·с):
- * i = 200 * Q_tnt^(1/3) / r (эмпирика по Садовскому)
+ * i = 200 * Q_tnt^(2/3) / r  (формула Садовского; показатель 2/3, не 1/3)
  */
 function sadovskyImpulse(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
-  const i_kPa_ms = 200 * Math.pow(q_tnt, 1 / 3) / r_m;
+  const i_kPa_ms = 200 * Math.pow(q_tnt, 2 / 3) / r_m;
   return Math.round(i_kPa_ms * 10) / 10; // Па·с (1 кПа·мс = 1 Па·с)
 }
 
@@ -240,8 +258,10 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     }
     // Максимум мощности при стехиометрической концентрации
     const effectiveConc = Math.min(conc, gas.stoichConc * 1.2);
-    q_tnt = gasToTnt(gas, params.gasVolume_m3, effectiveConc);
+    const z = params.zParticipation && params.zParticipation > 0 ? params.zParticipation : Z_DEFAULT;
+    q_tnt = gasToTnt(gas, params.gasVolume_m3, effectiveConc, z);
     log.push(`Газ: ${gas.name}, объём смеси: ${params.gasVolume_m3} м³, концентрация: ${conc}%`);
+    log.push(`Коэффициент участия Z (Методика №415): ${z}`);
     log.push(`Тротиловый эквивалент: Q_tnt = ${Math.round(q_tnt * 100) / 100} кг ТНТ`);
   } else {
     const expl = EXPLOSIVE_TYPES.find(e => e.id === params.explosiveId) ?? EXPLOSIVE_TYPES[0];

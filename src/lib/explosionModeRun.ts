@@ -72,6 +72,8 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     excavationLength_m: b.length ?? 100,
     ambientPressure_kPa: 101.3,
     considerWalls: b.explosionConsiderWalls ?? true,
+    // Коэффициент участия Z по Методике №415 (0.1 открыто / 0.5 замкнуто)
+    zParticipation: b.explosionZ ?? 0.5,
   }));
   // Ответы сервера по номеру ветви. Если связи нет — карта пустая,
   // и каждый взрыв считается на месте (резервный расчёт ниже).
@@ -109,8 +111,9 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         if (_qTnt <= 0 || r <= 0) return 0;
         const rBar = r / Math.pow(_qTnt, 1 / 3);
         if (rBar < 0.1) return 10000;
-        // P0 НЕ умножаем — коэффициенты уже в кПа (Садовский)
-        return Math.round((0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar)) * 10) / 10;
+        // Коэффициенты Садовского дают кгс/см² — переводим в кПа (×98.07)
+        const dpKgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
+        return Math.round(dpKgf * 98.07 * 10) / 10;
       };
       const fnip494 = (r: number): number => {
         if (_qTnt <= 0 || r <= 0) return 0;
@@ -125,7 +128,8 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         },
         impulseAtDistance: (r: number) => {
           if (_qTnt <= 0 || r <= 0) return 0;
-          return Math.round(200 * Math.pow(_qTnt, 1 / 3) / r * _wf * 10) / 10;
+          // Импульс Садовского: показатель 2/3 (не 1/3)
+          return Math.round(200 * Math.pow(_qTnt, 2 / 3) / r * _wf * 10) / 10;
         },
       };
     } catch {
@@ -141,6 +145,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         excavationLength_m: length,
         ambientPressure_kPa: 101.3,
         considerWalls: b.explosionConsiderWalls ?? true,
+        zParticipation: b.explosionZ ?? 0.5,
       });
     }
     results.push(res);

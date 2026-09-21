@@ -9302,6 +9302,15 @@ export default function CadPage() {
                         onChange={e => updateBranch(b.id, { explosionGasConcentration: parseFloat(e.target.value) || 9.5 })}
                         className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Коэф. участия Z:</span>
+                      <select value={String(b.explosionZ ?? 0.5)}
+                        onChange={e => updateBranch(b.id, { explosionZ: parseFloat(e.target.value) || 0.5 })}
+                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                        <option value="0.5">0.5 — замкнутый объём (выработка)</option>
+                        <option value="0.1">0.1 — открытое пространство</option>
+                      </select>
+                    </div>
                     {(() => {
                       const gas = GAS_TYPES.find(g => g.id === (b.explosionGasId ?? "methane"));
                       if (!gas) return null;

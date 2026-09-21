@@ -434,6 +434,7 @@ export interface TopoBranch {
   explosionGasId: string;                  // ID газа из GAS_TYPES
   explosionGasVolume: number;              // м³ — объём взрывоопасной смеси
   explosionGasConcentration: number;       // % — концентрация газа
+  explosionZ: number;                      // коэф. участия Z по Методике №415 (0.1 / 0.5)
   // По массе ВВ
   explosionExplosiveId: string;            // ID ВВ из EXPLOSIVE_TYPES
   explosionExplosiveMass: number;          // кг — масса ВВ
@@ -855,6 +856,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     explosionGasId: "methane",
     explosionGasVolume: 100,
     explosionGasConcentration: 9.5,
+    explosionZ: 0.5,
     explosionExplosiveId: "ammonit",
     explosionExplosiveMass: 100,
     explosionConsiderWalls: true,

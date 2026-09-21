@@ -24,12 +24,22 @@ P0      = 101.3    # кПа    — атмосферное давление
 C0      = 340.0    # м/с    — скорость звука
 
 GAS_TYPES = {
-    "methane":   {"qCombust": 33.8,  "lowerLimit": 5.0,  "upperLimit": 15.0, "stoichConc": 9.5,  "efficiency": 0.08},
-    "hydrogen":  {"qCombust": 10.8,  "lowerLimit": 4.0,  "upperLimit": 75.0, "stoichConc": 29.5, "efficiency": 0.10},
-    "propane":   {"qCombust": 93.2,  "lowerLimit": 2.1,  "upperLimit": 9.5,  "stoichConc": 4.0,  "efficiency": 0.07},
-    "acetylene": {"qCombust": 56.0,  "lowerLimit": 2.5,  "upperLimit": 80.0, "stoichConc": 7.7,  "efficiency": 0.12},
-    "coal_dust": {"qCombust": 22.0,  "lowerLimit": 60.0, "upperLimit": 400.0,"stoichConc": 200,  "efficiency": 0.05},
+    "methane":   {"qCombust": 33.8,  "lowerLimit": 5.0,  "upperLimit": 15.0, "stoichConc": 9.5},
+    "hydrogen":  {"qCombust": 10.8,  "lowerLimit": 4.0,  "upperLimit": 75.0, "stoichConc": 29.5},
+    "propane":   {"qCombust": 93.2,  "lowerLimit": 2.1,  "upperLimit": 9.5,  "stoichConc": 4.0},
+    "acetylene": {"qCombust": 56.0,  "lowerLimit": 2.5,  "upperLimit": 80.0, "stoichConc": 7.7},
+    "coal_dust": {"qCombust": 22.0,  "lowerLimit": 60.0, "upperLimit": 400.0,"stoichConc": 200},
 }
+
+# Коэффициент участия Z (Методика №415, прил. по ТВС):
+#   0.1 — дефлаграция в открытом пространстве,
+#   0.5 — взрыв в замкнутом/загромождённом объёме (горная выработка).
+Z_OPEN     = 0.1
+Z_CONFINED = 0.5
+Z_DEFAULT  = Z_CONFINED
+
+# Коэффициенты Садовского дают ΔP в кгс/см² — переводим в кПа
+KGF_CM2_TO_KPA = 98.07
 
 EXPLOSIVE_TYPES = {
     "tnt":       {"tntEq": 1.00},
@@ -44,11 +54,12 @@ EXPLOSIVE_TYPES = {
 HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "safe": 5}
 
 
-def gas_to_tnt(gas, volume_m3, concentration_pct):
+def gas_to_tnt(gas, volume_m3, concentration_pct, z=Z_DEFAULT):
+    """m_пр = (q_г / q_ТНТ) · m · Z  (Методика №415, прил. по ТВС)."""
     fuel_fraction = concentration_pct / 100.0
     fuel_vol = volume_m3 * fuel_fraction
     e_chem = fuel_vol * gas["qCombust"]
-    e_mech = e_chem * gas["efficiency"] * 1000
+    e_mech = e_chem * z * 1000
     return e_mech / Q_TNT
 
 
@@ -58,8 +69,9 @@ def sadovsky_delta_p(r_m, q_tnt):
     r_bar = r_m / (q_tnt ** (1.0 / 3.0))
     if r_bar < 0.1:
         return 10000.0
-    # Формула Садовского: коэффициенты уже в кПа — P0 НЕ умножаем
-    return round(0.84 / r_bar + 2.7 / r_bar**2 + 7.15 / r_bar**3, 1)
+    # Коэффициенты Садовского дают кгс/см² — переводим в кПа (×98.07)
+    dp_kgf = 0.84 / r_bar + 2.7 / r_bar**2 + 7.15 / r_bar**3
+    return round(dp_kgf * KGF_CM2_TO_KPA, 1)
 
 
 def fnip494_delta_p(r_m, q_tnt):
@@ -72,7 +84,8 @@ def fnip494_delta_p(r_m, q_tnt):
 def sadovsky_impulse(r_m, q_tnt):
     if q_tnt <= 0 or r_m <= 0:
         return 0.0
-    return round(200 * q_tnt ** (1.0 / 3.0) / r_m, 1)
+    # Импульс Садовского: показатель 2/3 (не 1/3)
+    return round(200 * q_tnt ** (2.0 / 3.0) / r_m, 1)
 
 
 def wave_front_speed(delta_p_kpa):
@@ -138,8 +151,12 @@ def calc_one(body: dict) -> dict:
         elif conc > gas["upperLimit"]:
             warnings.append(f"Концентрация {conc}% выше ВПВ ({gas['upperLimit']}%) — смесь не взрывоопасна")
         eff_conc = min(conc, gas["stoichConc"] * 1.2)
-        q_tnt = gas_to_tnt(gas, volume, eff_conc)
+        z = float(body.get("zParticipation") or Z_DEFAULT)
+        if z <= 0:
+            z = Z_DEFAULT
+        q_tnt = gas_to_tnt(gas, volume, eff_conc, z)
         log.append(f"Газ: {gas_id}, объём: {volume} м³, концентрация: {conc}%")
+        log.append(f"Коэффициент участия Z (Методика №415): {z}")
     else:
         expl_id = body.get("explosiveId", "ammonit")
         expl    = EXPLOSIVE_TYPES.get(expl_id, EXPLOSIVE_TYPES["ammonit"])
