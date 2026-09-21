@@ -6423,6 +6423,24 @@ export default function CadPage() {
 
                 setBranches(finalBranches);
                 if (results.length > 0) {
+                  // Ни один очаг не взорвался: нулевой заряд либо смесь вне
+                  // пределов взрываемости. Зоны не показываем — иначе на схеме
+                  // остаётся пустая легенда с прочерками, которую легко
+                  // принять за «расчёт не удался».
+                  const anyExplosion = results.some(r => !r.noExplosion);
+                  if (!anyExplosion) {
+                    setExplosionResult(results[results.length - 1]);
+                    setExplosionResultByBranch(resultByBranch);
+                    setExplosionCalcDone(true);
+                    setShowExplosionZones(false);
+                    results.forEach(r => r.log.forEach(l => addLog("info", l)));
+                    results.forEach(r => r.warnings.forEach(w => addLog("warn", w)));
+                    const reason = results.find(r => r.noExplosionReason)?.noExplosionReason
+                      ?? "заряд нулевой или смесь не взрывоопасна";
+                    addLog("warn", `Взрыв не происходит: ${reason}. Зоны поражения не построены.`);
+                    alert(`Взрыв не происходит.\n\n${reason}\n\nЗоны поражения не рассчитаны.`);
+                    return;
+                  }
                   const lastRes = results[results.length - 1];
                   setExplosionResult(lastRes);
                   setExplosionResultByBranch(resultByBranch);
@@ -6549,10 +6567,23 @@ export default function CadPage() {
         {explosionCalcDone && explosionResult && (
           <RibbonGroup label="Результат: взрыв">
             <div className="flex flex-col justify-center px-2 gap-0.5" style={{ fontSize: 10, minWidth: 148 }}>
-              <div className="font-semibold" style={{ color: "var(--c-amber-ink, #92400e)" }}>Q_тнт: {explosionResult.q_tnt_kg} кг</div>
-              <div style={{ color: "var(--c-amber, #c2410c)" }}>ΔP_max = {explosionResult.maxDeltaP_kPa} кПа</div>
-              <div style={{ color: "var(--c-t2, #374151)" }}>D = {explosionResult.waveFrontSpeed_ms} м/с</div>
-              <div style={{ color: "var(--c-red, #b91c1c)" }}>R_лет. = {explosionResult.zones[0]?.radius_m ?? 0} м</div>
+              {explosionResult.noExplosion ? (
+                // Взрыва нет — показываем причину, а не столбик нулей:
+                // «Q_тнт: 0 кг, R_лет. = 0 м» читается как сбой расчёта.
+                <>
+                  <div className="font-semibold" style={{ color: "var(--c-t2, #374151)" }}>Взрыв не происходит</div>
+                  <div style={{ color: "var(--c-amber, #c2410c)", whiteSpace: "normal", lineHeight: 1.25 }}>
+                    {explosionResult.noExplosionReason ?? "заряд нулевой или смесь не взрывоопасна"}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="font-semibold" style={{ color: "var(--c-amber-ink, #92400e)" }}>Q_тнт: {explosionResult.q_tnt_kg} кг</div>
+                  <div style={{ color: "var(--c-amber, #c2410c)" }}>ΔP_max = {explosionResult.maxDeltaP_kPa} кПа</div>
+                  <div style={{ color: "var(--c-t2, #374151)" }}>D = {explosionResult.waveFrontSpeed_ms} м/с</div>
+                  <div style={{ color: "var(--c-red, #b91c1c)" }}>R_лет. = {explosionResult.zones[0]?.radius_m ?? 0} м</div>
+                </>
+              )}
             </div>
           </RibbonGroup>
         )}
@@ -12764,6 +12795,8 @@ export default function CadPage() {
               })()}
               branchExplosionColors={(() => {
                 if (!showExplosionZones || !explosionCalcDone || !explosionResult) return undefined;
+                // Взрыва не было — окрашивать выработки не по чему.
+                if (explosionResult.noExplosion) return undefined;
                 if (blastWaveRadius <= 0) return undefined;
                 const map = new Map<string, {
                   color: string; hazardLevel: string;
@@ -13275,7 +13308,7 @@ export default function CadPage() {
             )}
 
             {/* ── Легенда зон взрыва с радиусами ────────────────────── */}
-            {showExplosionZones && explosionCalcDone && explosionResult && (
+            {showExplosionZones && explosionCalcDone && explosionResult && !explosionResult.noExplosion && (
               <div style={{
                 position: "absolute", bottom: 12, left: 12, zIndex: 20,
                 background: "rgba(10,6,0,0.88)", borderRadius: 10,
@@ -13816,7 +13849,7 @@ export default function CadPage() {
             )}
 
             {/* ─── Шкала распространения взрывной волны ────────────── */}
-            {showExplosionZones && explosionCalcDone && explosionResult && (
+            {showExplosionZones && explosionCalcDone && explosionResult && !explosionResult.noExplosion && (
               <div style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
                 background: "rgba(10,8,0,0.93)", borderTop: "2px solid var(--c-amber, #b45309)",

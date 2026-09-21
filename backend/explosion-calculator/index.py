@@ -215,6 +215,30 @@ def pressure_at(r, q_tnt, method, wall_factor):
     return round(sadovsky_delta_p(r, q_tnt) * wall_factor, 1)
 
 
+def empty_result(th, reason, log, warnings) -> dict:
+    """Результат «взрыва не было»: нулевые параметры, пустой список зон.
+
+    Возвращается при нулевом заряде и при смеси вне пределов взрываемости.
+    Список zones намеренно ПУСТОЙ, а не с нулевыми радиусами: клиент рисует
+    окружности по radius_m, и зона радиусом 0 всё равно дала бы точку на
+    схеме и строку в легенде, будто поражение есть.
+    """
+    return {
+        "q_tnt_kg":          0,
+        "maxDeltaP_kPa":     0,
+        "maxImpulse_Pas":    0,
+        "waveFrontSpeed_ms": 0,
+        "minValidRadius_m":  0,
+        "thresholds":        th,
+        "noExplosion":       True,
+        "noExplosionReason": reason,
+        "zones":             [],
+        "pressurePoints":    [],
+        "log":               log,
+        "warnings":          warnings,
+    }
+
+
 def calc_one(body: dict) -> dict:
     """Расчёт одного взрыва по его исходным данным. Возвращает готовый результат."""
     method       = body.get("method", "gas_dynamics")
@@ -226,6 +250,8 @@ def calc_one(body: dict) -> dict:
 
     log = []
     warnings = []
+    # Причина отсутствия взрыва. Если заполнена — расчёт прекращается.
+    no_explosion_reason = ""
 
     # 1. Тротиловый эквивалент
     q_tnt = 0.0
@@ -235,10 +261,19 @@ def calc_one(body: dict) -> dict:
         volume  = float(body.get("gasVolume_m3", 100))
         conc    = float(body.get("gasConcentration", 9.5))
         u = conc_unit_label(gas.get("unit"))
-        if conc < gas["lowerLimit"]:
-            warnings.append(f"Концентрация {conc} {u} ниже НПВ ({gas['lowerLimit']} {u}) — смесь не взрывоопасна")
+        # ПРОВЕРКА ВЗРЫВАЕМОСТИ прекращает расчёт, а не просто предупреждает:
+        # вне пределов НПВ/ВПВ смесь физически не детонирует, а раньше энергия
+        # считалась как для взрывоопасной и зоны поражения всё равно строились.
+        if conc <= 0:
+            no_explosion_reason = "Концентрация горючего равна нулю — взрыв невозможен"
+        elif conc < gas["lowerLimit"]:
+            no_explosion_reason = (f"Концентрация {conc} {u} ниже НПВ ({gas['lowerLimit']} {u}) — "
+                                   "смесь не взрывоопасна, зоны поражения не образуются")
         elif conc > gas["upperLimit"]:
-            warnings.append(f"Концентрация {conc} {u} выше ВПВ ({gas['upperLimit']} {u}) — смесь не взрывоопасна")
+            no_explosion_reason = (f"Концентрация {conc} {u} выше ВПВ ({gas['upperLimit']} {u}) — "
+                                   "смесь не взрывоопасна, зоны поражения не образуются")
+        elif volume <= 0:
+            no_explosion_reason = "Объём взрывоопасной смеси равен нулю — взрыв невозможен"
         # Обогащённая смесь: горючего больше стехиометрии — не хватает
         # кислорода, энергия ограничена окислителем.
         eff_conc = min(conc, gas["stoichConc"])
@@ -254,14 +289,25 @@ def calc_one(body: dict) -> dict:
         expl_id = body.get("explosiveId", "ammonit")
         expl    = EXPLOSIVE_TYPES.get(expl_id, EXPLOSIVE_TYPES["ammonit"])
         mass_kg = float(body.get("explosiveMass_kg", 10))
+        # Нулевая масса заряда — взрывать нечего.
+        if mass_kg <= 0:
+            no_explosion_reason = "Масса взрывчатого вещества равна нулю — взрыв невозможен"
         k_tnt   = tnt_equivalent(expl)
         q_tnt   = mass_kg * k_tnt
         log.append(f"ВВ: {expl_id}, масса: {mass_kg} кг, Q_уд = {expl['qSpec']} кДж/кг")
         log.append(f"Тротиловый эквивалент: k = {expl['qSpec']} / {Q_TNT:.0f} = {k_tnt}")
 
-    if q_tnt <= 0:
-        warnings.append("Тротиловый эквивалент = 0 — расчёт невозможен")
-        q_tnt = 0.001
+    # Раньше здесь подставлялось q_tnt = 0.001 кг «чтобы не делить на ноль»,
+    # и из этой выдуманной сотой грамма вырастали настоящие зоны поражения
+    # с ненулевыми радиусами. Теперь расчёт честно возвращает нули.
+    if not no_explosion_reason and q_tnt <= 0:
+        no_explosion_reason = "Тротиловый эквивалент равен нулю — взрыв невозможен"
+
+    if no_explosion_reason:
+        warnings.append(no_explosion_reason)
+        log.append(f"Взрыв не происходит: {no_explosion_reason.lower()}")
+        log.append("Зоны поражения не рассчитываются, радиусы приняты равными нулю")
+        return empty_result(th, no_explosion_reason, log, warnings)
 
     q_tnt_rounded = round(q_tnt * 100) / 100
     log.append(f"Тротиловый эквивалент: Q_tnt = {q_tnt_rounded} кг ТНТ")

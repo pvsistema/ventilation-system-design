@@ -171,6 +171,14 @@ export interface ExplosionResult {
   minValidRadius_m?: number;
   /** Пороги, по которым построены зоны (нужны для окраски схемы) */
   thresholds?: ExplosionThresholds;
+  /**
+   * Взрыва нет: заряд нулевой либо смесь вне пределов взрываемости.
+   * В этом случае все радиусы и давления равны нулю — зоны поражения
+   * не строятся и на схему не выводятся.
+   */
+  noExplosion?: boolean;
+  /** Причина отсутствия взрыва — показывается пользователю. */
+  noExplosionReason?: string;
   // Распределение по расстоянию
   zones: ExplosionZone[];
   // Зоны поражения на конкретных расстояниях
@@ -374,6 +382,37 @@ function radiusAtPressure(targetP_kPa: number, q_tnt: number, wallFactor: number
   return Math.round((lo + hi) / 2);
 }
 
+/**
+ * Результат «взрыва не было»: все параметры нулевые, зоны отсутствуют.
+ *
+ * Возвращается, когда заряд нулевой или смесь вне пределов взрываемости.
+ * Массив zones намеренно ПУСТОЙ, а не с нулевыми радиусами: потребители
+ * рисуют окружность по zones[i].radius_m, и зона радиусом 0 всё равно даёт
+ * точку и строку в легенде, будто поражение есть.
+ */
+function emptyExplosionResult(
+  th: ExplosionThresholds,
+  reason: string,
+  log: string[],
+  warnings: string[],
+): ExplosionResult {
+  return {
+    q_tnt_kg: 0,
+    maxDeltaP_kPa: 0,
+    maxImpulse_Pas: 0,
+    waveFrontSpeed_ms: 0,
+    minValidRadius_m: 0,
+    thresholds: th,
+    noExplosion: true,
+    noExplosionReason: reason,
+    zones: [],
+    pressureAtDistance: () => 0,
+    impulseAtDistance: () => 0,
+    log,
+    warnings,
+  };
+}
+
 // ─── Главная функция расчёта ──────────────────────────────────────────────────
 export function calcExplosion(params: ExplosionParams): ExplosionResult {
   const log: string[] = [];
@@ -384,16 +423,26 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
 
   // 1. Тротиловый эквивалент
   let q_tnt = 0;
+  // Причина, по которой взрыва не происходит. Заполняется ниже; если она
+  // задана — расчёт прекращается и возвращается нулевой результат.
+  let noExplosionReason = "";
 
   if (params.sourceType === "gas") {
     const gas = GAS_TYPES.find(g => g.id === params.gasId) ?? GAS_TYPES[0];
     const conc = params.gasConcentration;
     const u = concUnitLabel(gas.unit);
-    // Проверка взрываемости
-    if (conc < gas.lowerLimit) {
-      warnings.push(`⚠ Концентрация ${conc} ${u} ниже НПВ (${gas.lowerLimit} ${u}) — смесь не взрывоопасна`);
+    // ПРОВЕРКА ВЗРЫВАЕМОСТИ — она прекращает расчёт, а не просто
+    // предупреждает. Вне пределов НПВ/ВПВ смесь физически не детонирует:
+    // раньше предупреждение выводилось, но энергия всё равно считалась,
+    // и для 1 % метана (вдвое ниже НПВ) программа рисовала зоны поражения.
+    if (conc <= 0) {
+      noExplosionReason = `Концентрация ${gas.name.toLowerCase()} равна нулю — горючего нет, взрыв невозможен`;
+    } else if (conc < gas.lowerLimit) {
+      noExplosionReason = `Концентрация ${conc} ${u} ниже НПВ (${gas.lowerLimit} ${u}) — смесь не взрывоопасна, зоны поражения не образуются`;
     } else if (conc > gas.upperLimit) {
-      warnings.push(`⚠ Концентрация ${conc} ${u} выше ВПВ (${gas.upperLimit} ${u}) — смесь не взрывоопасна`);
+      noExplosionReason = `Концентрация ${conc} ${u} выше ВПВ (${gas.upperLimit} ${u}) — смесь не взрывоопасна, зоны поражения не образуются`;
+    } else if (params.gasVolume_m3 <= 0) {
+      noExplosionReason = "Объём взрывоопасной смеси равен нулю — взрыв невозможен";
     }
     // Обогащённая смесь: горючего больше стехиометрии — не хватает кислорода.
     // Энергия ограничена окислителем, поэтому сверх стехиометрии в расчёт
@@ -409,15 +458,30 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     log.push(`Тротиловый эквивалент: Q_tnt = ${Math.round(q_tnt * 100) / 100} кг ТНТ`);
   } else {
     const expl = EXPLOSIVE_TYPES.find(e => e.id === params.explosiveId) ?? EXPLOSIVE_TYPES[0];
-    q_tnt = massToTnt(expl, params.explosiveMass_kg);
+    const mass = params.explosiveMass_kg;
+    // Нулевая (или не заданная) масса заряда — взрывать нечего.
+    if (!Number.isFinite(mass) || mass <= 0) {
+      noExplosionReason = "Масса взрывчатого вещества равна нулю — взрыв невозможен";
+    }
+    q_tnt = massToTnt(expl, mass);
     log.push(`ВВ: ${expl.name}, масса: ${params.explosiveMass_kg} кг, Q_уд = ${expl.qSpec} кДж/кг`);
     log.push(`Тротиловый эквивалент: k = Q_уд / Q_ТНТ = ${expl.qSpec} / ${Q_TNT} = ${tntEquivalent(expl)}`);
     log.push(`Тротиловый эквивалент: Q_tnt = ${Math.round(q_tnt * 100) / 100} кг ТНТ`);
   }
 
-  if (q_tnt <= 0) {
-    warnings.push("⚠ Тротиловый эквивалент = 0 — расчёт невозможен");
-    q_tnt = 0.001;
+  // Заряда нет ни по массе, ни по энергии — дальше считать нечего.
+  // Раньше здесь подставлялось q_tnt = 0.001 кг «чтобы формулы не делились
+  // на ноль», и из этой выдуманной сотой грамма вырастали настоящие зоны
+  // поражения с ненулевыми радиусами. Теперь расчёт честно возвращает нули.
+  if (!noExplosionReason && (!Number.isFinite(q_tnt) || q_tnt <= 0)) {
+    noExplosionReason = "Тротиловый эквивалент равен нулю — взрыв невозможен";
+  }
+
+  if (noExplosionReason) {
+    warnings.push(`⚠ ${noExplosionReason}`);
+    log.push(`Взрыв не происходит: ${noExplosionReason.toLowerCase()}`);
+    log.push("Зоны поражения не рассчитываются, радиусы приняты равными нулю");
+    return emptyExplosionResult(th, noExplosionReason, log, warnings);
   }
 
   // 2. Коэффициент эффекта выработки (канализирование волны)

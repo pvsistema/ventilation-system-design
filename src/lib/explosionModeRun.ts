@@ -122,9 +122,26 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     try {
       const data = expServerData.get(b.id);
       if (!data) throw new Error("no server data");
+      // Сервер сообщил, что взрыва нет (нулевой заряд или смесь вне пределов
+      // взрываемости) — берём результат как есть, с нулевыми функциями.
+      if (data.noExplosion) {
+        res = { ...data, pressureAtDistance: () => 0, impulseAtDistance: () => 0 };
+        results.push(res);
+        resultByBranch.set(b.id, res);
+        return {
+          ...b,
+          explosionComputedQtnt: 0,
+          explosionComputedMaxP: 0,
+          explosionComputedWaveSpeed: 0,
+          explosionComputedR_lethal: 0,
+          explosionComputedR_heavy: 0,
+          explosionComputedR_medium: 0,
+          explosionComputedR_light: 0,
+        };
+      }
       // Восстанавливаем pressureAtDistance / impulseAtDistance по формуле Садовского
       // напрямую из q_tnt_kg и wall_factor (не зависит от таблицы точек)
-      const _qTnt = data.q_tnt_kg ?? 0.001;
+      const _qTnt = data.q_tnt_kg ?? 0;
       const _considerWalls = b.explosionConsiderWalls ?? true;
       // Коэффициент берём из ядра, а не повторяем формулу здесь: раньше это
       // была отдельная копия ступенчатого выражения, и любая правка в ядре

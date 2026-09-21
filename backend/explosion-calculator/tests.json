@@ -68,6 +68,50 @@
         ]
       },
       "expectedStatus": 200
+    },
+    {
+      "name": "Нулевая масса заряда — взрыва нет, зоны поражения не строятся",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "gas_dynamics",
+        "sourceType": "mass",
+        "explosiveId": "ammonit",
+        "explosiveMass_kg": 0,
+        "excavationArea_m2": 12,
+        "considerWalls": true
+      },
+      "expectedStatus": 200
+    },
+    {
+      "name": "Метан 1 % — ниже НПВ, смесь не взрывоопасна, зон нет",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "gas_dynamics",
+        "sourceType": "gas",
+        "gasId": "methane",
+        "gasVolume_m3": 500,
+        "gasConcentration": 1,
+        "excavationArea_m2": 12,
+        "considerWalls": true
+      },
+      "expectedStatus": 200
+    },
+    {
+      "name": "Метан 20 % — выше ВПВ, смесь не взрывоопасна, зон нет",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "gas_dynamics",
+        "sourceType": "gas",
+        "gasId": "methane",
+        "gasVolume_m3": 500,
+        "gasConcentration": 20,
+        "excavationArea_m2": 12,
+        "considerWalls": true
+      },
+      "expectedStatus": 200
     }
   ]
 }
