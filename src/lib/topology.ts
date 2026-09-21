@@ -444,7 +444,7 @@ export interface TopoBranch {
    * источника по газу (как в «Аэросети»). Объём смеси = длина × сечение.
    */
   explosionGasZoneLength: number;
-  /** Начальное избыточное давление продуктов взрыва в очаге, кПа */
+  /** Нач. избыточное давление в очаге, кПа. 0 = авторасчёт по длине участка */
   explosionGasP0: number;
   explosionGasConcentration: number;       // % — концентрация газа
   explosionZ: number;                      // коэф. участия Z по Методике №415 (0.1 / 0.5)
@@ -869,7 +869,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     explosionGasId: "methane",
     explosionGasVolume: 100,
     explosionGasZoneLength: 100,
-    explosionGasP0: 282,
+    explosionGasP0: 0,   // 0 = авторасчёт по длине участка
     explosionGasConcentration: 9.5,
     explosionZ: 0.5,
     explosionExplosiveId: "ammonit",

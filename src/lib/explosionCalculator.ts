@@ -168,7 +168,11 @@ export interface ExplosionParams {
    * Начальное давление продуктов взрыва в загазованном объёме, кПа
    * (избыточное). Применяется ТОЛЬКО для газа/пыли: волна стартует с фронта
    * загазованного участка уже как плоская, поэтому сферическая ближняя зона
-   * по Садовскому для газа не используется. По умолчанию GAS_P0_DEFAULT.
+   * по Садовскому для газа не используется.
+   *
+   * НЕ ЗАДАНО (или 0) — давление считается АВТОМАТИЧЕСКИ по длине участка
+   * функцией gasInitialPressure(), как в «Аэросети». Задавать вручную нужно
+   * только для сверки с чужим расчётом.
    */
   gasInitialPressure_kPa?: number;
   /** Коэффициент участия Z по Методике №415: 0.1 — открытое пространство,
@@ -431,6 +435,33 @@ export const LAMBDA_DEFAULT = 0.02;
  * а 282 кПа принято значением по умолчанию для сверки.
  */
 export const GAS_P0_DEFAULT = 282;
+
+/**
+ * Начальное давление продуктов взрыва в зависимости от ДЛИНЫ загазованного
+ * участка, кПа — автоматический расчёт, как в «Аэросети».
+ *
+ * Физический смысл: чем длиннее загазованный участок, тем дольше фронт
+ * пламени разгоняется внутри него до выхода наружу. При дефлаграции в
+ * канале пламя ускоряется на турбулентности от стенок, и давление в очаге
+ * растёт с длиной разгона — но не линейно, а с насыщением.
+ *
+ * Аппроксимация степенная, откалибрована по двум точкам «Аэросети»:
+ *   L = 50 м  → 209 кПа
+ *   L = 100 м → 282 кПа
+ * Отсюда P₀(L) = 38.54 · L^0.4322.
+ *
+ * Ограничения: снизу 20 кПа (совсем короткий участок не разгоняет пламя),
+ * сверху 900 кПа — предел давления продуктов сгорания метановоздушной
+ * смеси в замкнутом объёме (примерно 9 атмосфер).
+ */
+export const GAS_P0_COEF = 38.5358;
+export const GAS_P0_EXP  = 0.43219;
+
+export function gasInitialPressure(zoneLength_m: number): number {
+  if (!Number.isFinite(zoneLength_m) || zoneLength_m <= 0) return 0;
+  const p = GAS_P0_COEF * Math.pow(zoneLength_m, GAS_P0_EXP);
+  return Math.round(Math.min(900, Math.max(20, p)) * 10) / 10;
+}
 
 /** Гидравлический диаметр выработки d_г = 4S/P, м */
 export function hydraulicDiameter(area_m2: number, perimeter_m?: number): number {
@@ -719,7 +750,9 @@ function hazardLevel(dP: number): ExplosionZone["hazardLevel"] {
 function radiusAtPressure(targetP_kPa: number, q_tnt: number, wallFactor: number): number {
   if (targetP_kPa <= 0 || q_tnt <= 0) return 0;
   // Бинарный поиск радиуса
-  let lo = 0.1, hi = 5000;
+  // Верхний предел 50 км: в канальной модели волна уходит на километры,
+  // и прежние 5000 м обрезали радиус зоны на этом значении.
+  let lo = 0.1, hi = 50000;
   for (let i = 0; i < 60; i++) {
     const mid = (lo + hi) / 2;
     const dP = sadovskyDeltaP(mid, q_tnt) * wallFactor;
@@ -870,22 +903,29 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // ГАЗ — плоская волна от протяжённого загазованного участка.
   // Сферическая ближняя зона для газа не применяется: очаг занимает всё
   // сечение выработки, поэтому волна плоская с самого начала.
-  const gasSource: GasSourceParams | undefined =
-    (channelMode && params.sourceType === "gas")
-      ? {
-          zoneLength_m: gasZoneLen > 0
-            ? gasZoneLen
-            // Длина не задана — восстанавливаем её из объёма и сечения
-            : (params.excavationArea_m2 > 0 ? gasVolume / params.excavationArea_m2 : 0),
-          initialPressure_kPa: params.gasInitialPressure_kPa && params.gasInitialPressure_kPa > 0
-            ? params.gasInitialPressure_kPa
-            : GAS_P0_DEFAULT,
-        }
-      : undefined;
+  const gasSource: GasSourceParams | undefined = (() => {
+    if (!channelMode || params.sourceType !== "gas") return undefined;
+    const zoneLen = gasZoneLen > 0
+      ? gasZoneLen
+      // Длина не задана — восстанавливаем её из объёма и сечения
+      : (params.excavationArea_m2 > 0 ? gasVolume / params.excavationArea_m2 : 0);
+    // ΔP₀ задано вручную — используем его; иначе считаем по длине участка
+    const manual = params.gasInitialPressure_kPa && params.gasInitialPressure_kPa > 0;
+    return {
+      zoneLength_m: zoneLen,
+      initialPressure_kPa: manual
+        ? params.gasInitialPressure_kPa!
+        : gasInitialPressure(zoneLen),
+    };
+  })();
 
   if (gasSource) {
+    const auto = !(params.gasInitialPressure_kPa && params.gasInitialPressure_kPa > 0);
     log.push(`Модель источника: протяжённый загазованный участок (плоская волна, как в «Аэросети»)`);
-    log.push(`Длина участка: ${Math.round(gasSource.zoneLength_m * 10) / 10} м, начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа`);
+    log.push(`Длина участка: ${Math.round(gasSource.zoneLength_m * 10) / 10} м`);
+    log.push(auto
+      ? `Начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа (расчёт по длине: ${GAS_P0_COEF}·L^${GAS_P0_EXP})`
+      : `Начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа (задано вручную)`);
   }
 
   if (channelMode) {

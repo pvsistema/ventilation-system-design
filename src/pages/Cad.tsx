@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -9364,13 +9364,37 @@ export default function CadPage() {
                         onChange={e => updateBranch(b.id, { explosionGasZoneLength: parseFloat(e.target.value) || 100 })}
                         className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
-                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Нач. давление ΔP₀, кПа:</span>
-                      <input type="number" step="10" min="1"
-                        value={b.explosionGasP0 ?? 282}
-                        onChange={e => updateBranch(b.id, { explosionGasP0: parseFloat(e.target.value) || 282 })}
-                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
-                    </div>
+                    {/* ΔP₀ по умолчанию считается ПО ДЛИНЕ участка (как в
+                        «Аэросети»): 50 м → 209 кПа, 100 м → 282 кПа.
+                        Ручной ввод нужен только для сверки с чужим расчётом,
+                        поэтому включается галочкой. */}
+                    {(() => {
+                      const zoneLen = b.explosionGasZoneLength ?? 100;
+                      const autoP0 = gasInitialPressure(zoneLen);
+                      const manual = (b.explosionGasP0 ?? 0) > 0;
+                      return (
+                        <div className="px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                          <div className="flex items-center">
+                            <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Нач. давление ΔP₀, кПа:</span>
+                            <input type="number" step="10" min="1"
+                              disabled={!manual}
+                              value={manual ? b.explosionGasP0 : autoP0}
+                              onChange={e => updateBranch(b.id, { explosionGasP0: parseFloat(e.target.value) || autoP0 })}
+                              className="flex-1 text-[11px] text-right px-1 rounded"
+                              style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20,
+                                background: manual ? "white" : "var(--c-s3, #f3f4f6)",
+                                color: manual ? undefined : "var(--c-t3, #6b7280)" }} />
+                          </div>
+                          <label className="flex items-center gap-1 mt-0.5 cursor-pointer">
+                            <input type="checkbox" checked={manual}
+                              onChange={e => updateBranch(b.id, { explosionGasP0: e.target.checked ? autoP0 : 0 })} />
+                            <span className="text-[10px] text-gray-500">
+                              {manual ? "Задано вручную" : `Авторасчёт по длине участка (${zoneLen} м → ${autoP0} кПа)`}
+                            </span>
+                          </label>
+                        </div>
+                      );
+                    })()}
                     {(() => {
                       // Единица зависит от вещества: газ — % объёма, пыль — г/м³
                       const g = GAS_TYPES.find(x => x.id === (b.explosionGasId ?? "methane")) ?? GAS_TYPES[0];
@@ -13159,7 +13183,7 @@ export default function CadPage() {
                         explosionGasId: "methane",
                         explosionGasVolume: 100,
                         explosionGasZoneLength: 100,
-                        explosionGasP0: 282,
+                        explosionGasP0: 0,
                         explosionGasConcentration: 9.5,
                         explosionExplosiveId: "ammonit",
                         explosionExplosiveMass: 100,
@@ -14038,11 +14062,14 @@ export default function CadPage() {
 
                 {/* Настройки */}
                 <span style={{ fontSize: 10, color: "#fde68a", whiteSpace: "nowrap" }}>Макс:</span>
+                {/* Предел 50 км, а не 5 км: при канальной модели волна идёт
+                    по выработкам на километры, и прежний потолок 5000 м
+                    обрезал окраску — дальше него ветви оставались неокрашенными. */}
                 <input
-                  type="number" min={10} max={5000} step={10}
+                  type="number" min={10} max={50000} step={10}
                   value={blastMaxRadius}
                   onChange={e => {
-                    const v = Math.max(10, Math.min(5000, Number(e.target.value)));
+                    const v = Math.max(10, Math.min(50000, Number(e.target.value)));
                     setBlastMaxRadius(v);
                     if (blastWaveRadius > v) setBlastWaveRadius(v);
                   }}

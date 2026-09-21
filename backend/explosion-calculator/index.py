@@ -234,8 +234,30 @@ K_TRANSITION = 2.0
 LAMBDA_DEFAULT = 0.02
 
 # Начальное избыточное давление продуктов взрыва газовоздушной смеси
-# в замкнутом объёме, кПа. В «Аэросети» задаётся явно (P = 282 кПа).
+# в замкнутом объёме, кПа. В «Аэросети» считается АВТОМАТИЧЕСКИ по длине
+# загазованного участка — у нас так же (см. gas_initial_pressure).
 GAS_P0_DEFAULT = 282.0
+
+# Зависимость ΔP0 от длины загазованного участка, откалибрована по двум
+# точкам «Аэросети»: L=50 м -> 209 кПа, L=100 м -> 282 кПа.
+# Физика: чем длиннее участок, тем дольше фронт пламени разгоняется внутри
+# него на турбулентности от стенок, тем выше давление в очаге — но с
+# насыщением, а не линейно.
+GAS_P0_COEF = 38.5358
+GAS_P0_EXP = 0.43219
+
+
+def gas_initial_pressure(zone_len):
+    """ΔP0 в очаге по длине загазованного участка, кПа.
+
+    Ограничения: 20 кПа снизу (короткий участок не разгоняет пламя),
+    900 кПа сверху — предел давления продуктов сгорания метановоздушной
+    смеси в замкнутом объёме (около 9 атмосфер).
+    """
+    if zone_len is None or zone_len <= 0:
+        return 0.0
+    p = GAS_P0_COEF * (zone_len ** GAS_P0_EXP)
+    return round(min(900.0, max(20.0, p)), 1)
 
 
 # ─── ГАЗОВАЯ МОДЕЛЬ: ПЛОСКАЯ ВОЛНА ОТ ЗАГАЗОВАННОГО УЧАСТКА ─────────────────
@@ -392,7 +414,8 @@ def radius_at_pressure(target_p, q_tnt, method, wall_factor):
     # method не используется: осталась одна методика (см. pressure_at)
     if target_p <= 0 or q_tnt <= 0:
         return 0
-    lo, hi = 0.1, 5000.0
+    # Верхний предел 50 км — см. комментарий в TS-ядре
+    lo, hi = 0.1, 50000.0
     for _ in range(60):
         mid = (lo + hi) / 2.0
         dp = sadovsky_delta_p(mid, q_tnt) * wall_factor
@@ -454,8 +477,9 @@ def calc_one(body: dict) -> dict:
     # как длина × сечение; поле gasVolume_m3 остаётся запасным вариантом.
     gas_zone_len = body.get("gasZoneLength_m")
     gas_zone_len = float(gas_zone_len) if gas_zone_len else 0.0
-    gas_p0       = body.get("gasInitialPressure_kPa")
-    gas_p0       = float(gas_p0) if gas_p0 else GAS_P0_DEFAULT
+    # ΔP0: если не задано (или 0) — считается автоматически по длине участка
+    gas_p0_manual = body.get("gasInitialPressure_kPa")
+    gas_p0_manual = float(gas_p0_manual) if gas_p0_manual else 0.0
 
     log = []
     warnings = []
@@ -540,6 +564,8 @@ def calc_one(body: dict) -> dict:
     # сферическая ближняя зона по Садовскому не применяется.
     gas_mode = channel_mode and source_type == "gas"
     gas_len = gas_zone_len if gas_zone_len > 0 else (volume / area_m2 if area_m2 > 0 else 0.0)
+    # ΔP0 — вручную либо автоматически по длине участка (как в «Аэросети»)
+    gas_p0 = gas_p0_manual if gas_p0_manual > 0 else gas_initial_pressure(gas_len)
 
     def dp_at(r):
         if gas_mode:
@@ -564,7 +590,9 @@ def calc_one(body: dict) -> dict:
 
     if gas_mode:
         log.append("Модель источника: протяжённый загазованный участок (плоская волна, как в «Аэросети»)")
-        log.append(f"Длина участка: {round(gas_len, 1)} м, начальное давление ΔP₀ = {gas_p0} кПа")
+        log.append(f"Длина участка: {round(gas_len, 1)} м")
+        log.append(f"Начальное давление ΔP₀ = {gas_p0} кПа (задано вручную)" if gas_p0_manual > 0
+                   else f"Начальное давление ΔP₀ = {gas_p0} кПа (расчёт по длине: {GAS_P0_COEF}·L^{GAS_P0_EXP})")
 
     if channel_mode:
         d_g = hydraulic_diameter(area_m2, perimeter_m)

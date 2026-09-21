@@ -14,7 +14,7 @@ import {
   calcExplosion, GAS_TYPES, wallReflectionFactor, type ExplosionThresholds,
   type ExplosionResult, type ExplosionSourceType,
   channelPressureAt, channelImpulseAt, channelDecay, LAMBDA_DEFAULT,
-  gasChannelPressureAt, gasChannelImpulseAt, GAS_P0_DEFAULT,
+  gasChannelPressureAt, gasChannelImpulseAt,
 } from "@/lib/explosionCalculator";
 
 /**
@@ -101,7 +101,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     // Длина загазованного участка — основной способ задания источника по газу.
     // Объём смеси считается как длина × сечение ветви (как в «Аэросети»).
     gasZoneLength_m: b.explosionGasZoneLength ?? 100,
-    gasInitialPressure_kPa: b.explosionGasP0 ?? GAS_P0_DEFAULT,
+    gasInitialPressure_kPa: b.explosionGasP0 ?? 0,  // 0 = авторасчёт ΔP₀ по длине участка
     gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
     explosiveId: b.explosionExplosiveId ?? "ammonit",
     explosiveMass_kg: b.explosionExplosiveMass ?? 100,
@@ -209,7 +209,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         gasId: b.explosionGasId ?? "methane",
         gasVolume_m3: b.explosionGasVolume ?? 100,
         gasZoneLength_m: b.explosionGasZoneLength ?? 100,
-        gasInitialPressure_kPa: b.explosionGasP0 ?? GAS_P0_DEFAULT,
+        gasInitialPressure_kPa: b.explosionGasP0 ?? 0,  // 0 = авторасчёт ΔP₀ по длине участка
         gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
         explosiveId: b.explosionExplosiveId ?? "ammonit",
         explosiveMass_kg: b.explosionExplosiveMass ?? 100,
