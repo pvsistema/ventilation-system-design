@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
-  calcExplosion, GAS_TYPES,
+  calcExplosion, GAS_TYPES, wallReflectionFactor,
   type ExplosionResult, type ExplosionSourceType,
 } from "@/lib/explosionCalculator";
 
@@ -123,8 +123,10 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       // напрямую из q_tnt_kg и wall_factor (не зависит от таблицы точек)
       const _qTnt = data.q_tnt_kg ?? 0.001;
       const _considerWalls = b.explosionConsiderWalls ?? true;
-      const _wfRaw = area <= 0 ? 1.5 : area < 10 ? 2.0 : area < 20 ? 1.8 : area < 40 ? 1.5 : 1.3;
-      const _wf   = _considerWalls ? _wfRaw : 1.0;
+      // Коэффициент берём из ядра, а не повторяем формулу здесь: раньше это
+      // была отдельная копия ступенчатого выражения, и любая правка в ядре
+      // расходилась с расчётом по схеме.
+      const _wf   = _considerWalls ? wallReflectionFactor(area) : 1.0;
       // Формулы согласованы с explosionCalculator.ts
       const sadovsky = (r: number): number => {
         if (_qTnt <= 0 || r <= 0) return 0;

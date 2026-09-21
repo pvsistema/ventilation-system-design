@@ -133,12 +133,30 @@ def wave_front_speed(delta_p_kpa):
     return round(C0 * math.sqrt(1 + (6.0 / 7.0) * (delta_p_kpa / P0)), 1)
 
 
+# Опорные точки коэффициента отражения от стенок выработки (сечение, к).
+# Чем уже выработка, тем сильнее канализируется волна.
+WALL_FACTOR_POINTS = [(5, 2.0), (15, 1.8), (30, 1.5), (50, 1.3)]
+
+
 def wall_reflection_factor(area_m2):
-    if area_m2 <= 0:  return 1.5
-    if area_m2 < 10:  return 2.0
-    if area_m2 < 20:  return 1.8
-    if area_m2 < 40:  return 1.5
-    return 1.3
+    """Коэффициент отражения от стенок — ПЛАВНЫЙ (линейная интерполяция).
+
+    Раньше коэффициент был ступенчатым (<10 -> 2.0, <20 -> 1.8, <40 -> 1.5,
+    иначе 1.3): 19.9 м2 давало 1.8, а 20.0 м2 — уже 1.5, то есть изменение
+    сечения на 0.1 м2 роняло давление на 17 % и двигало границы зон.
+    """
+    if area_m2 <= 0:
+        return 1.5
+    pts = WALL_FACTOR_POINTS
+    if area_m2 <= pts[0][0]:
+        return pts[0][1]
+    if area_m2 >= pts[-1][0]:
+        return pts[-1][1]
+    for (a1, k1), (a2, k2) in zip(pts, pts[1:]):
+        if area_m2 <= a2:
+            t = (area_m2 - a1) / (a2 - a1)
+            return round(k1 + (k2 - k1) * t, 3)
+    return pts[-1][1]
 
 
 def hazard_level(dp):
