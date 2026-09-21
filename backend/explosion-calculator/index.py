@@ -80,10 +80,27 @@ def sadovsky_delta_p(r_m, q_tnt):
 
 
 def sadovsky_impulse(r_m, q_tnt):
+    """Импульс положительной фазы, Па·с — по Методике №415: i = 123·m^0.66/r.
+
+    Коэффициент 123 из той же методики, что и формула давления. Прежний
+    коэффициент 200 (другая редакция формулы, иные единицы) завышал
+    импульс ровно на 68 % на всех расстояниях.
+    """
     if q_tnt <= 0 or r_m <= 0:
         return 0.0
-    # Импульс Садовского: показатель 2/3 (не 1/3)
-    return round(200 * q_tnt ** (2.0 / 3.0) / r_m, 1)
+    return round(123 * q_tnt ** 0.66 / r_m, 1)
+
+
+def min_valid_radius(q_tnt):
+    """Наименьшее расстояние, на котором применима формула Садовского, м.
+
+    Граница — приведённое расстояние r̄ = r/Q^(1/3) = 1. Ближе к заряду
+    члены 1/r̄² и 1/r̄³ растут неограниченно и дают величины без
+    физического смысла (для 97 кг при r=1 м выходило 74 000 кПа).
+    """
+    if q_tnt <= 0:
+        return 0.0
+    return round(q_tnt ** (1.0 / 3.0), 2)
 
 
 def wave_front_speed(delta_p_kpa):
@@ -176,12 +193,16 @@ def calc_one(body: dict) -> dict:
         log.append(f"Коэффициент отражения от стенок: k = {wall_factor}")
 
     # 3. Параметры в эпицентре (r=1м)
-    max_dp   = pressure_at(1.0, q_tnt, method, wall_factor)
-    max_imp  = round(sadovsky_impulse(1.0, q_tnt) * wall_factor, 1)
+    # Максимум — на ГРАНИЦЕ ПРИМЕНИМОСТИ формулы (r̄ = 1), а не при r = 1 м:
+    # для 97 кг ТНТ r = 1 м это r̄ = 0.22, где формула уже не работает.
+    r_min    = min_valid_radius(q_tnt)
+    max_dp   = pressure_at(r_min, q_tnt, method, wall_factor)
+    max_imp  = round(sadovsky_impulse(r_min, q_tnt) * wall_factor, 1)
     wave_spd = wave_front_speed(max_dp)
 
     log.append("Методика: газодинамическая (Садовский), Q_тнт по Методике №415")
-    log.append(f"Давление во фронте (r=1м): ΔP = {max_dp} кПа")
+    log.append(f"Граница применимости формулы: r̄ = 1, то есть r = {r_min} м")
+    log.append(f"Максимальное давление во фронте (r = {r_min} м): ΔP = {max_dp} кПа")
     log.append(f"Скорость фронта: D = {wave_spd} м/с")
 
     # 4. Зоны поражения
@@ -213,6 +234,7 @@ def calc_one(body: dict) -> dict:
         "maxDeltaP_kPa":      max_dp,
         "maxImpulse_Pas":     max_imp,
         "waveFrontSpeed_ms":  wave_spd,
+        "minValidRadius_m":   r_min,
         "zones":              zones,
         "pressurePoints":     pressure_points,
         "log":                log,

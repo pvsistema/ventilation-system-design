@@ -9370,8 +9370,13 @@ export default function CadPage() {
                   {explosionCalcDone && b.explosionComputedQtnt > 0 && (<>
                     <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Результаты расчёта</div>
                     <Row label="Тротиловый эквивалент:" value={`${b.explosionComputedQtnt} кг ТНТ`} bold />
-                    <Row label="Давление в эпицентре:" value={`${b.explosionComputedMaxP} кПа`} bold color="#dc2626" />
+                    <Row label="Максимальное давление:" value={`${b.explosionComputedMaxP} кПа`} bold color="#dc2626" />
                     <Row label="Скорость фронта волны:" value={`${b.explosionComputedWaveSpeed} м/с`} />
+                    <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
+                      Максимум приведён на границе применимости формулы
+                      (r = Q<sup>1/3</sup> ≈ {Math.round(Math.cbrt(b.explosionComputedQtnt) * 100) / 100} м).
+                      Ближе к заряду методика параметры волны не определяет.
+                    </div>
                     <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)", marginTop: 4 }}>Зоны поражения</div>
                     {[
                       { label: "💀 Летальная (>100 кПа):", r: b.explosionComputedR_lethal, color: "#7c1010" },

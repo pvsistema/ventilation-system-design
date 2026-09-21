@@ -448,7 +448,7 @@ export interface TopoBranch {
   explosionConsiderWalls: boolean;         // учитывать отражение от стенок
   // Вычисленные результаты
   explosionComputedQtnt: number;           // кг ТНТ — тротиловый эквивалент
-  explosionComputedMaxP: number;           // кПа — давление в эпицентре
+  explosionComputedMaxP: number;           // кПа — максимальное давление (на границе применимости, r̄=1)
   explosionComputedWaveSpeed: number;      // м/с — скорость фронта
   explosionComputedR_lethal: number;       // м — радиус летальной зоны
   explosionComputedR_heavy: number;        // м — радиус тяжёлых поражений

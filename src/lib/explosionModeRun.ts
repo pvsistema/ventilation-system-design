@@ -131,8 +131,8 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         },
         impulseAtDistance: (r: number) => {
           if (_qTnt <= 0 || r <= 0) return 0;
-          // Импульс Садовского: показатель 2/3 (не 1/3)
-          return Math.round(200 * Math.pow(_qTnt, 2 / 3) / r * _wf * 10) / 10;
+          // Импульс по Методике №415: i = 123·m^0.66/r (Па·с)
+          return Math.round(123 * Math.pow(_qTnt, 0.66) / r * _wf * 10) / 10;
         },
       };
     } catch {

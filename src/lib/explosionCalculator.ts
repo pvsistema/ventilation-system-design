@@ -118,10 +118,15 @@ export interface ExplosionZone {
 export interface ExplosionResult {
   // Тротиловый эквивалент
   q_tnt_kg: number;
-  // Основные параметры в эпицентре
+  /**
+   * Максимальные параметры волны — НЕ в эпицентре, а на границе
+   * применимости формулы (r̄ = 1). Ближе к заряду методика не работает.
+   */
   maxDeltaP_kPa: number;
   maxImpulse_Pas: number;
   waveFrontSpeed_ms: number;
+  /** Расстояние, к которому относятся max-параметры, м (r̄ = 1) */
+  minValidRadius_m?: number;
   // Распределение по расстоянию
   zones: ExplosionZone[];
   // Зоны поражения на конкретных расстояниях
@@ -162,6 +167,21 @@ function massToTnt(expl: ExplosiveType, mass_kg: number): number {
 const KGF_CM2_TO_KPA = 98.07;
 
 /**
+ * Нижняя граница применимости формулы Садовского — приведённое расстояние
+ * r̄ = r / Q^(1/3) = 1, то есть r = Q^(1/3) метров. Ближе к заряду формула
+ * расходится: члены 1/r̄² и 1/r̄³ растут неограниченно и дают величины,
+ * не имеющие физического смысла (для 97 кг при r = 1 м получалось
+ * 74 000 кПа и скорость фронта 8 500 м/с — быстрее детонации любого ВВ).
+ */
+const R_BAR_MIN = 1.0;
+
+/** Наименьшее расстояние, на котором формула ещё применима, м */
+export function minValidRadius(q_tnt: number): number {
+  if (q_tnt <= 0) return 0;
+  return Math.round(R_BAR_MIN * Math.pow(q_tnt, 1 / 3) * 100) / 100;
+}
+
+/**
  * Давление во фронте ударной волны по формуле Садовского (Методика ГД):
  * ΔP = 0.84/r̄ + 2.7/r̄² + 7.15/r̄³  [кгс/см²]
  * где r̄ = r / Q_tnt^(1/3) — приведённое расстояние.
@@ -179,13 +199,18 @@ function sadovskyDeltaP(r_m: number, q_tnt: number): number {
 }
 
 /**
- * Импульс положительной фазы (кПа·мс → Па·с):
- * i = 200 * Q_tnt^(2/3) / r  (формула Садовского; показатель 2/3, не 1/3)
+ * Импульс положительной фазы, Па·с — по Методике №415 (прил. по ТВС):
+ *   i = 123 · m_пр^0.66 / r
+ *
+ * Коэффициент 123 взят из той же методики, что и формула давления, — иначе
+ * импульс и давление считались бы по разным источникам. Прежний коэффициент
+ * 200 (из другой редакции формулы Садовского, в иных единицах) завышал
+ * импульс ровно на 68 % на всех расстояниях.
  */
 function sadovskyImpulse(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
-  const i_kPa_ms = 200 * Math.pow(q_tnt, 2 / 3) / r_m;
-  return Math.round(i_kPa_ms * 10) / 10; // Па·с (1 кПа·мс = 1 Па·с)
+  const i_Pa_s = 123 * Math.pow(q_tnt, 0.66) / r_m;
+  return Math.round(i_Pa_s * 10) / 10;
 }
 
 /** Скорость фронта ударной волны (м/с) через давление: D = C0 * √(1 + 6/7 * ΔP/P0) */
@@ -297,13 +322,19 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     return Math.round(i * wallFactor * 10) / 10;
   };
 
-  // 4. Основные параметры в эпицентре (r = 1 м)
-  const maxDeltaP = pressureAtDistance(1);
-  const maxImpulse = impulseAtDistance(1);
+  // 4. Максимальные параметры — на ГРАНИЦЕ ПРИМЕНИМОСТИ формулы (r̄ = 1).
+  // Раньше здесь стояло r = 1 м независимо от массы заряда. Для 97 кг ТНТ
+  // это r̄ = 0.22, то есть глубоко внутри зоны, где формула Садовского уже
+  // не работает: получалось 74 000 кПа и скорость фронта 8 500 м/с.
+  // Ближе к заряду параметры волны этой методикой не определяются.
+  const rMin = minValidRadius(q_tnt);
+  const maxDeltaP = pressureAtDistance(rMin);
+  const maxImpulse = impulseAtDistance(rMin);
   const waveFrontSpeed_ms = waveFrontSpeed(maxDeltaP);
 
   log.push("Методика: газодинамическая (Садовский), Q_тнт по Методике №415");
-  log.push(`Давление во фронте (r=1м): ΔP = ${maxDeltaP} кПа`);
+  log.push(`Граница применимости формулы: r̄ = 1, то есть r = ${rMin} м`);
+  log.push(`Максимальное давление во фронте (r = ${rMin} м): ΔP = ${maxDeltaP} кПа`);
   log.push(`Скорость фронта: D = ${waveFrontSpeed_ms} м/с`);
 
   // 5. Зоны поражения
@@ -359,6 +390,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     maxDeltaP_kPa: maxDeltaP,
     maxImpulse_Pas: maxImpulse,
     waveFrontSpeed_ms,
+    minValidRadius_m: rMin,
     zones,
     pressureAtDistance,
     impulseAtDistance,
