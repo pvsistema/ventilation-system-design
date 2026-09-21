@@ -13240,7 +13240,7 @@ export default function CadPage() {
                     { color: EXPLOSION_HAZARD_COLORS.heavy, label: "Тяжёлые травмы",   dp: "ΔP 50–100 кПа", hazard: "heavy"  },
                     { color: EXPLOSION_HAZARD_COLORS.medium, label: "Средние травмы",   dp: "ΔP 30–50 кПа",  hazard: "medium" },
                     { color: EXPLOSION_HAZARD_COLORS.light, label: "Лёгкие травмы",    dp: "ΔP 10–30 кПа",  hazard: "light"  },
-                    { color: EXPLOSION_HAZARD_COLORS.safe, label: "Безопасно",         dp: "ΔP < 10 кПа",   hazard: "safe"   },
+                    { color: EXPLOSION_HAZARD_COLORS.safe, label: "Безопасно",         dp: "ΔP < 5,99 кПа", hazard: "safe"   },
                   ];
                   return zoneDefs.map(({ color, label, dp, hazard }) => {
                     const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);

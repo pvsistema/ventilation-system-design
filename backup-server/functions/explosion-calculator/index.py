@@ -51,7 +51,10 @@ EXPLOSIVE_TYPES = {
     "custom":    {"tntEq": 1.00},
 }
 
-HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "safe": 5}
+HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "safe": 5.99}
+# "safe": 5.99 кПа — граница безопасной зоны, как в ПО «Аэросеть».
+# Это НЕ порог классификации точки (им остаётся 10 кПа, см. hazard_level),
+# а расстояние, дальше которого воздействие пренебрежимо мало.
 
 
 def gas_to_tnt(gas, volume_m3, concentration_pct, z=Z_DEFAULT):
@@ -185,7 +188,7 @@ def calc_one(body: dict) -> dict:
         ("Тяжёлые поражения",  "ΔP 50–100 кПа — тяжёлые травмы, обрушение",         HAZARD_THRESHOLDS["heavy"],   "heavy"),
         ("Средние поражения",  "ΔP 30–50 кПа — средние травмы, повреждение",          HAZARD_THRESHOLDS["medium"],  "medium"),
         ("Лёгкие поражения",   "ΔP 10–30 кПа — контузии, лёгкие повреждения",         HAZARD_THRESHOLDS["light"],   "light"),
-        ("Безопасная зона",    "ΔP < 10 кПа — незначительное воздействие",            HAZARD_THRESHOLDS["safe"],    "safe"),
+        ("Безопасная зона",    "ΔP < 5.99 кПа — незначительное воздействие",            HAZARD_THRESHOLDS["safe"],    "safe"),
     ]
     zones = []
     for name, desc, thresh, hlevel in zone_defs:

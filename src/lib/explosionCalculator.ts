@@ -210,8 +210,16 @@ const HAZARD_THRESHOLDS = {
   heavy:    50,   // 50–100 кПа — тяжёлые повреждения
   medium:   30,   // 30–50 кПа — средние повреждения
   light:    10,   // 10–30 кПа — лёгкие повреждения
-  safe:      0,   // < 10 кПа — безопасно
+  safe:      0,   // < 10 кПа — безопасно (для классификации точки)
 };
+
+/**
+ * Граница безопасной зоны, кПа — как в ПО «Аэросеть».
+ * Это НЕ порог классификации (им остаётся 10 кПа), а расстояние, дальше
+ * которого воздействие считается пренебрежимо малым: до него доезжает
+ * шкала волны и по нему строится внешний контур зон.
+ */
+const SAFE_ZONE_LIMIT_KPA = 5.99;
 
 function hazardLevel(dP: number): ExplosionZone["hazardLevel"] {
   if (dP >= HAZARD_THRESHOLDS.lethal)  return "lethal";
@@ -334,10 +342,10 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     },
     {
       name: "Безопасная зона",
-      description: "ΔP < 10 кПа — незначительное воздействие",
-      radius_m: radiusAtPressure(5, q_tnt, wallFactor),
-      deltaP_kPa: 5,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(5, q_tnt, wallFactor)),
+      description: "ΔP < 5.99 кПа — незначительное воздействие",
+      radius_m: radiusAtPressure(SAFE_ZONE_LIMIT_KPA, q_tnt, wallFactor),
+      deltaP_kPa: SAFE_ZONE_LIMIT_KPA,
+      impulse_Pas: impulseAtDistance(radiusAtPressure(SAFE_ZONE_LIMIT_KPA, q_tnt, wallFactor)),
       hazardLevel: "safe",
     },
   ];
