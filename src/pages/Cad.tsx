@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -12826,54 +12826,75 @@ export default function CadPage() {
                   return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
                 };
 
-                // Дейкстра по сети выработок: для каждого узла — расстояние
-                // по выработкам И id очага, от которого волна пришла первой.
-                // Волна идёт ПО ВЫРАБОТКАМ, а не сквозь породу.
-                type NodeReach = { d: number; srcId: string };
+                // РАСПРОСТРАНЕНИЕ ВОЛНЫ ПО ГРАФУ — та же модель, что в
+                // explosionModeRun: вместе с длиной пути копится множитель
+                // ослабления (трение в канале + деление на сопряжениях).
+                // Раньше здесь была Дейкстра только по расстоянию, и давление
+                // затем бралось из сферической формулы — волна «не знала»
+                // ни сечения выработок, ни развилок.
+                const branchArea = (b: typeof branches[0]) => (b.area && b.area > 0 ? b.area : 12);
+                type NodeReach = { d: number; srcId: string; att: number; fromNode?: string };
                 const distNode = new Map<string, NodeReach>();
-                const pq: Array<{ id: string; d: number; srcId: string }> = [];
+                const pq: Array<{ id: string } & NodeReach> = [];
 
-                const upd = (nid: string, d: number, srcId: string) => {
+                const upd = (nid: string, st: NodeReach) => {
                   const cur = distNode.get(nid);
-                  if (!cur || cur.d > d) {
-                    distNode.set(nid, { d, srcId });
-                    pq.push({ id: nid, d, srcId });
+                  // Сильнее = больше накопленное ослабление
+                  if (!cur || st.att > cur.att * 1.000001) {
+                    distNode.set(nid, st);
+                    pq.push({ id: nid, ...st });
                   }
                 };
 
-                // Начальные расстояния от узлов ветви-очага
+                // Начальные состояния у концов ветви-очага
                 // (символ взрыва стоит на позиции t вдоль ветви)
                 sources.forEach(src => {
                   const len = branchLen(src);
                   const t = src.explosionT ?? 0.5;
-                  upd(src.fromId, len * t,       src.id); // до fromId
-                  upd(src.toId,   len * (1 - t), src.id); // до toId
+                  const res = resFor(src.id);
+                  const rTr = res?.transitionRadius_m ?? 0;
+                  const beta = channelDecay({ area_m2: branchArea(src), lambda: LAMBDA_DEFAULT });
+                  const attTo = (d: number) => d <= rTr ? 1 : Math.exp(-beta * (d - rTr));
+                  const dF = len * t, dT = len * (1 - t);
+                  upd(src.fromId, { d: dF, srcId: src.id, att: attTo(dF) });
+                  upd(src.toId,   { d: dT, srcId: src.id, att: attTo(dT) });
                 });
 
-                // Граф смежности: nodeId → [{nodeId, branchLen}]
-                type Edge = { to: string; len: number };
+                // Граф смежности: nodeId → [{nodeId, длина, сечение}]
+                type Edge = { to: string; len: number; area: number };
                 const adj = new Map<string, Edge[]>();
                 branches.forEach(b => {
-                  const len = branchLen(b);
+                  const len = branchLen(b), area = branchArea(b);
                   if (!adj.has(b.fromId)) adj.set(b.fromId, []);
                   if (!adj.has(b.toId))   adj.set(b.toId,   []);
-                  adj.get(b.fromId)!.push({ to: b.toId,   len });
-                  adj.get(b.toId)!.push  ({ to: b.fromId, len });
+                  adj.get(b.fromId)!.push({ to: b.toId,   len, area });
+                  adj.get(b.toId)!.push  ({ to: b.fromId, len, area });
                 });
 
-                // Простой Дейкстра (без приоритетной очереди — сеть небольшая)
+                // Обход по убыванию силы волны
                 const visited = new Set<string>();
-                while (pq.length > 0) {
-                  pq.sort((a, b) => a.d - b.d);
-                  const { id: cur, d: curD, srcId } = pq.shift()!;
+                let guardC = 0;
+                while (pq.length > 0 && guardC++ < 200000) {
+                  pq.sort((a, b) => b.att - a.att);
+                  const { id: cur, d: curD, srcId, att: curAtt, fromNode } = pq.shift()!;
                   if (visited.has(cur)) continue;
                   visited.add(cur);
-                  for (const e of (adj.get(cur) ?? [])) {
+                  const edges = adj.get(cur) ?? [];
+                  // Ветвь, по которой волна пришла, в деление не входит:
+                  // в прямом штреке волна идёт насквозь, а не теряет половину.
+                  const out = edges.filter(e => e.to !== fromNode);
+                  const outArea = out.reduce((s, e) => s + e.area, 0);
+                  for (const e of out) {
                     const nd = curD + e.len;
                     if (nd > blastWaveRadius) continue; // волна не дошла
                     // Волна останавливается на атмосферных узлах (выход на поверхность)
                     if (nodeByIdMap.get(e.to)?.atmosphereLink) continue;
-                    upd(e.to, nd, srcId);
+                    const split = out.length > 1 && outArea > 0
+                      ? Math.max(e.area / outArea, 0.05) : 1;
+                    const beta = channelDecay({ area_m2: e.area, lambda: LAMBDA_DEFAULT });
+                    const att = curAtt * split * Math.exp(-beta * e.len);
+                    if (att < 1e-4) continue;
+                    upd(e.to, { d: nd, srcId, att, fromNode: cur });
                   }
                 }
 
@@ -12891,18 +12912,29 @@ export default function CadPage() {
                   const rTo   = distNode.get(b.toId);
                   if (!isSource && !rFrom && !rTo) return; // волна не дошла
 
-                  /** Расстояние волны и её очаг в точке t (0 = fromId, 1 = toId) */
+                  // Затухание вдоль САМОЙ этой ветви — по её сечению
+                  const betaB = channelDecay({ area_m2: branchArea(b), lambda: LAMBDA_DEFAULT });
+
+                  /** Состояние волны в точке t вдоль ветви (0 = fromId, 1 = toId) */
                   const reachAt = (t: number): NodeReach | null => {
                     let best: NodeReach | null = null;
-                    const take = (d: number, srcId: string) => {
-                      if (d <= blastWaveRadius && (!best || d < best.d)) best = { d, srcId };
+                    // Берём тот вариант прихода, где волна СИЛЬНЕЕ, а не где
+                    // путь короче: через узкую сбойку путь может быть короче,
+                    // а давление — заметно ниже.
+                    const take = (d: number, srcId: string, att: number) => {
+                      if (d <= blastWaveRadius && (!best || att > best.att)) best = { d, srcId, att };
                     };
-                    // Путь через fromId / через toId
-                    if (rFrom) take(rFrom.d + len * t,       rFrom.srcId);
-                    if (rTo)   take(rTo.d   + len * (1 - t), rTo.srcId);
+                    const decay = (dd: number) => Math.exp(-betaB * dd);
+                    // Путь через fromId / через toId — с дозатуханием внутри ветви
+                    if (rFrom) take(rFrom.d + len * t,       rFrom.srcId, rFrom.att * decay(len * t));
+                    if (rTo)   take(rTo.d   + len * (1 - t), rTo.srcId,   rTo.att   * decay(len * (1 - t)));
                     // Если очаг стоит на самой этой ветви — идём по ней напрямую,
                     // не огибая через узлы
-                    if (isSource) take(Math.abs(t - (b.explosionT ?? 0.5)) * len, b.id);
+                    if (isSource) {
+                      const dSrc = Math.abs(t - (b.explosionT ?? 0.5)) * len;
+                      const rTrS = resFor(b.id)?.transitionRadius_m ?? 0;
+                      take(dSrc, b.id, dSrc <= rTrS ? 1 : decay(dSrc - rTrS));
+                    }
                     return best;
                   };
 
@@ -12921,7 +12953,14 @@ export default function CadPage() {
                       }
                       continue;
                     }
-                    const dp = resFor(reach.srcId).pressureAtDistance(reach.d);
+                    // Давление: ближняя зона — сферическая часть, дальше —
+                    // значение на сшивке × накопленное по графу ослабление.
+                    // Трение здесь повторно НЕ применяется: оно уже в att.
+                    const resR = resFor(reach.srcId);
+                    const rTrR = resR?.transitionRadius_m ?? 0;
+                    const dp = (resR?.channelMode && reach.d > rTrR)
+                      ? Math.round(resR.pressureAtDistance(rTrR) * reach.att * 10) / 10
+                      : Math.round((resR?.pressureAtDistance(reach.d) ?? 0) * reach.att * 10) / 10;
                     const { color, hazardLevel: lvl } = zoneColor(dp);
                     if (RANK.indexOf(lvl) > RANK.indexOf(worst)) worst = lvl;
                     if (color !== curColor) {

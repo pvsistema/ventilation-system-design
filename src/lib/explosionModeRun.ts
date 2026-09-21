@@ -13,6 +13,7 @@ import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
   calcExplosion, GAS_TYPES, wallReflectionFactor, type ExplosionThresholds,
   type ExplosionResult, type ExplosionSourceType,
+  channelPressureAt, channelImpulseAt, channelDecay, LAMBDA_DEFAULT,
 } from "@/lib/explosionCalculator";
 
 /**
@@ -52,6 +53,15 @@ export interface ExplosionRunResult {
    * чужому заряду. Теперь у каждого очага своя функция давления.
    */
   resultByBranch: Map<string, ExplosionResult>;
+  /**
+   * Состояние волны в каждом узле: длина пути по выработкам, накопленный
+   * множитель ослабления (трение + деление на сопряжениях) и очаг-источник.
+   * Нужно схеме, чтобы окрашивать ветви по РЕАЛЬНОМУ давлению в них, а не
+   * по расстоянию до очага.
+   */
+  netWave: Map<string, { d: number; att: number; srcId: string }>;
+  /** Давление в узле по состоянию волны, кПа */
+  pressureAtNode: (st: { d: number; att: number; srcId: string }) => number;
 }
 
 /**
@@ -147,7 +157,10 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       // была отдельная копия ступенчатого выражения, и любая правка в ядре
       // расходилась с расчётом по схеме.
       const _wf   = _considerWalls ? wallReflectionFactor(area) : 1.0;
-      // Формулы согласованы с explosionCalculator.ts
+      // Канал восстанавливаем из ответа сервера; если сервер старый и поля
+      // нет — берём сечение ветви и λ по умолчанию.
+      const _ch = data.channel ?? { area_m2: area, lambda: LAMBDA_DEFAULT };
+      const _channelMode = data.channelMode !== false;
       // Граница применимости формулы (r̄ = 1) — та же, что в ядре.
       const _rMin = Math.pow(_qTnt, 1 / 3);
       const sadovsky = (r: number): number => {
@@ -163,11 +176,15 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       };
       res = {
         ...data,
+        channel: _ch,
         pressureAtDistance: (r: number) => {
+          // Канальная модель — та же функция, что в ядре (единый источник правды)
+          if (_channelMode && _qTnt > 0) return channelPressureAt(r, _qTnt, _ch);
           return Math.round(sadovsky(r) * _wf * 10) / 10;
         },
         impulseAtDistance: (r: number) => {
           if (_qTnt <= 0) return 0;
+          if (_channelMode) return channelImpulseAt(r, _qTnt, _ch);
           // Импульс по Методике №415: i = 123·m^0.66/r (Па·с).
           // Ограничен той же границей применимости — при r → 0 растёт
           // неограниченно.
@@ -206,49 +223,135 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   });
   const updatedBranches = await Promise.all(updatedBranchesPromises);
 
-  // ── Определяем разрушенные перемычки по зонам поражения ──────────
-  // Дейкстра по сети для расчёта расстояния по выработкам от источника
+  // ── РАСПРОСТРАНЕНИЕ ВОЛНЫ ПО ГРАФУ ВЫРАБОТОК ──────────────────────
+  //
+  // Раньше здесь была Дейкстра ТОЛЬКО по расстоянию: находился кратчайший
+  // путь, а давление затем бралось из сферической формулы. Получался гибрид —
+  // путь мерился по выработкам, а затухание считалось как в открытом поле.
+  //
+  // Теперь волна ведётся по графу с НАКОПЛЕНИЕМ ЗАТУХАНИЯ на каждом ребре:
+  //   • на участке длиной l давление падает как exp(−β·l), β = λ/(2·d_г),
+  //     то есть узкая выработка гасит волну быстрее широкой;
+  //   • на сопряжении поток делится между исходящими ветвями пропорционально
+  //     их сечениям — это отдельный множитель ослабления;
+  //   • на атмосферном узле волна выходит на поверхность и дальше не идёт.
+  //
+  // Вместо расстояния минимизируется «стоимость» = сумма затухания, поэтому
+  // до точки доходит та волна, которая пришла САМОЙ СИЛЬНОЙ, а не та, что
+  // прошла геометрически короткий путь через узкую сбойку.
   const bLen = (b: TopoBranch) => {
     const fN = nodeById.get(b.fromId);
     const tN = nodeById.get(b.toId);
     if (!fN || !tN) return b.length > 0 ? b.length : 1;
     return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
   };
-  // Вместе с расстоянием запоминаем ОЧАГ, от которого волна пришла первой:
-  // при нескольких взрывах давление нельзя считать по чужому заряду.
-  const netDist = new Map<string, { d: number; srcId: string }>();
-  const pq2: Array<{id: string; d: number; srcId: string}> = [];
-  const push2 = (nid: string, d: number, srcId: string) => {
-    const cur = netDist.get(nid);
-    if (!cur || d < cur.d) { netDist.set(nid, { d, srcId }); pq2.push({id: nid, d, srcId}); }
+  const bArea = (b: TopoBranch) => (b.area && b.area > 0 ? b.area : 12);
+
+  /**
+   * Состояние волны в узле: путь, множитель ослабления, очаг-источник и
+   * узел, ИЗ которого волна пришла. Последнее нужно для деления потока:
+   * назад волна не уносит энергию, поэтому входящая ветвь из деления
+   * исключается — иначе в прямом штреке (два ребра в узле) волна теряла
+   * бы половину энергии на каждом промежуточном узле, хотя там она просто
+   * идёт насквозь.
+   */
+  type WaveState = { d: number; att: number; srcId: string; fromNode?: string };
+  const netWave = new Map<string, WaveState>();
+  const pq2: Array<{ id: string } & WaveState> = [];
+  // Сильнее = больше att при сопоставимом пути. Сравниваем по ослаблению.
+  const pushWave = (nid: string, st: WaveState) => {
+    const cur = netWave.get(nid);
+    if (!cur || st.att > cur.att * 1.000001) {
+      netWave.set(nid, st);
+      pq2.push({ id: nid, ...st });
+    }
   };
+
+  // Старт: от точки очага до обоих концов его ветви
   updatedBranches.forEach(src => {
     if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
     const len = bLen(src); const t = src.explosionT ?? 0.5;
-    push2(src.fromId, len * t,       src.id);
-    push2(src.toId,   len * (1 - t), src.id);
+    const res = resultByBranch.get(src.id);
+    const rTr = res?.transitionRadius_m ?? 0;
+    const betaSrc = channelDecay({ area_m2: bArea(src), lambda: LAMBDA_DEFAULT });
+    // Ослабление до конца ветви-очага: за точкой сшивки волна уже канальная,
+    // поэтому от неё и считается экспоненциальное затухание. До сшивки
+    // ослабления нет — там работает сферическая часть внутри pressureAtNode.
+    const attTo = (d: number) => d <= rTr ? 1 : Math.exp(-betaSrc * (d - rTr));
+    const dFrom = len * t, dTo = len * (1 - t);
+    pushWave(src.fromId, { d: dFrom, att: attTo(dFrom), srcId: src.id });
+    pushWave(src.toId,   { d: dTo,   att: attTo(dTo),   srcId: src.id });
   });
-  const adjMap = new Map<string, Array<{to: string; len: number}>>();
+
+  // Смежность с геометрией ребра
+  const adjMap = new Map<string, Array<{ to: string; len: number; area: number }>>();
   updatedBranches.forEach(b => {
-    const len = bLen(b);
+    const len = bLen(b), area = bArea(b);
     if (!adjMap.has(b.fromId)) adjMap.set(b.fromId, []);
     if (!adjMap.has(b.toId))   adjMap.set(b.toId, []);
-    adjMap.get(b.fromId)!.push({to: b.toId, len});
-    adjMap.get(b.toId)!.push({to: b.fromId, len});
+    adjMap.get(b.fromId)!.push({ to: b.toId,   len, area });
+    adjMap.get(b.toId)!.push  ({ to: b.fromId, len, area });
   });
+
   const vis2 = new Set<string>();
-  while (pq2.length > 0) {
-    pq2.sort((a,b) => a.d - b.d);
-    const {id: cur, d: curD, srcId} = pq2.shift()!;
-    if (vis2.has(cur)) continue; vis2.add(cur);
-    for (const e of (adjMap.get(cur) ?? [])) {
-      const nd = curD + e.len;
-      // Волна останавливается на атмосферных узлах (выход на поверхность)
+  let guard = 0;
+  while (pq2.length > 0 && guard++ < 200000) {
+    // Разбираем по убыванию силы волны
+    pq2.sort((a, b) => b.att - a.att);
+    const { id: cur, d: curD, att: curAtt, srcId, fromNode } = pq2.shift()!;
+    if (vis2.has(cur)) continue;
+    vis2.add(cur);
+    const edges = adjMap.get(cur) ?? [];
+    // ДЕЛЕНИЕ ПОТОКА НА СОПРЯЖЕНИИ. Энергия расходится по ИСХОДЯЩИМ ветвям
+    // пропорционально их сечениям. Ветвь, по которой волна пришла, в деление
+    // не входит: назад энергия не уносится. Поэтому в прямом штреке (узел с
+    // двумя рёбрами) волна идёт насквозь без потерь на «деление», а делится
+    // только там, где выработки реально расходятся.
+    const out = edges.filter(e => e.to !== fromNode);
+    const outArea = out.reduce((s, e) => s + e.area, 0);
+    for (const e of out) {
       const toNode = nodeById.get(e.to);
+      // Волна выходит на поверхность — дальше не идёт
       if (toNode?.atmosphereLink) continue;
-      push2(e.to, nd, srcId);
+      // Доля энергии, ушедшая в эту ветвь
+      const split = out.length > 1 && outArea > 0
+        ? Math.max(e.area / outArea, 0.05)
+        : 1;
+      // Затухание на трении вдоль ребра
+      const beta = channelDecay({ area_m2: e.area, lambda: LAMBDA_DEFAULT });
+      const att  = curAtt * split * Math.exp(-beta * e.len);
+      // Волна угасла — ветвь не продолжаем (порог 1e-4 от начальной)
+      if (att < 1e-4) continue;
+      pushWave(e.to, { d: curD + e.len, att, srcId, fromNode: cur });
     }
   }
+
+  /**
+   * Давление в узле, кПа: берётся функция давления СВОЕГО очага от длины
+   * пути, и к ней применяется накопленный по графу множитель ослабления
+   * (деление на сопряжениях + трение на пройденных ветвях).
+   */
+  const pressureAtNode = (st: WaveState): number => {
+    const res = resultByBranch.get(st.srcId) ?? results[0];
+    if (!res) return 0;
+    const q = res.q_tnt_kg ?? 0;
+    const ch = res.channel;
+    if (res.channelMode && ch && q > 0) {
+      // ВАЖНО: затухание на трении уже накоплено в st.att при обходе графа —
+      // по каждой ветви со СВОИМ сечением. Поэтому здесь берётся только
+      // ближняя (сферическая) часть: давление на границе сшивки, к которому
+      // применяется накопленный множитель. Иначе трение учлось бы дважды —
+      // один раз по фактическим сечениям пути, второй раз по сечению
+      // ветви-очага.
+      const rTr = res.transitionRadius_m ?? 0;
+      // До точки сшивки волна ещё сферическая — считаем как есть
+      if (st.d <= rTr) return channelPressureAt(st.d, q, ch, st.att);
+      // Дальше: давление на сшивке × накопленное по графу ослабление
+      const dpAtTr = channelPressureAt(rTr, q, ch, 1);
+      return Math.round(dpAtTr * st.att * 10) / 10;
+    }
+    return Math.round(res.pressureAtDistance(st.d) * st.att * 10) / 10;
+  };
 
   // Помечаем перемычки разрушенными если ΔP > failurePressure
   // fp берём из символа (bkFailurePressure) или из ветви как fallback
@@ -262,18 +365,15 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       ? bkSym.bkFailurePressure
       : b.bulkheadFailurePressure) || 0; // МПа
     if (!fp || fp <= 0) return {...b, bulkheadDestroyedByExplosion: false};
-    // Ближайший к перемычке конец ветви и очаг, от которого туда пришла волна
-    const rFrom = netDist.get(b.fromId);
-    const rTo   = netDist.get(b.toId);
-    const reach = !rFrom ? rTo : !rTo ? rFrom : (rFrom.d <= rTo.d ? rFrom : rTo);
+    // Конец ветви, куда волна пришла СИЛЬНЕЕ (а не просто ближе)
+    const wFrom = netWave.get(b.fromId);
+    const wTo   = netWave.get(b.toId);
+    const reach = !wFrom ? wTo : !wTo ? wFrom : (wFrom.att >= wTo.att ? wFrom : wTo);
     if (!reach || results.length === 0) return {...b, bulkheadDestroyedByExplosion: false};
-    // Давление считаем по ЕГО очагу, а не по первому в списке
-    const res = resultByBranch.get(reach.srcId) ?? results[0];
-    const dp_kPa = res.pressureAtDistance(reach.d);
-    const dp_MPa = dp_kPa / 1000;
+    const dp_MPa = pressureAtNode(reach) / 1000;
     const destroyed = dp_MPa >= fp;
     return {...b, bulkheadDestroyedByExplosion: destroyed};
   });
 
-  return { branches: finalBranches, results, resultByBranch };
+  return { branches: finalBranches, results, resultByBranch, netWave, pressureAtNode };
 }

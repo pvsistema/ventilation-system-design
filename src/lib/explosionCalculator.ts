@@ -137,9 +137,20 @@ export interface ExplosionParams {
   // Геометрия выработки
   excavationArea_m2: number;   // м² — сечение выработки
   excavationLength_m: number;  // м — длина зоны взрыва
+  /** Периметр выработки, м. Не задан — сечение считается круглым. */
+  excavationPerimeter_m?: number;
   // Дополнительно
   ambientPressure_kPa: number; // кПа — атмосферное давление (высота)
   considerWalls: boolean;      // учёт отражения от стенок выработки
+  /**
+   * Канальная модель распространения по выработке.
+   * true (по умолчанию) — ближняя зона по Садовскому, дальняя — затухание
+   * в канале с трением. false — прежний сферический разлёт, как в открытом
+   * воздухе (оставлен для сверки со старыми расчётами).
+   */
+  channelMode?: boolean;
+  /** Коэффициент сопротивления λ для канальной модели (по умолчанию 0.05) */
+  channelLambda?: number;
   /** Коэффициент участия Z по Методике №415: 0.1 — открытое пространство,
    *  0.5 — замкнутый объём (горная выработка). По умолчанию 0.5. */
   zParticipation?: number;
@@ -171,6 +182,14 @@ export interface ExplosionResult {
   minValidRadius_m?: number;
   /** Пороги, по которым построены зоны (нужны для окраски схемы) */
   thresholds?: ExplosionThresholds;
+  /** Канальная модель включена (ближняя зона — сфера, дальняя — канал) */
+  channelMode?: boolean;
+  /** Расстояние сшивки сфера → канал, м */
+  transitionRadius_m?: number;
+  /** Погонный декремент затухания β, 1/м */
+  channelDecay_per_m?: number;
+  /** Параметры канала — нужны схеме, чтобы вести волну по графу */
+  channel?: ChannelParams;
   /**
    * Взрыва нет: заряд нулевой либо смесь вне пределов взрываемости.
    * В этом случае все радиусы и давления равны нулю — зоны поражения
@@ -245,7 +264,7 @@ export function minValidRadius(q_tnt: number): number {
  * Источник: Садовский М.А. «Механическое действие взрыва».
  * Согласуется с Методикой №415 (ТВС) при Z = 0.1.
  */
-function sadovskyDeltaP(r_m: number, q_tnt: number): number {
+function sadovskyDeltaPRaw(r_m: number, q_tnt: number): number {
   if (q_tnt <= 0 || r_m <= 0) return 0;
   // ГРАНИЦА ПРИМЕНИМОСТИ соблюдается здесь, а не только при выводе ΔP_max.
   // Ближе r̄ = 1 формула расходится: на 1 м от заряда 95 кг она давала
@@ -257,7 +276,12 @@ function sadovskyDeltaP(r_m: number, q_tnt: number): number {
   // давление принимается равным значению на самой границе (плато).
   const rBar = Math.max(r_m / Math.pow(q_tnt, 1 / 3), R_BAR_MIN);
   const dP_kgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
-  return Math.round(dP_kgf * KGF_CM2_TO_KPA * 10) / 10;
+  return dP_kgf * KGF_CM2_TO_KPA;
+}
+
+/** То же, округлённое до 0,1 кПа — для вывода пользователю */
+function sadovskyDeltaP(r_m: number, q_tnt: number): number {
+  return Math.round(sadovskyDeltaPRaw(r_m, q_tnt) * 10) / 10;
 }
 
 /**
@@ -319,6 +343,178 @@ export function wallReflectionFactor(area_m2: number): number {
     }
   }
   return last.k;
+}
+
+// ─── КАНАЛЬНАЯ МОДЕЛЬ РАСПРОСТРАНЕНИЯ ────────────────────────────────────────
+/**
+ * ПОЧЕМУ ОНА НУЖНА.
+ *
+ * Формула Садовского описывает СФЕРИЧЕСКИЙ разлёт в открытом воздухе: энергия
+ * размазывается по поверхности шара, давление падает почти как 1/r³. В горной
+ * выработке волна уже через несколько метров упирается в стенки и дальше идёт
+ * по КАНАЛУ постоянного сечения: энергия в объём не рассеивается, давление
+ * падает только на трении о стенки, местных сопротивлениях и делении потока
+ * на сопряжениях.
+ *
+ * Разница не в процентах, а в порядках. Для 95 кг ТНТ в выработке 12 м²
+ * сферическая модель давала границу 6 кПа на 127 м, тогда как «Аэросеть»
+ * на той же сети красит ветви на километры. Прежний коэффициент
+ * wallReflectionFactor этого не лечил: он умножал давление на постоянное
+ * число (1.3…2.0) и не менял сам ЗАКОН затухания — на 10 м это почти
+ * незаметно, а на 500 м кривая всё равно уже в нуле.
+ *
+ * КАК СЧИТАЕМ.
+ *   1) Ближняя зона (r ≤ r_tr) — сферическая, по Садовскому. Пока фронт не
+ *      заполнил сечение, волна действительно расходится шаром.
+ *   2) Переход r_tr ≈ k_tr·√S — момент, когда фронт упёрся в стенки.
+ *   3) Дальняя зона — канальная: ΔP(L) = ΔP(r_tr)·exp(−β·(L−r_tr)),
+ *      где β = λ/(2·d_г) — погонный декремент затухания, d_г = 4S/P.
+ *
+ * Экспонента — это решение уравнения затухания плоской волны в трубе с
+ * трением: dΔP/dx = −(λ/2d)·ΔP. Именно такой закон даёт характерную для
+ * шахт дальнобойность в сотни метров и километры вместо десятков метров.
+ */
+
+/** Коэффициент перехода сфера → канал: r_tr = K_TRANSITION · √S */
+const K_TRANSITION = 2.0;
+
+/**
+ * Коэффициент аэродинамического сопротивления выработки λ (безразмерный).
+ * Для ударной волны он заметно выше, чем для установившегося потока:
+ * шероховатость крепи, затяжка, оборудование, повороты.
+ *   0.02…0.03 — гладкие бетонные стволы;
+ *   0.04…0.06 — типовые выработки с арочной крепью (значение по умолчанию);
+ *   0.08…0.12 — сильно загромождённые, с большой шероховатостью.
+ */
+export const LAMBDA_DEFAULT = 0.05;
+
+/** Гидравлический диаметр выработки d_г = 4S/P, м */
+export function hydraulicDiameter(area_m2: number, perimeter_m?: number): number {
+  if (area_m2 <= 0) return 0;
+  // Периметр не задан — принимаем круглое сечение: P = 2√(πS), d = 2√(S/π)
+  const P = perimeter_m && perimeter_m > 0 ? perimeter_m : 2 * Math.sqrt(Math.PI * area_m2);
+  return (4 * area_m2) / P;
+}
+
+/** Параметры канала для затухания волны вдоль одной выработки */
+export interface ChannelParams {
+  /** Сечение выработки, м² */
+  area_m2: number;
+  /** Периметр, м (не задан — считается как для круга) */
+  perimeter_m?: number;
+  /** Коэффициент сопротивления λ (не задан — LAMBDA_DEFAULT) */
+  lambda?: number;
+}
+
+/**
+ * Погонный декремент затухания β, 1/м: ΔP(x) = ΔP₀·exp(−β·x).
+ *
+ * β = λ / (2·d_г). Чем уже выработка, тем быстрее гаснет волна — это
+ * ПРОТИВОПОЛОЖНО прежней логике wallReflectionFactor, где узкая выработка
+ * просто усиливала давление постоянным множителем. Физически верно именно
+ * так: в узком канале выше отношение периметра к площади, значит больше
+ * потери на трении о стенки на каждом метре пути.
+ */
+export function channelDecay(ch: ChannelParams): number {
+  const d = hydraulicDiameter(ch.area_m2, ch.perimeter_m);
+  if (d <= 0) return 0;
+  const lambda = ch.lambda && ch.lambda > 0 ? ch.lambda : LAMBDA_DEFAULT;
+  return lambda / (2 * d);
+}
+
+/** Расстояние перехода от сферического разлёта к канальному, м */
+export function transitionRadius(area_m2: number): number {
+  if (area_m2 <= 0) return 0;
+  return K_TRANSITION * Math.sqrt(area_m2);
+}
+
+/**
+ * Давление во фронте на расстоянии L по ВЫРАБОТКЕ, кПа.
+ *
+ * Ближняя зона — Садовский (сфера), дальняя — экспоненциальное затухание
+ * в канале. В точке сшивки r_tr обе ветви дают одно значение, поэтому
+ * функция непрерывна и монотонно убывает.
+ *
+ * @param pathLoss_dB — накопленные потери на ПРЕДЫДУЩИХ участках пути
+ *        (деление потока на сопряжениях, местные сопротивления), в виде
+ *        безразмерного множителя ≤ 1. Для одиночной выработки равен 1.
+ */
+export function channelPressureAt(
+  L_m: number,
+  q_tnt: number,
+  ch: ChannelParams,
+  pathFactor = 1,
+): number {
+  if (q_tnt <= 0) return 0;
+  const rMin = R_BAR_MIN * Math.pow(q_tnt, 1 / 3);
+  const rTr  = Math.max(transitionRadius(ch.area_m2), rMin);
+  const L    = Math.max(L_m, rMin);
+
+  // Ближняя зона — чистая сфера по Садовскому
+  if (L <= rTr) {
+    return Math.round(sadovskyDeltaPRaw(L, q_tnt) * pathFactor * 10) / 10;
+  }
+  // Дальняя зона — канал: сшивка в r_tr и экспоненциальное затухание
+  const dpTr = sadovskyDeltaPRaw(rTr, q_tnt);
+  const beta = channelDecay(ch);
+  const dp   = dpTr * Math.exp(-beta * (L - rTr));
+  return Math.round(dp * pathFactor * 10) / 10;
+}
+
+/**
+ * Импульс на расстоянии L по выработке, Па·с.
+ * В канале импульс затухает медленнее давления (фаза сжатия растягивается),
+ * поэтому берётся половинный декремент.
+ */
+export function channelImpulseAt(
+  L_m: number,
+  q_tnt: number,
+  ch: ChannelParams,
+  pathFactor = 1,
+): number {
+  if (q_tnt <= 0) return 0;
+  const rMin = R_BAR_MIN * Math.pow(q_tnt, 1 / 3);
+  const rTr  = Math.max(transitionRadius(ch.area_m2), rMin);
+  const L    = Math.max(L_m, rMin);
+  const base = 123 * Math.pow(q_tnt, 0.66);
+  if (L <= rTr) {
+    return Math.round((base / L) * pathFactor * 10) / 10;
+  }
+  const iTr  = base / rTr;
+  const beta = channelDecay(ch) * 0.5;
+  return Math.round(iTr * Math.exp(-beta * (L - rTr)) * pathFactor * 10) / 10;
+}
+
+/**
+ * Длина пути по выработке, на которой давление падает до заданного, м.
+ * Аналог radiusAtPressure, но для канальной модели.
+ */
+export function channelDistanceAtPressure(
+  targetP_kPa: number,
+  q_tnt: number,
+  ch: ChannelParams,
+  pathFactor = 1,
+): number {
+  if (targetP_kPa <= 0 || q_tnt <= 0) return 0;
+  const rMin = R_BAR_MIN * Math.pow(q_tnt, 1 / 3);
+  const rTr  = Math.max(transitionRadius(ch.area_m2), rMin);
+  const dpTr = sadovskyDeltaPRaw(rTr, q_tnt) * pathFactor;
+
+  // Порог достигается ещё в сферической зоне — ищем там (бинарный поиск)
+  if (targetP_kPa >= dpTr) {
+    let lo = rMin, hi = rTr;
+    if (sadovskyDeltaPRaw(rMin, q_tnt) * pathFactor <= targetP_kPa) return Math.round(rMin);
+    for (let i = 0; i < 60; i++) {
+      const mid = (lo + hi) / 2;
+      if (sadovskyDeltaPRaw(mid, q_tnt) * pathFactor > targetP_kPa) lo = mid; else hi = mid;
+    }
+    return Math.round((lo + hi) / 2);
+  }
+  // Дальняя зона — решаем экспоненту аналитически
+  const beta = channelDecay(ch);
+  if (beta <= 0) return Math.round(rTr);
+  const L = rTr + Math.log(dpTr / targetP_kPa) / beta;
+  return Math.round(L);
 }
 
 // ─── Пороги поражения (кПа) ───────────────────────────────────────────────────
@@ -498,12 +694,34 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // Ниже её параметры волны методикой не определяются.
   const rMinValid = minValidRadius(q_tnt);
 
-  // 2. Коэффициент эффекта выработки (канализирование волны)
-  const wallFactor = params.considerWalls
+  // 2. Модель распространения.
+  // По умолчанию — КАНАЛЬНАЯ: ближняя зона сферическая (Садовский), дальняя
+  // идёт по выработке с затуханием на трении. Прежний wallFactor при этом
+  // НЕ применяется: он был грубой заменой канализирования постоянным
+  // множителем, и вместе с канальной моделью эффект учитывался бы дважды —
+  // ровно та же ошибка, из-за которой был удалён режим «ФНиП №494».
+  const channelMode = params.channelMode !== false;
+  const channel: ChannelParams = {
+    area_m2: params.excavationArea_m2,
+    perimeter_m: params.excavationPerimeter_m,
+    lambda: params.channelLambda,
+  };
+  const wallFactor = (!channelMode && params.considerWalls)
     ? wallReflectionFactor(params.excavationArea_m2)
     : 1.0;
-  if (params.considerWalls) {
-    log.push(`Коэффициент отражения от стенок выработки: k = ${wallFactor}`);
+
+  const rTr  = channelMode ? Math.max(transitionRadius(channel.area_m2), rMinValid) : 0;
+  const beta = channelMode ? channelDecay(channel) : 0;
+
+  if (channelMode) {
+    const dg = hydraulicDiameter(channel.area_m2, channel.perimeter_m);
+    log.push(`Модель распространения: канальная (ближняя зона — Садовский, дальняя — выработка)`);
+    log.push(`Сечение S = ${channel.area_m2} м², гидравлический диаметр d = ${Math.round(dg * 100) / 100} м`);
+    log.push(`Коэффициент сопротивления λ = ${channel.lambda ?? LAMBDA_DEFAULT}`);
+    log.push(`Переход сфера → канал: r = ${Math.round(rTr * 10) / 10} м`);
+    log.push(`Погонное затухание β = λ/(2d) = ${beta.toExponential(3)} 1/м`);
+  } else if (params.considerWalls) {
+    log.push(`Модель распространения: сферическая, коэффициент стенок k = ${wallFactor}`);
   }
 
   // 3. Функции давления и импульса.
@@ -512,11 +730,13 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // r = 0 (точка установки очага) — тоже максимум, а не ноль: раньше
   // ветка `r_m <= 0` давала 0 кПа, и эпицентр взрыва попадал в «безопасно».
   const pressureAtDistance = (r: number) => {
+    if (channelMode) return channelPressureAt(r, q_tnt, channel);
     const dP = sadovskyDeltaP(Math.max(r, rMinValid), q_tnt);
     return Math.round(dP * wallFactor * 10) / 10;
   };
 
   const impulseAtDistance = (r: number) => {
+    if (channelMode) return channelImpulseAt(r, q_tnt, channel);
     const i = sadovskyImpulse(Math.max(r, rMinValid), q_tnt);
     return Math.round(i * wallFactor * 10) / 10;
   };
@@ -547,8 +767,15 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     { name: "Лёгкие поражения",  level: "light",  from: th.light,  to: th.medium, what: "контузии, звуковая травма, лёгкие повреждения" },
   ];
 
+  // Радиус зоны: в канальном режиме это ДЛИНА ПУТИ ПО ВЫРАБОТКЕ, а не
+  // радиус сферы. Именно поэтому значения получаются в сотни метров —
+  // волна не рассеивается в объём, а идёт по каналу.
+  const zoneReach = (p: number) => channelMode
+    ? channelDistanceAtPressure(p, q_tnt, channel)
+    : radiusAtPressure(p, q_tnt, wallFactor);
+
   const zones: ExplosionZone[] = zoneDefs.map(d => {
-    const r = radiusAtPressure(d.from, q_tnt, wallFactor);
+    const r = zoneReach(d.from);
     return {
       name: d.name,
       description: `ΔP ${d.to === null ? `> ${d.from}` : `${d.from}–${d.to}`} кПа — ${d.what}`,
@@ -559,7 +786,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     };
   });
 
-  const rSafe = radiusAtPressure(th.safeLimit, q_tnt, wallFactor);
+  const rSafe = zoneReach(th.safeLimit);
   zones.push({
     name: "Безопасная зона",
     description: `ΔP < ${th.safeLimit} кПа — незначительное воздействие`,
@@ -580,6 +807,10 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     waveFrontSpeed_ms,
     minValidRadius_m: rMin,
     thresholds: th,
+    channelMode,
+    transitionRadius_m: channelMode ? Math.round(rTr * 10) / 10 : undefined,
+    channelDecay_per_m: channelMode ? beta : undefined,
+    channel: channelMode ? channel : undefined,
     zones,
     pressureAtDistance,
     impulseAtDistance,

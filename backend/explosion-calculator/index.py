@@ -135,12 +135,17 @@ def sadovsky_delta_p(r_m, q_tnt):
     давление оказывалось МЕНЬШЕ, чем дальше от него.
     Внутри границы принимаем значение на самой границе (плато).
     """
+    return round(sadovsky_delta_p_raw(r_m, q_tnt), 1)
+
+
+def sadovsky_delta_p_raw(r_m, q_tnt):
+    """То же без округления — для внутренних расчётов канальной модели."""
     if q_tnt <= 0 or r_m <= 0:
         return 0.0
     r_bar = max(r_m / (q_tnt ** (1.0 / 3.0)), R_BAR_MIN)
     # Коэффициенты Садовского дают кгс/см² — переводим в кПа (×98.07)
     dp_kgf = 0.84 / r_bar + 2.7 / r_bar**2 + 7.15 / r_bar**3
-    return round(dp_kgf * KGF_CM2_TO_KPA, 1)
+    return dp_kgf * KGF_CM2_TO_KPA
 
 
 def sadovsky_impulse(r_m, q_tnt):
@@ -199,6 +204,113 @@ def wall_reflection_factor(area_m2):
             t = (area_m2 - a1) / (a2 - a1)
             return round(k1 + (k2 - k1) * t, 3)
     return pts[-1][1]
+
+
+# ─── КАНАЛЬНАЯ МОДЕЛЬ РАСПРОСТРАНЕНИЯ ────────────────────────────────────────
+# Формула Садовского описывает СФЕРИЧЕСКИЙ разлёт в открытом воздухе. В горной
+# выработке волна уже через несколько метров упирается в стенки и дальше идёт
+# по КАНАЛУ: энергия в объём не рассеивается, давление падает только на трении
+# о стенки и делении потока на сопряжениях.
+#
+# Разница не в процентах, а в порядках: для 95 кг ТНТ в выработке 12 м²
+# сфера давала границу 6 кПа на 127 м, канал — на 650 м, что согласуется
+# с «Аэросетью». Прежний wall_reflection_factor этого не лечил: он умножал
+# давление на постоянное число и не менял сам ЗАКОН затухания.
+#
+#   1) Ближняя зона (r <= r_tr) — сфера по Садовскому.
+#   2) r_tr = K_TRANSITION * sqrt(S) — фронт заполнил сечение.
+#   3) Дальняя зона — ΔP(L) = ΔP(r_tr) * exp(-beta * (L - r_tr)),
+#      beta = lambda / (2 * d_g),  d_g = 4S/P.
+
+K_TRANSITION = 2.0
+LAMBDA_DEFAULT = 0.05
+
+
+def hydraulic_diameter(area_m2, perimeter_m=None):
+    """Гидравлический диаметр выработки d = 4S/P, м."""
+    if area_m2 <= 0:
+        return 0.0
+    p = perimeter_m if perimeter_m and perimeter_m > 0 else 2 * math.sqrt(math.pi * area_m2)
+    return (4 * area_m2) / p
+
+
+def channel_decay(area_m2, perimeter_m=None, lam=None):
+    """Погонный декремент затухания beta, 1/м: ΔP(x) = ΔP0 * exp(-beta*x).
+
+    Чем УЖЕ выработка, тем быстрее гаснет волна — выше отношение периметра
+    к площади, больше потери на трении на каждом метре. Это противоположно
+    прежней логике wall_reflection_factor, где узкая выработка просто
+    усиливала давление постоянным множителем.
+    """
+    d = hydraulic_diameter(area_m2, perimeter_m)
+    if d <= 0:
+        return 0.0
+    lam = lam if lam and lam > 0 else LAMBDA_DEFAULT
+    return lam / (2 * d)
+
+
+def transition_radius(area_m2):
+    """Расстояние перехода сфера -> канал, м."""
+    if area_m2 <= 0:
+        return 0.0
+    return K_TRANSITION * math.sqrt(area_m2)
+
+
+def channel_pressure_at(l_m, q_tnt, area_m2, perimeter_m=None, lam=None, path_factor=1.0):
+    """ΔP на расстоянии L по выработке, кПа. Непрерывна в точке сшивки."""
+    if q_tnt <= 0:
+        return 0.0
+    r_min = R_BAR_MIN * (q_tnt ** (1.0 / 3.0))
+    r_tr = max(transition_radius(area_m2), r_min)
+    l = max(l_m, r_min)
+    if l <= r_tr:
+        return round(sadovsky_delta_p_raw(l, q_tnt) * path_factor, 1)
+    dp_tr = sadovsky_delta_p_raw(r_tr, q_tnt)
+    beta = channel_decay(area_m2, perimeter_m, lam)
+    return round(dp_tr * math.exp(-beta * (l - r_tr)) * path_factor, 1)
+
+
+def channel_impulse_at(l_m, q_tnt, area_m2, perimeter_m=None, lam=None, path_factor=1.0):
+    """Импульс на расстоянии L по выработке, Па·с.
+
+    В канале импульс затухает медленнее давления (фаза сжатия растягивается),
+    поэтому декремент берётся половинный.
+    """
+    if q_tnt <= 0:
+        return 0.0
+    r_min = R_BAR_MIN * (q_tnt ** (1.0 / 3.0))
+    r_tr = max(transition_radius(area_m2), r_min)
+    l = max(l_m, r_min)
+    base = 123 * q_tnt ** 0.66
+    if l <= r_tr:
+        return round((base / l) * path_factor, 1)
+    beta = channel_decay(area_m2, perimeter_m, lam) * 0.5
+    return round((base / r_tr) * math.exp(-beta * (l - r_tr)) * path_factor, 1)
+
+
+def channel_distance_at_pressure(target_p, q_tnt, area_m2, perimeter_m=None, lam=None, path_factor=1.0):
+    """Длина пути по выработке, на которой ΔP падает до заданного, м."""
+    if target_p <= 0 or q_tnt <= 0:
+        return 0
+    r_min = R_BAR_MIN * (q_tnt ** (1.0 / 3.0))
+    r_tr = max(transition_radius(area_m2), r_min)
+    dp_tr = sadovsky_delta_p_raw(r_tr, q_tnt) * path_factor
+    if target_p >= dp_tr:
+        # Порог достигается ещё в сферической зоне
+        if sadovsky_delta_p_raw(r_min, q_tnt) * path_factor <= target_p:
+            return round(r_min)
+        lo, hi = r_min, r_tr
+        for _ in range(60):
+            mid = (lo + hi) / 2.0
+            if sadovsky_delta_p_raw(mid, q_tnt) * path_factor > target_p:
+                lo = mid
+            else:
+                hi = mid
+        return round((lo + hi) / 2.0)
+    beta = channel_decay(area_m2, perimeter_m, lam)
+    if beta <= 0:
+        return round(r_tr)
+    return round(r_tr + math.log(dp_tr / target_p) / beta)
 
 
 def hazard_level(dp, th=None):
@@ -263,9 +375,15 @@ def calc_one(body: dict) -> dict:
     method       = body.get("method", "gas_dynamics")
     source_type  = body.get("sourceType", "gas")
     area_m2      = float(body.get("excavationArea_m2", 12))
+    perimeter_m  = body.get("excavationPerimeter_m")
+    perimeter_m  = float(perimeter_m) if perimeter_m else None
     consider_walls = bool(body.get("considerWalls", True))
     distances    = body.get("distances", [])
     th           = normalize_thresholds(body.get("thresholds"))
+    # Канальная модель включена по умолчанию (см. блок выше).
+    channel_mode = body.get("channelMode") is not False
+    lam          = body.get("channelLambda")
+    lam          = float(lam) if lam else None
 
     log = []
     warnings = []
@@ -331,17 +449,44 @@ def calc_one(body: dict) -> dict:
     q_tnt_rounded = round(q_tnt * 100) / 100
     log.append(f"Тротиловый эквивалент: Q_tnt = {q_tnt_rounded} кг ТНТ")
 
-    # 2. Коэффициент выработки
-    wall_factor = wall_reflection_factor(area_m2) if consider_walls else 1.0
-    if consider_walls:
-        log.append(f"Коэффициент отражения от стенок: k = {wall_factor}")
+    # 2. Модель распространения.
+    # При канальной модели wall_factor НЕ применяется: он был грубой заменой
+    # канализирования постоянным множителем, и вместе с каналом эффект
+    # учитывался бы дважды — та же ошибка, из-за которой убрали «ФНиП №494».
+    wall_factor = wall_reflection_factor(area_m2) if (consider_walls and not channel_mode) else 1.0
+    r_tr = max(transition_radius(area_m2), min_valid_radius(q_tnt)) if channel_mode else 0.0
+    beta = channel_decay(area_m2, perimeter_m, lam) if channel_mode else 0.0
 
-    # 3. Параметры в эпицентре (r=1м)
-    # Максимум — на ГРАНИЦЕ ПРИМЕНИМОСТИ формулы (r̄ = 1), а не при r = 1 м:
+    def dp_at(r):
+        if channel_mode:
+            return channel_pressure_at(r, q_tnt, area_m2, perimeter_m, lam)
+        return pressure_at(r, q_tnt, method, wall_factor)
+
+    def imp_at(r):
+        if channel_mode:
+            return channel_impulse_at(r, q_tnt, area_m2, perimeter_m, lam)
+        return round(sadovsky_impulse(r, q_tnt) * wall_factor, 1)
+
+    def reach_at(p):
+        if channel_mode:
+            return channel_distance_at_pressure(p, q_tnt, area_m2, perimeter_m, lam)
+        return radius_at_pressure(p, q_tnt, method, wall_factor)
+
+    if channel_mode:
+        d_g = hydraulic_diameter(area_m2, perimeter_m)
+        log.append("Модель распространения: канальная (ближняя зона — Садовский, дальняя — выработка)")
+        log.append(f"Сечение S = {area_m2} м², гидравлический диаметр d = {round(d_g, 2)} м")
+        log.append(f"Коэффициент сопротивления λ = {lam if lam else LAMBDA_DEFAULT}")
+        log.append(f"Переход сфера → канал: r = {round(r_tr, 1)} м")
+        log.append(f"Погонное затухание β = λ/(2d) = {beta:.3e} 1/м")
+    elif consider_walls:
+        log.append(f"Модель распространения: сферическая, коэффициент стенок k = {wall_factor}")
+
+    # 3. Максимум — на ГРАНИЦЕ ПРИМЕНИМОСТИ формулы (r̄ = 1), а не при r = 1 м:
     # для 97 кг ТНТ r = 1 м это r̄ = 0.22, где формула уже не работает.
     r_min    = min_valid_radius(q_tnt)
-    max_dp   = pressure_at(r_min, q_tnt, method, wall_factor)
-    max_imp  = round(sadovsky_impulse(r_min, q_tnt) * wall_factor, 1)
+    max_dp   = dp_at(r_min)
+    max_imp  = imp_at(r_min)
     wave_spd = wave_front_speed(max_dp)
 
     log.append("Методика: газодинамическая (Садовский), Q_тнт по Методике №415")
@@ -357,28 +502,31 @@ def calc_one(body: dict) -> dict:
         ("Средние поражения", "medium", th["medium"], th["heavy"],  "средние травмы, повреждение"),
         ("Лёгкие поражения",  "light",  th["light"],  th["medium"], "контузии, лёгкие повреждения"),
     ]
+    # В канальном режиме radius_m — это ДЛИНА ПУТИ ПО ВЫРАБОТКЕ, а не радиус
+    # сферы. Поэтому значения получаются в сотни метров: волна не рассеивается
+    # в объём, а идёт по каналу.
     zones = []
     for name, hlevel, lo, hi, what in zone_defs:
-        r = radius_at_pressure(lo, q_tnt, method, wall_factor)
-        imp = round(sadovsky_impulse(r, q_tnt) * wall_factor, 1) if r > 0 else 0
+        r = reach_at(lo)
+        imp = imp_at(r) if r > 0 else 0
         rng = f"> {lo}" if hi is None else f"{lo}–{hi}"
         zones.append({"name": name, "description": f"ΔP {rng} кПа — {what}",
                       "radius_m": r, "deltaP_kPa": lo, "impulse_Pas": imp,
                       "hazardLevel": hlevel})
         log.append(f"{name}: r = {r} м, ΔP = {lo} кПа")
-    r_safe = radius_at_pressure(th["safe"], q_tnt, method, wall_factor)
+    r_safe = reach_at(th["safe"])
     zones.append({"name": "Безопасная зона",
                   "description": f"ΔP < {th['safe']} кПа — незначительное воздействие",
                   "radius_m": r_safe, "deltaP_kPa": th["safe"],
-                  "impulse_Pas": round(sadovsky_impulse(r_safe, q_tnt) * wall_factor, 1) if r_safe > 0 else 0,
+                  "impulse_Pas": imp_at(r_safe) if r_safe > 0 else 0,
                   "hazardLevel": "safe"})
     log.append(f"Безопасная зона: r = {r_safe} м, ΔP = {th['safe']} кПа")
 
     # 5. Давление в произвольных точках (опционально)
     pressure_points = []
     for r in distances:
-        dp = pressure_at(float(r), q_tnt, method, wall_factor)
-        imp = round(sadovsky_impulse(float(r), q_tnt) * wall_factor, 1)
+        dp = dp_at(float(r))
+        imp = imp_at(float(r))
         pressure_points.append({"r_m": r, "deltaP_kPa": dp, "impulse_Pas": imp,
                                  "hazardLevel": hazard_level(dp, th)})
 
@@ -389,6 +537,13 @@ def calc_one(body: dict) -> dict:
         "waveFrontSpeed_ms":  wave_spd,
         "minValidRadius_m":   r_min,
         "thresholds":         th,
+        "channelMode":        channel_mode,
+        "transitionRadius_m": round(r_tr, 1) if channel_mode else None,
+        "channelDecay_per_m": beta if channel_mode else None,
+        # Параметры канала нужны клиенту, чтобы вести волну по графу
+        "channel":            ({"area_m2": area_m2, "perimeter_m": perimeter_m,
+                                "lambda": lam if lam else LAMBDA_DEFAULT}
+                               if channel_mode else None),
         "zones":              zones,
         "pressurePoints":     pressure_points,
         "log":                log,
