@@ -437,29 +437,75 @@ export const LAMBDA_DEFAULT = 0.02;
 export const GAS_P0_DEFAULT = 282;
 
 /**
- * Начальное давление продуктов взрыва в зависимости от ДЛИНЫ загазованного
- * участка, кПа — автоматический расчёт, как в «Аэросети».
+ * Начальное давление продуктов взрыва, кПа — зависит от ДЛИНЫ участка
+ * И от ЭНЕРГИИ смеси.
  *
- * Физический смысл: чем длиннее загазованный участок, тем дольше фронт
- * пламени разгоняется внутри него до выхода наружу. При дефлаграции в
- * канале пламя ускоряется на турбулентности от стенок, и давление в очаге
- * растёт с длиной разгона — но не линейно, а с насыщением.
+ * ФИЗИКА. Давление в замкнутом объёме при сгорании определяется удельным
+ * энерговыделением: P_изб ∝ E_v (энергия на кубометр смеси). Длина участка
+ * добавляет разгон фронта пламени — чем дольше пламя ускоряется на
+ * турбулентности от стенок, тем выше давление, но с насыщением.
  *
- * Аппроксимация степенная, откалибрована по двум точкам «Аэросети»:
+ *     ΔP₀ = K · L^n · (E_v / E_v_ref)
+ *
+ * ПОЧЕМУ ТАК, А НЕ ТОЛЬКО ПО ДЛИНЕ. Раньше формула была ΔP₀ = K·L^n без
+ * энергии, и это разрывало расчётную цепочку: вид газа, его концентрация
+ * и коэффициент участия Z считались, выводились на экран — но на зоны
+ * поражения не влияли вообще. Смесь у нижнего предела 5.5 % давала те же
+ * зоны, что стехиометрическая 9.5 %, а водород — те же, что ацетилен.
+ *
+ * КАЛИБРОВКА. Множитель (E_v/E_v_ref) равен единице для эталона —
+ * метановоздушной смеси стехиометрической концентрации при Z = 0.5.
+ * Поэтому контрольные точки «Аэросети» сохраняются в точности:
  *   L = 50 м  → 209 кПа
  *   L = 100 м → 282 кПа
- * Отсюда P₀(L) = 38.54 · L^0.4322.
  *
- * Ограничения: снизу 20 кПа (совсем короткий участок не разгоняет пламя),
- * сверху 900 кПа — предел давления продуктов сгорания метановоздушной
- * смеси в замкнутом объёме (примерно 9 атмосфер).
+ * Ограничения: снизу 20 кПа (короткий участок не разгоняет пламя), сверху
+ * 900 кПа — предел давления продуктов сгорания углеводородовоздушной смеси
+ * в замкнутом объёме (около 9 атмосфер).
  */
 export const GAS_P0_COEF = 38.5358;
 export const GAS_P0_EXP  = 0.43219;
 
-export function gasInitialPressure(zoneLength_m: number): number {
+/**
+ * Эталонная удельная энергия: метан, стехиометрия 9.5 %, Z = 0.5.
+ * E_v = 33.8 МДж/м³ · 0.095 · 0.5 = 1.6055 МДж на м³ смеси.
+ */
+export const GAS_EV_REF = 1.6055;
+
+/**
+ * Удельная энергия смеси, МДж на кубометр СМЕСИ.
+ *
+ * Учитывает три ограничения:
+ *   1) горючего больше стехиометрии — сгорает только стехиометрическая
+ *      доля, остального кислорода не хватает;
+ *   2) непрореагировавший избыток работает БАЛЛАСТОМ: поглощает тепло,
+ *      снижает температуру продуктов и давление. Отсюда множитель
+ *      stoich/conc для богатых смесей — раньше его не было, и смеси
+ *      12 % и 14.9 % давали ровно то же, что стехиометрические 9.5 %;
+ *   3) коэффициент участия Z по Методике №415.
+ */
+export function gasEnergyDensity(gas: GasType, concentration: number, z: number): number {
+  if (concentration <= 0 || z <= 0) return 0;
+  // Доля горючего, которая реально сгорает (ограничена кислородом)
+  const burned = Math.min(concentration, gas.stoichConc);
+  // Энергия на м³ смеси: у газа концентрация объёмная (%), у пыли — г/м³
+  const e = gas.unit === "g/m3"
+    ? (burned / 1000) * gas.qCombust   // кг пыли в м³ × МДж/кг
+    : (burned / 100)  * gas.qCombust;  // м³ газа в м³ смеси × МДж/м³
+  // Балласт: избыток горючего сверх стехиометрии охлаждает продукты
+  const ballast = concentration > gas.stoichConc ? gas.stoichConc / concentration : 1;
+  return e * ballast * z;
+}
+
+/**
+ * ΔP₀ в очаге по длине участка и удельной энергии смеси, кПа.
+ * energyDensity не задана — берётся эталонная (метан, стехиометрия, Z=0.5),
+ * то есть формула вырождается в прежнюю зависимость только от длины.
+ */
+export function gasInitialPressure(zoneLength_m: number, energyDensity_MJ_m3?: number): number {
   if (!Number.isFinite(zoneLength_m) || zoneLength_m <= 0) return 0;
-  const p = GAS_P0_COEF * Math.pow(zoneLength_m, GAS_P0_EXP);
+  const ev = energyDensity_MJ_m3 && energyDensity_MJ_m3 > 0 ? energyDensity_MJ_m3 : GAS_EV_REF;
+  const p = GAS_P0_COEF * Math.pow(zoneLength_m, GAS_P0_EXP) * (ev / GAS_EV_REF);
   return Math.round(Math.min(900, Math.max(20, p)) * 10) / 10;
 }
 
@@ -805,6 +851,9 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // Причина, по которой взрыва не происходит. Заполняется ниже; если она
   // задана — расчёт прекращается и возвращается нулевой результат.
   let noExplosionReason = "";
+  // Удельная энергия смеси, МДж/м³ — заполняется в газовой ветке и через
+  // неё вид газа, концентрация и Z влияют на ΔP₀ (см. gasInitialPressure).
+  let gasEv = 0;
 
   // Длина загазованного участка и объём смеси.
   // ГЛАВНОЕ: объём считается как L × S выработки, а не берётся буквально из
@@ -840,6 +889,9 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     const effectiveConc = Math.min(conc, gas.stoichConc);
     const z = params.zParticipation && params.zParticipation > 0 ? params.zParticipation : Z_DEFAULT;
     q_tnt = gasToTnt(gas, gasVolume, effectiveConc, z);
+    // Удельная энергия смеси — через неё вид газа, концентрация и Z влияют
+    // на начальное давление ΔP₀, а значит и на зоны поражения.
+    gasEv = gasEnergyDensity(gas, conc, z);
     if (gasZoneLen > 0) {
       log.push(`Загазованный участок: длина ${gasZoneLen} м × сечение ${params.excavationArea_m2} м² = ${Math.round(gasVolume)} м³ смеси`);
     }
@@ -915,7 +967,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
       zoneLength_m: zoneLen,
       initialPressure_kPa: manual
         ? params.gasInitialPressure_kPa!
-        : gasInitialPressure(zoneLen),
+        : gasInitialPressure(zoneLen, gasEv),
     };
   })();
 
@@ -923,9 +975,13 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     const auto = !(params.gasInitialPressure_kPa && params.gasInitialPressure_kPa > 0);
     log.push(`Модель источника: протяжённый загазованный участок (плоская волна, как в «Аэросети»)`);
     log.push(`Длина участка: ${Math.round(gasSource.zoneLength_m * 10) / 10} м`);
-    log.push(auto
-      ? `Начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа (расчёт по длине: ${GAS_P0_COEF}·L^${GAS_P0_EXP})`
-      : `Начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа (задано вручную)`);
+    if (auto) {
+      const rel = Math.round((gasEv / GAS_EV_REF) * 1000) / 1000;
+      log.push(`Удельная энергия смеси: ${Math.round(gasEv * 1000) / 1000} МДж/м³ (эталон метан 9,5 % при Z=0,5: ${GAS_EV_REF}; отношение ${rel})`);
+      log.push(`Начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа (${GAS_P0_COEF}·L^${GAS_P0_EXP}·E_v/E_ref)`);
+    } else {
+      log.push(`Начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа (задано вручную)`);
+    }
   }
 
   if (channelMode) {

@@ -238,25 +238,57 @@ LAMBDA_DEFAULT = 0.02
 # загазованного участка — у нас так же (см. gas_initial_pressure).
 GAS_P0_DEFAULT = 282.0
 
-# Зависимость ΔP0 от длины загазованного участка, откалибрована по двум
-# точкам «Аэросети»: L=50 м -> 209 кПа, L=100 м -> 282 кПа.
-# Физика: чем длиннее участок, тем дольше фронт пламени разгоняется внутри
-# него на турбулентности от стенок, тем выше давление в очаге — но с
-# насыщением, а не линейно.
+# ΔP0 зависит от ДЛИНЫ участка И от ЭНЕРГИИ смеси:
+#     ΔP0 = K * L^n * (E_v / E_v_ref)
+# Физика: давление в замкнутом объёме определяется удельным энерговыделением
+# E_v, а длина добавляет разгон фронта пламени на турбулентности от стенок
+# (с насыщением, а не линейно).
+#
+# Раньше формула была ΔP0 = K*L^n без энергии, и это разрывало цепочку: вид
+# газа, концентрация и Z считались, но на зоны поражения не влияли вообще —
+# смесь 5.5 % давала те же зоны, что стехиометрическая 9.5 %.
+#
+# Калибровка по «Аэросети» сохранена: множитель равен 1 для эталона (метан
+# 9.5 % при Z=0.5), поэтому L=50 м -> 209 кПа, L=100 м -> 282 кПа.
 GAS_P0_COEF = 38.5358
 GAS_P0_EXP = 0.43219
 
+# Эталон: метан 9.5 %, Z=0.5 -> 33.8 * 0.095 * 0.5 = 1.6055 МДж/м3 смеси
+GAS_EV_REF = 1.6055
 
-def gas_initial_pressure(zone_len):
-    """ΔP0 в очаге по длине загазованного участка, кПа.
+
+def gas_energy_density(gas, concentration, z):
+    """Удельная энергия смеси, МДж на кубометр СМЕСИ.
+
+    Учитывает: (1) сгорает только стехиометрическая доля — остального
+    кислорода не хватает; (2) непрореагировавший избыток работает
+    БАЛЛАСТОМ, поглощает тепло и снижает давление; (3) коэффициент Z.
+    """
+    if concentration <= 0 or z <= 0:
+        return 0.0
+    burned = min(concentration, gas["stoichConc"])
+    if gas.get("unit") == "g/m3":
+        e = (burned / 1000.0) * gas["qCombust"]   # кг пыли в м3 x МДж/кг
+    else:
+        e = (burned / 100.0) * gas["qCombust"]    # м3 газа в м3 смеси x МДж/м3
+    ballast = (gas["stoichConc"] / concentration) if concentration > gas["stoichConc"] else 1.0
+    return e * ballast * z
+
+
+def gas_initial_pressure(zone_len, energy_density=None):
+    """ΔP0 в очаге по длине участка и удельной энергии смеси, кПа.
+
+    energy_density не задана — берётся эталонная, то есть формула
+    вырождается в прежнюю зависимость только от длины.
 
     Ограничения: 20 кПа снизу (короткий участок не разгоняет пламя),
-    900 кПа сверху — предел давления продуктов сгорания метановоздушной
-    смеси в замкнутом объёме (около 9 атмосфер).
+    900 кПа сверху — предел давления продуктов сгорания углеводородо-
+    воздушной смеси в замкнутом объёме (около 9 атмосфер).
     """
     if zone_len is None or zone_len <= 0:
         return 0.0
-    p = GAS_P0_COEF * (zone_len ** GAS_P0_EXP)
+    ev = energy_density if energy_density and energy_density > 0 else GAS_EV_REF
+    p = GAS_P0_COEF * (zone_len ** GAS_P0_EXP) * (ev / GAS_EV_REF)
     return round(min(900.0, max(20.0, p)), 1)
 
 
@@ -489,6 +521,8 @@ def calc_one(body: dict) -> dict:
     # 1. Тротиловый эквивалент
     q_tnt = 0.0
     volume = 0.0   # объём газовоздушной смеси, м³ (нужен и ниже, вне ветки)
+    gas_ev = 0.0   # удельная энергия смеси, МДж/м³ — через неё вид газа,
+                   # концентрация и Z влияют на ΔP0 (см. gas_initial_pressure)
     if source_type == "gas":
         gas_id  = body.get("gasId", "methane")
         gas     = GAS_TYPES.get(gas_id, GAS_TYPES["methane"])
@@ -519,6 +553,7 @@ def calc_one(body: dict) -> dict:
         if z <= 0:
             z = Z_DEFAULT
         q_tnt = gas_to_tnt(gas, volume, eff_conc, z)
+        gas_ev = gas_energy_density(gas, conc, z)
         if gas_zone_len > 0:
             log.append(f"Загазованный участок: длина {gas_zone_len} м × сечение {area_m2} м² = {round(volume)} м³ смеси")
         log.append(f"{'Пыль' if gas.get('unit') == 'g/m3' else 'Газ'}: {gas_id}, объём: {round(volume)} м³, концентрация: {conc} {u}")
@@ -565,7 +600,7 @@ def calc_one(body: dict) -> dict:
     gas_mode = channel_mode and source_type == "gas"
     gas_len = gas_zone_len if gas_zone_len > 0 else (volume / area_m2 if area_m2 > 0 else 0.0)
     # ΔP0 — вручную либо автоматически по длине участка (как в «Аэросети»)
-    gas_p0 = gas_p0_manual if gas_p0_manual > 0 else gas_initial_pressure(gas_len)
+    gas_p0 = gas_p0_manual if gas_p0_manual > 0 else gas_initial_pressure(gas_len, gas_ev)
 
     def dp_at(r):
         if gas_mode:
@@ -591,8 +626,12 @@ def calc_one(body: dict) -> dict:
     if gas_mode:
         log.append("Модель источника: протяжённый загазованный участок (плоская волна, как в «Аэросети»)")
         log.append(f"Длина участка: {round(gas_len, 1)} м")
-        log.append(f"Начальное давление ΔP₀ = {gas_p0} кПа (задано вручную)" if gas_p0_manual > 0
-                   else f"Начальное давление ΔP₀ = {gas_p0} кПа (расчёт по длине: {GAS_P0_COEF}·L^{GAS_P0_EXP})")
+        if gas_p0_manual > 0:
+            log.append(f"Начальное давление ΔP₀ = {gas_p0} кПа (задано вручную)")
+        else:
+            log.append(f"Удельная энергия смеси: {round(gas_ev, 3)} МДж/м³ "
+                       f"(эталон метан 9,5 % при Z=0,5: {GAS_EV_REF}; отношение {round(gas_ev / GAS_EV_REF, 3)})")
+            log.append(f"Начальное давление ΔP₀ = {gas_p0} кПа ({GAS_P0_COEF}·L^{GAS_P0_EXP}·E_v/E_ref)")
 
     if channel_mode:
         d_g = hydraulic_diameter(area_m2, perimeter_m)

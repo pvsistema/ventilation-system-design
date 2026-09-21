@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -9370,7 +9370,11 @@ export default function CadPage() {
                         поэтому включается галочкой. */}
                     {(() => {
                       const zoneLen = b.explosionGasZoneLength ?? 100;
-                      const autoP0 = gasInitialPressure(zoneLen);
+                      // ΔP₀ зависит не только от длины, но и от ЭНЕРГИИ смеси:
+                      // вид газа, концентрация и Z входят через E_v.
+                      const gg = GAS_TYPES.find(x => x.id === (b.explosionGasId ?? "methane")) ?? GAS_TYPES[0];
+                      const ev = gasEnergyDensity(gg, b.explosionGasConcentration ?? gg.stoichConc, b.explosionZ ?? 0.5);
+                      const autoP0 = gasInitialPressure(zoneLen, ev);
                       const manual = (b.explosionGasP0 ?? 0) > 0;
                       return (
                         <div className="px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
@@ -9389,7 +9393,7 @@ export default function CadPage() {
                             <input type="checkbox" checked={manual}
                               onChange={e => updateBranch(b.id, { explosionGasP0: e.target.checked ? autoP0 : 0 })} />
                             <span className="text-[10px] text-gray-500">
-                              {manual ? "Задано вручную" : `Авторасчёт по длине участка (${zoneLen} м → ${autoP0} кПа)`}
+                              {manual ? "Задано вручную" : `Авторасчёт: ${zoneLen} м, E=${Math.round(ev * 100) / 100} МДж/м³ → ${autoP0} кПа`}
                             </span>
                           </label>
                         </div>
