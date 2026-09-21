@@ -15,7 +15,7 @@
       "expectedStatus": 200
     },
     {
-      "name": "Расчёт взрыва ВВ (аммонит, ФНиП-494, 50 кг)",
+      "name": "Старый проект с удалённым режимом fnip_494 — считается газодинамикой",
       "method": "POST",
       "path": "/",
       "body": {
@@ -29,13 +29,29 @@
       "expectedStatus": 200
     },
     {
+      "name": "Взрыв газа с коэффициентом участия Z по Методике №415",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "gas_dynamics",
+        "sourceType": "gas",
+        "gasId": "methane",
+        "gasVolume_m3": 100,
+        "gasConcentration": 9.5,
+        "excavationArea_m2": 12,
+        "considerWalls": false,
+        "zParticipation": 0.5
+      },
+      "expectedStatus": 200
+    },
+    {
       "name": "Пакетный расчёт нескольких взрывов одним запросом",
       "method": "POST",
       "path": "/",
       "body": {
         "items": [
           {
-            "method": "fnip_494",
+            "method": "gas_dynamics",
             "sourceType": "mass",
             "explosiveId": "ammonit",
             "explosiveMass_kg": 100,

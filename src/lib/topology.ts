@@ -428,7 +428,13 @@ export interface TopoBranch {
   // ─── Взрыв (расчёт параметров воздушных ударных волн) ───────────────
   hasExplosion: boolean;                   // в ветви установлен источник взрыва
   explosionT: number;                      // позиция источника вдоль ветви 0..1
-  explosionMethod: "gas_dynamics" | "fnip_494"; // методика расчёта
+  /**
+   * Методика расчёта. Осталась одна — газодинамическая (Садовский, Q_тнт
+   * по Методике №415). Значение "fnip_494" встречается в СТАРЫХ проектах:
+   * тип оставлен, чтобы такие файлы открывались, но расчёт всегда идёт
+   * по газодинамической методике.
+   */
+  explosionMethod: "gas_dynamics" | "fnip_494";
   explosionSourceType: "gas" | "mass";     // способ задания: по газу или по массе ВВ
   // По газу
   explosionGasId: string;                  // ID газа из GAS_TYPES
@@ -851,7 +857,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     // Взрыв
     hasExplosion: false,
     explosionT: 0.5,
-    explosionMethod: "fnip_494",
+    explosionMethod: "gas_dynamics",
     explosionSourceType: "mass",
     explosionGasId: "methane",
     explosionGasVolume: 100,

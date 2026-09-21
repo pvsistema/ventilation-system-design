@@ -9253,21 +9253,21 @@ export default function CadPage() {
 
                   {/* Методика */}
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Алгоритм расчёта</div>
-                  <div className="flex flex-col gap-0.5 px-2 py-1.5" style={{ borderBottom: SB }}>
-                    <label className="flex items-start gap-1.5 cursor-pointer">
-                      <input type="radio" name={`expl_method_${b.id}`} value="gas_dynamics"
-                        checked={(b.explosionMethod ?? "gas_dynamics") === "gas_dynamics"}
-                        onChange={() => updateBranch(b.id, { explosionMethod: "gas_dynamics" })}
-                        className="mt-0.5 flex-shrink-0" />
-                      <span className="text-[10px] text-gray-700 leading-tight">Методика газодинамического расчёта параметров воздушных ударных волн при взрывах газа и пыли</span>
-                    </label>
-                    <label className="flex items-start gap-1.5 cursor-pointer">
-                      <input type="radio" name={`expl_method_${b.id}`} value="fnip_494"
-                        checked={(b.explosionMethod ?? "gas_dynamics") === "fnip_494"}
-                        onChange={() => updateBranch(b.id, { explosionMethod: "fnip_494" })}
-                        className="mt-0.5 flex-shrink-0" />
-                      <span className="text-[10px] text-gray-700 leading-tight">ФНиП №494 (Правила безопасности при производстве, хранении и применении ВМ)</span>
-                    </label>
+                  <div className="flex flex-col gap-1 px-2 py-1.5" style={{ borderBottom: SB }}>
+                    <span className="text-[10px] text-gray-700 leading-tight">
+                      Методика газодинамического расчёта параметров воздушных ударных волн
+                      при взрывах газа и пыли (формула Садовского), тротиловый эквивалент —
+                      по Методике №415.
+                    </span>
+                    {b.explosionMethod === "fnip_494" && (
+                      <span className="text-[10px] leading-tight px-1.5 py-1 rounded"
+                        style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#713f12" }}>
+                        В проекте была выбрана методика «ФНиП №494». Этот режим убран:
+                        в ФНиП №494 расчётных формул ударной волны нет, а прежняя формула
+                        завышала давление на дальних расстояниях. Расчёт выполнен
+                        газодинамическим методом.
+                      </span>
+                    )}
                   </div>
 
                   {/* Настройки */}
@@ -13010,7 +13010,7 @@ export default function CadPage() {
                       updateBranch(branchId, {
                         hasExplosion: true,
                         explosionT: expT,
-                        explosionMethod: "fnip_494",
+                        explosionMethod: "gas_dynamics",
                         explosionSourceType: "mass",
                         explosionGasId: "methane",
                         explosionGasVolume: 100,

@@ -2,8 +2,8 @@
 // explosionModeRun.ts — расчёт последствий взрыва по схеме.
 //
 // Вынесено ИЗ ОБРАБОТЧИКА КНОПКИ в Cad.tsx. Логика перенесена дословно:
-// формулы Садовского и ФНиП 494, коэффициенты, пороги и порядок шагов
-// не менялись.
+// формула Садовского, коэффициенты, пороги и порядок шагов совпадают
+// с explosionCalculator.ts.
 //
 // Зачем вынесено: 200 строк расчёта жили прямо внутри кнопки ленты, вперемешку
 // с оформлением. Теперь это самостоятельная функция: на вход — схема и очаги,
@@ -12,7 +12,7 @@
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
   calcExplosion,
-  type ExplosionResult, type ExplosionMethod, type ExplosionSourceType,
+  type ExplosionResult, type ExplosionSourceType,
 } from "@/lib/explosionCalculator";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { withLicense } from "@/lib/license";
@@ -69,7 +69,9 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   // серверу при каждом нажатии «Рассчитать». Теперь все очаги
   // уходят ОДНИМ запросом и возвращаются одним ответом.
   const expPayload = expBranches.map(b => ({
-    method: b.explosionMethod ?? "fnip_494",
+    // Методика одна — газодинамическая. Значение из ветви игнорируем:
+    // в старых проектах там может стоять удалённый режим "fnip_494".
+    method: "gas_dynamics",
     sourceType: b.explosionSourceType ?? "mass",
     gasId: b.explosionGasId ?? "methane",
     gasVolume_m3: b.explosionGasVolume ?? 100,
@@ -113,7 +115,6 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       const _considerWalls = b.explosionConsiderWalls ?? true;
       const _wfRaw = area <= 0 ? 1.5 : area < 10 ? 2.0 : area < 20 ? 1.8 : area < 40 ? 1.5 : 1.3;
       const _wf   = _considerWalls ? _wfRaw : 1.0;
-      const _meth = b.explosionMethod ?? "gas_dynamics";
       // Формулы согласованы с explosionCalculator.ts
       const sadovsky = (r: number): number => {
         if (_qTnt <= 0 || r <= 0) return 0;
@@ -123,16 +124,10 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         const dpKgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
         return Math.round(dpKgf * 98.07 * 10) / 10;
       };
-      const fnip494 = (r: number): number => {
-        if (_qTnt <= 0 || r <= 0) return 0;
-        // Коэф. 1.5 согласован с Аэросетью (ВНИМИ) для горных выработок
-        return Math.round(1.5 * Math.pow(_qTnt / (r * r * r), 1 / 3) * 101.3 * 10) / 10;
-      };
       res = {
         ...data,
         pressureAtDistance: (r: number) => {
-          const dp = _meth === "gas_dynamics" ? sadovsky(r) : fnip494(r);
-          return Math.round(dp * _wf * 10) / 10;
+          return Math.round(sadovsky(r) * _wf * 10) / 10;
         },
         impulseAtDistance: (r: number) => {
           if (_qTnt <= 0 || r <= 0) return 0;
@@ -142,7 +137,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       };
     } catch {
       res = calcExplosion({
-        method: (b.explosionMethod ?? "fnip_494") as ExplosionMethod,
+        method: "gas_dynamics",
         sourceType: (b.explosionSourceType ?? "mass") as ExplosionSourceType,
         gasId: b.explosionGasId ?? "methane",
         gasVolume_m3: b.explosionGasVolume ?? 100,

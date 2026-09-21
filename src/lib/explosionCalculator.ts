@@ -1,13 +1,20 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // explosionCalculator.ts — Расчёт параметров воздушных ударных волн при взрывах
 //
-// Реализованы две методики:
+// Методика: «Методика газодинамического расчёта параметров воздушных ударных
+// волн при взрывах газа и пыли» — формула Садовского, тротиловый эквивалент
+// по Методике №415 (Приказ Ростехнадзора от 28.11.2022) с коэффициентом
+// участия Z.
 //
-//  1. «Методика газодинамического расчёта параметров воздушных ударных волн
-//     при взрывах газа и пыли» (основная, рекомендуемая для горных выработок)
-//
-//  2. «ФНиП №494: Правила безопасности при производстве, хранении и применении
-//     взрывчатых материалов промышленного назначения»
+// РАНЕЕ здесь был второй режим «ФНиП №494» с формулой
+// ΔP = 1.5·(Q/r³)^(1/3)·P₀. Он удалён: в самих ФНиП №494 (правила обращения
+// с взрывчатыми материалами) расчётных формул ударной волны нет, а сама
+// зависимость сводилась к затуханию 1/r и на дальних расстояниях завышала
+// давление втрое против №415. Вдобавок коэффициент 1.5 уже учитывал
+// канализирование волны в выработке, и поверх него домножался коэффициент
+// отражения от стенок — эффект учитывался дважды.
+// Старые проекты с method="fnip_494" открываются: поле сохранено в типе
+// ветви, но на расчёт не влияет — он всегда газодинамический.
 //
 // Способы задания источника:
 //   • По газу    — объём горючего газа (CH₄ или H₂) в м³, концентрация
@@ -73,11 +80,12 @@ export const Z_CONFINED = 0.5;
 export const Z_DEFAULT  = Z_CONFINED; // выработка — замкнутый объём
 
 // ─── Параметры расчёта ────────────────────────────────────────────────────────
-export type ExplosionMethod = "gas_dynamics" | "fnip_494";
+/** Методика расчёта. Осталась одна — газодинамическая (Садовский + №415). */
+export type ExplosionMethod = "gas_dynamics";
 export type ExplosionSourceType = "gas" | "mass";
 
 export interface ExplosionParams {
-  method: ExplosionMethod;
+  method?: ExplosionMethod;
   sourceType: ExplosionSourceType;
   // По газу
   gasId: string;
@@ -180,19 +188,6 @@ function sadovskyImpulse(r_m: number, q_tnt: number): number {
   return Math.round(i_kPa_ms * 10) / 10; // Па·с (1 кПа·мс = 1 Па·с)
 }
 
-/**
- * ФНиП №494 / ВостНИИ: формула давления во фронте взрывной волны
- * для подземных горных выработок (канализирование волны).
- * ΔP = 1.5 × (Q_tnt / r³)^(1/3) × P₀
- * Коэффициент 1.5 согласован с Аэросетью (ВНИМИ) для горных выработок.
- * При Q=97 кг ТНТ даёт летальную зону ≈7 м, лёгкую ≈75 м (без доп. wallFactor).
- */
-function fnip494DeltaP(r_m: number, q_tnt: number): number {
-  if (q_tnt <= 0 || r_m <= 0) return 0;
-  const dP = 1.5 * Math.pow(q_tnt / (r_m * r_m * r_m), 1 / 3) * P0;
-  return Math.round(dP * 10) / 10;
-}
-
 /** Скорость фронта ударной волны (м/с) через давление: D = C0 * √(1 + 6/7 * ΔP/P0) */
 function waveFrontSpeed(deltaP_kPa: number): number {
   return Math.round(C0 * Math.sqrt(1 + (6 / 7) * (deltaP_kPa / P0)) * 10) / 10;
@@ -227,13 +222,13 @@ function hazardLevel(dP: number): ExplosionZone["hazardLevel"] {
 }
 
 /** Радиус, при котором давление падает до порогового значения */
-function radiusAtPressure(targetP_kPa: number, q_tnt: number, method: ExplosionMethod, wallFactor: number): number {
+function radiusAtPressure(targetP_kPa: number, q_tnt: number, wallFactor: number): number {
   if (targetP_kPa <= 0 || q_tnt <= 0) return 0;
   // Бинарный поиск радиуса
   let lo = 0.1, hi = 5000;
   for (let i = 0; i < 60; i++) {
     const mid = (lo + hi) / 2;
-    const dP = (method === "gas_dynamics" ? sadovskyDeltaP(mid, q_tnt) : fnip494DeltaP(mid, q_tnt)) * wallFactor;
+    const dP = sadovskyDeltaP(mid, q_tnt) * wallFactor;
     if (dP > targetP_kPa) lo = mid; else hi = mid;
   }
   return Math.round((lo + hi) / 2);
@@ -285,9 +280,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
 
   // 3. Функции давления и импульса
   const pressureAtDistance = (r: number) => {
-    const dP = params.method === "gas_dynamics"
-      ? sadovskyDeltaP(r, q_tnt)
-      : fnip494DeltaP(r, q_tnt);
+    const dP = sadovskyDeltaP(r, q_tnt);
     return Math.round(dP * wallFactor * 10) / 10;
   };
 
@@ -301,7 +294,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   const maxImpulse = impulseAtDistance(1);
   const waveFrontSpeed_ms = waveFrontSpeed(maxDeltaP);
 
-  log.push(`Методика: ${params.method === "gas_dynamics" ? "Газодинамическая (Садовский)" : "ФНиП №494"}`);
+  log.push("Методика: газодинамическая (Садовский), Q_тнт по Методике №415");
   log.push(`Давление во фронте (r=1м): ΔP = ${maxDeltaP} кПа`);
   log.push(`Скорость фронта: D = ${waveFrontSpeed_ms} м/с`);
 
@@ -310,41 +303,41 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     {
       name: "Летальная",
       description: "ΔP > 100 кПа — летальный исход, полное разрушение",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.lethal, q_tnt, params.method, wallFactor),
+      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.lethal, q_tnt, wallFactor),
       deltaP_kPa: HAZARD_THRESHOLDS.lethal,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.lethal, q_tnt, params.method, wallFactor)),
+      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.lethal, q_tnt, wallFactor)),
       hazardLevel: "lethal",
     },
     {
       name: "Тяжёлые поражения",
       description: "ΔP 50–100 кПа — тяжёлые травмы, обрушение конструкций",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.heavy, q_tnt, params.method, wallFactor),
+      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.heavy, q_tnt, wallFactor),
       deltaP_kPa: HAZARD_THRESHOLDS.heavy,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.heavy, q_tnt, params.method, wallFactor)),
+      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.heavy, q_tnt, wallFactor)),
       hazardLevel: "heavy",
     },
     {
       name: "Средние поражения",
       description: "ΔP 30–50 кПа — средние травмы, повреждение оборудования",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.medium, q_tnt, params.method, wallFactor),
+      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.medium, q_tnt, wallFactor),
       deltaP_kPa: HAZARD_THRESHOLDS.medium,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.medium, q_tnt, params.method, wallFactor)),
+      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.medium, q_tnt, wallFactor)),
       hazardLevel: "medium",
     },
     {
       name: "Лёгкие поражения",
       description: "ΔP 10–30 кПа — контузии, звуковая травма, лёгкие повреждения",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.light, q_tnt, params.method, wallFactor),
+      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.light, q_tnt, wallFactor),
       deltaP_kPa: HAZARD_THRESHOLDS.light,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.light, q_tnt, params.method, wallFactor)),
+      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.light, q_tnt, wallFactor)),
       hazardLevel: "light",
     },
     {
       name: "Безопасная зона",
       description: "ΔP < 10 кПа — незначительное воздействие",
-      radius_m: radiusAtPressure(5, q_tnt, params.method, wallFactor),
+      radius_m: radiusAtPressure(5, q_tnt, wallFactor),
       deltaP_kPa: 5,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(5, q_tnt, params.method, wallFactor)),
+      impulse_Pas: impulseAtDistance(radiusAtPressure(5, q_tnt, wallFactor)),
       hazardLevel: "safe",
     },
   ];

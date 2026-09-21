@@ -55,12 +55,6 @@ def sadovsky_delta_p(r_m, q_tnt):
     return round(dp_kgf * KGF_CM2_TO_KPA, 1)
 
 
-def fnip494_delta_p(r_m, q_tnt):
-    if q_tnt <= 0 or r_m <= 0:
-        return 0.0
-    return round(1.5 * (q_tnt / r_m**3) ** (1.0 / 3.0) * P0, 1)
-
-
 def sadovsky_impulse(r_m, q_tnt):
     if q_tnt <= 0 or r_m <= 0:
         return 0.0
@@ -89,13 +83,13 @@ def hazard_level(dp):
 
 
 def radius_at_pressure(target_p, q_tnt, method, wall_factor):
+    # method не используется: осталась одна методика (см. pressure_at)
     if target_p <= 0 or q_tnt <= 0:
         return 0
     lo, hi = 0.1, 5000.0
     for _ in range(60):
         mid = (lo + hi) / 2.0
-        dp_fn = sadovsky_delta_p if method == "gas_dynamics" else fnip494_delta_p
-        dp = dp_fn(mid, q_tnt) * wall_factor
+        dp = sadovsky_delta_p(mid, q_tnt) * wall_factor
         if dp > target_p:
             lo = mid
         else:
@@ -104,8 +98,9 @@ def radius_at_pressure(target_p, q_tnt, method, wall_factor):
 
 
 def pressure_at(r, q_tnt, method, wall_factor):
-    dp_fn = sadovsky_delta_p if method == "gas_dynamics" else fnip494_delta_p
-    return round(dp_fn(r, q_tnt) * wall_factor, 1)
+    # method оставлен в сигнатуре для совместимости со старыми вызовами:
+    # режим "fnip_494" удалён, расчёт всегда газодинамический (Садовский).
+    return round(sadovsky_delta_p(r, q_tnt) * wall_factor, 1)
 
 
 def run(body: dict) -> dict:
@@ -156,7 +151,7 @@ def run(body: dict) -> dict:
     max_imp  = round(sadovsky_impulse(1.0, q_tnt) * wall_factor, 1)
     wave_spd = wave_front_speed(max_dp)
 
-    log.append(f"Методика: {'Газодинамическая (Садовский)' if method == 'gas_dynamics' else 'ФНиП №494'}")
+    log.append("Методика: газодинамическая (Садовский), Q_тнт по Методике №415")
     log.append(f"Давление во фронте (r=1м): ΔP = {max_dp} кПа")
     log.append(f"Скорость фронта: D = {wave_spd} м/с")
 
