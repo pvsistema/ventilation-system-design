@@ -11,7 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
-  calcExplosion, GAS_TYPES, wallReflectionFactor,
+  calcExplosion, GAS_TYPES, wallReflectionFactor, type ExplosionThresholds,
   type ExplosionResult, type ExplosionSourceType,
 } from "@/lib/explosionCalculator";
 
@@ -36,6 +36,8 @@ export interface ExplosionRunParams {
   bulkheadSymbolIds: Set<string>;
   /** Адрес серверного расчёта взрыва. */
   explosionUrl: string;
+  /** Пороги зон поражения из справочника. */
+  thresholds?: ExplosionThresholds;
 }
 
 export interface ExplosionRunResult {
@@ -61,7 +63,7 @@ export interface ExplosionRunResult {
  * помечаются разрушенными.
  */
 export async function runExplosionMode(p: ExplosionRunParams): Promise<ExplosionRunResult | null> {
-  const { branches, nodes, symbols, bulkheadSymbolIds, explosionUrl } = p;
+  const { branches, nodes, symbols, bulkheadSymbolIds, explosionUrl, thresholds } = p;
 
   const expBranches = branches.filter(b => b.hasExplosion);
   if (expBranches.length === 0) return null;
@@ -94,6 +96,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     considerWalls: b.explosionConsiderWalls ?? true,
     // Коэффициент участия Z по Методике №415 (0.1 открыто / 0.5 замкнуто)
     zParticipation: b.explosionZ ?? 0.5,
+    thresholds,
   }));
   // Ответы сервера по номеру ветви. Если связи нет — карта пустая,
   // и каждый взрыв считается на месте (резервный расчёт ниже).
@@ -161,6 +164,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         ambientPressure_kPa: 101.3,
         considerWalls: b.explosionConsiderWalls ?? true,
         zParticipation: b.explosionZ ?? 0.5,
+        thresholds,
       });
     }
     results.push(res);

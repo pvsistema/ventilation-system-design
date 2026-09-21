@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -1838,6 +1838,9 @@ export default function CadPage() {
   // Участки рудника и нормы расхода воздуха (ФНиП № 505 п.155) — в проекте
   const [ventSections, setVentSections] = useState<VentSection[]>([]);
   const [ventNorms, setVentNorms] = useState<VentNorms>(DEFAULT_VENT_NORMS);
+  // Пороги зон поражения взрывом — справочник «Аварии → Зоны поражения взрывом».
+  // Ряд различается в разных документах, поэтому хранится в проекте.
+  const [blastThresholds, setBlastThresholds] = useState<ExplosionThresholds>(DEFAULT_EXPLOSION_THRESHOLDS);
   const [showVentSections, setShowVentSections] = useState(false);
   const [showAirDemand, setShowAirDemand] = useState(false);
 
@@ -3190,6 +3193,7 @@ export default function CadPage() {
     opoData,
     ventSections,
     ventNorms,
+    blastThresholds,
     calcMode,
     solverTolerance,
     solverMaxIter,
@@ -3767,6 +3771,11 @@ export default function CadPage() {
     setVentNorms(data.ventNorms
       ? { ...DEFAULT_VENT_NORMS, ...(data.ventNorms as Partial<VentNorms>) }
       : DEFAULT_VENT_NORMS);
+    // Пороги зон взрыва: в проектах, сохранённых до появления справочника,
+    // поля нет — берётся прежний ряд, расчёт не меняется.
+    setBlastThresholds(data.blastThresholds
+      ? { ...DEFAULT_EXPLOSION_THRESHOLDS, ...(data.blastThresholds as Partial<ExplosionThresholds>) }
+      : DEFAULT_EXPLOSION_THRESHOLDS);
     if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
     // Данные ОПО. В файлах, сохранённых до появления этой вкладки, поля нет —
     // normalizeOpoData вернёт значения по умолчанию, старый проект откроется.
@@ -6407,6 +6416,7 @@ export default function CadPage() {
                   symbols: symbolsRef.current,
                   bulkheadSymbolIds: BULKHEAD_SYMBOL_IDS,
                   explosionUrl: EXPLOSION_URL,
+                  thresholds: blastThresholds,
                 });
                 if (!run) return;
                 const { branches: finalBranches, results, resultByBranch } = run;
@@ -9417,10 +9427,10 @@ export default function CadPage() {
                     </div>
                     <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)", marginTop: 4 }}>Зоны поражения</div>
                     {[
-                      { label: "💀 Летальная (>100 кПа):", r: b.explosionComputedR_lethal, color: "#7c1010" },
-                      { label: "🔴 Тяжёлые (>50 кПа):",   r: b.explosionComputedR_heavy,  color: "var(--c-red, #dc2626)" },
-                      { label: "🟠 Средние (>30 кПа):",    r: b.explosionComputedR_medium, color: "#f97316" },
-                      { label: "🟡 Лёгкие (>10 кПа):",     r: b.explosionComputedR_light,  color: "#ca8a04" },
+                      { label: `💀 Летальная (>${blastThresholds.lethal} кПа):`, r: b.explosionComputedR_lethal, color: EXPLOSION_HAZARD_COLORS.lethal },
+                      { label: `🔴 Тяжёлые (>${blastThresholds.heavy} кПа):`,  r: b.explosionComputedR_heavy,  color: EXPLOSION_HAZARD_COLORS.heavy },
+                      { label: `🟠 Средние (>${blastThresholds.medium} кПа):`, r: b.explosionComputedR_medium, color: EXPLOSION_HAZARD_COLORS.medium },
+                      { label: `🟡 Лёгкие (>${blastThresholds.light} кПа):`,   r: b.explosionComputedR_light,  color: "#ca8a04" },
                     ].map(({ label, r, color }) => (
                       <div key={label} className="flex items-center px-1 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                         <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>{label}</span>
@@ -12764,7 +12774,8 @@ export default function CadPage() {
                 // ВАЖНО: только hex. Здесь раньше стояли строки вида
                 // "var(--c-red, #dc2626)"; canvas их не понимает и молча
                 // рисовал ветвь цветом, оставшимся от предыдущей линии.
-                const zoneColor = (deltaP: number) => explosionZoneColor(deltaP);
+                // Пороги — из справочника, иначе окраска разошлась бы с радиусами зон
+                const zoneColor = (deltaP: number) => explosionZoneColor(deltaP, blastThresholds);
 
                 // Очаги взрыва. У каждого — СВОЙ результат расчёта: при
                 // нескольких очагах давление нельзя считать по чужому заряду.
@@ -13279,11 +13290,12 @@ export default function CadPage() {
                 </div>
                 {(() => {
                   const zoneDefs = [
-                    { color: EXPLOSION_HAZARD_COLORS.lethal, label: "Летальная",        dp: "ΔP > 100 кПа", hazard: "lethal"  },
-                    { color: EXPLOSION_HAZARD_COLORS.heavy, label: "Тяжёлые травмы",   dp: "ΔP 50–100 кПа", hazard: "heavy"  },
-                    { color: EXPLOSION_HAZARD_COLORS.medium, label: "Средние травмы",   dp: "ΔP 30–50 кПа",  hazard: "medium" },
-                    { color: EXPLOSION_HAZARD_COLORS.light, label: "Лёгкие травмы",    dp: "ΔP 10–30 кПа",  hazard: "light"  },
-                    { color: EXPLOSION_HAZARD_COLORS.safe, label: "Безопасно",         dp: "ΔP < 5,99 кПа", hazard: "safe"   },
+                    // Границы — из справочника, а не зашитые числа
+                    { color: EXPLOSION_HAZARD_COLORS.lethal, label: "Летальная",      dp: `ΔP > ${blastThresholds.lethal} кПа`, hazard: "lethal" },
+                    { color: EXPLOSION_HAZARD_COLORS.heavy,  label: "Тяжёлые травмы", dp: `ΔP ${blastThresholds.heavy}–${blastThresholds.lethal} кПа`, hazard: "heavy" },
+                    { color: EXPLOSION_HAZARD_COLORS.medium, label: "Средние травмы", dp: `ΔP ${blastThresholds.medium}–${blastThresholds.heavy} кПа`, hazard: "medium" },
+                    { color: EXPLOSION_HAZARD_COLORS.light,  label: "Лёгкие травмы",  dp: `ΔP ${blastThresholds.light}–${blastThresholds.medium} кПа`, hazard: "light" },
+                    { color: EXPLOSION_HAZARD_COLORS.safe,   label: "Безопасно",      dp: `ΔP < ${blastThresholds.safeLimit} кПа`, hazard: "safe" },
                   ];
                   return zoneDefs.map(({ color, label, dp, hazard }) => {
                     const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);
@@ -14356,6 +14368,8 @@ export default function CadPage() {
       unitsConfig={unitsConfig}
       ventNorms={ventNorms}
       setVentNorms={setVentNorms}
+      blastThresholds={blastThresholds}
+      setBlastThresholds={setBlastThresholds}
       ventSections={ventSections}
       setVentSections={setVentSections}
       showVentSections={showVentSections}

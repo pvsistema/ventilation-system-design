@@ -54,10 +54,34 @@ def tnt_equivalent(expl):
     """Тротиловый эквивалент ВВ: k = q_ВВ / q_ТНТ."""
     return round(expl["qSpec"] / Q_TNT, 2)
 
+# Пороги зон поражения, кПа. Ряд различается в разных документах, поэтому
+# задаётся в справочнике и приходит в запросе полем "thresholds".
+# "safe" — НЕ порог классификации точки, а граница безопасной зоны:
+# расстояние, дальше которого воздействие пренебрежимо мало (как в «Аэросети»).
 HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "safe": 5.99}
-# "safe": 5.99 кПа — граница безопасной зоны, как в ПО «Аэросеть».
-# Это НЕ порог классификации точки (им остаётся 10 кПа, см. hazard_level),
-# а расстояние, дальше которого воздействие пренебрежимо мало.
+
+
+def normalize_thresholds(raw):
+    """Пороги из запроса -> корректный убывающий ряд."""
+    d = HAZARD_THRESHOLDS
+    raw = raw if isinstance(raw, dict) else {}
+
+    def take(key, fallback, cap=None):
+        v = raw.get(key)
+        try:
+            v = float(v)
+        except (TypeError, ValueError):
+            v = 0.0
+        if v <= 0:
+            v = fallback
+        return min(v, cap) if cap is not None else v
+
+    lethal = take("lethal", d["lethal"])
+    heavy  = take("heavy",  d["heavy"],  lethal)
+    medium = take("medium", d["medium"], heavy)
+    light  = take("light",  d["light"],  medium)
+    safe   = take("safeLimit", d["safe"], light)
+    return {"lethal": lethal, "heavy": heavy, "medium": medium, "light": light, "safe": safe}
 
 
 def gas_to_tnt(gas, volume_m3, concentration, z=Z_DEFAULT):
@@ -140,11 +164,12 @@ def wall_reflection_factor(area_m2):
     return pts[-1][1]
 
 
-def hazard_level(dp):
-    if dp >= 100: return "lethal"
-    if dp >= 50:  return "heavy"
-    if dp >= 30:  return "medium"
-    if dp >= 10:  return "light"
+def hazard_level(dp, th=None):
+    th = th or HAZARD_THRESHOLDS
+    if dp >= th["lethal"]: return "lethal"
+    if dp >= th["heavy"]:  return "heavy"
+    if dp >= th["medium"]: return "medium"
+    if dp >= th["light"]:  return "light"
     return "safe"
 
 
@@ -175,6 +200,7 @@ def run(body: dict) -> dict:
     area_m2        = float(body.get("excavationArea_m2", 12))
     consider_walls = bool(body.get("considerWalls", True))
     distances      = body.get("distances", [])
+    th             = normalize_thresholds(body.get("thresholds"))
     log = []
     warnings = []
 
@@ -232,27 +258,36 @@ def run(body: dict) -> dict:
     log.append(f"Максимальное давление во фронте (r = {r_min} м): ΔP = {max_dp} кПа")
     log.append(f"Скорость фронта: D = {wave_spd} м/с")
 
+    # Зоны строятся из порогов справочника, а не из зашитых чисел.
     zone_defs = [
-        ("Летальная",         "ΔP > 100 кПа — летальный исход, полное разрушение", HAZARD_THRESHOLDS["lethal"],  "lethal"),
-        ("Тяжёлые поражения", "ΔP 50–100 кПа — тяжёлые травмы, обрушение",         HAZARD_THRESHOLDS["heavy"],   "heavy"),
-        ("Средние поражения", "ΔP 30–50 кПа — средние травмы, повреждение",          HAZARD_THRESHOLDS["medium"],  "medium"),
-        ("Лёгкие поражения",  "ΔP 10–30 кПа — контузии, лёгкие повреждения",         HAZARD_THRESHOLDS["light"],   "light"),
-        ("Безопасная зона",   "ΔP < 5.99 кПа — незначительное воздействие",            HAZARD_THRESHOLDS["safe"],    "safe"),
+        ("Летальная",         "lethal", th["lethal"], None,         "летальный исход, полное разрушение"),
+        ("Тяжёлые поражения", "heavy",  th["heavy"],  th["lethal"], "тяжёлые травмы, обрушение"),
+        ("Средние поражения", "medium", th["medium"], th["heavy"],  "средние травмы, повреждение"),
+        ("Лёгкие поражения",  "light",  th["light"],  th["medium"], "контузии, лёгкие повреждения"),
     ]
     zones = []
-    for name, desc, thresh, hlevel in zone_defs:
-        r = radius_at_pressure(thresh, q_tnt, method, wall_factor)
+    for name, hlevel, lo, hi, what in zone_defs:
+        r = radius_at_pressure(lo, q_tnt, method, wall_factor)
         imp = round(sadovsky_impulse(r, q_tnt) * wall_factor, 1) if r > 0 else 0
-        zones.append({"name": name, "description": desc, "radius_m": r,
-                      "deltaP_kPa": thresh, "impulse_Pas": imp, "hazardLevel": hlevel})
-        log.append(f"{name}: r = {r} м, ΔP = {thresh} кПа")
+        rng = f"> {lo}" if hi is None else f"{lo}–{hi}"
+        zones.append({"name": name, "description": f"ΔP {rng} кПа — {what}",
+                      "radius_m": r, "deltaP_kPa": lo, "impulse_Pas": imp,
+                      "hazardLevel": hlevel})
+        log.append(f"{name}: r = {r} м, ΔP = {lo} кПа")
+    r_safe = radius_at_pressure(th["safe"], q_tnt, method, wall_factor)
+    zones.append({"name": "Безопасная зона",
+                  "description": f"ΔP < {th['safe']} кПа — незначительное воздействие",
+                  "radius_m": r_safe, "deltaP_kPa": th["safe"],
+                  "impulse_Pas": round(sadovsky_impulse(r_safe, q_tnt) * wall_factor, 1) if r_safe > 0 else 0,
+                  "hazardLevel": "safe"})
+    log.append(f"Безопасная зона: r = {r_safe} м, ΔP = {th['safe']} кПа")
 
     pressure_points = []
     for r in distances:
         dp = pressure_at(float(r), q_tnt, method, wall_factor)
         imp = round(sadovsky_impulse(float(r), q_tnt) * wall_factor, 1)
         pressure_points.append({"r_m": r, "deltaP_kPa": dp, "impulse_Pas": imp,
-                                 "hazardLevel": hazard_level(dp)})
+                                 "hazardLevel": hazard_level(dp, th)})
 
     return {
         "q_tnt_kg":          q_tnt_rounded,
@@ -260,6 +295,7 @@ def run(body: dict) -> dict:
         "maxImpulse_Pas":    max_imp,
         "waveFrontSpeed_ms": wave_spd,
         "minValidRadius_m":  r_min,
+        "thresholds":        th,
         "zones":             zones,
         "pressurePoints":    pressure_points,
         "log":               log,

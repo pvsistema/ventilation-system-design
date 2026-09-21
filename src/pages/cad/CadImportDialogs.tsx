@@ -24,6 +24,7 @@ import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
 import VentsimVsmImportDialog from "@/components/cad/VentsimVsmImportDialog";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import EquipmentRefDialog, { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
+import { type ExplosionThresholds } from "@/lib/explosionCalculator";
 import LogPanel, { type LogEntry } from "@/components/cad/LogPanel";
 import CadContextMenu from "@/components/cad/CadContextMenu";
 import { nodeContextItems, branchContextItems, canvasContextItems } from "./cadComponents";
@@ -47,6 +48,9 @@ export interface CadImportDialogsProps {
   /** Нормы расхода воздуха и участки рудника (ФНиП № 505) */
   ventNorms: VentNorms;
   setVentNorms: (n: VentNorms) => void;
+  /** Пороги зон поражения взрывом (вкладка «Аварии → Зоны поражения взрывом») */
+  blastThresholds: ExplosionThresholds;
+  setBlastThresholds: (t: ExplosionThresholds) => void;
   ventSections: VentSection[];
   setVentSections: (s: VentSection[]) => void;
   showVentSections: boolean;
@@ -221,6 +225,8 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           onUnitsConfigChange={p.setUnitsConfig}
           ventNorms={p.ventNorms}
           onVentNormsChange={p.setVentNorms}
+          blastThresholds={p.blastThresholds}
+          onBlastThresholdsChange={p.setBlastThresholds}
         />
       )}
 

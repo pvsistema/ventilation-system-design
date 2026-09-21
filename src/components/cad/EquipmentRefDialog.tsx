@@ -12,8 +12,12 @@ import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, type PumpModel } from "@/lib/p
 import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, type ConsumerGroup } from "@/lib/waterConsumers";
 import PumpChart from "@/components/cad/PumpChart";
 import { type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
+import {
+  type ExplosionThresholds, DEFAULT_EXPLOSION_THRESHOLDS,
+  TYPICAL_EXPLOSION_THRESHOLDS, EXPLOSION_HAZARD_COLORS,
+} from "@/lib/explosionCalculator";
 
-type TabId = "fans" | "types" | "bulkheads" | "airnorms" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units";
+type TabId = "fans" | "types" | "bulkheads" | "airnorms" | "blastzones" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units";
 
 export interface MineFanExport {
   catalogId: string;
@@ -50,6 +54,9 @@ interface Props {
   /** Нормы расхода воздуха (ФНиП № 505) */
   ventNorms?: VentNorms;
   onVentNormsChange?: (n: VentNorms) => void;
+  /** Пороги зон поражения взрывом */
+  blastThresholds?: ExplosionThresholds;
+  onBlastThresholdsChange?: (t: ExplosionThresholds) => void;
 }
 
 const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
@@ -57,6 +64,7 @@ const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
   { id: "types",     label: "Типы выработок",      icon: "Layers",    group: "Вентиляция" },
   { id: "bulkheads", label: "Перемычки",           icon: "Square",    group: "Вентиляция" },
   { id: "airnorms",  label: "Нормы расхода воздуха", icon: "Calculator", group: "Вентиляция" },
+  { id: "blastzones",label: "Зоны поражения взрывом", icon: "Bomb",   group: "Аварии" },
   { id: "sensors",   label: "Датчики",             icon: "Radio",     group: "Аварии" },
   { id: "typical",   label: "Типовые меры",        icon: "FileText",  group: "Аварии" },
   { id: "pumps",     label: "Насосы",              icon: "Gauge",     group: "Трубопровод" },
@@ -1731,6 +1739,89 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
   );
 }
 
+// ─── Пороги зон поражения взрывом ───────────────────────────────────────────
+function BlastZonesSection({ thresholds, onChange }: {
+  thresholds: ExplosionThresholds;
+  onChange: (t: ExplosionThresholds) => void;
+}) {
+  const t = thresholds;
+  const set = (patch: Partial<ExplosionThresholds>) => onChange({ ...t, ...patch });
+
+  // Ряд должен строго убывать: иначе зоны вложатся в неверном порядке
+  // и радиус «тяжёлой» окажется больше радиуса «лёгкой».
+  const broken = !(t.lethal > t.heavy && t.heavy > t.medium
+    && t.medium > t.light && t.light > t.safeLimit);
+
+  const Row = ({ label, value, onSet, color, range }: {
+    label: string; value: number; onSet: (v: number) => void; color: string; range: string;
+  }) => (
+    <div className="flex items-center gap-2 py-1" style={{ borderBottom: "1px solid #f0f2f7" }}>
+      <div style={{ width: 6, height: 26, background: color, borderRadius: 3, flexShrink: 0 }} />
+      <div className="flex-1 min-w-0">
+        <div className="text-[11px] text-gray-700">{label}</div>
+        <div className="text-[10px] text-gray-400 leading-snug">{range}</div>
+      </div>
+      <input type="number" step="1" min="0" value={value}
+        onChange={e => onSet(parseFloat(e.target.value) || 0)}
+        className="text-[11px] px-1 text-right flex-shrink-0"
+        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, width: 80, outline: "none" }} />
+      <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 40 }}>кПа</span>
+    </div>
+  );
+
+  return (
+    <div className="px-4 py-2">
+      <div className="text-[10px] text-gray-500 leading-snug pb-2">
+        Границы зон поражения по избыточному давлению во фронте ударной волны.
+        Ряд порогов в разных документах различается, поэтому предприятие
+        выставляет тот, под который аттестован расчёт. Значения применяются
+        и к радиусам зон, и к окраске выработок на схеме.
+      </div>
+
+      <Row label="Летальная" color={EXPLOSION_HAZARD_COLORS.lethal}
+        range={`ΔP ≥ ${t.lethal} кПа — летальный исход, полное разрушение`}
+        value={t.lethal} onSet={v => set({ lethal: v })} />
+      <Row label="Тяжёлые поражения" color={EXPLOSION_HAZARD_COLORS.heavy}
+        range={`ΔP ${t.heavy}–${t.lethal} кПа — тяжёлые травмы, обрушение конструкций`}
+        value={t.heavy} onSet={v => set({ heavy: v })} />
+      <Row label="Средние поражения" color={EXPLOSION_HAZARD_COLORS.medium}
+        range={`ΔP ${t.medium}–${t.heavy} кПа — средние травмы, повреждение оборудования`}
+        value={t.medium} onSet={v => set({ medium: v })} />
+      <Row label="Лёгкие поражения" color={EXPLOSION_HAZARD_COLORS.light}
+        range={`ΔP ${t.light}–${t.medium} кПа — контузии, звуковая травма`}
+        value={t.light} onSet={v => set({ light: v })} />
+      <Row label="Граница безопасной зоны" color={EXPLOSION_HAZARD_COLORS.safe}
+        range="Дальше этого расстояния воздействие пренебрежимо мало. Задаёт внешний контур зон и предел шкалы волны"
+        value={t.safeLimit} onSet={v => set({ safeLimit: v })} />
+
+      {broken && (
+        <div className="mt-2 px-2 py-1.5 rounded text-[10px]"
+          style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#713f12" }}>
+          Ряд должен убывать: летальная &gt; тяжёлые &gt; средние &gt; лёгкие &gt; граница
+          безопасной. Сейчас это не так — при расчёте значения будут приведены
+          к убывающему ряду, и часть зон совпадёт.
+        </div>
+      )}
+
+      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-1">Готовые ряды</div>
+      <div className="flex gap-2 flex-wrap">
+        <button onClick={() => onChange(DEFAULT_EXPLOSION_THRESHOLDS)}
+          className="text-[11px] px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+          100 / 50 / 30 / 10 — прежний в программе
+        </button>
+        <button onClick={() => onChange(TYPICAL_EXPLOSION_THRESHOLDS)}
+          className="text-[11px] px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+          100 / 60 / 40 / 20 — типовые таблицы поражения человека
+        </button>
+      </div>
+      <div className="text-[10px] text-gray-400 leading-snug mt-2">
+        Оба ряда даны как заготовки. Какой из них применим — определяет
+        документ, под который аттестуется расчёт на вашем предприятии.
+      </div>
+    </div>
+  );
+}
+
 // ─── Нормы расхода воздуха (ФНиП № 505) ─────────────────────────────────────
 function AirNormsSection({ norms, onChange }: {
   norms: VentNorms;
@@ -1827,7 +1918,7 @@ function AirNormsSection({ norms, onChange }: {
   );
 }
 
-function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange }: {
+function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange }: {
   tab: TabId;
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
@@ -1839,7 +1930,12 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   onUnitsConfigChange?: (cfg: UnitsConfig) => void;
   ventNorms?: VentNorms;
   onVentNormsChange?: (n: VentNorms) => void;
+  blastThresholds?: ExplosionThresholds;
+  onBlastThresholdsChange?: (t: ExplosionThresholds) => void;
 }) {
+  if (tab === "blastzones") return <BlastZonesSection
+    thresholds={blastThresholds ?? DEFAULT_EXPLOSION_THRESHOLDS}
+    onChange={onBlastThresholdsChange ?? (() => {})} />;
   if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} initialMineFans={initialMineFans} />;
   if (tab === "airnorms") return <AirNormsSection
     norms={ventNorms ?? DEFAULT_VENT_NORMS}
@@ -1862,7 +1958,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   return null;
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
@@ -1914,7 +2010,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} />
+              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} />
             </div>
             <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
               Дважды кликните по строке для редактирования характеристик

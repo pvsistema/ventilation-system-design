@@ -143,6 +143,8 @@ export interface ExplosionParams {
   /** Коэффициент участия Z по Методике №415: 0.1 — открытое пространство,
    *  0.5 — замкнутый объём (горная выработка). По умолчанию 0.5. */
   zParticipation?: number;
+  /** Пороги зон поражения из справочника. Не заданы — берутся по умолчанию. */
+  thresholds?: Partial<ExplosionThresholds>;
 }
 
 // ─── Результаты расчёта ───────────────────────────────────────────────────────
@@ -167,6 +169,8 @@ export interface ExplosionResult {
   waveFrontSpeed_ms: number;
   /** Расстояние, к которому относятся max-параметры, м (r̄ = 1) */
   minValidRadius_m?: number;
+  /** Пороги, по которым построены зоны (нужны для окраски схемы) */
+  thresholds?: ExplosionThresholds;
   // Распределение по расстоянию
   zones: ExplosionZone[];
   // Зоны поражения на конкретных расстояниях
@@ -300,28 +304,61 @@ export function wallReflectionFactor(area_m2: number): number {
 }
 
 // ─── Пороги поражения (кПа) ───────────────────────────────────────────────────
-const HAZARD_THRESHOLDS = {
-  lethal:  100,   // > 100 кПа — летальный исход
-  heavy:    50,   // 50–100 кПа — тяжёлые повреждения
-  medium:   30,   // 30–50 кПа — средние повреждения
-  light:    10,   // 10–30 кПа — лёгкие повреждения
-  safe:      0,   // < 10 кПа — безопасно (для классификации точки)
+/**
+ * Пороги зон поражения по избыточному давлению, кПа.
+ *
+ * Вынесены в справочник: ряд порогов в разных документах различается.
+ * По умолчанию 100 / 50 / 30 / 10 — как было исторически. В большинстве
+ * отечественных таблиц поражения человека используется ряд
+ * 100 / 60 / 40 / 20, поэтому предприятие может выставить свой.
+ */
+export interface ExplosionThresholds {
+  lethal: number;   // ≥ — летальный исход
+  heavy: number;    // ≥ — тяжёлые поражения
+  medium: number;   // ≥ — средние поражения
+  light: number;    // ≥ — лёгкие поражения
+  /**
+   * Граница безопасной зоны — НЕ порог классификации, а расстояние,
+   * дальше которого воздействие пренебрежимо мало. По нему строится
+   * внешний контур зон и предел шкалы волны. 5.99 кПа — как в «Аэросети».
+   */
+  safeLimit: number;
+}
+
+/** Ряд по умолчанию — исторический для этой программы */
+export const DEFAULT_EXPLOSION_THRESHOLDS: ExplosionThresholds = {
+  lethal: 100, heavy: 50, medium: 30, light: 10, safeLimit: 5.99,
+};
+
+/** Типовой ряд отечественных таблиц поражения человека */
+export const TYPICAL_EXPLOSION_THRESHOLDS: ExplosionThresholds = {
+  lethal: 100, heavy: 60, medium: 40, light: 20, safeLimit: 5.99,
 };
 
 /**
- * Граница безопасной зоны, кПа — как в ПО «Аэросеть».
- * Это НЕ порог классификации (им остаётся 10 кПа), а расстояние, дальше
- * которого воздействие считается пренебрежимо малым: до него доезжает
- * шкала волны и по нему строится внешний контур зон.
+ * Приведение порогов к корректному виду: ряд должен строго убывать,
+ * иначе бинарный поиск радиуса даст вложенные зоны в неверном порядке.
  */
-const SAFE_ZONE_LIMIT_KPA = 5.99;
+export function normalizeThresholds(t?: Partial<ExplosionThresholds>): ExplosionThresholds {
+  const d = DEFAULT_EXPLOSION_THRESHOLDS;
+  const lethal = t?.lethal && t.lethal > 0 ? t.lethal : d.lethal;
+  const heavy  = Math.min(t?.heavy  && t.heavy  > 0 ? t.heavy  : d.heavy,  lethal);
+  const medium = Math.min(t?.medium && t.medium > 0 ? t.medium : d.medium, heavy);
+  const light  = Math.min(t?.light  && t.light  > 0 ? t.light  : d.light,  medium);
+  const safeLimit = Math.min(t?.safeLimit && t.safeLimit > 0 ? t.safeLimit : d.safeLimit, light);
+  return { lethal, heavy, medium, light, safeLimit };
+}
+
+export function hazardLevelWith(dP: number, t: ExplosionThresholds): ExplosionZone["hazardLevel"] {
+  if (dP >= t.lethal) return "lethal";
+  if (dP >= t.heavy)  return "heavy";
+  if (dP >= t.medium) return "medium";
+  if (dP >= t.light)  return "light";
+  return "safe";
+}
 
 function hazardLevel(dP: number): ExplosionZone["hazardLevel"] {
-  if (dP >= HAZARD_THRESHOLDS.lethal)  return "lethal";
-  if (dP >= HAZARD_THRESHOLDS.heavy)   return "heavy";
-  if (dP >= HAZARD_THRESHOLDS.medium)  return "medium";
-  if (dP >= HAZARD_THRESHOLDS.light)   return "light";
-  return "safe";
+  return hazardLevelWith(dP, DEFAULT_EXPLOSION_THRESHOLDS);
 }
 
 /** Радиус, при котором давление падает до порогового значения */
@@ -341,6 +378,9 @@ function radiusAtPressure(targetP_kPa: number, q_tnt: number, wallFactor: number
 export function calcExplosion(params: ExplosionParams): ExplosionResult {
   const log: string[] = [];
   const warnings: string[] = [];
+  // Пороги зон — из справочника; при их отсутствии берутся значения
+  // по умолчанию. normalizeThresholds следит за убыванием ряда.
+  const th = normalizeThresholds(params.thresholds);
 
   // 1. Тротиловый эквивалент
   let q_tnt = 0;
@@ -414,49 +454,38 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   log.push(`Максимальное давление во фронте (r = ${rMin} м): ΔP = ${maxDeltaP} кПа`);
   log.push(`Скорость фронта: D = ${waveFrontSpeed_ms} м/с`);
 
-  // 5. Зоны поражения
-  const zones: ExplosionZone[] = [
-    {
-      name: "Летальная",
-      description: "ΔP > 100 кПа — летальный исход, полное разрушение",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.lethal, q_tnt, wallFactor),
-      deltaP_kPa: HAZARD_THRESHOLDS.lethal,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.lethal, q_tnt, wallFactor)),
-      hazardLevel: "lethal",
-    },
-    {
-      name: "Тяжёлые поражения",
-      description: "ΔP 50–100 кПа — тяжёлые травмы, обрушение конструкций",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.heavy, q_tnt, wallFactor),
-      deltaP_kPa: HAZARD_THRESHOLDS.heavy,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.heavy, q_tnt, wallFactor)),
-      hazardLevel: "heavy",
-    },
-    {
-      name: "Средние поражения",
-      description: "ΔP 30–50 кПа — средние травмы, повреждение оборудования",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.medium, q_tnt, wallFactor),
-      deltaP_kPa: HAZARD_THRESHOLDS.medium,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.medium, q_tnt, wallFactor)),
-      hazardLevel: "medium",
-    },
-    {
-      name: "Лёгкие поражения",
-      description: "ΔP 10–30 кПа — контузии, звуковая травма, лёгкие повреждения",
-      radius_m: radiusAtPressure(HAZARD_THRESHOLDS.light, q_tnt, wallFactor),
-      deltaP_kPa: HAZARD_THRESHOLDS.light,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(HAZARD_THRESHOLDS.light, q_tnt, wallFactor)),
-      hazardLevel: "light",
-    },
-    {
-      name: "Безопасная зона",
-      description: "ΔP < 5.99 кПа — незначительное воздействие",
-      radius_m: radiusAtPressure(SAFE_ZONE_LIMIT_KPA, q_tnt, wallFactor),
-      deltaP_kPa: SAFE_ZONE_LIMIT_KPA,
-      impulse_Pas: impulseAtDistance(radiusAtPressure(SAFE_ZONE_LIMIT_KPA, q_tnt, wallFactor)),
-      hazardLevel: "safe",
-    },
+  // 5. Зоны поражения — строятся из порогов справочника, а не из
+  // зашитых чисел: ряд порогов в разных документах различается.
+  const zoneDefs: Array<{
+    name: string; level: ExplosionZone["hazardLevel"]; from: number; to: number | null; what: string;
+  }> = [
+    { name: "Летальная",         level: "lethal", from: th.lethal, to: null,      what: "летальный исход, полное разрушение" },
+    { name: "Тяжёлые поражения", level: "heavy",  from: th.heavy,  to: th.lethal, what: "тяжёлые травмы, обрушение конструкций" },
+    { name: "Средние поражения", level: "medium", from: th.medium, to: th.heavy,  what: "средние травмы, повреждение оборудования" },
+    { name: "Лёгкие поражения",  level: "light",  from: th.light,  to: th.medium, what: "контузии, звуковая травма, лёгкие повреждения" },
   ];
+
+  const zones: ExplosionZone[] = zoneDefs.map(d => {
+    const r = radiusAtPressure(d.from, q_tnt, wallFactor);
+    return {
+      name: d.name,
+      description: `ΔP ${d.to === null ? `> ${d.from}` : `${d.from}–${d.to}`} кПа — ${d.what}`,
+      radius_m: r,
+      deltaP_kPa: d.from,
+      impulse_Pas: impulseAtDistance(r),
+      hazardLevel: d.level,
+    };
+  });
+
+  const rSafe = radiusAtPressure(th.safeLimit, q_tnt, wallFactor);
+  zones.push({
+    name: "Безопасная зона",
+    description: `ΔP < ${th.safeLimit} кПа — незначительное воздействие`,
+    radius_m: rSafe,
+    deltaP_kPa: th.safeLimit,
+    impulse_Pas: impulseAtDistance(rSafe),
+    hazardLevel: "safe",
+  });
 
   zones.forEach(z => {
     log.push(`${z.name}: r = ${z.radius_m} м, ΔP = ${z.deltaP_kPa} кПа`);
@@ -468,6 +497,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     maxImpulse_Pas: maxImpulse,
     waveFrontSpeed_ms,
     minValidRadius_m: rMin,
+    thresholds: th,
     zones,
     pressureAtDistance,
     impulseAtDistance,
@@ -495,8 +525,15 @@ export const EXPLOSION_HAZARD_COLORS: Record<ExplosionZone["hazardLevel"], strin
   safe:    "#22c55e",
 };
 
-/** Зона поражения (цвет + уровень) по избыточному давлению */
-export function explosionZoneColor(deltaP_kPa: number): { color: string; hazardLevel: ExplosionZone["hazardLevel"] } {
-  const level = hazardLevel(deltaP_kPa);
+/**
+ * Зона поражения (цвет + уровень) по избыточному давлению.
+ * Пороги передаются из справочника — иначе окраска схемы разошлась бы
+ * с радиусами зон, посчитанными по пользовательскому ряду.
+ */
+export function explosionZoneColor(
+  deltaP_kPa: number,
+  thresholds?: ExplosionThresholds,
+): { color: string; hazardLevel: ExplosionZone["hazardLevel"] } {
+  const level = hazardLevelWith(deltaP_kPa, thresholds ?? DEFAULT_EXPLOSION_THRESHOLDS);
   return { color: EXPLOSION_HAZARD_COLORS[level], hazardLevel: level };
 }
