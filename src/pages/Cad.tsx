@@ -9497,11 +9497,32 @@ export default function CadPage() {
                     <Row label="Тротиловый эквивалент:" value={`${b.explosionComputedQtnt} кг ТНТ`} bold />
                     <Row label="Максимальное давление:" value={`${b.explosionComputedMaxP} кПа`} bold color="#dc2626" />
                     <Row label="Скорость фронта волны:" value={`${b.explosionComputedWaveSpeed} м/с`} />
-                    <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
-                      Максимум приведён на границе применимости формулы
-                      (r = Q<sup>1/3</sup> ≈ {Math.round(Math.cbrt(b.explosionComputedQtnt) * 100) / 100} м).
-                      Ближе к заряду методика параметры волны не определяет.
-                    </div>
+                    {(() => {
+                      // Импульс показываем ВМЕСТЕ с длительностью фазы сжатия.
+                      // Без неё две ветки выглядят несопоставимо: у заряда ВВ
+                      // импульс — сотни Па·с, у газовой дефлаграции — тысячи.
+                      // Разница не в формулах, а в длительности нагружения:
+                      // короткий удар против длинного поршня.
+                      const res = explosionResultByBranch.get(b.id);
+                      if (!res || !res.maxImpulse_Pas) return null;
+                      const isGas = !!res.gasSource;
+                      return (<>
+                        <Row label="Импульс (i = ΔP·τ):" value={`${res.maxImpulse_Pas} Па·с`} />
+                        <Row label="Длительность фазы τ:" value={`${res.phaseDuration_ms ?? "—"} мс`} />
+                        <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
+                          {isGas ? (<>
+                            Максимум — внутри загазованного участка.
+                            Длительность фазы τ = (L/2)/c<sub>прод</sub> — время разгрузки
+                            очага. У газовой дефлаграции она в десятки раз больше, чем
+                            у заряда ВВ, поэтому и импульс выше на порядки.
+                          </>) : (<>
+                            Максимум приведён на границе применимости формулы
+                            (r = Q<sup>1/3</sup> ≈ {Math.round(Math.cbrt(b.explosionComputedQtnt) * 100) / 100} м).
+                            Ближе к заряду методика параметры волны не определяет.
+                          </>)}
+                        </div>
+                      </>);
+                    })()}
                     <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)", marginTop: 4 }}>Зоны поражения</div>
                     {[
                       { label: `💀 Летальная (>${blastThresholds.lethal} кПа):`, r: b.explosionComputedR_lethal, color: EXPLOSION_HAZARD_COLORS.lethal },

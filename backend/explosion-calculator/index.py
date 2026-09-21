@@ -23,7 +23,9 @@ CORS = {
 
 Q_TNT   = 4520.0   # кДж/кг — теплота взрыва ТНТ
 P0      = 101.3    # кПа    — атмосферное давление
-C0      = 340.0    # м/с    — скорость звука
+C0      = 340.0    # м/с    — скорость звука в холодном воздухе
+# Скорость звука в ПРОДУКТАХ сгорания (нагреты до ~2000 K): вдвое выше C0.
+C_PRODUCTS = 680.0
 
 # unit — единица концентрации, у газов и пыли она РАЗНАЯ:
 #   "vol%" — объёмные проценты, qCombust в МДж/м3 (газы)
@@ -318,13 +320,45 @@ def gas_pressure_at(l_m, zone_len, p0, area_m2, perimeter_m=None, lam=None, path
     return round(p0 * math.exp(-beta * (l - half)) * path_factor, 1)
 
 
+def gas_phase_duration(zone_len):
+    """Длительность фазы сжатия для газового взрыва, с.
+
+    Это время разгрузки загазованного участка: волна разрежения идёт от
+    границы очага вглубь со скоростью звука в ПРОДУКТАХ (они нагреты до
+    ~2000 K, c ~ 680 м/с). Очаг разгружается в обе стороны, поэтому берётся
+    полудлина: tau = (L/2) / c_прод.
+
+    ПРЕЖНЯЯ ОШИБКА: стояло tau = L / C0 — полная длина, делённая на скорость
+    звука в ХОЛОДНОМ воздухе. Это давало вчетверо завышенную длительность
+    (для L=100 м — 294 мс вместо 73.5 мс) и такой же завышенный импульс.
+    """
+    return max(max(zone_len, 0) / 2.0, 0.5) / C_PRODUCTS
+
+
+def tnt_phase_duration(r_m, q_tnt):
+    """Длительность фазы сжатия для компактного заряда (ВВ), с.
+
+    Выводится из определения импульса: tau = i / ΔP. Обе величины из
+    Методики №415, поэтому новый источник данных не вводится.
+    """
+    dp = sadovsky_delta_p_raw(r_m, q_tnt)
+    if dp <= 0:
+        return 0.0
+    return sadovsky_impulse(r_m, q_tnt) / (dp * 1000.0)
+
+
 def gas_impulse_at(l_m, zone_len, p0, area_m2, perimeter_m=None, lam=None, path_factor=1.0):
-    """Импульс плоской волны, Па·с: ΔP * tau, tau ≈ L_газ / c0."""
+    """Импульс плоской волны, Па·с: i = ΔP * tau.
+
+    У газа импульс на порядки больше, чем у ВВ, и это не ошибка: компактный
+    заряд даёт короткий удар (единицы мс), газовая дефлаграция работает как
+    длинный поршень (десятки мс). Длительность возвращается отдельным полем
+    phaseDuration_ms, чтобы разница была видна явно.
+    """
     if p0 <= 0:
         return 0.0
     half = max(zone_len, 0) / 2.0
-    tau = max(zone_len, 1) / C0
-    i0 = p0 * 1000 * tau
+    i0 = p0 * 1000 * gas_phase_duration(zone_len)
     l = max(l_m, 0)
     if l <= half:
         return round(i0 * path_factor, 1)
@@ -651,11 +685,21 @@ def calc_one(body: dict) -> dict:
     r_min    = 0.0 if gas_mode else min_valid_radius(q_tnt)
     max_dp   = dp_at(r_min)
     max_imp  = imp_at(r_min)
+    # Длительность фазы сжатия — без неё импульсы газа и ВВ несопоставимы
+    phase_ms = round((gas_phase_duration(gas_len) if gas_mode
+                      else tnt_phase_duration(r_min, q_tnt)) * 1000, 1)
     wave_spd = wave_front_speed(max_dp)
 
-    log.append("Методика: газодинамическая (Садовский), Q_тнт по Методике №415")
-    log.append(f"Граница применимости формулы: r̄ = 1, то есть r = {r_min} м")
-    log.append(f"Максимальное давление во фронте (r = {r_min} м): ΔP = {max_dp} кПа")
+    if gas_mode:
+        log.append("Методика: плоская волна от загазованного участка, Q_тнт по Методике №415 (справочно)")
+        log.append(f"Максимальное давление (внутри участка): ΔP = {max_dp} кПа")
+        log.append(f"Длительность фазы сжатия: τ = (L/2)/c_прод = {phase_ms} мс (c_прод = {C_PRODUCTS} м/с)")
+    else:
+        log.append("Методика: газодинамическая (Садовский), Q_тнт по Методике №415")
+        log.append(f"Граница применимости формулы: r̄ = 1, то есть r = {r_min} м")
+        log.append(f"Максимальное давление во фронте (r = {r_min} м): ΔP = {max_dp} кПа")
+        log.append(f"Длительность фазы сжатия: τ = i/ΔP = {phase_ms} мс")
+    log.append(f"Импульс: i = ΔP·τ = {max_imp} Па·с")
     log.append(f"Скорость фронта: D = {wave_spd} м/с")
 
     # 4. Зоны поражения
@@ -698,6 +742,7 @@ def calc_one(body: dict) -> dict:
         "q_tnt_kg":           q_tnt_rounded,
         "maxDeltaP_kPa":      max_dp,
         "maxImpulse_Pas":     max_imp,
+        "phaseDuration_ms":   phase_ms,
         "waveFrontSpeed_ms":  wave_spd,
         "minValidRadius_m":   r_min,
         "thresholds":         th,

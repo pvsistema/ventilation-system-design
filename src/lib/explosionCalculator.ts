@@ -201,6 +201,15 @@ export interface ExplosionResult {
    */
   maxDeltaP_kPa: number;
   maxImpulse_Pas: number;
+  /**
+   * Длительность фазы сжатия, мс — для тех же условий, что maxImpulse_Pas.
+   *
+   * Показывается рядом с импульсом, потому что без неё две ветки расчёта
+   * выглядят несопоставимо: у компактного заряда ВВ импульс — сотни Па·с,
+   * у газовой дефлаграции — тысячи. Разница не в формулах, а именно в
+   * длительности нагружения: удар против длинного поршня.
+   */
+  phaseDuration_ms?: number;
   waveFrontSpeed_ms: number;
   /** Расстояние, к которому относятся max-параметры, м (r̄ = 1) */
   minValidRadius_m?: number;
@@ -330,6 +339,24 @@ function sadovskyImpulse(r_m: number, q_tnt: number): number {
   const r = Math.max(r_m, minValidRadius(q_tnt));
   const i_Pa_s = 123 * Math.pow(q_tnt, 0.66) / r;
   return Math.round(i_Pa_s * 10) / 10;
+}
+
+/**
+ * Длительность фазы сжатия для КОМПАКТНОГО ЗАРЯДА (ВВ), с.
+ *
+ * Выводится из определения импульса: i = ΔP · τ, откуда τ = i / ΔP.
+ * Обе величины берутся из Методики №415, поэтому длительность
+ * согласована с ними и не вводит нового источника данных.
+ *
+ * Нужна, чтобы импульсы газовой и тротиловой веток были СОПОСТАВИМЫ:
+ * они отличаются на порядки не из-за разных формул, а из-за разной
+ * длительности нагружения — у ВВ это единицы миллисекунд, у газовой
+ * дефлаграции в выработке десятки.
+ */
+export function tntPhaseDuration(r_m: number, q_tnt: number): number {
+  const dp = sadovskyDeltaPRaw(r_m, q_tnt); // кПа
+  if (dp <= 0) return 0;
+  return sadovskyImpulse(r_m, q_tnt) / (dp * 1000); // с
 }
 
 /** Скорость фронта ударной волны (м/с) через давление: D = C0 * √(1 + 6/7 * ΔP/P0) */
@@ -664,8 +691,48 @@ export function gasChannelPressureAt(
 }
 
 /**
- * Импульс плоской волны, Па·с. Оценивается как ΔP · τ, где длительность
- * фазы сжатия τ ≈ L_газ / c₀ — время прохождения волной облака продуктов.
+ * Скорость звука в продуктах сгорания, м/с.
+ *
+ * Продукты горения метановоздушной смеси нагреты до ~2000 K, и скорость
+ * звука в них вдвое выше, чем в холодном воздухе: c = √(γRT/M) ≈ 700–900 м/с.
+ * С учётом остывания при расширении принято 680 м/с (2·C₀).
+ *
+ * Это НЕ C₀: раньше в формуле длительности стояла скорость звука в холодном
+ * воздухе, что вдвое завышало время разгрузки очага.
+ */
+export const C_PRODUCTS = 680;
+
+/**
+ * Длительность фазы сжатия для газового взрыва, с.
+ *
+ * Физически это время разгрузки загазованного участка: волна разрежения
+ * идёт от границы очага вглубь со скоростью звука в продуктах. Очаг
+ * разгружается в ОБЕ стороны, поэтому в расчёт идёт полудлина.
+ *
+ *     τ = (L/2) / c_прод
+ *
+ * ПРЕЖНЯЯ ОШИБКА: стояло τ = L / C₀ — полная длина, делённая на скорость
+ * звука в ХОЛОДНОМ воздухе. Это давало вчетверо завышенную длительность
+ * (для L = 100 м — 294 мс вместо 74 мс) и такой же завышенный импульс.
+ */
+export function gasPhaseDuration(src: GasSourceParams): number {
+  return Math.max(gasHalfLength(src), 0.5) / C_PRODUCTS;
+}
+
+/**
+ * Импульс плоской волны, Па·с: i = ΔP · τ.
+ *
+ * ПОЧЕМУ У ГАЗА ИМПУЛЬС НАМНОГО БОЛЬШЕ, ЧЕМ У ВВ. Это не ошибка расчёта,
+ * а разные режимы нагружения. Компактный заряд ВВ даёт короткий удар:
+ * длительность фазы сжатия — единицы миллисекунд. Газовая дефлаграция в
+ * выработке работает как длинный поршень: продукты разгружаются десятки
+ * миллисекунд, и при том же давлении импульс на порядок-два выше.
+ *
+ * Чтобы величины были сопоставимы, длительность фазы возвращается в
+ * результате отдельным полем (phaseDuration_ms) для обеих веток — тогда
+ * видно, что импульсы отличаются именно из-за τ, а не из-за разнобоя
+ * в формулах.
+ *
  * В канале импульс затухает медленнее давления, поэтому декремент половинный.
  */
 export function gasChannelImpulseAt(
@@ -677,8 +744,7 @@ export function gasChannelImpulseAt(
   const p0 = src.initialPressure_kPa;
   if (p0 <= 0) return 0;
   const half = gasHalfLength(src);
-  const tau = Math.max(src.zoneLength_m, 1) / C0; // с
-  const i0 = p0 * 1000 * tau;                     // Па·с
+  const i0 = p0 * 1000 * gasPhaseDuration(src); // Па·с
   const L = Math.max(L_m, 0);
   if (L <= half) return Math.round(i0 * pathFactor * 10) / 10;
   const beta = channelDecay(ch) * 0.5;
@@ -1028,15 +1094,23 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   const maxDeltaP = pressureAtDistance(rMin);
   const maxImpulse = impulseAtDistance(rMin);
   const waveFrontSpeed_ms = waveFrontSpeed(maxDeltaP);
+  // Длительность фазы сжатия — та же точка, что и для maxImpulse.
+  // Без неё импульсы двух веток выглядят несопоставимо.
+  const phaseDuration_ms = Math.round(
+    (gasSource ? gasPhaseDuration(gasSource) : tntPhaseDuration(rMin, q_tnt)) * 1000 * 10,
+  ) / 10;
 
   if (gasSource) {
     log.push("Методика: плоская волна от загазованного участка, Q_тнт по Методике №415 (справочно)");
     log.push(`Максимальное давление (внутри участка): ΔP = ${maxDeltaP} кПа`);
+    log.push(`Длительность фазы сжатия: τ = (L/2)/c_прод = ${phaseDuration_ms} мс (c_прод = ${C_PRODUCTS} м/с)`);
   } else {
     log.push("Методика: газодинамическая (Садовский), Q_тнт по Методике №415");
     log.push(`Граница применимости формулы: r̄ = 1, то есть r = ${rMin} м`);
     log.push(`Максимальное давление во фронте (r = ${rMin} м): ΔP = ${maxDeltaP} кПа`);
+    log.push(`Длительность фазы сжатия: τ = i/ΔP = ${phaseDuration_ms} мс`);
   }
+  log.push(`Импульс: i = ΔP·τ = ${maxImpulse} Па·с`);
   log.push(`Скорость фронта: D = ${waveFrontSpeed_ms} м/с`);
 
   // 5. Зоны поражения — строятся из порогов справочника, а не из
@@ -1089,6 +1163,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     q_tnt_kg: Math.round(q_tnt * 100) / 100,
     maxDeltaP_kPa: maxDeltaP,
     maxImpulse_Pas: maxImpulse,
+    phaseDuration_ms,
     waveFrontSpeed_ms,
     minValidRadius_m: rMin,
     thresholds: th,
