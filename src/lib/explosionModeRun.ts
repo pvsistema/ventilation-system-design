@@ -14,6 +14,7 @@ import {
   calcExplosion, GAS_TYPES, wallReflectionFactor, type ExplosionThresholds,
   type ExplosionResult, type ExplosionSourceType,
   channelPressureAt, channelImpulseAt, channelDecay, LAMBDA_DEFAULT,
+  gasChannelPressureAt, gasChannelImpulseAt, GAS_P0_DEFAULT,
 } from "@/lib/explosionCalculator";
 
 /**
@@ -97,6 +98,10 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     sourceType: b.explosionSourceType ?? "mass",
     gasId: b.explosionGasId ?? "methane",
     gasVolume_m3: b.explosionGasVolume ?? 100,
+    // Длина загазованного участка — основной способ задания источника по газу.
+    // Объём смеси считается как длина × сечение ветви (как в «Аэросети»).
+    gasZoneLength_m: b.explosionGasZoneLength ?? 100,
+    gasInitialPressure_kPa: b.explosionGasP0 ?? GAS_P0_DEFAULT,
     gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
     explosiveId: b.explosionExplosiveId ?? "ammonit",
     explosiveMass_kg: b.explosionExplosiveMass ?? 100,
@@ -161,6 +166,9 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       // нет — берём сечение ветви и λ по умолчанию.
       const _ch = data.channel ?? { area_m2: area, lambda: LAMBDA_DEFAULT };
       const _channelMode = data.channelMode !== false;
+      // Газовый источник — протяжённый загазованный участок: волна плоская
+      // с самого начала, сферическая формула Садовского не применяется.
+      const _gas = data.gasSource;
       // Граница применимости формулы (r̄ = 1) — та же, что в ядре.
       const _rMin = Math.pow(_qTnt, 1 / 3);
       const sadovsky = (r: number): number => {
@@ -178,11 +186,14 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         ...data,
         channel: _ch,
         pressureAtDistance: (r: number) => {
+          // Газ — плоская волна от загазованного участка (см. ядро)
+          if (_gas) return gasChannelPressureAt(r, _gas, _ch);
           // Канальная модель — та же функция, что в ядре (единый источник правды)
           if (_channelMode && _qTnt > 0) return channelPressureAt(r, _qTnt, _ch);
           return Math.round(sadovsky(r) * _wf * 10) / 10;
         },
         impulseAtDistance: (r: number) => {
+          if (_gas) return gasChannelImpulseAt(r, _gas, _ch);
           if (_qTnt <= 0) return 0;
           if (_channelMode) return channelImpulseAt(r, _qTnt, _ch);
           // Импульс по Методике №415: i = 123·m^0.66/r (Па·с).
@@ -197,6 +208,8 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         sourceType: (b.explosionSourceType ?? "mass") as ExplosionSourceType,
         gasId: b.explosionGasId ?? "methane",
         gasVolume_m3: b.explosionGasVolume ?? 100,
+        gasZoneLength_m: b.explosionGasZoneLength ?? 100,
+        gasInitialPressure_kPa: b.explosionGasP0 ?? GAS_P0_DEFAULT,
         gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
         explosiveId: b.explosionExplosiveId ?? "ammonit",
         explosiveMass_kg: b.explosionExplosiveMass ?? 100,
@@ -274,10 +287,13 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     const res = resultByBranch.get(src.id);
     const rTr = res?.transitionRadius_m ?? 0;
     const betaSrc = channelDecay({ area_m2: bArea(src), lambda: LAMBDA_DEFAULT });
-    // Ослабление до конца ветви-очага: за точкой сшивки волна уже канальная,
-    // поэтому от неё и считается экспоненциальное затухание. До сшивки
-    // ослабления нет — там работает сферическая часть внутри pressureAtNode.
-    const attTo = (d: number) => d <= rTr ? 1 : Math.exp(-betaSrc * (d - rTr));
+    // Для газа затухание начинается не от точки сшивки сферы, а от ГРАНИЦЫ
+    // загазованного участка: внутри него давление постоянно и равно ΔP₀.
+    const gasHalf = res?.gasSource ? res.gasSource.zoneLength_m / 2 : 0;
+    const freeSpan = res?.gasSource ? gasHalf : rTr;
+    // Ослабление до конца ветви-очага: за этой границей волна уже канальная,
+    // поэтому от неё и считается экспоненциальное затухание.
+    const attTo = (d: number) => d <= freeSpan ? 1 : Math.exp(-betaSrc * (d - freeSpan));
     const dFrom = len * t, dTo = len * (1 - t);
     pushWave(src.fromId, { d: dFrom, att: attTo(dFrom), srcId: src.id });
     pushWave(src.toId,   { d: dTo,   att: attTo(dTo),   srcId: src.id });
@@ -336,6 +352,13 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     if (!res) return 0;
     const q = res.q_tnt_kg ?? 0;
     const ch = res.channel;
+    // ГАЗ: внутри загазованного участка — плато ΔP₀, снаружи затухание уже
+    // накоплено в st.att при обходе графа, поэтому здесь берётся ΔP₀ × att.
+    if (res.gasSource && ch) {
+      const half = res.gasSource.zoneLength_m / 2;
+      if (st.d <= half) return gasChannelPressureAt(st.d, res.gasSource, ch, st.att);
+      return Math.round(res.gasSource.initialPressure_kPa * st.att * 10) / 10;
+    }
     if (res.channelMode && ch && q > 0) {
       // ВАЖНО: затухание на трении уже накоплено в st.att при обходе графа —
       // по каждой ветви со СВОИМ сечением. Поэтому здесь берётся только

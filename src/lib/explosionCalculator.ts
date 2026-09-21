@@ -129,7 +129,20 @@ export interface ExplosionParams {
   sourceType: ExplosionSourceType;
   // По газу
   gasId: string;
-  gasVolume_m3: number;        // м³ — объём взрывоопасной смеси
+  /**
+   * Объём взрывоопасной смеси, м³.
+   *
+   * ИСПОЛЬЗУЕТСЯ ТОЛЬКО как запасной вариант: если задана длина загазованного
+   * участка (gasZoneLength_m), объём считается как L × S выработки. Раньше
+   * поле трактовалось буквально — 100 м³ при сечении 12 м² — и занижало
+   * энергию в 12 раз против «Аэросети», где вводится именно ДЛИНА участка.
+   */
+  gasVolume_m3: number;
+  /**
+   * Длина загазованного участка выработки, м (как в «Аэросети»).
+   * Объём смеси = gasZoneLength_m × excavationArea_m2.
+   */
+  gasZoneLength_m?: number;
   gasConcentration: number;    // % — концентрация газа в смеси
   // По массе
   explosiveId: string;
@@ -149,8 +162,15 @@ export interface ExplosionParams {
    * воздухе (оставлен для сверки со старыми расчётами).
    */
   channelMode?: boolean;
-  /** Коэффициент сопротивления λ для канальной модели (по умолчанию 0.05) */
+  /** Коэффициент сопротивления λ для канальной модели (по умолчанию 0.02) */
   channelLambda?: number;
+  /**
+   * Начальное давление продуктов взрыва в загазованном объёме, кПа
+   * (избыточное). Применяется ТОЛЬКО для газа/пыли: волна стартует с фронта
+   * загазованного участка уже как плоская, поэтому сферическая ближняя зона
+   * по Садовскому для газа не используется. По умолчанию GAS_P0_DEFAULT.
+   */
+  gasInitialPressure_kPa?: number;
   /** Коэффициент участия Z по Методике №415: 0.1 — открытое пространство,
    *  0.5 — замкнутый объём (горная выработка). По умолчанию 0.5. */
   zParticipation?: number;
@@ -190,6 +210,12 @@ export interface ExplosionResult {
   channelDecay_per_m?: number;
   /** Параметры канала — нужны схеме, чтобы вести волну по графу */
   channel?: ChannelParams;
+  /**
+   * Параметры газового источника (протяжённый загазованный участок).
+   * Задан только для sourceType="gas": в этом режиме волна плоская с самого
+   * начала и сферическая формула Садовского не применяется.
+   */
+  gasSource?: GasSourceParams;
   /**
    * Взрыва нет: заряд нулевой либо смесь вне пределов взрываемости.
    * В этом случае все радиусы и давления равны нулю — зоны поражения
@@ -379,14 +405,32 @@ export function wallReflectionFactor(area_m2: number): number {
 const K_TRANSITION = 2.0;
 
 /**
- * Коэффициент аэродинамического сопротивления выработки λ (безразмерный).
- * Для ударной волны он заметно выше, чем для установившегося потока:
- * шероховатость крепи, затяжка, оборудование, повороты.
- *   0.02…0.03 — гладкие бетонные стволы;
- *   0.04…0.06 — типовые выработки с арочной крепью (значение по умолчанию);
- *   0.08…0.12 — сильно загромождённые, с большой шероховатостью.
+ * Коэффициент сопротивления λ для ЗАТУХАНИЯ УДАРНОЙ ВОЛНЫ (безразмерный).
+ *
+ * ВАЖНО: это НЕ коэффициент стационарного трения из аэродинамики выработки.
+ * Ударная волна проходит выработку за доли секунды, пограничный слой
+ * развиться не успевает, и фактические потери на порядок ниже, чем при
+ * установившемся потоке. Прежнее значение 0.05 (взятое как для стационарного
+ * течения в арочной крепи) гасило волну втрое быстрее реального и давало
+ * зону 10 кПа на 737 м там, где «Аэросеть» показывает километры.
+ *
+ *   0.005…0.01 — гладкие бетонные стволы, набрызг-бетон;
+ *   0.015…0.025 — типовые выработки с арочной крепью (по умолчанию 0.02);
+ *   0.03…0.05  — сильно загромождённые, с затяжкой и оборудованием.
  */
-export const LAMBDA_DEFAULT = 0.05;
+export const LAMBDA_DEFAULT = 0.02;
+
+/**
+ * Начальное избыточное давление продуктов взрыва газовоздушной смеси
+ * в замкнутом объёме, кПа.
+ *
+ * При дефлаграции метановоздушной смеси в выработке давление в очаге
+ * поднимается примерно в 8…9 раз от атмосферного, то есть избыточное
+ * составляет ~0.7…0.9 МПа. В «Аэросети» этот параметр задаётся явно
+ * (на скриншоте P = 282 кПа) — у нас он тоже вынесен в настройку,
+ * а 282 кПа принято значением по умолчанию для сверки.
+ */
+export const GAS_P0_DEFAULT = 282;
 
 /** Гидравлический диаметр выработки d_г = 4S/P, м */
 export function hydraulicDiameter(area_m2: number, perimeter_m?: number): number {
@@ -483,6 +527,102 @@ export function channelImpulseAt(
   const iTr  = base / rTr;
   const beta = channelDecay(ch) * 0.5;
   return Math.round(iTr * Math.exp(-beta * (L - rTr)) * pathFactor * 10) / 10;
+}
+
+// ─── ГАЗОВАЯ МОДЕЛЬ: ПЛОСКАЯ ВОЛНА ОТ ЗАГАЗОВАННОГО УЧАСТКА ─────────────────
+/**
+ * ПОЧЕМУ ДЛЯ ГАЗА ОТДЕЛЬНАЯ МОДЕЛЬ.
+ *
+ * Для ВВ источник — компактный заряд: волна сначала расходится шаром, и
+ * формула Садовского здесь уместна. Для газа источник принципиально другой —
+ * это ПРОТЯЖЁННЫЙ загазованный участок выработки длиной в десятки метров.
+ * Он занимает всё сечение, поэтому волна с самого начала плоская: никакого
+ * сферического разлёта нет, и «делить энергию на поверхность шара» неверно.
+ *
+ * Прежний расчёт применял к газу ту же сферическую ближнюю зону, и уже на
+ * r_tr = 2√S ≈ 7 м от 35 кг ТНТ оставалось 174 кПа вместо стартовых 1046 —
+ * то есть 85 % энергии «терялось» в первых семи метрах ещё до входа в канал.
+ * Отсюда и расхождение с «Аэросетью» в разы по дальности зон.
+ *
+ * КАК СЧИТАЕМ ТЕПЕРЬ (как в «Аэросети»):
+ *   • внутри загазованного участка (L ≤ L_газ/2 от центра) давление
+ *     постоянно и равно начальному ΔP₀ — весь объём реагирует;
+ *   • за границей участка — экспоненциальное затухание плоской волны
+ *     в канале: ΔP(L) = ΔP₀ · exp(−β·(L − L_газ/2)).
+ *
+ * Тротиловый эквивалент при этом сохраняется в результате для отчётности,
+ * но на форму кривой не влияет — она определяется ΔP₀ и геометрией канала.
+ */
+
+/** Параметры источника-газа: протяжённый загазованный участок */
+export interface GasSourceParams {
+  /** Длина загазованного участка, м */
+  zoneLength_m: number;
+  /** Начальное избыточное давление в очаге, кПа */
+  initialPressure_kPa: number;
+}
+
+/** Полуразмер загазованного участка, м — от центра до его границы */
+function gasHalfLength(src: GasSourceParams): number {
+  return Math.max(src.zoneLength_m, 0) / 2;
+}
+
+/**
+ * Давление плоской волны на расстоянии L от ЦЕНТРА загазованного участка, кПа.
+ * Внутри участка — плато ΔP₀, снаружи — экспоненциальное затухание.
+ */
+export function gasChannelPressureAt(
+  L_m: number,
+  src: GasSourceParams,
+  ch: ChannelParams,
+  pathFactor = 1,
+): number {
+  const p0 = src.initialPressure_kPa;
+  if (p0 <= 0) return 0;
+  const half = gasHalfLength(src);
+  const L = Math.max(L_m, 0);
+  if (L <= half) return Math.round(p0 * pathFactor * 10) / 10;
+  const beta = channelDecay(ch);
+  return Math.round(p0 * Math.exp(-beta * (L - half)) * pathFactor * 10) / 10;
+}
+
+/**
+ * Импульс плоской волны, Па·с. Оценивается как ΔP · τ, где длительность
+ * фазы сжатия τ ≈ L_газ / c₀ — время прохождения волной облака продуктов.
+ * В канале импульс затухает медленнее давления, поэтому декремент половинный.
+ */
+export function gasChannelImpulseAt(
+  L_m: number,
+  src: GasSourceParams,
+  ch: ChannelParams,
+  pathFactor = 1,
+): number {
+  const p0 = src.initialPressure_kPa;
+  if (p0 <= 0) return 0;
+  const half = gasHalfLength(src);
+  const tau = Math.max(src.zoneLength_m, 1) / C0; // с
+  const i0 = p0 * 1000 * tau;                     // Па·с
+  const L = Math.max(L_m, 0);
+  if (L <= half) return Math.round(i0 * pathFactor * 10) / 10;
+  const beta = channelDecay(ch) * 0.5;
+  return Math.round(i0 * Math.exp(-beta * (L - half)) * pathFactor * 10) / 10;
+}
+
+/** Длина пути от центра очага, на которой ΔP падает до заданного, м */
+export function gasChannelDistanceAtPressure(
+  targetP_kPa: number,
+  src: GasSourceParams,
+  ch: ChannelParams,
+  pathFactor = 1,
+): number {
+  const p0 = src.initialPressure_kPa * pathFactor;
+  if (targetP_kPa <= 0 || p0 <= 0) return 0;
+  const half = gasHalfLength(src);
+  // Порог выше начального давления — зона не образуется
+  if (targetP_kPa >= p0) return Math.round(half);
+  const beta = channelDecay(ch);
+  if (beta <= 0) return Math.round(half);
+  return Math.round(half + Math.log(p0 / targetP_kPa) / beta);
 }
 
 /**
@@ -633,6 +773,17 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // задана — расчёт прекращается и возвращается нулевой результат.
   let noExplosionReason = "";
 
+  // Длина загазованного участка и объём смеси.
+  // ГЛАВНОЕ: объём считается как L × S выработки, а не берётся буквально из
+  // поля «Объём смеси». В «Аэросети» вводится именно ДЛИНА участка, и при
+  // сечении 12 м² «100 м выработки» — это 1200 м³, а не 100. Старая трактовка
+  // занижала энергию ровно во столько раз, сколько метров в сечении.
+  const gasZoneLen = params.gasZoneLength_m && params.gasZoneLength_m > 0
+    ? params.gasZoneLength_m : 0;
+  const gasVolume = gasZoneLen > 0 && params.excavationArea_m2 > 0
+    ? gasZoneLen * params.excavationArea_m2
+    : params.gasVolume_m3;
+
   if (params.sourceType === "gas") {
     const gas = GAS_TYPES.find(g => g.id === params.gasId) ?? GAS_TYPES[0];
     const conc = params.gasConcentration;
@@ -647,7 +798,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
       noExplosionReason = `Концентрация ${conc} ${u} ниже НПВ (${gas.lowerLimit} ${u}) — смесь не взрывоопасна, зоны поражения не образуются`;
     } else if (conc > gas.upperLimit) {
       noExplosionReason = `Концентрация ${conc} ${u} выше ВПВ (${gas.upperLimit} ${u}) — смесь не взрывоопасна, зоны поражения не образуются`;
-    } else if (params.gasVolume_m3 <= 0) {
+    } else if (gasVolume <= 0) {
       noExplosionReason = "Объём взрывоопасной смеси равен нулю — взрыв невозможен";
     }
     // Обогащённая смесь: горючего больше стехиометрии — не хватает кислорода.
@@ -655,8 +806,11 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     // идёт стехиометрическая концентрация, а не заданная.
     const effectiveConc = Math.min(conc, gas.stoichConc);
     const z = params.zParticipation && params.zParticipation > 0 ? params.zParticipation : Z_DEFAULT;
-    q_tnt = gasToTnt(gas, params.gasVolume_m3, effectiveConc, z);
-    log.push(`${gas.unit === "g/m3" ? "Пыль" : "Газ"}: ${gas.name}, объём смеси: ${params.gasVolume_m3} м³, концентрация: ${conc} ${u}`);
+    q_tnt = gasToTnt(gas, gasVolume, effectiveConc, z);
+    if (gasZoneLen > 0) {
+      log.push(`Загазованный участок: длина ${gasZoneLen} м × сечение ${params.excavationArea_m2} м² = ${Math.round(gasVolume)} м³ смеси`);
+    }
+    log.push(`${gas.unit === "g/m3" ? "Пыль" : "Газ"}: ${gas.name}, объём смеси: ${Math.round(gasVolume)} м³, концентрация: ${conc} ${u}`);
     if (effectiveConc < conc) {
       log.push(`Смесь обогащённая: в расчёт принята стехиометрическая концентрация ${effectiveConc} ${u} (энергия ограничена кислородом)`);
     }
@@ -713,12 +867,36 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   const rTr  = channelMode ? Math.max(transitionRadius(channel.area_m2), rMinValid) : 0;
   const beta = channelMode ? channelDecay(channel) : 0;
 
+  // ГАЗ — плоская волна от протяжённого загазованного участка.
+  // Сферическая ближняя зона для газа не применяется: очаг занимает всё
+  // сечение выработки, поэтому волна плоская с самого начала.
+  const gasSource: GasSourceParams | undefined =
+    (channelMode && params.sourceType === "gas")
+      ? {
+          zoneLength_m: gasZoneLen > 0
+            ? gasZoneLen
+            // Длина не задана — восстанавливаем её из объёма и сечения
+            : (params.excavationArea_m2 > 0 ? gasVolume / params.excavationArea_m2 : 0),
+          initialPressure_kPa: params.gasInitialPressure_kPa && params.gasInitialPressure_kPa > 0
+            ? params.gasInitialPressure_kPa
+            : GAS_P0_DEFAULT,
+        }
+      : undefined;
+
+  if (gasSource) {
+    log.push(`Модель источника: протяжённый загазованный участок (плоская волна, как в «Аэросети»)`);
+    log.push(`Длина участка: ${Math.round(gasSource.zoneLength_m * 10) / 10} м, начальное давление ΔP₀ = ${gasSource.initialPressure_kPa} кПа`);
+  }
+
   if (channelMode) {
     const dg = hydraulicDiameter(channel.area_m2, channel.perimeter_m);
-    log.push(`Модель распространения: канальная (ближняя зона — Садовский, дальняя — выработка)`);
+    log.push(gasSource
+      ? `Модель распространения: канальная (плоская волна по выработке)`
+      : `Модель распространения: канальная (ближняя зона — Садовский, дальняя — выработка)`);
     log.push(`Сечение S = ${channel.area_m2} м², гидравлический диаметр d = ${Math.round(dg * 100) / 100} м`);
     log.push(`Коэффициент сопротивления λ = ${channel.lambda ?? LAMBDA_DEFAULT}`);
-    log.push(`Переход сфера → канал: r = ${Math.round(rTr * 10) / 10} м`);
+    // Переход сфера → канал есть только у компактного заряда (ВВ).
+    if (!gasSource) log.push(`Переход сфера → канал: r = ${Math.round(rTr * 10) / 10} м`);
     log.push(`Погонное затухание β = λ/(2d) = ${beta.toExponential(3)} 1/м`);
   } else if (params.considerWalls) {
     log.push(`Модель распространения: сферическая, коэффициент стенок k = ${wallFactor}`);
@@ -730,12 +908,14 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // r = 0 (точка установки очага) — тоже максимум, а не ноль: раньше
   // ветка `r_m <= 0` давала 0 кПа, и эпицентр взрыва попадал в «безопасно».
   const pressureAtDistance = (r: number) => {
+    if (gasSource) return gasChannelPressureAt(r, gasSource, channel);
     if (channelMode) return channelPressureAt(r, q_tnt, channel);
     const dP = sadovskyDeltaP(Math.max(r, rMinValid), q_tnt);
     return Math.round(dP * wallFactor * 10) / 10;
   };
 
   const impulseAtDistance = (r: number) => {
+    if (gasSource) return gasChannelImpulseAt(r, gasSource, channel);
     if (channelMode) return channelImpulseAt(r, q_tnt, channel);
     const i = sadovskyImpulse(Math.max(r, rMinValid), q_tnt);
     return Math.round(i * wallFactor * 10) / 10;
@@ -746,14 +926,21 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // это r̄ = 0.22, то есть глубоко внутри зоны, где формула Садовского уже
   // не работает: получалось 74 000 кПа и скорость фронта 8 500 м/с.
   // Ближе к заряду параметры волны этой методикой не определяются.
-  const rMin = rMinValid;
+  // Для газа максимум — это начальное давление в самом загазованном участке:
+  // граница применимости Садовского здесь ни при чём, формула не используется.
+  const rMin = gasSource ? 0 : rMinValid;
   const maxDeltaP = pressureAtDistance(rMin);
   const maxImpulse = impulseAtDistance(rMin);
   const waveFrontSpeed_ms = waveFrontSpeed(maxDeltaP);
 
-  log.push("Методика: газодинамическая (Садовский), Q_тнт по Методике №415");
-  log.push(`Граница применимости формулы: r̄ = 1, то есть r = ${rMin} м`);
-  log.push(`Максимальное давление во фронте (r = ${rMin} м): ΔP = ${maxDeltaP} кПа`);
+  if (gasSource) {
+    log.push("Методика: плоская волна от загазованного участка, Q_тнт по Методике №415 (справочно)");
+    log.push(`Максимальное давление (внутри участка): ΔP = ${maxDeltaP} кПа`);
+  } else {
+    log.push("Методика: газодинамическая (Садовский), Q_тнт по Методике №415");
+    log.push(`Граница применимости формулы: r̄ = 1, то есть r = ${rMin} м`);
+    log.push(`Максимальное давление во фронте (r = ${rMin} м): ΔP = ${maxDeltaP} кПа`);
+  }
   log.push(`Скорость фронта: D = ${waveFrontSpeed_ms} м/с`);
 
   // 5. Зоны поражения — строятся из порогов справочника, а не из
@@ -770,9 +957,11 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   // Радиус зоны: в канальном режиме это ДЛИНА ПУТИ ПО ВЫРАБОТКЕ, а не
   // радиус сферы. Именно поэтому значения получаются в сотни метров —
   // волна не рассеивается в объём, а идёт по каналу.
-  const zoneReach = (p: number) => channelMode
-    ? channelDistanceAtPressure(p, q_tnt, channel)
-    : radiusAtPressure(p, q_tnt, wallFactor);
+  const zoneReach = (p: number) => gasSource
+    ? gasChannelDistanceAtPressure(p, gasSource, channel)
+    : channelMode
+      ? channelDistanceAtPressure(p, q_tnt, channel)
+      : radiusAtPressure(p, q_tnt, wallFactor);
 
   const zones: ExplosionZone[] = zoneDefs.map(d => {
     const r = zoneReach(d.from);
@@ -811,6 +1000,7 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     transitionRadius_m: channelMode ? Math.round(rTr * 10) / 10 : undefined,
     channelDecay_per_m: channelMode ? beta : undefined,
     channel: channelMode ? channel : undefined,
+    gasSource,
     zones,
     pressureAtDistance,
     impulseAtDistance,

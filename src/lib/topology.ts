@@ -438,7 +438,14 @@ export interface TopoBranch {
   explosionSourceType: "gas" | "mass";     // способ задания: по газу или по массе ВВ
   // По газу
   explosionGasId: string;                  // ID газа из GAS_TYPES
-  explosionGasVolume: number;              // м³ — объём взрывоопасной смеси
+  explosionGasVolume: number;              // м³ — объём смеси (запасной вариант, если не задана длина)
+  /**
+   * Длина загазованного участка выработки, м — основной способ задания
+   * источника по газу (как в «Аэросети»). Объём смеси = длина × сечение.
+   */
+  explosionGasZoneLength: number;
+  /** Начальное избыточное давление продуктов взрыва в очаге, кПа */
+  explosionGasP0: number;
   explosionGasConcentration: number;       // % — концентрация газа
   explosionZ: number;                      // коэф. участия Z по Методике №415 (0.1 / 0.5)
   // По массе ВВ
@@ -861,6 +868,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     explosionSourceType: "mass",
     explosionGasId: "methane",
     explosionGasVolume: 100,
+    explosionGasZoneLength: 100,
+    explosionGasP0: 282,
     explosionGasConcentration: 9.5,
     explosionZ: 0.5,
     explosionExplosiveId: "ammonit",

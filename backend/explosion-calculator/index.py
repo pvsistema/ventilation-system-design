@@ -223,7 +223,73 @@ def wall_reflection_factor(area_m2):
 #      beta = lambda / (2 * d_g),  d_g = 4S/P.
 
 K_TRANSITION = 2.0
-LAMBDA_DEFAULT = 0.05
+
+# Коэффициент сопротивления для ЗАТУХАНИЯ УДАРНОЙ ВОЛНЫ (не стационарного
+# трения!). Волна проходит выработку за доли секунды, пограничный слой
+# развиться не успевает, потери на порядок ниже. Прежние 0.05 (как для
+# установившегося потока) гасили волну втрое быстрее реального.
+#   0.005…0.01 — гладкие бетонные стволы;
+#   0.015…0.025 — типовые выработки с арочной крепью (по умолчанию 0.02);
+#   0.03…0.05  — сильно загромождённые.
+LAMBDA_DEFAULT = 0.02
+
+# Начальное избыточное давление продуктов взрыва газовоздушной смеси
+# в замкнутом объёме, кПа. В «Аэросети» задаётся явно (P = 282 кПа).
+GAS_P0_DEFAULT = 282.0
+
+
+# ─── ГАЗОВАЯ МОДЕЛЬ: ПЛОСКАЯ ВОЛНА ОТ ЗАГАЗОВАННОГО УЧАСТКА ─────────────────
+# Для ВВ источник — компактный заряд, волна сначала расходится шаром, и
+# формула Садовского уместна. Для газа источник другой: ПРОТЯЖЁННЫЙ
+# загазованный участок на всё сечение выработки. Волна там плоская с самого
+# начала, сферического разлёта нет.
+#
+# Прежний расчёт применял к газу сферическую ближнюю зону, и уже на
+# r_tr = 2*sqrt(S) ≈ 7 м от 35 кг ТНТ оставалось 174 кПа вместо 1046 — то есть
+# 85 % энергии «терялось» в первых семи метрах ещё до входа в канал.
+#
+#   • внутри участка (L <= L_газ/2 от центра) давление постоянно = ΔP0;
+#   • за границей — ΔP(L) = ΔP0 * exp(-beta * (L - L_газ/2)).
+
+
+def gas_pressure_at(l_m, zone_len, p0, area_m2, perimeter_m=None, lam=None, path_factor=1.0):
+    """ΔP плоской волны на расстоянии L от ЦЕНТРА загазованного участка, кПа."""
+    if p0 <= 0:
+        return 0.0
+    half = max(zone_len, 0) / 2.0
+    l = max(l_m, 0)
+    if l <= half:
+        return round(p0 * path_factor, 1)
+    beta = channel_decay(area_m2, perimeter_m, lam)
+    return round(p0 * math.exp(-beta * (l - half)) * path_factor, 1)
+
+
+def gas_impulse_at(l_m, zone_len, p0, area_m2, perimeter_m=None, lam=None, path_factor=1.0):
+    """Импульс плоской волны, Па·с: ΔP * tau, tau ≈ L_газ / c0."""
+    if p0 <= 0:
+        return 0.0
+    half = max(zone_len, 0) / 2.0
+    tau = max(zone_len, 1) / C0
+    i0 = p0 * 1000 * tau
+    l = max(l_m, 0)
+    if l <= half:
+        return round(i0 * path_factor, 1)
+    beta = channel_decay(area_m2, perimeter_m, lam) * 0.5
+    return round(i0 * math.exp(-beta * (l - half)) * path_factor, 1)
+
+
+def gas_distance_at_pressure(target_p, zone_len, p0, area_m2, perimeter_m=None, lam=None, path_factor=1.0):
+    """Длина пути от центра очага, на которой ΔP падает до заданного, м."""
+    p = p0 * path_factor
+    if target_p <= 0 or p <= 0:
+        return 0
+    half = max(zone_len, 0) / 2.0
+    if target_p >= p:
+        return round(half)
+    beta = channel_decay(area_m2, perimeter_m, lam)
+    if beta <= 0:
+        return round(half)
+    return round(half + math.log(p / target_p) / beta)
 
 
 def hydraulic_diameter(area_m2, perimeter_m=None):
@@ -384,6 +450,12 @@ def calc_one(body: dict) -> dict:
     channel_mode = body.get("channelMode") is not False
     lam          = body.get("channelLambda")
     lam          = float(lam) if lam else None
+    # Длина загазованного участка (как в «Аэросети»). Объём смеси считается
+    # как длина × сечение; поле gasVolume_m3 остаётся запасным вариантом.
+    gas_zone_len = body.get("gasZoneLength_m")
+    gas_zone_len = float(gas_zone_len) if gas_zone_len else 0.0
+    gas_p0       = body.get("gasInitialPressure_kPa")
+    gas_p0       = float(gas_p0) if gas_p0 else GAS_P0_DEFAULT
 
     log = []
     warnings = []
@@ -392,10 +464,15 @@ def calc_one(body: dict) -> dict:
 
     # 1. Тротиловый эквивалент
     q_tnt = 0.0
+    volume = 0.0   # объём газовоздушной смеси, м³ (нужен и ниже, вне ветки)
     if source_type == "gas":
         gas_id  = body.get("gasId", "methane")
         gas     = GAS_TYPES.get(gas_id, GAS_TYPES["methane"])
-        volume  = float(body.get("gasVolume_m3", 100))
+        # ГЛАВНОЕ: объём = длина участка × сечение выработки. Раньше поле
+        # «объём» трактовалось буквально (100 м³ при сечении 12 м² — это
+        # всего 8 м выработки), отчего энергия занижалась в разы.
+        volume  = (gas_zone_len * area_m2) if (gas_zone_len > 0 and area_m2 > 0) \
+                  else float(body.get("gasVolume_m3", 100))
         conc    = float(body.get("gasConcentration", 9.5))
         u = conc_unit_label(gas.get("unit"))
         # ПРОВЕРКА ВЗРЫВАЕМОСТИ прекращает расчёт, а не просто предупреждает:
@@ -418,7 +495,9 @@ def calc_one(body: dict) -> dict:
         if z <= 0:
             z = Z_DEFAULT
         q_tnt = gas_to_tnt(gas, volume, eff_conc, z)
-        log.append(f"{'Пыль' if gas.get('unit') == 'g/m3' else 'Газ'}: {gas_id}, объём: {volume} м³, концентрация: {conc} {u}")
+        if gas_zone_len > 0:
+            log.append(f"Загазованный участок: длина {gas_zone_len} м × сечение {area_m2} м² = {round(volume)} м³ смеси")
+        log.append(f"{'Пыль' if gas.get('unit') == 'g/m3' else 'Газ'}: {gas_id}, объём: {round(volume)} м³, концентрация: {conc} {u}")
         if eff_conc < conc:
             log.append(f"Смесь обогащённая: в расчёт принята стехиометрическая концентрация {eff_conc} {u}")
         log.append(f"Коэффициент участия Z (Методика №415): {z}")
@@ -457,34 +536,52 @@ def calc_one(body: dict) -> dict:
     r_tr = max(transition_radius(area_m2), min_valid_radius(q_tnt)) if channel_mode else 0.0
     beta = channel_decay(area_m2, perimeter_m, lam) if channel_mode else 0.0
 
+    # ГАЗ — протяжённый загазованный участок: волна плоская с самого начала,
+    # сферическая ближняя зона по Садовскому не применяется.
+    gas_mode = channel_mode and source_type == "gas"
+    gas_len = gas_zone_len if gas_zone_len > 0 else (volume / area_m2 if area_m2 > 0 else 0.0)
+
     def dp_at(r):
+        if gas_mode:
+            return gas_pressure_at(r, gas_len, gas_p0, area_m2, perimeter_m, lam)
         if channel_mode:
             return channel_pressure_at(r, q_tnt, area_m2, perimeter_m, lam)
         return pressure_at(r, q_tnt, method, wall_factor)
 
     def imp_at(r):
+        if gas_mode:
+            return gas_impulse_at(r, gas_len, gas_p0, area_m2, perimeter_m, lam)
         if channel_mode:
             return channel_impulse_at(r, q_tnt, area_m2, perimeter_m, lam)
         return round(sadovsky_impulse(r, q_tnt) * wall_factor, 1)
 
     def reach_at(p):
+        if gas_mode:
+            return gas_distance_at_pressure(p, gas_len, gas_p0, area_m2, perimeter_m, lam)
         if channel_mode:
             return channel_distance_at_pressure(p, q_tnt, area_m2, perimeter_m, lam)
         return radius_at_pressure(p, q_tnt, method, wall_factor)
 
+    if gas_mode:
+        log.append("Модель источника: протяжённый загазованный участок (плоская волна, как в «Аэросети»)")
+        log.append(f"Длина участка: {round(gas_len, 1)} м, начальное давление ΔP₀ = {gas_p0} кПа")
+
     if channel_mode:
         d_g = hydraulic_diameter(area_m2, perimeter_m)
-        log.append("Модель распространения: канальная (ближняя зона — Садовский, дальняя — выработка)")
+        log.append("Модель распространения: канальная (плоская волна по выработке)" if gas_mode
+                   else "Модель распространения: канальная (ближняя зона — Садовский, дальняя — выработка)")
         log.append(f"Сечение S = {area_m2} м², гидравлический диаметр d = {round(d_g, 2)} м")
         log.append(f"Коэффициент сопротивления λ = {lam if lam else LAMBDA_DEFAULT}")
-        log.append(f"Переход сфера → канал: r = {round(r_tr, 1)} м")
+        # Переход сфера → канал есть только у компактного заряда (ВВ).
+        if not gas_mode:
+            log.append(f"Переход сфера → канал: r = {round(r_tr, 1)} м")
         log.append(f"Погонное затухание β = λ/(2d) = {beta:.3e} 1/м")
     elif consider_walls:
         log.append(f"Модель распространения: сферическая, коэффициент стенок k = {wall_factor}")
 
-    # 3. Максимум — на ГРАНИЦЕ ПРИМЕНИМОСТИ формулы (r̄ = 1), а не при r = 1 м:
-    # для 97 кг ТНТ r = 1 м это r̄ = 0.22, где формула уже не работает.
-    r_min    = min_valid_radius(q_tnt)
+    # 3. Максимум. Для газа это ΔP₀ в самом участке; для ВВ — на границе
+    # применимости формулы (r̄ = 1), а не при r = 1 м.
+    r_min    = 0.0 if gas_mode else min_valid_radius(q_tnt)
     max_dp   = dp_at(r_min)
     max_imp  = imp_at(r_min)
     wave_spd = wave_front_speed(max_dp)
@@ -544,6 +641,10 @@ def calc_one(body: dict) -> dict:
         "channel":            ({"area_m2": area_m2, "perimeter_m": perimeter_m,
                                 "lambda": lam if lam else LAMBDA_DEFAULT}
                                if channel_mode else None),
+        # Параметры газового источника — клиент ведёт по ним волну по графу
+        "gasSource":          ({"zoneLength_m": round(gas_len, 2),
+                                "initialPressure_kPa": gas_p0}
+                               if gas_mode else None),
         "zones":              zones,
         "pressurePoints":     pressure_points,
         "log":                log,

@@ -9352,11 +9352,23 @@ export default function CadPage() {
                         {GAS_TYPES.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                       </select>
                     </div>
+                    {/* Источник задаётся ДЛИНОЙ загазованного участка (как в
+                        «Аэросети»), а объём смеси считается как длина × сечение.
+                        Раньше вводился объём и трактовался буквально: 100 м³
+                        при сечении 12 м² — это лишь 8 м выработки, отчего
+                        энергия занижалась в разы. */}
                     <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Объём смеси, м³:</span>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Длина загазов. участка, м:</span>
                       <input type="number" step="10" min="1"
-                        value={b.explosionGasVolume ?? 100}
-                        onChange={e => updateBranch(b.id, { explosionGasVolume: parseFloat(e.target.value) || 100 })}
+                        value={b.explosionGasZoneLength ?? 100}
+                        onChange={e => updateBranch(b.id, { explosionGasZoneLength: parseFloat(e.target.value) || 100 })}
+                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                    </div>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Нач. давление ΔP₀, кПа:</span>
+                      <input type="number" step="10" min="1"
+                        value={b.explosionGasP0 ?? 282}
+                        onChange={e => updateBranch(b.id, { explosionGasP0: parseFloat(e.target.value) || 282 })}
                         className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
                     {(() => {
@@ -9392,12 +9404,18 @@ export default function CadPage() {
                       const u = concUnitLabel(gas.unit);
                       const inRange = conc >= gas.lowerLimit && conc <= gas.upperLimit;
                       const rich = conc > gas.stoichConc && inRange;
+                      // Объём смеси = длина участка × сечение выработки
+                      const zoneLen = b.explosionGasZoneLength ?? 100;
+                      const volume = zoneLen * (b.area ?? 12);
                       return (
                         <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]" style={{ background: inRange ? "var(--c-tint-green, #f0fdf4)" : "var(--c-tint-amber, #fef9c3)", border: `1px solid ${inRange ? "#bbf7d0" : "#fde047"}`, color: inRange ? "var(--c-green-ink, #166534)" : "#713f12" }}>
                           НПВ: {gas.lowerLimit} {u} · ВПВ: {gas.upperLimit} {u} · Стехиом.: {gas.stoichConc} {u}
+                          <div style={{ marginTop: 2 }}>
+                            Объём смеси: {zoneLen} м × {b.area ?? 12} м² = {Math.round(volume)} м³
+                          </div>
                           {gas.unit === "g/m3" && (
                             <div style={{ marginTop: 2 }}>
-                              Масса пыли в облаке: {Math.round((b.explosionGasVolume ?? 100) * conc / 1000 * 10) / 10} кг
+                              Масса пыли в облаке: {Math.round(volume * conc / 1000 * 10) / 10} кг
                             </div>
                           )}
                           {!inRange && " ⚠ Концентрация вне диапазона взрываемости"}
@@ -13140,6 +13158,8 @@ export default function CadPage() {
                         explosionSourceType: "mass",
                         explosionGasId: "methane",
                         explosionGasVolume: 100,
+                        explosionGasZoneLength: 100,
+                        explosionGasP0: 282,
                         explosionGasConcentration: 9.5,
                         explosionExplosiveId: "ammonit",
                         explosionExplosiveMass: 100,
