@@ -11,9 +11,19 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
-  calcExplosion,
+  calcExplosion, GAS_TYPES,
   type ExplosionResult, type ExplosionSourceType,
 } from "@/lib/explosionCalculator";
+
+/**
+ * Концентрация по умолчанию — стехиометрическая для ВЫБРАННОГО вещества.
+ * Единая константа 9.5 здесь не годится: у газов это проценты объёма,
+ * у угольной пыли — г/м³, и 9.5 г/м³ лежит ниже НПВ (30 г/м³), то есть
+ * расчёт молча вернул бы ноль.
+ */
+function defaultConc(gasId: string | undefined): number {
+  return GAS_TYPES.find(g => g.id === (gasId ?? "methane"))?.stoichConc ?? 9.5;
+}
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { withLicense } from "@/lib/license";
 
@@ -75,7 +85,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     sourceType: b.explosionSourceType ?? "mass",
     gasId: b.explosionGasId ?? "methane",
     gasVolume_m3: b.explosionGasVolume ?? 100,
-    gasConcentration: b.explosionGasConcentration ?? 9.5,
+    gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
     explosiveId: b.explosionExplosiveId ?? "ammonit",
     explosiveMass_kg: b.explosionExplosiveMass ?? 100,
     excavationArea_m2: b.area ?? 12,
@@ -141,7 +151,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         sourceType: (b.explosionSourceType ?? "mass") as ExplosionSourceType,
         gasId: b.explosionGasId ?? "methane",
         gasVolume_m3: b.explosionGasVolume ?? 100,
-        gasConcentration: b.explosionGasConcentration ?? 9.5,
+        gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
         explosiveId: b.explosionExplosiveId ?? "ammonit",
         explosiveMass_kg: b.explosionExplosiveMass ?? 100,
         excavationArea_m2: area,

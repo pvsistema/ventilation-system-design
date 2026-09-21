@@ -53,23 +53,46 @@ export const EXPLOSIVE_TYPES: ExplosiveType[] = [
   { id: "custom",    name: "Произвольное ВВ",            qSpec: 4520, tntEq: 1.00 },
 ];
 
-// ─── Виды горючих газов (метод «по газу») ────────────────────────────────────
+// ─── Виды горючих газов и пыли (метод «по газу») ─────────────────────────────
+/**
+ * Единица концентрации. У газов и у пыли она РАЗНАЯ, и это не косметика:
+ *   • "vol%" — объёмные проценты (газы). Объём горючего = V · c/100.
+ *   • "g/m3" — граммы на кубометр (аэровзвесь пыли). Масса пыли = V · c/1000.
+ * Раньше пыль хранилась с пределами 60…400 и считалась как проценты — при
+ * «концентрации» 200 выходило 200 м³ горючего в 100 м³ смеси, то есть
+ * горючего вдвое больше, чем всей смеси, и Q_тнт завышался в сотни раз.
+ */
+export type ConcUnit = "vol%" | "g/m3";
+
 export interface GasType {
   id: string;
   name: string;
-  qCombust: number;   // МДж/м³ — теплота сгорания при н.у.
-  lowerLimit: number; // % — нижний концентрационный предел взрываемости
-  upperLimit: number; // % — верхний концентрационный предел взрываемости
-  stoichConc: number; // % — стехиометрическая концентрация
+  /**
+   * Теплота сгорания. Единица зависит от unit:
+   *   "vol%" → МДж/м³ (на кубометр горючего газа при н.у.)
+   *   "g/m3" → МДж/кг (на килограмм пыли)
+   */
+  qCombust: number;
+  unit: ConcUnit;     // в чём задаётся концентрация
+  lowerLimit: number; // нижний концентрационный предел взрываемости
+  upperLimit: number; // верхний концентрационный предел взрываемости
+  stoichConc: number; // стехиометрическая (оптимальная) концентрация
 }
 
 export const GAS_TYPES: GasType[] = [
-  { id: "methane",   name: "Метан (CH₄)",       qCombust: 33.8, lowerLimit: 5.0,  upperLimit: 15.0, stoichConc: 9.5  },
-  { id: "hydrogen",  name: "Водород (H₂)",       qCombust: 10.8, lowerLimit: 4.0,  upperLimit: 75.0, stoichConc: 29.5 },
-  { id: "propane",   name: "Пропан (C₃H₈)",      qCombust: 93.2, lowerLimit: 2.1,  upperLimit: 9.5,  stoichConc: 4.0  },
-  { id: "acetylene", name: "Ацетилен (C₂H₂)",    qCombust: 56.0, lowerLimit: 2.5,  upperLimit: 80.0, stoichConc: 7.7  },
-  { id: "coal_dust", name: "Угольная пыль",       qCombust: 22.0, lowerLimit: 60.0, upperLimit: 400.0,stoichConc: 200  },
+  { id: "methane",   name: "Метан (CH₄)",    unit: "vol%", qCombust: 33.8, lowerLimit: 5.0, upperLimit: 15.0, stoichConc: 9.5  },
+  { id: "hydrogen",  name: "Водород (H₂)",    unit: "vol%", qCombust: 10.8, lowerLimit: 4.0, upperLimit: 75.0, stoichConc: 29.5 },
+  { id: "propane",   name: "Пропан (C₃H₈)",   unit: "vol%", qCombust: 93.2, lowerLimit: 2.1, upperLimit: 9.5,  stoichConc: 4.0  },
+  { id: "acetylene", name: "Ацетилен (C₂H₂)", unit: "vol%", qCombust: 56.0, lowerLimit: 2.5, upperLimit: 80.0, stoichConc: 7.7  },
+  // Угольная пыль: НПВ ≈ 30 г/м³, ВПВ ≈ 2000 г/м³, максимум давления
+  // при 300–500 г/м³. Теплота сгорания каменного угля ≈ 22 МДж/кг.
+  { id: "coal_dust", name: "Угольная пыль",   unit: "g/m3", qCombust: 22.0, lowerLimit: 30,  upperLimit: 2000, stoichConc: 400  },
 ];
+
+/** Подпись единицы концентрации для интерфейса */
+export function concUnitLabel(unit: ConcUnit): string {
+  return unit === "g/m3" ? "г/м³" : "%";
+}
 
 // ─── Коэффициент участия Z (Методика №415, прил. по ТВС) ─────────────────────
 // Z — доля горючего вещества, участвующая во взрывном превращении.
@@ -141,17 +164,20 @@ export interface ExplosionResult {
 // ─── Вспомогательные функции ─────────────────────────────────────────────────
 
 /**
- * Тротиловый эквивалент из объёма газа (Методика №415, прил. по ТВС):
+ * Тротиловый эквивалент облака (Методика №415, прил. по ТВС):
  *   m_пр = (q_г / q_ТНТ) · m · Z
  * где Z — коэффициент участия горючего во взрывном превращении
  * (0.1 — дефлаграция в открытом пространстве, 0.5 — замкнутый объём).
+ *
+ * Газ и пыль считаются по-разному — у них разная единица концентрации:
+ *   газ  (vol%): объём горючего = V·c/100,  энергия = объём · qCombust [МДж/м³]
+ *   пыль (g/m3): масса пыли     = V·c/1000, энергия = масса · qCombust [МДж/кг]
  */
-function gasToTnt(gas: GasType, volume_m3: number, concentration_pct: number, z: number): number {
-  // Эффективный объём горючего газа (только горючая фракция)
-  const fuelFraction = concentration_pct / 100;
-  const fuelVol = volume_m3 * fuelFraction;
-  // Химическая энергия (МДж)
-  const E_chem = fuelVol * gas.qCombust;
+function gasToTnt(gas: GasType, volume_m3: number, concentration: number, z: number): number {
+  // Химическая энергия облака, МДж
+  const E_chem = gas.unit === "g/m3"
+    ? (volume_m3 * concentration / 1000) * gas.qCombust  // кг пыли × МДж/кг
+    : (volume_m3 * concentration / 100)  * gas.qCombust; // м³ газа × МДж/м³
   // Энергия, участвующая во взрывном превращении (коэффициент Z по №415)
   const E_mech = E_chem * z * 1000; // → кДж
   // Тротиловый эквивалент
@@ -278,17 +304,23 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
   if (params.sourceType === "gas") {
     const gas = GAS_TYPES.find(g => g.id === params.gasId) ?? GAS_TYPES[0];
     const conc = params.gasConcentration;
+    const u = concUnitLabel(gas.unit);
     // Проверка взрываемости
     if (conc < gas.lowerLimit) {
-      warnings.push(`⚠ Концентрация ${conc}% ниже НПВ (${gas.lowerLimit}%) — смесь не взрывоопасна`);
+      warnings.push(`⚠ Концентрация ${conc} ${u} ниже НПВ (${gas.lowerLimit} ${u}) — смесь не взрывоопасна`);
     } else if (conc > gas.upperLimit) {
-      warnings.push(`⚠ Концентрация ${conc}% выше ВПВ (${gas.upperLimit}%) — смесь не взрывоопасна`);
+      warnings.push(`⚠ Концентрация ${conc} ${u} выше ВПВ (${gas.upperLimit} ${u}) — смесь не взрывоопасна`);
     }
-    // Максимум мощности при стехиометрической концентрации
-    const effectiveConc = Math.min(conc, gas.stoichConc * 1.2);
+    // Обогащённая смесь: горючего больше стехиометрии — не хватает кислорода.
+    // Энергия ограничена окислителем, поэтому сверх стехиометрии в расчёт
+    // идёт стехиометрическая концентрация, а не заданная.
+    const effectiveConc = Math.min(conc, gas.stoichConc);
     const z = params.zParticipation && params.zParticipation > 0 ? params.zParticipation : Z_DEFAULT;
     q_tnt = gasToTnt(gas, params.gasVolume_m3, effectiveConc, z);
-    log.push(`Газ: ${gas.name}, объём смеси: ${params.gasVolume_m3} м³, концентрация: ${conc}%`);
+    log.push(`${gas.unit === "g/m3" ? "Пыль" : "Газ"}: ${gas.name}, объём смеси: ${params.gasVolume_m3} м³, концентрация: ${conc} ${u}`);
+    if (effectiveConc < conc) {
+      log.push(`Смесь обогащённая: в расчёт принята стехиометрическая концентрация ${effectiveConc} ${u} (энергия ограничена кислородом)`);
+    }
     log.push(`Коэффициент участия Z (Методика №415): ${z}`);
     log.push(`Тротиловый эквивалент: Q_tnt = ${Math.round(q_tnt * 100) / 100} кг ТНТ`);
   } else {

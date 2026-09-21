@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -9294,9 +9294,19 @@ export default function CadPage() {
                   {/* По газу */}
                   {(b.explosionSourceType ?? "gas") === "gas" && (<>
                     <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Горючий газ:</span>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Горючее вещество:</span>
                       <select value={b.explosionGasId ?? "methane"}
-                        onChange={e => updateBranch(b.id, { explosionGasId: e.target.value })}
+                        onChange={e => {
+                          // У газов концентрация в % объёма, у пыли — в г/м³.
+                          // При смене вещества переносим значение из другой
+                          // единицы измерения на стехиометрию нового: 9.5 г/м³
+                          // пыли — это ниже НПВ, расчёт молча дал бы ноль.
+                          const next = GAS_TYPES.find(g => g.id === e.target.value);
+                          const prev = GAS_TYPES.find(g => g.id === (b.explosionGasId ?? "methane"));
+                          const patch: Partial<TopoBranch> = { explosionGasId: e.target.value };
+                          if (next && prev && next.unit !== prev.unit) patch.explosionGasConcentration = next.stoichConc;
+                          updateBranch(b.id, patch);
+                        }}
                         className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
                         {GAS_TYPES.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                       </select>
@@ -9308,13 +9318,23 @@ export default function CadPage() {
                         onChange={e => updateBranch(b.id, { explosionGasVolume: parseFloat(e.target.value) || 100 })}
                         className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
-                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Концентрация, %:</span>
-                      <input type="number" step="0.5" min="0" max="100"
-                        value={b.explosionGasConcentration ?? 9.5}
-                        onChange={e => updateBranch(b.id, { explosionGasConcentration: parseFloat(e.target.value) || 9.5 })}
-                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
-                    </div>
+                    {(() => {
+                      // Единица зависит от вещества: газ — % объёма, пыль — г/м³
+                      const g = GAS_TYPES.find(x => x.id === (b.explosionGasId ?? "methane")) ?? GAS_TYPES[0];
+                      const isDust = g.unit === "g/m3";
+                      return (
+                        <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>
+                            Концентрация, {concUnitLabel(g.unit)}:
+                          </span>
+                          <input type="number"
+                            step={isDust ? 10 : 0.5} min="0" max={isDust ? 5000 : 100}
+                            value={b.explosionGasConcentration ?? g.stoichConc}
+                            onChange={e => updateBranch(b.id, { explosionGasConcentration: parseFloat(e.target.value) || g.stoichConc })}
+                            className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                        </div>
+                      );
+                    })()}
                     <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Коэф. участия Z:</span>
                       <select value={String(b.explosionZ ?? 0.5)}
@@ -9327,12 +9347,25 @@ export default function CadPage() {
                     {(() => {
                       const gas = GAS_TYPES.find(g => g.id === (b.explosionGasId ?? "methane"));
                       if (!gas) return null;
-                      const conc = b.explosionGasConcentration ?? 9.5;
+                      const conc = b.explosionGasConcentration ?? gas.stoichConc;
+                      const u = concUnitLabel(gas.unit);
                       const inRange = conc >= gas.lowerLimit && conc <= gas.upperLimit;
+                      const rich = conc > gas.stoichConc && inRange;
                       return (
                         <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]" style={{ background: inRange ? "var(--c-tint-green, #f0fdf4)" : "var(--c-tint-amber, #fef9c3)", border: `1px solid ${inRange ? "#bbf7d0" : "#fde047"}`, color: inRange ? "var(--c-green-ink, #166534)" : "#713f12" }}>
-                          НПВ: {gas.lowerLimit}% · ВПВ: {gas.upperLimit}% · Стехиом.: {gas.stoichConc}%
+                          НПВ: {gas.lowerLimit} {u} · ВПВ: {gas.upperLimit} {u} · Стехиом.: {gas.stoichConc} {u}
+                          {gas.unit === "g/m3" && (
+                            <div style={{ marginTop: 2 }}>
+                              Масса пыли в облаке: {Math.round((b.explosionGasVolume ?? 100) * conc / 1000 * 10) / 10} кг
+                            </div>
+                          )}
                           {!inRange && " ⚠ Концентрация вне диапазона взрываемости"}
+                          {rich && (
+                            <div style={{ marginTop: 2 }}>
+                              Смесь обогащённая — не хватает кислорода. В расчёт пойдёт
+                              стехиометрическая концентрация {gas.stoichConc} {u}.
+                            </div>
+                          )}
                         </div>
                       );
                     })()}

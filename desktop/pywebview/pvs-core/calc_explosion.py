@@ -4,13 +4,25 @@ Q_TNT = 4520.0
 P0    = 101.3
 C0    = 340.0
 
+# unit — единица концентрации, у газов и пыли она РАЗНАЯ:
+#   "vol%" — объёмные проценты, qCombust в МДж/м3 (газы)
+#   "g/m3" — граммы на кубометр, qCombust в МДж/кг (аэровзвесь пыли)
+# Раньше пыль хранилась с пределами 60...400 и считалась как проценты: при
+# концентрации 200 выходило 200 м3 горючего в 100 м3 смеси, то есть горючего
+# вдвое больше, чем всей смеси, и Q_тнт завышался в сотни раз.
 GAS_TYPES = {
-    "methane":   {"qCombust": 33.8,  "lowerLimit": 5.0,  "upperLimit": 15.0, "stoichConc": 9.5},
-    "hydrogen":  {"qCombust": 10.8,  "lowerLimit": 4.0,  "upperLimit": 75.0, "stoichConc": 29.5},
-    "propane":   {"qCombust": 93.2,  "lowerLimit": 2.1,  "upperLimit": 9.5,  "stoichConc": 4.0},
-    "acetylene": {"qCombust": 56.0,  "lowerLimit": 2.5,  "upperLimit": 80.0, "stoichConc": 7.7},
-    "coal_dust": {"qCombust": 22.0,  "lowerLimit": 60.0, "upperLimit": 400.0,"stoichConc": 200},
+    "methane":   {"unit": "vol%", "qCombust": 33.8, "lowerLimit": 5.0, "upperLimit": 15.0, "stoichConc": 9.5},
+    "hydrogen":  {"unit": "vol%", "qCombust": 10.8, "lowerLimit": 4.0, "upperLimit": 75.0, "stoichConc": 29.5},
+    "propane":   {"unit": "vol%", "qCombust": 93.2, "lowerLimit": 2.1, "upperLimit": 9.5,  "stoichConc": 4.0},
+    "acetylene": {"unit": "vol%", "qCombust": 56.0, "lowerLimit": 2.5, "upperLimit": 80.0, "stoichConc": 7.7},
+    # Угольная пыль: НПВ ~30 г/м3, ВПВ ~2000 г/м3, максимум при 300-500 г/м3,
+    # теплота сгорания каменного угля ~22 МДж/кг.
+    "coal_dust": {"unit": "g/m3", "qCombust": 22.0, "lowerLimit": 30,  "upperLimit": 2000, "stoichConc": 400},
 }
+
+
+def conc_unit_label(unit):
+    return "г/м3" if unit == "g/m3" else "%"
 
 # Коэффициент участия Z (Методика №415, прил. по ТВС):
 #   0.1 — дефлаграция в открытом пространстве,
@@ -38,11 +50,17 @@ HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "saf
 # а расстояние, дальше которого воздействие пренебрежимо мало.
 
 
-def gas_to_tnt(gas, volume_m3, concentration_pct, z=Z_DEFAULT):
-    """m_пр = (q_г / q_ТНТ) · m · Z  (Методика №415, прил. по ТВС)."""
-    fuel_fraction = concentration_pct / 100.0
-    fuel_vol = volume_m3 * fuel_fraction
-    e_chem = fuel_vol * gas["qCombust"]
+def gas_to_tnt(gas, volume_m3, concentration, z=Z_DEFAULT):
+    """m_пр = (q_г / q_ТНТ) · m · Z  (Методика №415, прил. по ТВС).
+
+    Газ и пыль считаются по-разному — разная единица концентрации:
+      газ  (vol%): объём горючего = V·c/100,  энергия = объём · МДж/м3
+      пыль (g/m3): масса пыли     = V·c/1000, энергия = масса · МДж/кг
+    """
+    if gas.get("unit") == "g/m3":
+        e_chem = (volume_m3 * concentration / 1000.0) * gas["qCombust"]
+    else:
+        e_chem = (volume_m3 * concentration / 100.0) * gas["qCombust"]
     e_mech = e_chem * z * 1000
     return e_mech / Q_TNT
 
@@ -138,16 +156,21 @@ def run(body: dict) -> dict:
         gas     = GAS_TYPES.get(gas_id, GAS_TYPES["methane"])
         volume  = float(body.get("gasVolume_m3", 100))
         conc    = float(body.get("gasConcentration", 9.5))
+        u = conc_unit_label(gas.get("unit"))
         if conc < gas["lowerLimit"]:
-            warnings.append(f"Концентрация {conc}% ниже НПВ ({gas['lowerLimit']}%) — смесь не взрывоопасна")
+            warnings.append(f"Концентрация {conc} {u} ниже НПВ ({gas['lowerLimit']} {u}) — смесь не взрывоопасна")
         elif conc > gas["upperLimit"]:
-            warnings.append(f"Концентрация {conc}% выше ВПВ ({gas['upperLimit']}%) — смесь не взрывоопасна")
-        eff_conc = min(conc, gas["stoichConc"] * 1.2)
+            warnings.append(f"Концентрация {conc} {u} выше ВПВ ({gas['upperLimit']} {u}) — смесь не взрывоопасна")
+        # Обогащённая смесь: горючего больше стехиометрии — не хватает
+        # кислорода, энергия ограничена окислителем.
+        eff_conc = min(conc, gas["stoichConc"])
         z = float(body.get("zParticipation") or Z_DEFAULT)
         if z <= 0:
             z = Z_DEFAULT
         q_tnt = gas_to_tnt(gas, volume, eff_conc, z)
-        log.append(f"Газ: {gas_id}, объём: {volume} м³, концентрация: {conc}%")
+        log.append(f"{'Пыль' if gas.get('unit') == 'g/m3' else 'Газ'}: {gas_id}, объём: {volume} м³, концентрация: {conc} {u}")
+        if eff_conc < conc:
+            log.append(f"Смесь обогащённая: в расчёт принята стехиометрическая концентрация {eff_conc} {u}")
         log.append(f"Коэффициент участия Z (Методика №415): {z}")
     else:
         expl_id = body.get("explosiveId", "ammonit")
