@@ -196,8 +196,16 @@ export interface CanvasRenderOptions {
   waterBranchResults?: Map<string, WaterBranchResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} (0..1 вдоль ветви) */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
-  /** Карта branchId → зона поражения взрывом {hazardLevel} */
-  branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
+  /**
+   * Карта branchId → зона поражения взрывом.
+   * segments — окраска ПО УЧАСТКАМ вдоль ветви (t от fromId к toId):
+   * давление падает с расстоянием, поэтому длинная выработка не может быть
+   * окрашена одним цветом по ближнему к очагу концу.
+   */
+  branchExplosionColors?: Map<string, {
+    color: string; hazardLevel: string;
+    segments?: Array<{ color: string; fromT: number; toT: number }>;
+  }>;
   /** Режим цвета: none = по скорости, flowQ = по расходу */
   colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
   /**
@@ -610,6 +618,40 @@ function drawGrid3D(ctx: CanvasRenderingContext2D, proj: ProjOptions) {
 type BranchLabelBox = { id: string; cx: number; cy: number; halfW: number; halfH: number; ang: number };
 let _branchLabelBoxes: BranchLabelBox[] = [];
 
+/**
+ * Аура зоны поражения взрывом под обводкой ветви.
+ *
+ * Рисуется ВСЕГДА от fromId к toId (а не по sxA/sxB, которые переставляются
+ * местами при отрицательном расходе): участки приходят в координатах t,
+ * отсчитанных от fromId, и переворот ветви зеркалил бы раскраску.
+ *
+ * Если участков нет — ветвь красится одним цветом целиком (старое поведение).
+ */
+function drawExplosionAura(
+  ctx: CanvasRenderingContext2D,
+  seg: { color: string; segments?: Array<{ color: string; fromT: number; toT: number }> },
+  fromSx: number, fromSy: number, toSx: number, toSy: number,
+  w: number,
+) {
+  const parts = seg.segments && seg.segments.length > 0
+    ? seg.segments
+    : [{ color: seg.color, fromT: 0, toT: 1 }];
+  const dx = toSx - fromSx, dy = toSy - fromSy;
+  for (const part of parts) {
+    const ax = fromSx + dx * part.fromT, ay = fromSy + dy * part.fromT;
+    const bx = fromSx + dx * part.toT,   by = fromSy + dy * part.toT;
+    ctx.strokeStyle = part.color;
+    ctx.lineWidth = Math.max(w + 20, 12);
+    ctx.globalAlpha = 0.55;
+    ctx.setLineDash([10, 6]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+    ctx.globalAlpha = 0.35;
+    ctx.lineWidth = Math.max(w + 8, 6);
+    ctx.setLineDash([]);
+    ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke();
+  }
+}
+
 // ─── Основной рендер всей схемы ────────────────────────────────────────────
 // ВАЖНО: все поля CanvasRenderOptions ДОЛЖНЫ быть перечислены в деструктуризации ниже.
 // Если поле добавлено в интерфейс но пропущено здесь — TypeScript не ошибётся,
@@ -943,15 +985,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     // Взрыв — аура под border (штриховая, более широкая)
     const expSeg = branchExplosionColors?.get(b.id);
     if (expSeg) {
-      ctx.strokeStyle = expSeg.color;
-      ctx.lineWidth = Math.max(p.w + 20, 12);
-      ctx.globalAlpha = 0.55;
-      ctx.setLineDash([10, 6]);
-      ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
-      ctx.globalAlpha = 0.35;
-      ctx.lineWidth = Math.max(p.w + 8, 6);
-      ctx.setLineDash([]);
-      ctx.beginPath(); ctx.moveTo(p.sxA, p.syA); ctx.lineTo(p.sxB, p.syB); ctx.stroke();
+      drawExplosionAura(ctx, expSeg, p.fromSx, p.fromSy, p.toSx, p.toSy, p.w);
     }
     // Подсветка hover
     if (hoverBranchId === b.id) {
@@ -1125,15 +1159,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       }
       const expSeg2 = branchExplosionColors?.get(b.id);
       if (expSeg2) {
-        ctx.strokeStyle = expSeg2.color;
-        ctx.lineWidth = Math.max(w + 20, 12);
-        ctx.globalAlpha = 0.55;
-        ctx.setLineDash([10, 6]);
-        ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
-        ctx.globalAlpha = 0.35;
-        ctx.lineWidth = Math.max(w + 8, 6);
-        ctx.setLineDash([]);
-        ctx.beginPath(); ctx.moveTo(sxA, syA); ctx.lineTo(sxB, syB); ctx.stroke();
+        drawExplosionAura(ctx, expSeg2, p.fromSx, p.fromSy, p.toSx, p.toSy, w);
       }
       if (hoverBranchId === b.id) {
         ctx.strokeStyle = "#f59e0b";

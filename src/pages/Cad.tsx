@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -1325,6 +1325,12 @@ export default function CadPage() {
   const [showMultiBranchProps, setShowMultiBranchProps] = useState(false);
   // ─── Результат расчёта взрыва ──────────────────────────────────────
   const [explosionResult, setExplosionResult] = useState<ExplosionResult | null>(null);
+  /**
+   * Результат по КАЖДОМУ очагу (id ветви-очага → расчёт). При нескольких
+   * очагах давление в точке считается по тому очагу, от которого волна
+   * пришла первой, а не по одному произвольному.
+   */
+  const [explosionResultByBranch, setExplosionResultByBranch] = useState<Map<string, ExplosionResult>>(new Map());
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
   const [showExplosionZones, setShowExplosionZones] = useState(false);
   // Текущее расстояние фронта волны на шкале (метры)
@@ -2037,7 +2043,7 @@ export default function CadPage() {
           if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
           removeSymbol(s.id);
         });
-        setExplosionResult(null);
+        setExplosionResult(null); setExplosionResultByBranch(new Map());
         setExplosionCalcDone(false);
       }
     }
@@ -3563,7 +3569,7 @@ export default function CadPage() {
     setNormalFlows({});
     setFireResult(null);
     setFireCalcDone(false);
-    setExplosionResult(null);
+    setExplosionResult(null); setExplosionResultByBranch(new Map());
     setExplosionCalcDone(false);
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
     setVcSolving(false);
@@ -3896,7 +3902,7 @@ export default function CadPage() {
     setNormalFlows({});
     setFireResult(null);
     setFireCalcDone(false);
-    setExplosionResult(null);
+    setExplosionResult(null); setExplosionResultByBranch(new Map());
     setExplosionCalcDone(false);
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
     setVcSolving(false);
@@ -6377,7 +6383,7 @@ export default function CadPage() {
                   if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
                   removeSymbol(s.id);
                 });
-                setExplosionResult(null);
+                setExplosionResult(null); setExplosionResultByBranch(new Map());
                 setExplosionCalcDone(false);
               }}
             />
@@ -6403,15 +6409,22 @@ export default function CadPage() {
                   explosionUrl: EXPLOSION_URL,
                 });
                 if (!run) return;
-                const { branches: finalBranches, results } = run;
+                const { branches: finalBranches, results, resultByBranch } = run;
 
                 setBranches(finalBranches);
                 if (results.length > 0) {
                   const lastRes = results[results.length - 1];
                   setExplosionResult(lastRes);
+                  setExplosionResultByBranch(resultByBranch);
                   setExplosionCalcDone(true);
                   setShowExplosionZones(true);
-                  const safeRadius = lastRes.zones[lastRes.zones.length - 1]?.radius_m ?? 500;
+                  // Шкала волны — по САМОМУ ДАЛЬНОБОЙНОМУ очагу, иначе при
+                  // нескольких взрывах зоны крупного заряда обрезались бы
+                  // радиусом последнего в списке.
+                  const safeRadius = Math.max(
+                    ...results.map(r => r.zones[r.zones.length - 1]?.radius_m ?? 0),
+                    0,
+                  ) || 500;
                   const maxR = Math.max(100, Math.ceil(safeRadius / 50) * 50);
                   setBlastMaxRadius(maxR);
                   setBlastRadiusStep(maxR <= 200 ? 5 : maxR <= 500 ? 10 : 25);
@@ -6453,7 +6466,7 @@ export default function CadPage() {
               sublabel="взрыв"
               disabled={!explosionCalcDone}
               onClick={() => {
-                setExplosionResult(null);
+                setExplosionResult(null); setExplosionResultByBranch(new Map());
                 setExplosionCalcDone(false);
                 setShowExplosionZones(false);
                 setBranches(prev => prev.map(b => ({ ...b, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0, bulkheadDestroyedByExplosion: false })));
@@ -9231,7 +9244,7 @@ export default function CadPage() {
                       <button onClick={() => {
                         removeSymbol(expSymId.id);
                         updateBranch(b.id, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
-                        setExplosionResult(null); setExplosionCalcDone(false);
+                        setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionCalcDone(false);
                       }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)" }}>
                         Убрать
                       </button>
@@ -12467,7 +12480,7 @@ export default function CadPage() {
                     explosionComputedR_heavy: 0, explosionComputedR_medium: 0,
                     explosionComputedR_light: 0, explosionComputedDeltaP: 0,
                   }, false);
-                  setExplosionResult(null); setExplosionCalcDone(false);
+                  setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionCalcDone(false);
                 }
                 // Сброс редуктора при удалении символа клапана
                 if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
@@ -12699,117 +12712,146 @@ export default function CadPage() {
               branchExplosionColors={(() => {
                 if (!showExplosionZones || !explosionCalcDone || !explosionResult) return undefined;
                 if (blastWaveRadius <= 0) return undefined;
-                const map = new Map<string, { color: string; hazardLevel: string }>();
+                const map = new Map<string, {
+                  color: string; hazardLevel: string;
+                  segments?: Array<{ color: string; fromT: number; toT: number }>;
+                }>();
 
-                const zoneColor = (deltaP: number) => {
-                  if (deltaP >= 100) return { color: "#7c1010", hazardLevel: "lethal" };
-                  if (deltaP >= 50)  return { color: "var(--c-red, #dc2626)", hazardLevel: "heavy" };
-                  if (deltaP >= 30)  return { color: "#f97316", hazardLevel: "medium" };
-                  if (deltaP >= 10)  return { color: "#fbbf24", hazardLevel: "light" };
-                  // Безопасно — всё равно окрашиваем, чтобы не было «белых пятен»
-                  return { color: "var(--c-green-lt, #22c55e)", hazardLevel: "safe" };
-                };
+                // Цвета зон — из explosionCalculator (единый источник правды).
+                // ВАЖНО: только hex. Здесь раньше стояли строки вида
+                // "var(--c-red, #dc2626)"; canvas их не понимает и молча
+                // рисовал ветвь цветом, оставшимся от предыдущей линии.
+                const zoneColor = (deltaP: number) => explosionZoneColor(deltaP);
 
-                // Источники: координата точки взрыва на ветви
-                const sourceNodeIds = new Set<string>();
-                branches.forEach(src => {
-                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
-                  sourceNodeIds.add(src.fromId);
-                  sourceNodeIds.add(src.toId);
-                });
-                if (sourceNodeIds.size === 0) return undefined;
+                // Очаги взрыва. У каждого — СВОЙ результат расчёта: при
+                // нескольких очагах давление нельзя считать по чужому заряду.
+                const sources = branches.filter(b => b.hasExplosion && b.explosionComputedMaxP > 0);
+                if (sources.length === 0) return undefined;
+                const resFor = (branchId: string) =>
+                  explosionResultByBranch.get(branchId) ?? explosionResult;
 
                 // Длина ветви по координатам узлов (3D)
+                const nodeByIdMap = new Map(nodes.map(n => [n.id, n]));
                 const branchLen = (b: typeof branches[0]): number => {
-                  const fN = nodes.find(n => n.id === b.fromId);
-                  const tN = nodes.find(n => n.id === b.toId);
+                  const fN = nodeByIdMap.get(b.fromId);
+                  const tN = nodeByIdMap.get(b.toId);
                   if (!fN || !tN) return b.length > 0 ? b.length : 0;
                   return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
                 };
 
-                // Дейкстра по сети выработок: dist[nodeId] = расстояние по сети от источника
-                // Волна распространяется ПО ВЫРАБОТКАМ, а не сквозь породу
-                const distNode = new Map<string, number>();
-                const pq: Array<{ id: string; d: number }> = [];
+                // Дейкстра по сети выработок: для каждого узла — расстояние
+                // по выработкам И id очага, от которого волна пришла первой.
+                // Волна идёт ПО ВЫРАБОТКАМ, а не сквозь породу.
+                type NodeReach = { d: number; srcId: string };
+                const distNode = new Map<string, NodeReach>();
+                const pq: Array<{ id: string; d: number; srcId: string }> = [];
 
-                // Начальные расстояния от узлов ветви-источника
-                // Учитываем что символ взрыва стоит на позиции t вдоль ветви
-                branches.forEach(src => {
-                  if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
+                const upd = (nid: string, d: number, srcId: string) => {
+                  const cur = distNode.get(nid);
+                  if (!cur || cur.d > d) {
+                    distNode.set(nid, { d, srcId });
+                    pq.push({ id: nid, d, srcId });
+                  }
+                };
+
+                // Начальные расстояния от узлов ветви-очага
+                // (символ взрыва стоит на позиции t вдоль ветви)
+                sources.forEach(src => {
                   const len = branchLen(src);
                   const t = src.explosionT ?? 0.5;
-                  const dFrom = len * t;       // расстояние от точки взрыва до fromId
-                  const dTo   = len * (1 - t); // расстояние от точки взрыва до toId
-                  const upd = (nid: string, d: number) => {
-                    if (!distNode.has(nid) || distNode.get(nid)! > d) {
-                      distNode.set(nid, d);
-                      pq.push({ id: nid, d });
-                    }
-                  };
-                  upd(src.fromId, dFrom);
-                  upd(src.toId,   dTo);
+                  upd(src.fromId, len * t,       src.id); // до fromId
+                  upd(src.toId,   len * (1 - t), src.id); // до toId
                 });
 
-                // Граф смежности: nodeId → [{nodeId, branchLen, branchId}]
-                type Edge = { to: string; len: number; branchId: string };
+                // Граф смежности: nodeId → [{nodeId, branchLen}]
+                type Edge = { to: string; len: number };
                 const adj = new Map<string, Edge[]>();
                 branches.forEach(b => {
                   const len = branchLen(b);
                   if (!adj.has(b.fromId)) adj.set(b.fromId, []);
                   if (!adj.has(b.toId))   adj.set(b.toId,   []);
-                  adj.get(b.fromId)!.push({ to: b.toId,   len, branchId: b.id });
-                  adj.get(b.toId)!.push  ({ to: b.fromId, len, branchId: b.id });
+                  adj.get(b.fromId)!.push({ to: b.toId,   len });
+                  adj.get(b.toId)!.push  ({ to: b.fromId, len });
                 });
 
                 // Простой Дейкстра (без приоритетной очереди — сеть небольшая)
-                pq.sort((a, b) => a.d - b.d);
                 const visited = new Set<string>();
                 while (pq.length > 0) {
                   pq.sort((a, b) => a.d - b.d);
-                  const { id: cur, d: curD } = pq.shift()!;
+                  const { id: cur, d: curD, srcId } = pq.shift()!;
                   if (visited.has(cur)) continue;
                   visited.add(cur);
-                  const edges = adj.get(cur) ?? [];
-                  for (const e of edges) {
+                  for (const e of (adj.get(cur) ?? [])) {
                     const nd = curD + e.len;
                     if (nd > blastWaveRadius) continue; // волна не дошла
                     // Волна останавливается на атмосферных узлах (выход на поверхность)
-                    const toNode = nodes.find(n => n.id === e.to);
-                    if (toNode?.atmosphereLink) continue;
-                    if (!distNode.has(e.to) || distNode.get(e.to)! > nd) {
-                      distNode.set(e.to, nd);
-                      pq.push({ id: e.to, d: nd });
-                    }
+                    if (nodeByIdMap.get(e.to)?.atmosphereLink) continue;
+                    upd(e.to, nd, srcId);
                   }
                 }
 
-                // Окрашиваем ветви по давлению в их середине (ближайшая точка к источнику)
+                // ── Окрашивание ПО УЧАСТКАМ вдоль ветви ───────────────────
+                // Давление падает с расстоянием. Раньше вся ветвь красилась
+                // по её ближнему к очагу концу: выработка 300 м, ближний конец
+                // которой в 50 м от очага, целиком показывалась летальной.
+                // Теперь ветвь делится на участки, и у каждого своё давление.
+                const SEG_N = 12; // участков на ветвь — хватает для глаза
+
                 branches.forEach(b => {
-                  // Ветвь-источник взрыва: давление максимальное (в точке взрыва)
-                  if (b.hasExplosion && b.explosionComputedMaxP > 0) {
-                    map.set(b.id, zoneColor(b.explosionComputedMaxP));
-                    return;
-                  }
-                  const dFrom = distNode.get(b.fromId);
-                  const dTo   = distNode.get(b.toId);
-                  // Ни один узел не достигнут — волна не дошла
-                  if (dFrom === undefined && dTo === undefined) return;
-                  // Расстояние до ближайшей точки ветви с учётом середины:
-                  // если оба узла достигнуты — берём минимум из узлов и середины ветви
-                  const dF = dFrom ?? Infinity;
-                  const dT = dTo   ?? Infinity;
                   const len = branchLen(b);
-                  // Ближайшая точка на ветви: минимум расстояний по длине ветви
-                  // Если волна достигла обоих узлов — минимум в середине ≈ min(dF,dT) + len/2 - len/2 = min(dF,dT)
-                  // Если только один — ближайшая точка = ближайший узел
-                  const minNodeD = Math.min(dF, dT);
-                  // Для ветви между двумя достигнутыми узлами — давление по ближайшей точке
-                  // Используем наименьшее из: расстояний до узлов
-                  // (точная интерполяция: ближайшая точка на ветви = min(dF, dT) - len*t_closest)
-                  // Но это усложняет код, берём просто min расстояний до узлов
-                  const dp = explosionResult.pressureAtDistance(minNodeD);
-                  // Ветви достигнутые волной (узел в distNode) — красим всегда, включая зелёную безопасную зону
-                  map.set(b.id, zoneColor(dp));
+                  const isSource = b.hasExplosion && b.explosionComputedMaxP > 0;
+                  const rFrom = distNode.get(b.fromId);
+                  const rTo   = distNode.get(b.toId);
+                  if (!isSource && !rFrom && !rTo) return; // волна не дошла
+
+                  /** Расстояние волны и её очаг в точке t (0 = fromId, 1 = toId) */
+                  const reachAt = (t: number): NodeReach | null => {
+                    let best: NodeReach | null = null;
+                    const take = (d: number, srcId: string) => {
+                      if (d <= blastWaveRadius && (!best || d < best.d)) best = { d, srcId };
+                    };
+                    // Путь через fromId / через toId
+                    if (rFrom) take(rFrom.d + len * t,       rFrom.srcId);
+                    if (rTo)   take(rTo.d   + len * (1 - t), rTo.srcId);
+                    // Если очаг стоит на самой этой ветви — идём по ней напрямую,
+                    // не огибая через узлы
+                    if (isSource) take(Math.abs(t - (b.explosionT ?? 0.5)) * len, b.id);
+                    return best;
+                  };
+
+                  const RANK = ["safe", "light", "medium", "heavy", "lethal"];
+                  const segments: Array<{ color: string; fromT: number; toT: number }> = [];
+                  let curColor: string | null = null;
+                  let curStart = 0;
+                  let worst = "safe";
+                  for (let i = 0; i < SEG_N; i++) {
+                    const reach = reachAt((i + 0.5) / SEG_N);
+                    // Участок вне досягаемости волны — обрываем текущий отрезок
+                    if (!reach) {
+                      if (curColor !== null) {
+                        segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N });
+                        curColor = null;
+                      }
+                      continue;
+                    }
+                    const dp = resFor(reach.srcId).pressureAtDistance(reach.d);
+                    const { color, hazardLevel: lvl } = zoneColor(dp);
+                    if (RANK.indexOf(lvl) > RANK.indexOf(worst)) worst = lvl;
+                    if (color !== curColor) {
+                      if (curColor !== null) segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N });
+                      curColor = color;
+                      curStart = i / SEG_N;
+                    }
+                  }
+                  if (curColor !== null) segments.push({ color: curColor, fromT: curStart, toT: 1 });
+                  if (segments.length === 0) return;
+
+                  // Общий цвет ветви — по самому опасному из её участков
+                  map.set(b.id, {
+                    color: EXPLOSION_HAZARD_COLORS[worst as keyof typeof EXPLOSION_HAZARD_COLORS],
+                    hazardLevel: worst,
+                    segments,
+                  });
                 });
 
                 return map.size > 0 ? map : undefined;
@@ -12982,7 +13024,7 @@ export default function CadPage() {
                       setSelectedBranchId(branchId);
                       setSelectedNodeId(null);
                       setFanSymbolBranchId(null);
-                      setExplosionResult(null);
+                      setExplosionResult(null); setExplosionResultByBranch(new Map());
                       setExplosionCalcDone(false);
                       setActiveSide("blast");
                       setActiveRibbon("involve");
@@ -13194,11 +13236,11 @@ export default function CadPage() {
                 </div>
                 {(() => {
                   const zoneDefs = [
-                    { color: "#7c1010", label: "Летальная",        dp: "ΔP > 100 кПа", hazard: "lethal"  },
-                    { color: "var(--c-red, #dc2626)", label: "Тяжёлые травмы",   dp: "ΔP 50–100 кПа", hazard: "heavy"  },
-                    { color: "#f97316", label: "Средние травмы",   dp: "ΔP 30–50 кПа",  hazard: "medium" },
-                    { color: "#fbbf24", label: "Лёгкие травмы",    dp: "ΔP 10–30 кПа",  hazard: "light"  },
-                    { color: "var(--c-green-lt, #22c55e)", label: "Безопасно",         dp: "ΔP < 10 кПа",   hazard: "safe"   },
+                    { color: EXPLOSION_HAZARD_COLORS.lethal, label: "Летальная",        dp: "ΔP > 100 кПа", hazard: "lethal"  },
+                    { color: EXPLOSION_HAZARD_COLORS.heavy, label: "Тяжёлые травмы",   dp: "ΔP 50–100 кПа", hazard: "heavy"  },
+                    { color: EXPLOSION_HAZARD_COLORS.medium, label: "Средние травмы",   dp: "ΔP 30–50 кПа",  hazard: "medium" },
+                    { color: EXPLOSION_HAZARD_COLORS.light, label: "Лёгкие травмы",    dp: "ΔP 10–30 кПа",  hazard: "light"  },
+                    { color: EXPLOSION_HAZARD_COLORS.safe, label: "Безопасно",         dp: "ΔP < 10 кПа",   hazard: "safe"   },
                   ];
                   return zoneDefs.map(({ color, label, dp, hazard }) => {
                     const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);
@@ -13791,11 +13833,11 @@ export default function CadPage() {
 
                   {/* Маркеры радиусов зон */}
                   {explosionResult && blastMaxRadius > 0 && [
-                    { hazard: "lethal",  color: "#7c1010", label: "Л" },
-                    { hazard: "heavy",   color: "var(--c-red, #dc2626)", label: "Т" },
-                    { hazard: "medium",  color: "#f97316", label: "С" },
-                    { hazard: "light",   color: "#fbbf24", label: "Л" },
-                    { hazard: "safe",    color: "var(--c-green-lt, #22c55e)", label: "Б" },
+                    { hazard: "lethal",  color: EXPLOSION_HAZARD_COLORS.lethal, label: "Л" },
+                    { hazard: "heavy",   color: EXPLOSION_HAZARD_COLORS.heavy, label: "Т" },
+                    { hazard: "medium",  color: EXPLOSION_HAZARD_COLORS.medium, label: "С" },
+                    { hazard: "light",   color: EXPLOSION_HAZARD_COLORS.light, label: "Л" },
+                    { hazard: "safe",    color: EXPLOSION_HAZARD_COLORS.safe, label: "Б" },
                   ].map(({ hazard, color, label }) => {
                     const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);
                     const r = zone?.radius_m ?? 0;

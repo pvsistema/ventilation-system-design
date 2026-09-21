@@ -67,7 +67,10 @@ interface CanvasLayerProps {
   waterNodeResults?: Map<string, WaterNodeResult>;
   waterBranchResults?: Map<string, WaterBranchResult>;
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
-  branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
+  branchExplosionColors?: Map<string, {
+    color: string; hazardLevel: string;
+    segments?: Array<{ color: string; fromT: number; toT: number }>;
+  }>;
   reversedBranchIds?: Set<string>;
   fixedObjectScale?: boolean;
   scaleLimits?: {

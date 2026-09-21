@@ -33,6 +33,13 @@ export interface ExplosionRunResult {
   branches: TopoBranch[];
   /** Результаты по каждому очагу взрыва. */
   results: ExplosionResult[];
+  /**
+   * Результат по id ветви-очага. Нужен, когда очагов несколько: раньше
+   * давление на схеме и разрушение перемычек считались по ОДНОМУ
+   * произвольному очагу (последнему и первому соответственно), то есть по
+   * чужому заряду. Теперь у каждого очага своя функция давления.
+   */
+  resultByBranch: Map<string, ExplosionResult>;
 }
 
 /**
@@ -50,6 +57,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   if (expBranches.length === 0) return null;
 
   const results: ExplosionResult[] = [];
+  const resultByBranch = new Map<string, ExplosionResult>();
 
   // Узлы по id — расстояния и координаты ниже запрашиваются в циклах,
   // а перебор всего списка на каждый запрос заметно тормозил расчёт
@@ -149,6 +157,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       });
     }
     results.push(res);
+    resultByBranch.set(b.id, res);
     return {
       ...b,
       explosionComputedQtnt: res.q_tnt_kg,
@@ -170,15 +179,19 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     if (!fN || !tN) return b.length > 0 ? b.length : 1;
     return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
   };
-  const netDist = new Map<string, number>();
-  const pq2: Array<{id: string; d: number}> = [];
+  // Вместе с расстоянием запоминаем ОЧАГ, от которого волна пришла первой:
+  // при нескольких взрывах давление нельзя считать по чужому заряду.
+  const netDist = new Map<string, { d: number; srcId: string }>();
+  const pq2: Array<{id: string; d: number; srcId: string}> = [];
+  const push2 = (nid: string, d: number, srcId: string) => {
+    const cur = netDist.get(nid);
+    if (!cur || d < cur.d) { netDist.set(nid, { d, srcId }); pq2.push({id: nid, d, srcId}); }
+  };
   updatedBranches.forEach(src => {
     if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
     const len = bLen(src); const t = src.explosionT ?? 0.5;
-    ([[src.fromId, len*t],[src.toId, len*(1-t)]] as Array<[string, number]>).forEach(([nid, d]) => {
-      const cur = netDist.get(nid) ?? Infinity;
-      if (d < cur) { netDist.set(nid, d); pq2.push({id: nid, d}); }
-    });
+    push2(src.fromId, len * t,       src.id);
+    push2(src.toId,   len * (1 - t), src.id);
   });
   const adjMap = new Map<string, Array<{to: string; len: number}>>();
   updatedBranches.forEach(b => {
@@ -191,14 +204,14 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   const vis2 = new Set<string>();
   while (pq2.length > 0) {
     pq2.sort((a,b) => a.d - b.d);
-    const {id: cur, d: curD} = pq2.shift()!;
+    const {id: cur, d: curD, srcId} = pq2.shift()!;
     if (vis2.has(cur)) continue; vis2.add(cur);
     for (const e of (adjMap.get(cur) ?? [])) {
       const nd = curD + e.len;
       // Волна останавливается на атмосферных узлах (выход на поверхность)
       const toNode = nodeById.get(e.to);
       if (toNode?.atmosphereLink) continue;
-      if (nd < (netDist.get(e.to) ?? Infinity)) { netDist.set(e.to, nd); pq2.push({id: e.to, d: nd}); }
+      push2(e.to, nd, srcId);
     }
   }
 
@@ -214,15 +227,18 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       ? bkSym.bkFailurePressure
       : b.bulkheadFailurePressure) || 0; // МПа
     if (!fp || fp <= 0) return {...b, bulkheadDestroyedByExplosion: false};
-    const dFrom = netDist.get(b.fromId) ?? Infinity;
-    const dTo   = netDist.get(b.toId) ?? Infinity;
-    const minD  = Math.min(dFrom, dTo);
-    if (minD === Infinity || results.length === 0) return {...b, bulkheadDestroyedByExplosion: false};
-    const dp_kPa = results[0].pressureAtDistance(minD);
+    // Ближайший к перемычке конец ветви и очаг, от которого туда пришла волна
+    const rFrom = netDist.get(b.fromId);
+    const rTo   = netDist.get(b.toId);
+    const reach = !rFrom ? rTo : !rTo ? rFrom : (rFrom.d <= rTo.d ? rFrom : rTo);
+    if (!reach || results.length === 0) return {...b, bulkheadDestroyedByExplosion: false};
+    // Давление считаем по ЕГО очагу, а не по первому в списке
+    const res = resultByBranch.get(reach.srcId) ?? results[0];
+    const dp_kPa = res.pressureAtDistance(reach.d);
     const dp_MPa = dp_kPa / 1000;
     const destroyed = dp_MPa >= fp;
     return {...b, bulkheadDestroyedByExplosion: destroyed};
   });
 
-  return { branches: finalBranches, results };
+  return { branches: finalBranches, results, resultByBranch };
 }

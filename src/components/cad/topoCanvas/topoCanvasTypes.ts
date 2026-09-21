@@ -223,7 +223,10 @@ export interface Props {
   /** Карта branchId → сегмент задымления {color, fromT, toT} */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   /** Карта branchId → зона поражения взрывом {color, hazardLevel} */
-  branchExplosionColors?: Map<string, { color: string; hazardLevel: string }>;
+  branchExplosionColors?: Map<string, {
+    color: string; hazardLevel: string;
+    segments?: Array<{ color: string; fromT: number; toT: number }>;
+  }>;
   /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
   reversedBranchIds?: Set<string>;
   /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */

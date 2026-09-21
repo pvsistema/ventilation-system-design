@@ -2260,15 +2260,28 @@ export default function TopoCanvas(props: Props) {
                   stroke="#2563eb" strokeWidth={Math.max(w + 10, 6)} strokeLinecap="round"
                   opacity="0.3" />
               </>)}
-              {/* Подсветка взрыва — штриховая аура по всей ветви */}
-              {expSeg && (<>
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke={expSeg.color} strokeWidth={Math.max(w + 20, 12)} strokeLinecap="round"
-                  opacity="0.55" strokeDasharray="10 6" />
-                <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke={expSeg.color} strokeWidth={Math.max(w + 8, 6)} strokeLinecap="round"
-                  opacity="0.3" />
-              </>)}
+              {/* Подсветка взрыва — штриховая аура по участкам ветви.
+                  Давление падает с расстоянием, поэтому длинная выработка
+                  красится не одним цветом, а по участкам (t от fromId к toId). */}
+              {expSeg && (expSeg.segments && expSeg.segments.length > 0
+                ? expSeg.segments
+                : [{ color: expSeg.color, fromT: 0, toT: 1 }]
+              ).map((part, pi) => {
+                const ex1 = from.sx + (to.sx - from.sx) * part.fromT;
+                const ey1 = from.sy + (to.sy - from.sy) * part.fromT;
+                const ex2 = from.sx + (to.sx - from.sx) * part.toT;
+                const ey2 = from.sy + (to.sy - from.sy) * part.toT;
+                return (
+                  <g key={`exp-${pi}`}>
+                    <line x1={ex1} y1={ey1} x2={ex2} y2={ey2}
+                      stroke={part.color} strokeWidth={Math.max(w + 20, 12)} strokeLinecap="round"
+                      opacity="0.55" strokeDasharray="10 6" />
+                    <line x1={ex1} y1={ey1} x2={ex2} y2={ey2}
+                      stroke={part.color} strokeWidth={Math.max(w + 8, 6)} strokeLinecap="round"
+                      opacity="0.3" />
+                  </g>
+                );
+              })}
               {/* Альтернативные варианты маршрута — бледные линии-объезды,
                   как серые варианты пути в навигаторе. Клик выбирает вариант. */}
               {altRouteBranchColors?.get(b.id) && !rescuePathBranchIds?.has(b.id) && (<>

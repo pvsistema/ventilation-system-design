@@ -371,7 +371,12 @@ export function explosionHazardLevel(deltaP_kPa: number): ExplosionZone["hazardL
   return hazardLevel(deltaP_kPa);
 }
 
-/** Цвет ветви по уровню поражения */
+/**
+ * Цвет ветви по уровню поражения — ЕДИНСТВЕННЫЙ источник правды.
+ * ВАЖНО: только hex. Эти цвета уходят в ctx.strokeStyle холста, а canvas
+ * не понимает запись var(--...) — при невалидном цвете присваивание молча
+ * игнорируется и линия рисуется предыдущим цветом контекста.
+ */
 export const EXPLOSION_HAZARD_COLORS: Record<ExplosionZone["hazardLevel"], string> = {
   lethal:  "#7c1010",
   heavy:   "#dc2626",
@@ -379,3 +384,9 @@ export const EXPLOSION_HAZARD_COLORS: Record<ExplosionZone["hazardLevel"], strin
   light:   "#fbbf24",
   safe:    "#22c55e",
 };
+
+/** Зона поражения (цвет + уровень) по избыточному давлению */
+export function explosionZoneColor(deltaP_kPa: number): { color: string; hazardLevel: ExplosionZone["hazardLevel"] } {
+  const level = hazardLevel(deltaP_kPa);
+  return { color: EXPLOSION_HAZARD_COLORS[level], hazardLevel: level };
+}
