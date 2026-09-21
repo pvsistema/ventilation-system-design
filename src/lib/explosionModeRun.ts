@@ -14,7 +14,7 @@ import {
   calcExplosion, GAS_TYPES, wallReflectionFactor, type ExplosionThresholds,
   type ExplosionResult, type ExplosionSourceType,
   channelPressureAt, channelImpulseAt, channelDecay, LAMBDA_DEFAULT,
-  gasChannelPressureAt, gasChannelImpulseAt,
+  gasChannelPressureAt, gasChannelImpulseAt, junctionTransmission,
 } from "@/lib/explosionCalculator";
 
 /**
@@ -325,14 +325,17 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     // только там, где выработки реально расходятся.
     const out = edges.filter(e => e.to !== fromNode);
     const outArea = out.reduce((s, e) => s + e.area, 0);
+    // Сечение выработки, по которой волна пришла в этот узел
+    const inArea = edges.find(e => e.to === fromNode)?.area ?? outArea;
     for (const e of out) {
       const toNode = nodeById.get(e.to);
       // Волна выходит на поверхность — дальше не идёт
       if (toNode?.atmosphereLink) continue;
-      // Доля энергии, ушедшая в эту ветвь
-      const split = out.length > 1 && outArea > 0
-        ? Math.max(e.area / outArea, 0.05)
-        : 1;
+      // Прохождение через сопряжение по акустической модели (см. ядро):
+      // давление не делится по сечениям, а проходит с коэффициентом
+      // τ = 2·S_вх/(S_вх+ΣS_исх). Прежнее линейное деление гасило волну
+      // за 5-6 узлов, и окраска обрывалась в середине схемы.
+      const split = junctionTransmission(inArea, outArea);
       // Затухание на трении вдоль ребра
       const beta = channelDecay({ area_m2: e.area, lambda: LAMBDA_DEFAULT });
       const att  = curAtt * split * Math.exp(-beta * e.len);

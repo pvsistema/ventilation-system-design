@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, junctionTransmission, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -6449,8 +6449,17 @@ export default function CadPage() {
                   // Шкала волны — по САМОМУ ДАЛЬНОБОЙНОМУ очагу, иначе при
                   // нескольких взрывах зоны крупного заряда обрезались бы
                   // радиусом последнего в списке.
+                  // Радиус зоны считается для ОДИНОЧНОЙ прямой выработки. По
+                  // сети волна идёт дальше: ветвится, огибает, и путь до
+                  // дальних выработок в разы длиннее. Раньше шкала ставилась
+                  // ровно по этому радиусу и обрезала окраску на полпути —
+                  // поэтому берём фактическую длину пути волны по графу.
+                  const reachByGraph = Math.max(
+                    0, ...Array.from(run.netWave.values(), w => w.d),
+                  );
                   const safeRadius = Math.max(
                     ...results.map(r => r.zones[r.zones.length - 1]?.radius_m ?? 0),
+                    reachByGraph,
                     0,
                   ) || 500;
                   const maxR = Math.max(100, Math.ceil(safeRadius / 50) * 50);
@@ -12951,13 +12960,14 @@ export default function CadPage() {
                   // в прямом штреке волна идёт насквозь, а не теряет половину.
                   const out = edges.filter(e => e.to !== fromNode);
                   const outArea = out.reduce((s, e) => s + e.area, 0);
+                  // Сечение выработки, по которой волна пришла в узел
+                  const inArea = edges.find(e => e.to === fromNode)?.area ?? outArea;
                   for (const e of out) {
                     const nd = curD + e.len;
-                    if (nd > blastWaveRadius) continue; // волна не дошла
                     // Волна останавливается на атмосферных узлах (выход на поверхность)
                     if (nodeByIdMap.get(e.to)?.atmosphereLink) continue;
-                    const split = out.length > 1 && outArea > 0
-                      ? Math.max(e.area / outArea, 0.05) : 1;
+                    // Прохождение через сопряжение — акустическая модель (см. ядро).
+                    const split = junctionTransmission(inArea, outArea);
                     const beta = channelDecay({ area_m2: e.area, lambda: LAMBDA_DEFAULT });
                     const att = curAtt * split * Math.exp(-beta * e.len);
                     if (att < 1e-4) continue;
