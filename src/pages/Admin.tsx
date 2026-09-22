@@ -18,6 +18,7 @@ import { invalidateRemoteVersion } from "@/lib/updater";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import LicensesTab from "@/pages/admin/LicensesTab";
 import LicenseDialogs from "@/pages/admin/LicenseDialogs";
+import GroupDialog from "@/pages/admin/GroupDialog";
 
 // MonitoringData используют вкладки мониторинга — реэкспортируем, чтобы
 // внешние импорты «@/pages/Admin» продолжали работать без правок.
@@ -63,6 +64,9 @@ export default function Admin() {
   const [editErr, setEditErr]           = useState("");
   const [editOk, setEditOk]             = useState(false);
   const [editSaving, setEditSaving]     = useState(false);
+
+  // Диалог группы организаций: null — закрыт, "" — создание, иначе — правка.
+  const [groupDlg, setGroupDlg]         = useState<string | null>(null);
 
   // Вкладки
   const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update" | "server" | "emergency">("licenses");
@@ -678,6 +682,25 @@ export default function Admin() {
     setLicenses(ls => ls.map(l => l.id === id ? { ...l, is_active } : l));
   };
 
+  /**
+   * Сохранение группы организаций: имя + полный состав ключей.
+   *
+   * replace=true нужен, чтобы снятая в диалоге галочка действительно выводила
+   * филиал из группы: иначе состав можно было бы только дополнять, а убрать
+   * ошибочно добавленный ключ пришлось бы через карточку лицензии.
+   */
+  const saveGroup = async (name: string, ids: number[], prevName: string) => {
+    if (prevName && prevName !== name) {
+      // Сначала переименовываем всю группу целиком — так лицензии, которых нет
+      // в новом составе, не «зависнут» под старым именем отдельным разделом.
+      await adminApi(password, { action: "rename_license_group", org_group: prevName, new_name: name });
+    }
+    await adminApi(password, {
+      action: "set_licenses_group", org_group: name, license_ids: ids, replace: true,
+    });
+    await loadLicenses(password);
+  };
+
   const deleteLicense = async (id: number, name: string) => {
     if (!confirm(`Удалить лицензию "${name}"? Все рабочие места будут сброшены.`)) return;
     await adminApi(password, { action: "delete_license", license_id: id });
@@ -1010,6 +1033,7 @@ export default function Admin() {
             loadSeats={loadSeats} openEdit={openEdit}
             toggleLicense={toggleLicense} deleteLicense={deleteLicense}
             revokeSeat={revokeSeat}
+            openGroup={setGroupDlg}
           />
         )}
 
@@ -1027,6 +1051,12 @@ export default function Admin() {
         handleUpdate={handleUpdate} closeEdit={closeEdit}
         inputCls={inputCls}
         orgGroups={orgGroups}
+      />
+
+      {/* Диалог группы организаций: создание и состав */}
+      <GroupDialog
+        groupName={groupDlg} licenses={licenses} orgGroups={orgGroups}
+        onClose={() => setGroupDlg(null)} onSave={saveGroup} inputCls={inputCls}
       />
     </div>
   );

@@ -7,6 +7,8 @@ POST /  body: {action, password, ...params}
   list_licenses    — список всех лицензий с занятыми местами
   create_license   — создать новый ключ {owner_name, owner_email, max_seats, expires_at, notes, org_group}
   update_license   — изменить лицензию {license_id, owner_name, owner_email, max_seats, expires_at, notes, org_group}
+  set_licenses_group   — собрать ключи в группу {org_group, license_ids[], replace?}
+  rename_license_group — переименовать/расформировать группу {org_group, new_name}
   toggle_license   — включить/отключить лицензию {license_id, is_active}
   delete_license   — удалить лицензию и все места {license_id}
   list_seats       — места конкретной лицензии {license_id}
@@ -292,6 +294,51 @@ def handler(event: dict, context) -> dict:
                 return resp(404, {"error": "not_found"})
             conn.commit()
             return resp(200, {"ok": True})
+
+        # ── set_licenses_group ───────────────────────────────────────────────────
+        # Массовое назначение группы: администратор собирает нужные ключи в
+        # головную организацию одним действием, не открывая каждую лицензию.
+        # replace=true — лицензии, которые раньше были в этой группе, но в новый
+        # состав не попали, из группы выводятся (иначе состав только дополняется).
+        if action == "set_licenses_group":
+            org_group = body.get("org_group", "").strip()
+            raw_ids   = body.get("license_ids") or []
+            try:
+                ids = [int(i) for i in raw_ids][:1000]
+            except (TypeError, ValueError):
+                return resp(400, {"error": "invalid_license_ids"})
+            replace = bool(body.get("replace", False))
+
+            if replace and org_group:
+                if ids:
+                    cur.execute(
+                        "UPDATE licenses SET org_group = NULL "
+                        "WHERE org_group = %s AND NOT (id = ANY(%s))",
+                        (org_group, ids))
+                else:
+                    cur.execute(
+                        "UPDATE licenses SET org_group = NULL WHERE org_group = %s",
+                        (org_group,))
+            if ids:
+                cur.execute(
+                    "UPDATE licenses SET org_group = %s WHERE id = ANY(%s)",
+                    (org_group or None, ids))
+            conn.commit()
+            return resp(200, {"ok": True, "updated": len(ids), "org_group": org_group or None})
+
+        # ── rename_license_group ─────────────────────────────────────────────────
+        # Переименовать группу целиком (или расформировать — пустое новое имя).
+        if action == "rename_license_group":
+            old_name = body.get("org_group", "").strip()
+            new_name = body.get("new_name", "").strip()
+            if not old_name:
+                return resp(400, {"error": "org_group_required"})
+            cur.execute(
+                "UPDATE licenses SET org_group = %s WHERE org_group = %s",
+                (new_name or None, old_name))
+            updated = cur.rowcount
+            conn.commit()
+            return resp(200, {"ok": True, "updated": updated})
 
         # ── toggle_license ───────────────────────────────────────────────────────
         if action == "toggle_license":

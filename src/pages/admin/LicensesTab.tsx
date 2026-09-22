@@ -43,6 +43,8 @@ interface Props {
   toggleLicense: (id: number, is_active: boolean) => void;
   deleteLicense: (id: number, name: string) => void;
   revokeSeat: (seatId: number) => void;
+  /** Открыть диалог группы: "" — создать новую, иначе — изменить состав. */
+  openGroup?: (name: string) => void;
 }
 
 
@@ -258,6 +260,7 @@ function LicenseRow({
 
 export default function LicensesTab({
   licenses, seats, seatsForId, loadSeats, openEdit, toggleLicense, deleteLicense, revokeSeat,
+  openGroup,
 }: Props) {
   const { groups, loose } = useMemo(() => groupLicenses(licenses), [licenses]);
   // Развёрнутые группы. По умолчанию все свёрнуты: так видна структура
@@ -292,6 +295,14 @@ export default function LicensesTab({
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
           <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
             <span className="font-semibold text-[13px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Лицензии</span>
+            {openGroup && (
+              <button onClick={() => openGroup("")}
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-blue-50"
+                style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
+                <Icon name="FolderPlus" size={13} />
+                Создать группу
+              </button>
+            )}
           </div>
 
           {licenses.length === 0 ? (
@@ -309,8 +320,9 @@ export default function LicensesTab({
                 const seatsMax  = g.items.reduce((s, l) => s + l.max_seats, 0);
                 return (
                   <div key={g.name}>
-                    <button onClick={() => toggleGroup(g.name)}
-                      className="w-full px-5 py-3 flex items-center gap-3 text-left transition-colors hover:bg-blue-50"
+                    <div role="button" tabIndex={0} onClick={() => toggleGroup(g.name)}
+                      onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(g.name); } }}
+                      className="w-full px-5 py-3 flex items-center gap-3 text-left transition-colors hover:bg-blue-50 cursor-pointer"
                       style={{ background: "var(--c-tint-blue, #f5f8ff)" }}>
                       <Icon name={isOpen ? "ChevronDown" : "ChevronRight"} size={16}
                         className="flex-shrink-0" style={{ color: "var(--c-blue, #2563eb)" }} />
@@ -325,7 +337,16 @@ export default function LicensesTab({
                         <span>Активных: <b className="text-green-600">{activeCnt}</b></span>
                         <span>Мест: <b className={seatsUsed >= seatsMax ? "text-red-600" : "text-green-600"}>{seatsUsed}/{seatsMax}</b></span>
                       </span>
-                    </button>
+                      {openGroup && (
+                        <button onClick={e => { e.stopPropagation(); openGroup(g.name); }}
+                          title="Изменить состав группы: какие ключи в неё входят"
+                          className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-white flex-shrink-0"
+                          style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
+                          <Icon name="Settings2" size={12} />
+                          Состав
+                        </button>
+                      )}
+                    </div>
                     {isOpen && (
                       <div className="divide-y divide-gray-100 border-l-2"
                         style={{ borderColor: "var(--c-blue, #2563eb)" }}>
