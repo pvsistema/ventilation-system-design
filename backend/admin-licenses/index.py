@@ -9,6 +9,8 @@ POST /  body: {action, password, ...params}
   update_license   — изменить лицензию {license_id, owner_name, owner_email, max_seats, expires_at, notes, org_group}
   set_licenses_group   — собрать ключи в группу {org_group, license_ids[], replace?}
   rename_license_group — переименовать/расформировать группу {org_group, new_name}
+  set_offline_keys_group   — собрать аварийные ключи в группу {org_group, key_ids[], replace?}
+  rename_offline_key_group — переименовать/расформировать группу ключей {org_group, new_name}
   toggle_license   — включить/отключить лицензию {license_id, is_active}
   delete_license   — удалить лицензию и все места {license_id}
   list_seats       — места конкретной лицензии {license_id}
@@ -335,6 +337,49 @@ def handler(event: dict, context) -> dict:
                 return resp(400, {"error": "org_group_required"})
             cur.execute(
                 "UPDATE licenses SET org_group = %s WHERE org_group = %s",
+                (new_name or None, old_name))
+            updated = cur.rowcount
+            conn.commit()
+            return resp(200, {"ok": True, "updated": updated})
+
+        # ── set_offline_keys_group ───────────────────────────────────────────────
+        # То же, что set_licenses_group, но для аварийных оффлайн-ключей: они
+        # выдаются тем же филиалам, и собирать их по одному через карточку так
+        # же неудобно.
+        if action == "set_offline_keys_group":
+            org_group = body.get("org_group", "").strip()
+            raw_ids   = body.get("key_ids") or []
+            try:
+                ids = [int(i) for i in raw_ids][:1000]
+            except (TypeError, ValueError):
+                return resp(400, {"error": "invalid_key_ids"})
+            replace = bool(body.get("replace", False))
+
+            if replace and org_group:
+                if ids:
+                    cur.execute(
+                        "UPDATE offline_keys SET org_group = NULL "
+                        "WHERE org_group = %s AND NOT (id = ANY(%s))",
+                        (org_group, ids))
+                else:
+                    cur.execute(
+                        "UPDATE offline_keys SET org_group = NULL WHERE org_group = %s",
+                        (org_group,))
+            if ids:
+                cur.execute(
+                    "UPDATE offline_keys SET org_group = %s WHERE id = ANY(%s)",
+                    (org_group or None, ids))
+            conn.commit()
+            return resp(200, {"ok": True, "updated": len(ids), "org_group": org_group or None})
+
+        # ── rename_offline_key_group ─────────────────────────────────────────────
+        if action == "rename_offline_key_group":
+            old_name = body.get("org_group", "").strip()
+            new_name = body.get("new_name", "").strip()
+            if not old_name:
+                return resp(400, {"error": "org_group_required"})
+            cur.execute(
+                "UPDATE offline_keys SET org_group = %s WHERE org_group = %s",
                 (new_name or None, old_name))
             updated = cur.rowcount
             conn.commit()

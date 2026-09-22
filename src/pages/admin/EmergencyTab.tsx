@@ -89,6 +89,8 @@ interface EmergencyTabProps {
   resetBinding: (k: OfflineKey) => void;
   loadOfflineKeys: (pwd: string) => void;
   password: string;
+  /** Открыть диалог группы: "" — создать новую, иначе — изменить состав. */
+  openGroup?: (name: string) => void;
 }
 
 /**
@@ -110,7 +112,7 @@ export default function EmergencyTab(props: EmergencyTabProps) {
     emgOrg, setEmgOrg, emgOrgGroup, setEmgOrgGroup,
     emgExpires, setEmgExpires, emgKey, emgErr, setEmgErr,
     emgLoading, generateEmergencyKey, offlineKeys, okLoading,
-    loadOfflineKeys, password,
+    loadOfflineKeys, password, openGroup,
     emgSeats, setEmgSeats, emgBindFp, setEmgBindFp, emgAutobind, setEmgAutobind,
   } = props;
 
@@ -251,10 +253,20 @@ export default function EmergencyTab(props: EmergencyTabProps) {
             Выданные ключи ({offlineKeys.length})
           </span>
         </div>
-        <button onClick={() => loadOfflineKeys(password)}
-          className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600">
-          <Icon name="RefreshCw" size={12} className={okLoading ? "animate-spin" : ""} />Обновить
-        </button>
+        <div className="flex items-center gap-2">
+          {openGroup && (
+            <button onClick={() => openGroup("")}
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-blue-50"
+              style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
+              <Icon name="FolderPlus" size={13} />
+              Создать группу
+            </button>
+          )}
+          <button onClick={() => loadOfflineKeys(password)}
+            className="flex items-center gap-1 text-[11px] text-gray-400 hover:text-gray-600">
+            <Icon name="RefreshCw" size={12} className={okLoading ? "animate-spin" : ""} />Обновить
+          </button>
+        </div>
       </div>
 
       {offlineKeys.length === 0 && !okLoading && (
@@ -270,8 +282,11 @@ export default function EmergencyTab(props: EmergencyTabProps) {
           const seatsMax  = g.items.reduce((s, k) => s + k.seats, 0);
           return (
             <div key={g.name} className="rounded-lg border border-blue-100 overflow-hidden">
-              <button onClick={() => toggleGroup(g.name)}
-                className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left transition-colors hover:bg-blue-50"
+              {/* Заголовок — div, а не button: внутри него своя кнопка
+                  «Состав», а вложенная кнопка в разметке недопустима. */}
+              <div role="button" tabIndex={0} onClick={() => toggleGroup(g.name)}
+                onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); toggleGroup(g.name); } }}
+                className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left transition-colors hover:bg-blue-50 cursor-pointer"
                 style={{ background: "var(--c-tint-blue, #f5f8ff)" }}>
                 <Icon name={isOpen ? "ChevronDown" : "ChevronRight"} size={15}
                   className="flex-shrink-0" style={{ color: "var(--c-blue, #2563eb)" }} />
@@ -286,7 +301,16 @@ export default function EmergencyTab(props: EmergencyTabProps) {
                   <span>Активных: <b className="text-green-600">{activeCnt}</b></span>
                   <span>ПК: <b className={seatsUsed >= seatsMax ? "text-red-600" : "text-green-600"}>{seatsUsed}/{seatsMax}</b></span>
                 </span>
-              </button>
+                {openGroup && (
+                  <button onClick={e => { e.stopPropagation(); openGroup(g.name); }}
+                    title="Изменить состав группы: какие ключи в неё входят"
+                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-white flex-shrink-0"
+                    style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
+                    <Icon name="Settings2" size={12} />
+                    Состав
+                  </button>
+                )}
+              </div>
               {isOpen && (
                 <div className="p-2 space-y-2 border-l-2"
                   style={{ borderColor: "var(--c-blue, #2563eb)" }}>

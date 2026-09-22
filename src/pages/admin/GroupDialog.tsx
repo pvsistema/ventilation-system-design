@@ -1,30 +1,53 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { type License } from "@/pages/admin/adminTypes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Диалог «Группа организаций»: создать новую головную организацию и отметить
-// галочками ключи, которые в неё входят, либо изменить состав существующей.
+// галочками записи, которые в неё входят, либо изменить состав существующей.
 //
-// Раньше группу можно было задать только по одной лицензии за раз — при двух
+// Раньше группу можно было задать только по одной записи за раз — при двух
 // десятках филиалов это двадцать открытий карточки подряд, где легко разойтись
 // в написании названия и получить две почти одинаковые группы.
+//
+// Диалог общий для вкладок «Лицензии» и «Аварийный ключ»: там одни и те же
+// филиалы и одна и та же задача, поэтому вызывающая сторона приводит свои
+// записи к единому виду GroupItem, а не копирует весь диалог второй раз.
 // ─────────────────────────────────────────────────────────────────────────────
+
+/** Строка списка: то общее, что нужно диалогу от лицензии или аварийного ключа. */
+export interface GroupItem {
+  id: number;
+  /** Название организации — первая строка. */
+  title: string;
+  /** Ключ или другой опознавательный код — вторая строка. */
+  code: string;
+  /** Текущая группа записи (пусто — вне групп). */
+  group: string | null;
+  /** Помечать ли строку как неактивную (отозвана / просрочена). */
+  inactive?: boolean;
+  /** Подпись справа, обычно «занято/всего мест». */
+  meta?: string;
+  /** Дополнительные слова для поиска (email и т.п.). */
+  search?: string;
+}
 
 interface Props {
   /** null — диалог закрыт; "" — создание новой группы; иначе — правка существующей. */
   groupName: string | null;
-  licenses: License[];
+  items: GroupItem[];
   /** Все уже заведённые группы — для подсказки и проверки на дубликат имени. */
   orgGroups: string[];
   onClose: () => void;
-  /** Сохранение: имя группы и полный список входящих в неё лицензий. */
+  /** Сохранение: имя группы и полный список входящих в неё записей. */
   onSave: (name: string, ids: number[], prevName: string) => Promise<void>;
   inputCls: string;
+  /** Пометка для неактивных строк: у лицензий «ОТОЗВАНА», у ключей «НЕ ДЕЙСТВУЕТ». */
+  inactiveLabel?: string;
 }
 
 export default function GroupDialog({
-  groupName, licenses, orgGroups, onClose, onSave, inputCls,
+  groupName, items, orgGroups, onClose, onSave, inputCls,
+  inactiveLabel = "ОТОЗВАНА",
 }: Props) {
   const isNew = groupName === "";
   const [name, setName]       = useState("");
@@ -34,16 +57,16 @@ export default function GroupDialog({
   const [saving, setSaving]   = useState(false);
 
   // Состав подставляем один раз — при открытии диалога. Завязываться на
-  // licenses нельзя: список обновляется в фоне, и отметки сбрасывались бы
+  // items нельзя: список обновляется в фоне, и отметки сбрасывались бы
   // прямо под руками администратора.
-  const licRef = useRef(licenses);
-  licRef.current = licenses;
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
   /** Исходный состав группы — по нему задаётся порядок строк в списке. */
   const initial = useRef<Set<number>>(new Set());
   useEffect(() => {
     if (groupName === null) return;
     const ids = new Set(groupName
-      ? licRef.current.filter(l => (l.org_group ?? "").trim() === groupName).map(l => l.id)
+      ? itemsRef.current.filter(i => (i.group ?? "").trim() === groupName).map(i => i.id)
       : []);
     initial.current = ids;
     setName(groupName);
@@ -55,17 +78,17 @@ export default function GroupDialog({
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = q
-      ? licenses.filter(l =>
-          l.owner_name.toLowerCase().includes(q) ||
-          l.key.toLowerCase().includes(q) ||
-          (l.owner_email ?? "").toLowerCase().includes(q))
-      : licenses;
+      ? items.filter(i =>
+          i.title.toLowerCase().includes(q) ||
+          i.code.toLowerCase().includes(q) ||
+          (i.search ?? "").toLowerCase().includes(q))
+      : items;
     // Входящие в группу — наверх: состав виден сразу, не листая весь список.
     // Порядок берём по исходному составу, а не по текущим галочкам: иначе
     // строка уезжала бы из-под курсора в момент клика.
     const base = initial.current;
     return [...list].sort((a, b) => Number(base.has(b.id)) - Number(base.has(a.id)));
-  }, [licenses, query]);
+  }, [items, query]);
 
   if (groupName === null) return null;
 
@@ -118,8 +141,8 @@ export default function GroupDialog({
               placeholder='ФГУП «ВГСЧ»'
               className={inputCls} />
             <div className="text-[10px] text-gray-400 mt-1">
-              Отмеченные ключи соберутся в раскрывающийся раздел. Снятая галочка выводит
-              лицензию из группы — сама лицензия остаётся.
+              Отмеченные записи соберутся в раскрывающийся раздел. Снятая галочка выводит
+              запись из группы — сама она остаётся.
             </div>
           </div>
 
@@ -139,34 +162,34 @@ export default function GroupDialog({
           <div className="flex-1 min-h-0 overflow-y-auto border border-gray-200 rounded-lg divide-y divide-gray-100">
             {visible.length === 0 ? (
               <div className="py-8 text-center text-gray-400 text-[12px]">Ничего не найдено</div>
-            ) : visible.map(l => {
-              const own = (l.org_group ?? "").trim();
-              const foreign = own && own !== groupName && !picked.has(l.id);
+            ) : visible.map(it => {
+              const own = (it.group ?? "").trim();
+              const foreign = own && own !== groupName && !picked.has(it.id);
               return (
-                <label key={l.id}
+                <label key={it.id}
                   className="flex items-start gap-3 px-3 py-2 cursor-pointer hover:bg-blue-50 transition-colors">
-                  <input type="checkbox" checked={picked.has(l.id)} onChange={() => toggle(l.id)}
+                  <input type="checkbox" checked={picked.has(it.id)} onChange={() => toggle(it.id)}
                     className="mt-1 w-4 h-4 accent-blue-600 flex-shrink-0" />
                   <span className="flex-1 min-w-0">
                     <span className="flex items-center gap-2 flex-wrap">
                       <span className="font-semibold text-[12px]" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
-                        {l.owner_name}
+                        {it.title}
                       </span>
-                      {!l.is_active && (
-                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-100 text-red-600 font-medium">ОТОЗВАНА</span>
+                      {it.inactive && (
+                        <span className="px-1.5 py-0.5 rounded text-[9px] bg-red-100 text-red-600 font-medium">{inactiveLabel}</span>
                       )}
                       {foreign && (
                         <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-100 text-amber-700 font-medium"
-                          title="Лицензия уже входит в другую группу — отметка перенесёт её сюда">
+                          title="Запись уже входит в другую группу — отметка перенесёт её сюда">
                           в группе «{own}»
                         </span>
                       )}
                     </span>
-                    <span className="block font-mono text-[10px] text-blue-600 mt-0.5">{l.key}</span>
+                    <span className="block font-mono text-[10px] text-blue-600 mt-0.5 truncate">{it.code}</span>
                   </span>
-                  <span className="text-[10px] text-gray-500 flex-shrink-0 mt-1">
-                    {l.used_seats}/{l.max_seats}
-                  </span>
+                  {it.meta && (
+                    <span className="text-[10px] text-gray-500 flex-shrink-0 mt-1">{it.meta}</span>
+                  )}
                 </label>
               );
             })}

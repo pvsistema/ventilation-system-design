@@ -18,7 +18,7 @@ import { invalidateRemoteVersion } from "@/lib/updater";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import LicensesTab from "@/pages/admin/LicensesTab";
 import LicenseDialogs from "@/pages/admin/LicenseDialogs";
-import GroupDialog from "@/pages/admin/GroupDialog";
+import GroupDialog, { type GroupItem } from "@/pages/admin/GroupDialog";
 
 // MonitoringData используют вкладки мониторинга — реэкспортируем, чтобы
 // внешние импорты «@/pages/Admin» продолжали работать без правок.
@@ -66,7 +66,10 @@ export default function Admin() {
   const [editSaving, setEditSaving]     = useState(false);
 
   // Диалог группы организаций: null — закрыт, "" — создание, иначе — правка.
+  // Отдельно для лицензий и для аварийных ключей: это разные наборы записей,
+  // и группы у них свои, хотя филиалы одни и те же.
   const [groupDlg, setGroupDlg]         = useState<string | null>(null);
+  const [keyGroupDlg, setKeyGroupDlg]   = useState<string | null>(null);
 
   // Вкладки
   const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update" | "server" | "emergency">("licenses");
@@ -701,6 +704,43 @@ export default function Admin() {
     await loadLicenses(password);
   };
 
+  /**
+   * То же для аварийных ключей. Группы у ключей отдельные от лицензионных:
+   * один и тот же филиал может иметь лицензию и не иметь аварийного ключа.
+   */
+  const saveKeyGroup = async (name: string, ids: number[], prevName: string) => {
+    if (prevName && prevName !== name) {
+      await adminApi(password, { action: "rename_offline_key_group", org_group: prevName, new_name: name });
+    }
+    await adminApi(password, {
+      action: "set_offline_keys_group", org_group: name, key_ids: ids, replace: true,
+    });
+    await loadOfflineKeys(password);
+  };
+
+  // Приведение лицензий и ключей к общему виду для диалога группы.
+  const licenseItems: GroupItem[] = useMemo(() => licenses.map(l => ({
+    id: l.id, title: l.owner_name, code: l.key, group: l.org_group,
+    inactive: !l.is_active, meta: `${l.used_seats}/${l.max_seats}`,
+    search: l.owner_email ?? "",
+  })), [licenses]);
+
+  const keyItems: GroupItem[] = useMemo(() => offlineKeys.map(k => ({
+    id: k.id, title: k.org, code: k.key, group: k.org_group ?? null,
+    // Для ключа «неактивен» — это и отзыв, и истёкший срок: и то и другое
+    // означает, что ключ уже не работает.
+    inactive: !k.is_active || k.expired,
+    meta: `${k.used_seats ?? 0}/${k.seats}`,
+    search: k.notes ?? "",
+  })), [offlineKeys]);
+
+  // Группы, уже заведённые среди аварийных ключей.
+  const keyOrgGroups = useMemo(
+    () => Array.from(new Set(offlineKeys.map(k => (k.org_group ?? "").trim()).filter(Boolean)))
+      .sort((a, b) => a.localeCompare(b, "ru")),
+    [offlineKeys],
+  );
+
   const deleteLicense = async (id: number, name: string) => {
     if (!confirm(`Удалить лицензию "${name}"? Все рабочие места будут сброшены.`)) return;
     await adminApi(password, { action: "delete_license", license_id: id });
@@ -1023,6 +1063,7 @@ export default function Admin() {
             toggleAutobind={toggleAutobind}
             resetBinding={resetBinding}
             loadOfflineKeys={loadOfflineKeys} password={password}
+            openGroup={setKeyGroupDlg}
           />
         )}
 
@@ -1053,10 +1094,17 @@ export default function Admin() {
         orgGroups={orgGroups}
       />
 
-      {/* Диалог группы организаций: создание и состав */}
+      {/* Диалог группы организаций: создание и состав — для лицензий */}
       <GroupDialog
-        groupName={groupDlg} licenses={licenses} orgGroups={orgGroups}
+        groupName={groupDlg} items={licenseItems} orgGroups={orgGroups}
         onClose={() => setGroupDlg(null)} onSave={saveGroup} inputCls={inputCls}
+      />
+
+      {/* То же для аварийных ключей */}
+      <GroupDialog
+        groupName={keyGroupDlg} items={keyItems} orgGroups={keyOrgGroups}
+        onClose={() => setKeyGroupDlg(null)} onSave={saveKeyGroup} inputCls={inputCls}
+        inactiveLabel="НЕ ДЕЙСТВУЕТ"
       />
     </div>
   );
