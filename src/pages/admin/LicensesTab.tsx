@@ -260,10 +260,10 @@ export default function LicensesTab({
   licenses, seats, seatsForId, loadSeats, openEdit, toggleLicense, deleteLicense, revokeSeat,
 }: Props) {
   const { groups, loose } = useMemo(() => groupLicenses(licenses), [licenses]);
-  // Свёрнутые группы. По умолчанию все развёрнуты: админ чаще ищет конкретный
-  // филиал, чем обозревает структуру целиком.
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
-  const toggleGroup = (name: string) => setCollapsed(prev => {
+  // Развёрнутые группы. По умолчанию все свёрнуты: так видна структура
+  // организаций целиком, а длинные списки филиалов не растягивают страницу.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleGroup = (name: string) => setExpanded(prev => {
     const next = new Set(prev);
     if (next.has(name)) next.delete(name); else next.add(name);
     return next;
@@ -303,7 +303,7 @@ export default function LicensesTab({
             <div className="divide-y divide-gray-100 max-h-[calc(100vh-360px)] overflow-y-auto">
               {/* Группы организаций: заголовок сворачивает список филиалов */}
               {groups.map(g => {
-                const isOpen = !collapsed.has(g.name);
+                const isOpen = expanded.has(g.name);
                 const activeCnt = g.items.filter(l => l.is_active).length;
                 const seatsUsed = g.items.reduce((s, l) => s + l.used_seats, 0);
                 const seatsMax  = g.items.reduce((s, l) => s + l.max_seats, 0);
