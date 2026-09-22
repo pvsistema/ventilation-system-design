@@ -3,15 +3,45 @@
 // оффлайн-ключей (работают без интернета до истечения срока) и реестр ранее
 // выпущенных ключей с правкой, отключением и удалением.
 //
-// Вынесено из Admin.tsx БЕЗ изменений разметки, текстов и обработчиков.
+// Ключи, у которых задана головная организация (org_group), собираются в
+// сворачиваемые разделы — например ФГУП «ВГСЧ» с его филиалами. Иначе реестр
+// на два десятка филиалов превращается в сплошной список, где отдельные
+// организации теряются. Ключи без группы идут отдельными карточками, как
+// раньше. Логика повторяет вкладку «Лицензии», чтобы обе выглядели одинаково.
 // ─────────────────────────────────────────────────────────────────────────────
+import { useMemo, useState } from "react";
 import Icon from "@/components/ui/icon";
 
 import type { OfflineKey, OfflineSeat } from "@/pages/admin/adminTypes";
 
+/** Раздел реестра: головная организация и её ключи. */
+type KeyGroup = { name: string; items: OfflineKey[] };
+
+/**
+ * Раскладывает ключи по группам, сохраняя исходный порядок (с сервера —
+ * новые сверху): группа встаёт на позицию первого своего ключа.
+ */
+function groupKeys(keys: OfflineKey[]): { groups: KeyGroup[]; loose: OfflineKey[] } {
+  const map = new Map<string, OfflineKey[]>();
+  const loose: OfflineKey[] = [];
+  for (const k of keys) {
+    const g = (k.org_group ?? "").trim();
+    if (!g) { loose.push(k); continue; }
+    const arr = map.get(g);
+    if (arr) arr.push(k); else map.set(g, [k]);
+  }
+  return {
+    groups: Array.from(map.entries()).map(([name, items]) => ({ name, items })),
+    loose,
+  };
+}
+
 interface EmergencyTabProps {
   emgOrg: string;
   setEmgOrg: (v: string) => void;
+  /** Головная организация нового ключа (необязательно). */
+  emgOrgGroup: string;
+  setEmgOrgGroup: (v: string) => void;
   emgExpires: string;
   setEmgExpires: (v: string) => void;
   emgKey: string;
@@ -36,6 +66,9 @@ interface EmergencyTabProps {
   setOkEditId: (v: number | null) => void;
   okEditOrg: string;
   setOkEditOrg: (v: string) => void;
+  /** Головная организация при правке ключа. */
+  okEditGroup: string;
+  setOkEditGroup: (v: string) => void;
   okEditExp: string;
   setOkEditExp: (v: string) => void;
   okEditSeats: string;
@@ -58,19 +91,42 @@ interface EmergencyTabProps {
   password: string;
 }
 
-export default function EmergencyTab({
-  emgOrg, setEmgOrg, emgExpires, setEmgExpires, emgKey, emgErr, setEmgErr,
-  emgLoading, generateEmergencyKey, offlineKeys, okLoading,
-  okEditId, setOkEditId, okEditOrg, setOkEditOrg, okEditExp, setOkEditExp,
-  okEditSeats, setOkEditSeats, okEditNotes, setOkEditNotes,
-  okShowKeyId, setOkShowKeyId, saveEditOffline, toggleOffline, deleteOffline,
-  startEditOffline, reissueOffline, toggleAutobind, resetBinding,
-  loadOfflineKeys, password,
-  emgSeats, setEmgSeats, emgBindFp, setEmgBindFp, emgAutobind, setEmgAutobind,
-  okSeatsForId, okSeats, loadOfflineSeats, blockOfflineSeat,
-}: EmergencyTabProps) {
+/**
+ * Всё, что нужно одной карточке ключа. Собрано в отдельный тип, потому что
+ * карточка рисуется в двух местах — внутри группы и отдельной строкой.
+ */
+type KeyCardProps = Pick<EmergencyTabProps,
+  | "okEditId" | "setOkEditId" | "okEditOrg" | "setOkEditOrg"
+  | "okEditGroup" | "setOkEditGroup"
+  | "okEditExp" | "setOkEditExp" | "okEditSeats" | "setOkEditSeats"
+  | "okEditNotes" | "setOkEditNotes" | "okShowKeyId" | "setOkShowKeyId"
+  | "saveEditOffline" | "toggleOffline" | "deleteOffline" | "startEditOffline"
+  | "reissueOffline" | "toggleAutobind" | "resetBinding"
+  | "okSeatsForId" | "okSeats" | "loadOfflineSeats" | "blockOfflineSeat"
+> & { k: OfflineKey };
+
+export default function EmergencyTab(props: EmergencyTabProps) {
+  const {
+    emgOrg, setEmgOrg, emgOrgGroup, setEmgOrgGroup,
+    emgExpires, setEmgExpires, emgKey, emgErr, setEmgErr,
+    emgLoading, generateEmergencyKey, offlineKeys, okLoading,
+    loadOfflineKeys, password,
+    emgSeats, setEmgSeats, emgBindFp, setEmgBindFp, emgAutobind, setEmgAutobind,
+  } = props;
+
+  // Разложение реестра по головным организациям.
+  const { groups, loose } = useMemo(() => groupKeys(offlineKeys), [offlineKeys]);
+  // Развёрнутые группы. По умолчанию все свёрнуты — как во вкладке «Лицензии»:
+  // сначала видна структура организаций, детали раскрываются по клику.
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const toggleGroup = (name: string) => setExpanded(prev => {
+    const next = new Set(prev);
+    if (next.has(name)) next.delete(name); else next.add(name);
+    return next;
+  });
+
   return (
-  <div className="max-w-xl mx-auto">
+  <div className="max-w-2xl mx-auto">
     <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-5 mb-5">
       <div className="flex items-center gap-2 mb-1">
         <Icon name="LifeBuoy" size={16} className="text-amber-500" />
@@ -89,6 +145,27 @@ export default function EmergencyTab({
           <input value={emgOrg} onChange={e => { setEmgOrg(e.target.value); setEmgErr(""); }}
             placeholder="ВГСЧ / рудник — название"
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
+        </div>
+
+        {/* Головная организация: ключи филиалов одной структуры собираются
+            в реестре в сворачиваемый раздел. Поле необязательное — без него
+            ключ остаётся отдельной строкой, как было раньше. */}
+        <div>
+          <div className="text-[10px] font-semibold text-gray-400 uppercase mb-1">
+            Головная организация (необязательно)
+          </div>
+          <input value={emgOrgGroup} onChange={e => setEmgOrgGroup(e.target.value)}
+            placeholder='Например: ФГУП "ВГСЧ"'
+            list="emg-org-groups"
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-[12px] focus:outline-none focus:border-amber-400" />
+          {/* Подсказка из уже использованных групп — чтобы не плодить
+              «ФГУП ВГСЧ» и «ФГУП «ВГСЧ»» как разные разделы. */}
+          <datalist id="emg-org-groups">
+            {groups.map(g => <option key={g.name} value={g.name} />)}
+          </datalist>
+          <div className="text-[10px] text-gray-400 mt-1">
+            Если заполнить — ключ попадёт в сворачиваемый раздел этой структуры.
+          </div>
         </div>
 
         <div className="flex gap-3">
@@ -185,12 +262,71 @@ export default function EmergencyTab({
       )}
 
       <div className="space-y-2">
-        {offlineKeys.map(k => (
-          <div key={k.id} className={`rounded-lg border p-3 ${k.is_active && !k.expired ? "border-gray-200" : "border-gray-200 bg-gray-50 opacity-70"}`}>
+        {/* Разделы головных организаций: заголовок сворачивает список ключей */}
+        {groups.map(g => {
+          const isOpen = expanded.has(g.name);
+          const activeCnt = g.items.filter(k => k.is_active && !k.expired).length;
+          const seatsUsed = g.items.reduce((s, k) => s + (k.used_seats ?? 0), 0);
+          const seatsMax  = g.items.reduce((s, k) => s + k.seats, 0);
+          return (
+            <div key={g.name} className="rounded-lg border border-blue-100 overflow-hidden">
+              <button onClick={() => toggleGroup(g.name)}
+                className="w-full px-3 py-2.5 flex items-center gap-2.5 text-left transition-colors hover:bg-blue-50"
+                style={{ background: "var(--c-tint-blue, #f5f8ff)" }}>
+                <Icon name={isOpen ? "ChevronDown" : "ChevronRight"} size={15}
+                  className="flex-shrink-0" style={{ color: "var(--c-blue, #2563eb)" }} />
+                <Icon name="Building2" size={14} className="flex-shrink-0"
+                  style={{ color: "var(--c-blue, #2563eb)" }} />
+                <span className="font-bold text-[12px] flex-1 min-w-0 truncate"
+                  style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
+                  {g.name}
+                </span>
+                <span className="text-[10px] text-gray-500 flex items-center gap-2.5 flex-shrink-0">
+                  <span>Ключей: <b className="text-gray-700">{g.items.length}</b></span>
+                  <span>Активных: <b className="text-green-600">{activeCnt}</b></span>
+                  <span>ПК: <b className={seatsUsed >= seatsMax ? "text-red-600" : "text-green-600"}>{seatsUsed}/{seatsMax}</b></span>
+                </span>
+              </button>
+              {isOpen && (
+                <div className="p-2 space-y-2 border-l-2"
+                  style={{ borderColor: "var(--c-blue, #2563eb)" }}>
+                  {g.items.map(k => <KeyCard key={k.id} k={k} {...props} />)}
+                </div>
+              )}
+            </div>
+          );
+        })}
+
+        {/* Ключи без головной организации — обычными карточками */}
+        {loose.map(k => <KeyCard key={k.id} k={k} {...props} />)}
+      </div>
+    </div>
+  </div>
+  );
+}
+
+/** Одна карточка аварийного ключа: сводка, действия, ПК и режим правки. */
+function KeyCard({
+  k,
+  okEditId, setOkEditId, okEditOrg, setOkEditOrg, okEditGroup, setOkEditGroup,
+  okEditExp, setOkEditExp, okEditSeats, setOkEditSeats,
+  okEditNotes, setOkEditNotes, okShowKeyId, setOkShowKeyId,
+  saveEditOffline, toggleOffline, deleteOffline, startEditOffline,
+  reissueOffline, toggleAutobind, resetBinding,
+  okSeatsForId, okSeats, loadOfflineSeats, blockOfflineSeat,
+}: KeyCardProps) {
+  return (
+          <div className={`rounded-lg border p-3 ${k.is_active && !k.expired ? "border-gray-200" : "border-gray-200 bg-gray-50 opacity-70"}`}>
             {okEditId === k.id ? (
               <div className="space-y-2">
                 <input value={okEditOrg} onChange={e => setOkEditOrg(e.target.value)}
                   placeholder="Организация"
+                  className="w-full px-2 py-1.5 border border-gray-300 rounded text-[12px] focus:outline-none focus:border-amber-400" />
+                {/* Головная организация — по ней ключ попадает в раздел реестра.
+                    Очистить поле = вынести ключ из группы. */}
+                <input value={okEditGroup} onChange={e => setOkEditGroup(e.target.value)}
+                  placeholder='Головная организация, например ФГУП "ВГСЧ" (необязательно)'
+                  list="emg-org-groups"
                   className="w-full px-2 py-1.5 border border-gray-300 rounded text-[12px] focus:outline-none focus:border-amber-400" />
                 <div className="flex gap-2">
                   <div className="flex-1">
@@ -390,9 +526,5 @@ export default function EmergencyTab({
               </>
             )}
           </div>
-        ))}
-      </div>
-    </div>
-  </div>
   );
 }

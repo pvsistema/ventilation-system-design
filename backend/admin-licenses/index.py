@@ -19,7 +19,8 @@ POST /  body: {action, password, ...params}
   set_compute_config — переключить сервер {active: 'primary'|'backup', backup_url, autofailover}
   create_offline_key — аварийный оффлайн-ключ {org, days?, seats?, expires_at?, notes?, bound_fp?}
   list_offline_keys  — реестр выпущенных аварийных ключей (с учётом занятых мест)
-  update_offline_key — изменить {offline_key_id, org, seats?, expires_at?, notes?}
+  update_offline_key — изменить {offline_key_id, org, seats?, expires_at?, notes?,
+                        org_group?}
   toggle_offline_key — активировать/отозвать {offline_key_id, is_active}
   delete_offline_key — удалить запись {offline_key_id}
   compute_license_stats — расчёты с лицензией и без неё, готовность к строгому
@@ -853,6 +854,10 @@ def handler(event: dict, context) -> dict:
             if days < 1 or days > 3650:
                 return resp(400, {"error": "invalid_days"})
             seats = int(body.get("seats") or 999)
+            # Головная организация: ключи филиалов одной структуры (ФГУП «ВГСЧ»
+            # и т.п.) собираются в реестре в сворачиваемый раздел. Пусто —
+            # ключ остаётся отдельной строкой верхнего уровня.
+            org_group = (body.get("org_group") or "").strip()
             # Привязка к конкретному компьютеру: код рабочего места, который
             # человек называет из окна лицензии. Ключ с привязкой не работает
             # больше нигде — скопировать его на соседние ПК невозможно.
@@ -887,11 +892,12 @@ def handler(event: dict, context) -> dict:
             try:
                 cur.execute("""
                     INSERT INTO offline_keys
-                        (org, key, seats, expires_at, notes, bound_fp, autobind)
-                    VALUES (%s, '', %s, %s, %s, %s, %s)
+                        (org, key, seats, expires_at, notes, bound_fp, autobind,
+                         org_group)
+                    VALUES (%s, '', %s, %s, %s, %s, %s, %s)
                     RETURNING id
                 """, (org, seats, expires_iso, notes or None,
-                      bound_fp or None, autobind))
+                      bound_fp or None, autobind, org_group or None))
                 new_id = cur.fetchone()[0]
                 conn.commit()
             except Exception as e:
@@ -1053,7 +1059,8 @@ def handler(event: dict, context) -> dict:
                          WHERE s.offline_key_id = o.id
                            AND s.is_blocked = FALSE
                            AND s.bound_at IS NOT NULL
-                         ORDER BY s.bound_at ASC LIMIT 1) AS bound_host
+                         ORDER BY s.bound_at ASC LIMIT 1) AS bound_host,
+                       o.org_group
                 FROM offline_keys o
                 ORDER BY o.created_at DESC
             """)
@@ -1078,6 +1085,8 @@ def handler(event: dict, context) -> dict:
                     # которым ключ закрепился.
                     "bound_at": str(r[16]) if r[16] else None,
                     "bound_host": r[17],
+                    # Головная организация — по ней реестр группируется
+                    "org_group": r[18],
                 })
             return resp(200, {"keys": keys})
 
@@ -1191,6 +1200,7 @@ def handler(event: dict, context) -> dict:
             if not org:
                 return resp(400, {"error": "org_required"})
             seats = int(body.get("seats") or 999)
+            org_group = (body.get("org_group") or "").strip()
             exp_in = (body.get("expires_at") or "").strip()
             if exp_in:
                 expires_iso = exp_in if "T" in exp_in else exp_in + "T23:59:59Z"
@@ -1199,9 +1209,11 @@ def handler(event: dict, context) -> dict:
             notes = (body.get("notes") or "").strip()
             cur.execute("""
                 UPDATE offline_keys
-                SET org = %s, seats = %s, expires_at = %s, notes = %s
+                SET org = %s, seats = %s, expires_at = %s, notes = %s,
+                    org_group = %s
                 WHERE id = %s RETURNING id
-            """, (org, seats, expires_iso, notes or None, oid))
+            """, (org, seats, expires_iso, notes or None,
+                  org_group or None, oid))
             if not cur.fetchone():
                 return resp(404, {"error": "not_found"})
             conn.commit()

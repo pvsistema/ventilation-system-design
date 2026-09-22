@@ -69,6 +69,9 @@ export default function Admin() {
 
   // Аварийный оффлайн-ключ
   const [emgOrg, setEmgOrg]             = useState("");
+  // Головная организация: ключи филиалов одной структуры собираются
+  // в реестре в сворачиваемый раздел — как лицензии во вкладке «Лицензии».
+  const [emgOrgGroup, setEmgOrgGroup]   = useState("");
   const [emgExpires, setEmgExpires]     = useState("");
   const [emgKey, setEmgKey]             = useState("");
   const [emgErr, setEmgErr]             = useState("");
@@ -90,6 +93,7 @@ export default function Admin() {
   const [okLoading, setOkLoading]       = useState(false);
   const [okEditId, setOkEditId]         = useState<number | null>(null);
   const [okEditOrg, setOkEditOrg]       = useState("");
+  const [okEditGroup, setOkEditGroup]   = useState("");
   const [okEditExp, setOkEditExp]       = useState("");
   const [okEditSeats, setOkEditSeats]   = useState("999");
   const [okEditNotes, setOkEditNotes]   = useState("");
@@ -278,6 +282,7 @@ export default function Admin() {
       const data = await adminApi(password, {
         action: "create_offline_key",
         org: emgOrg.trim(),
+        org_group: emgOrgGroup.trim() || undefined,
         days: 365,
         expires_at: emgExpires || undefined,
         seats: parseInt(emgSeats) || 5,
@@ -312,6 +317,7 @@ export default function Admin() {
   const startEditOffline = (k: OfflineKey) => {
     setOkEditId(k.id);
     setOkEditOrg(k.org);
+    setOkEditGroup(k.org_group || "");
     setOkEditExp(k.expires_at ? k.expires_at.slice(0, 10) : "");
     setOkEditSeats(String(k.seats));
     setOkEditNotes(k.notes || "");
@@ -325,6 +331,7 @@ export default function Admin() {
         action: "update_offline_key",
         offline_key_id: okEditId,
         org: okEditOrg.trim(),
+        org_group: okEditGroup.trim(),
         seats: parseInt(okEditSeats) || 999,
         expires_at: okEditExp || undefined,
         notes: okEditNotes.trim(),
@@ -969,6 +976,7 @@ export default function Admin() {
         {activeTab === "emergency" && (
           <EmergencyTab
             emgOrg={emgOrg} setEmgOrg={setEmgOrg}
+            emgOrgGroup={emgOrgGroup} setEmgOrgGroup={setEmgOrgGroup}
             emgExpires={emgExpires} setEmgExpires={setEmgExpires}
             emgKey={emgKey} emgErr={emgErr} setEmgErr={setEmgErr}
             emgLoading={emgLoading} generateEmergencyKey={generateEmergencyKey}
@@ -980,6 +988,7 @@ export default function Admin() {
             offlineKeys={offlineKeys} okLoading={okLoading}
             okEditId={okEditId} setOkEditId={setOkEditId}
             okEditOrg={okEditOrg} setOkEditOrg={setOkEditOrg}
+            okEditGroup={okEditGroup} setOkEditGroup={setOkEditGroup}
             okEditExp={okEditExp} setOkEditExp={setOkEditExp}
             okEditSeats={okEditSeats} setOkEditSeats={setOkEditSeats}
             okEditNotes={okEditNotes} setOkEditNotes={setOkEditNotes}

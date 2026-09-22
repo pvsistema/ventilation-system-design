@@ -34,6 +34,11 @@ export interface License {
 export interface OfflineKey {
   id: number;
   org: string;
+  /**
+   * Головная организация: ключи филиалов одной структуры (ФГУП «ВГСЧ» и т.п.)
+   * собираются в реестре в сворачиваемый раздел. Пусто — отдельная строка.
+   */
+  org_group?: string | null;
   key: string;
   seats: number;
   expires_at: string | null;
