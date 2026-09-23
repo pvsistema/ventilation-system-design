@@ -13921,9 +13921,13 @@ export default function CadPage() {
                   });
                 })()}
                 <div style={{ marginTop: 8, paddingTop: 7, borderTop: "1px solid rgba(255,255,255,0.12)", display: "flex", gap: 10, flexWrap: "wrap" }}>
-                  <span style={{ color: "#fde68a", fontSize: 10 }}>Q_тнт = <b>{explosionResult.q_tnt_kg} кг</b></span>
-                  <span style={{ color: "#fde68a", fontSize: 10 }}>D = <b>{explosionResult.waveFrontSpeed_ms} м/с</b></span>
-                  <span style={{ color: "#fde68a", fontSize: 10 }}>ΔP_max = <b>{explosionResult.maxDeltaP_kPa} кПа</b></span>
+                  {/* Берём ТОТ ЖЕ результат, что и радиусы зон выше. Здесь
+                      стоял explosionResult, который до полного расчёта равен
+                      null: обращение к его полям роняло рендер — экран белел
+                      сразу при включении зон по предварительной оценке. */}
+                  <span style={{ color: "#fde68a", fontSize: 10 }}>Q_тнт = <b>{activeExplosionRes.q_tnt_kg} кг</b></span>
+                  <span style={{ color: "#fde68a", fontSize: 10 }}>D = <b>{activeExplosionRes.waveFrontSpeed_ms} м/с</b></span>
+                  <span style={{ color: "#fde68a", fontSize: 10 }}>ΔP_max = <b>{activeExplosionRes.maxDeltaP_kPa} кПа</b></span>
                 </div>
               </div>
             )}
