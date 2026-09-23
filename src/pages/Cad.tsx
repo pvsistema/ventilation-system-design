@@ -63,6 +63,7 @@ import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, junctionTransmission, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { BLAST_MIXES, blastMixById, blastMixAge, blastMixAgeLabel, calcBlastBulkheadThickness, bulkheadDimensions, reflectedPressure, BLAST_SAFETY_FACTOR } from "@/lib/blastBulkhead";
+import { calcGasZone, gasZoneTime, EXPLOSIVE_CH4_CONC, DEFAULT_I_NEPOGASH, GAS_TIME_PLA, GAS_TIME_EMERGENCY_MIN } from "@/lib/gasZone";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -1848,8 +1849,13 @@ export default function CadPage() {
   const [blastMixId, setBlastMixId] = useState<string>("gypsum_fast");
   // Прочность своей смеси из паспорта, МПа. 0 — берётся справочное значение.
   const [blastMixCustomR, setBlastMixCustomR] = useState(0);
-  // true — расчёт в ходе ликвидации аварии: прочность берётся суточная (п. 27).
+  // true — расчёт в ходе ликвидации аварии. Влияет сразу на два расчёта:
+  // прочность смеси берётся суточная (п. 27), а время загазирования — не менее
+  // 150 мин вместо плановых 60 (п. 11–12). Признак общий: документ либо
+  // проектный (ПЛА), либо составляется по факту аварии.
   const [blastDuringEmergency, setBlastDuringEmergency] = useState(false);
+  // Фактическое время загазирования, мин (п. 12). 0 — берётся минимум 150.
+  const [blastGasTimeFactual, setBlastGasTimeFactual] = useState(0);
   const [showVentSections, setShowVentSections] = useState(false);
   const [showAirDemand, setShowAirDemand] = useState(false);
 
@@ -3206,6 +3212,7 @@ export default function CadPage() {
     blastMixId,
     blastMixCustomR,
     blastDuringEmergency,
+    blastGasTimeFactual,
     calcMode,
     solverTolerance,
     solverMaxIter,
@@ -3793,6 +3800,7 @@ export default function CadPage() {
     if (typeof data.blastMixId === "string") setBlastMixId(data.blastMixId);
     if (typeof data.blastMixCustomR === "number") setBlastMixCustomR(data.blastMixCustomR);
     setBlastDuringEmergency(data.blastDuringEmergency === true);
+    if (typeof data.blastGasTimeFactual === "number") setBlastGasTimeFactual(data.blastGasTimeFactual);
     if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
     // Данные ОПО. В файлах, сохранённых до появления этой вкладки, поля нет —
     // normalizeOpoData вернёт значения по умолчанию, старый проект откроется.
@@ -6434,6 +6442,12 @@ export default function CadPage() {
                   bulkheadSymbolIds: BULKHEAD_SYMBOL_IDS,
                   explosionUrl: EXPLOSION_URL,
                   thresholds: blastThresholds,
+                  // Время загазирования: 60 мин при ПЛА, ≥150 мин при
+                  // ликвидации аварии (РБ №343, п. 11–12). Тот же признак,
+                  // что и у прочности смеси для перемычек, — условия расчёта
+                  // общие для всего документа.
+                  duringEmergency: blastDuringEmergency,
+                  gasZoneTimeFactual: blastGasTimeFactual,
                 });
                 if (!run) return;
                 const { branches: finalBranches, results, resultByBranch } = run;
@@ -9383,13 +9397,135 @@ export default function CadPage() {
                         Раньше вводился объём и трактовался буквально: 100 м³
                         при сечении 12 м² — это лишь 8 м выработки, отчего
                         энергия занижалась в разы. */}
-                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
-                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Длина загазов. участка, м:</span>
-                      <input type="number" step="10" min="1"
-                        value={b.explosionGasZoneLength ?? 100}
-                        onChange={e => updateBranch(b.id, { explosionGasZoneLength: parseFloat(e.target.value) || 100 })}
-                        className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                    {/* Длина зоны: руками либо расчётом по метановыделению
+                        (РБ №343, ф. 1/3/5). Расчёт выключен по умолчанию —
+                        исходные данные (дебит метана, мощность пласта) есть не
+                        всегда, а старые проекты должны считаться как прежде. */}
+                    <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <input type="checkbox" id={`gz_auto_${b.id}`}
+                        checked={b.explosionGasZoneAuto === true}
+                        onChange={e => updateBranch(b.id, { explosionGasZoneAuto: e.target.checked })} />
+                      <label htmlFor={`gz_auto_${b.id}`} className="text-[11px] text-gray-700 cursor-pointer">
+                        Считать зону по метановыделению
+                        <span className="block text-[9px] text-gray-400">РБ №343, п. 7–13, формулы (1)–(5)</span>
+                      </label>
                     </div>
+
+                    {b.explosionGasZoneAuto !== true ? (
+                      <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Длина загазов. участка, м:</span>
+                        <input type="number" step="10" min="1"
+                          value={b.explosionGasZoneLength ?? 100}
+                          onChange={e => updateBranch(b.id, { explosionGasZoneLength: parseFloat(e.target.value) || 100 })}
+                          className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                      </div>
+                    ) : (<>
+                      {/* Время загазирования — общее условие расчёта, а не
+                          свойство очага: документ либо проектный (ПЛА, 60 мин),
+                          либо составляется по факту аварии (≥150 мин). Тот же
+                          признак управляет прочностью смеси для перемычек,
+                          поэтому здесь он продублирован, а не заведён второй. */}
+                      <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <input type="checkbox" id={`gz_emg_${b.id}`}
+                          checked={blastDuringEmergency}
+                          onChange={e => setBlastDuringEmergency(e.target.checked)} />
+                        <label htmlFor={`gz_emg_${b.id}`} className="text-[11px] text-gray-700 cursor-pointer">
+                          В ходе ликвидации аварии
+                          <span className="block text-[9px] text-gray-400">
+                            t<sub>з</sub> ≥ {GAS_TIME_EMERGENCY_MIN} мин вместо {GAS_TIME_PLA} мин (п. 11–12)
+                          </span>
+                        </label>
+                      </div>
+                      {blastDuringEmergency && (
+                        <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Факт. время t, мин:</span>
+                          <input type="number" step="10" min="0"
+                            value={blastGasTimeFactual || ""}
+                            placeholder={`мин. ${GAS_TIME_EMERGENCY_MIN}`}
+                            onChange={e => setBlastGasTimeFactual(parseFloat(e.target.value) || 0)}
+                            className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                        </div>
+                      )}
+                      <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Где зона:</span>
+                        <select value={b.explosionGasZoneKind ?? "heading"}
+                          onChange={e => updateBranch(b.id, { explosionGasZoneKind: e.target.value as "longwall" | "preserved" | "heading" })}
+                          className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                          <option value="heading">Подготовительная выработка (ф. 5)</option>
+                          <option value="longwall">Очистной забой (ф. 1)</option>
+                          <option value="preserved">Непогашенная выработка (ф. 3)</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Метановыделение I, м³/мин:</span>
+                        <input type="number" step="0.1" min="0"
+                          value={b.explosionGasEmission ?? ""}
+                          placeholder={(b.explosionGasZoneKind ?? "heading") === "preserved" ? "0,5 по умолч." : "задайте"}
+                          onChange={e => updateBranch(b.id, { explosionGasEmission: parseFloat(e.target.value) || 0 })}
+                          className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                      </div>
+                      {/* Закрепное пространство — только для очистного забоя (ф. 2).
+                          Метан заполняет и забой, и пространство за крепью, и зона
+                          считается по их СУММАРНОМУ сечению. */}
+                      {(b.explosionGasZoneKind ?? "heading") === "longwall" && (<>
+                        <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Мощность пласта m, м:</span>
+                          <input type="number" step="0.1" min="0"
+                            value={b.explosionSeamThickness ?? ""}
+                            onChange={e => updateBranch(b.id, { explosionSeamThickness: parseFloat(e.target.value) || 0 })}
+                            className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                        </div>
+                        <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Шаг обрушения l, м:</span>
+                          <input type="number" step="0.5" min="0"
+                            value={b.explosionCaveStep ?? ""}
+                            onChange={e => updateBranch(b.id, { explosionCaveStep: parseFloat(e.target.value) || 0 })}
+                            className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                        </div>
+                      </>)}
+
+                      {/* Результат расчёта зоны */}
+                      {(() => {
+                        const kind = b.explosionGasZoneKind ?? "heading";
+                        const emis = b.explosionGasEmission
+                          ?? (kind === "preserved" ? DEFAULT_I_NEPOGASH : 0);
+                        const t = gasZoneTime(blastDuringEmergency, blastGasTimeFactual);
+                        const z = calcGasZone({
+                          kind, time_min: t, emission_m3min: emis,
+                          area_m2: b.area ?? 0,
+                          seamThickness_m: b.explosionSeamThickness,
+                          caveStep_m: b.explosionCaveStep,
+                          branchLength_m: b.length,
+                        });
+                        if (!z) {
+                          return (
+                            <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "var(--c-amber-ink, #92400e)" }}>
+                              Задайте метановыделение — без него зона не считается.
+                              Пока в расчёт идёт длина {b.explosionGasZoneLength ?? 100} м, введённая руками.
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "#1e3a8a" }}>
+                            <div className="font-semibold text-[11px]">
+                              Зона загазирования: {z.length_m} м · {z.volume_m3} м³
+                            </div>
+                            <div style={{ marginTop: 2 }}>
+                              t<sub>з</sub> = {t} мин · I = {emis} м³/мин · c<sub>в</sub> = {EXPLOSIVE_CH4_CONC} %
+                            </div>
+                            <div>
+                              Сечение в расчёте: {z.areaTotal_m2} м²
+                              {z.areaCaved_m2 > 0 && ` (забой ${b.area ?? 0} + закрепное ${z.areaCaved_m2})`}
+                            </div>
+                            {z.clampedByLength && (
+                              <div style={{ marginTop: 2, color: "#a16207" }}>
+                                Расчёт дал {z.lengthRaw_m} м — принята длина выработки {b.length} м (п. 13)
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })()}
+                    </>)}
                     {/* ΔP₀ по умолчанию считается ПО ДЛИНЕ участка (как в
                         «Аэросети»): 50 м → 209 кПа, 100 м → 282 кПа.
                         Ручной ввод нужен только для сверки с чужим расчётом,
@@ -9693,10 +9829,21 @@ export default function CadPage() {
                             Расчёт в ходе ликвидации аварии
                             <span className="block text-[9px] text-gray-400">
                               п. 27: прочность берётся через 24 ч застывания — перемычку
-                              возводят сейчас, а нагрузку она получит уже завтра
+                              возводят сейчас, а нагрузку она получит уже завтра.
+                              п. 11–12: время загазирования {GAS_TIME_EMERGENCY_MIN} мин
+                              вместо {GAS_TIME_PLA} мин для ПЛА
                             </span>
                           </span>
                         </label>
+                        {blastDuringEmergency && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-[10px] text-gray-600">Факт. время загаз., мин:</span>
+                            <input type="number" min={0} step={10} value={blastGasTimeFactual || ""}
+                              onChange={e => setBlastGasTimeFactual(parseFloat(e.target.value) || 0)}
+                              placeholder={`мин. ${GAS_TIME_EMERGENCY_MIN}`}
+                              className="flex-1 px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-blue-400" />
+                          </div>
+                        )}
                         <div className="mt-1 px-1.5 py-1 rounded text-[10px]" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "#1e3a8a" }}>
                           R<sub>раст</sub> = {rBend} МПа · возраст раствора {blastMixAgeLabel(age)}
                           <div className="text-[9px] mt-0.5" style={{ color: "#3730a3" }}>{mix.note}</div>

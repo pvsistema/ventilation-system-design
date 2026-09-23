@@ -28,6 +28,7 @@ function defaultConc(gasId: string | undefined): number {
 }
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { withLicense } from "@/lib/license";
+import { calcGasZone, gasZoneTime, DEFAULT_I_NEPOGASH } from "@/lib/gasZone";
 
 export interface ExplosionRunParams {
   branches: TopoBranch[];
@@ -40,6 +41,16 @@ export interface ExplosionRunParams {
   explosionUrl: string;
   /** Пороги зон поражения из справочника. */
   thresholds?: ExplosionThresholds;
+  /**
+   * Расчёт ведётся в ходе ликвидации аварии (РБ №343, п. 12).
+   *
+   * Влияет на время загазирования: при ПЛА это 60 мин, при ликвидации аварии —
+   * фактическое, но не менее 150 мин. Разница в зоне выходит в 2,5 раза, а
+   * значит и в энергии взрыва.
+   */
+  duringEmergency?: boolean;
+  /** Фактическое время загазирования, мин (п. 12); учитывается при аварии. */
+  gasZoneTimeFactual?: number;
 }
 
 export interface ExplosionRunResult {
@@ -82,6 +93,48 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   const results: ExplosionResult[] = [];
   const resultByBranch = new Map<string, ExplosionResult>();
 
+  /**
+   * Расчёты зон загазирования по очагам — чтобы показать их в протоколе.
+   *
+   * Без этого длина участка попадала бы в отчёт готовым числом, и проверить,
+   * откуда оно взялось, было бы нельзя. Для документа, который подписывают,
+   * это принципиально: видны и формула, и время, и ограничение по п. 13.
+   */
+  const gasZoneNotes = new Map<string, NonNullable<ReturnType<typeof calcGasZone>>>();
+
+  /**
+   * Длина загазованного участка очага, м.
+   *
+   * Либо расчёт по метановыделению (РБ №343, ф. 1/3/5), либо введённое руками
+   * значение. Нужна в двух местах — в запросе на сервер и в резервном расчёте
+   * на месте, — и оба обязаны брать ОДНО И ТО ЖЕ число: иначе схема считалась бы
+   * по-разному в зависимости от того, была ли связь.
+   */
+  const zoneLengthOf = (b: TopoBranch): number => {
+    const manual = b.explosionGasZoneLength ?? 100;
+    if (!b.explosionGasZoneAuto) return manual;
+    const kind = b.explosionGasZoneKind ?? "heading";
+    const z = calcGasZone({
+      kind,
+      time_min: gasZoneTime(p.duringEmergency === true, p.gasZoneTimeFactual),
+      // У непогашенной выработки методика прямо разрешает 0,5 м³/мин при
+      // отсутствии фактических данных (сноска к ф. 3) — замерить дебит в
+      // частично сохраняемой выработке обычно нечем.
+      emission_m3min: b.explosionGasEmission
+        ?? (kind === "preserved" ? DEFAULT_I_NEPOGASH : 0),
+      area_m2: b.area ?? 0,
+      seamThickness_m: b.explosionSeamThickness,
+      caveStep_m: b.explosionCaveStep,
+      // п. 13: зона не длиннее самой выработки.
+      branchLength_m: b.length,
+    });
+    // Данных для расчёта не хватило (нет дебита метана) — остаётся ручное
+    // значение. Молча подставлять ноль нельзя: очаг исчез бы вовсе.
+    if (!z) return manual;
+    gasZoneNotes.set(b.id, z);
+    return z.length_m;
+  };
+
   // Узлы по id — расстояния и координаты ниже запрашиваются в циклах,
   // а перебор всего списка на каждый запрос заметно тормозил расчёт
   // на больших схемах.
@@ -100,7 +153,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     gasVolume_m3: b.explosionGasVolume ?? 100,
     // Длина загазованного участка — основной способ задания источника по газу.
     // Объём смеси считается как длина × сечение ветви (как в «Аэросети»).
-    gasZoneLength_m: b.explosionGasZoneLength ?? 100,
+    gasZoneLength_m: zoneLengthOf(b),
     gasInitialPressure_kPa: b.explosionGasP0 ?? 0,  // 0 = авторасчёт ΔP₀ по длине участка
     gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
     explosiveId: b.explosionExplosiveId ?? "ammonit",
@@ -208,7 +261,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         sourceType: (b.explosionSourceType ?? "mass") as ExplosionSourceType,
         gasId: b.explosionGasId ?? "methane",
         gasVolume_m3: b.explosionGasVolume ?? 100,
-        gasZoneLength_m: b.explosionGasZoneLength ?? 100,
+        gasZoneLength_m: zoneLengthOf(b),
         gasInitialPressure_kPa: b.explosionGasP0 ?? 0,  // 0 = авторасчёт ΔP₀ по длине участка
         gasConcentration: b.explosionGasConcentration ?? defaultConc(b.explosionGasId),
         explosiveId: b.explosionExplosiveId ?? "ammonit",
@@ -220,6 +273,18 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         zParticipation: b.explosionZ ?? 0.5,
         thresholds,
       });
+    }
+    // Расчёт зоны загазирования — в протокол, перед остальными строками:
+    // это исходная величина, от которой пляшет вся остальная цепочка.
+    const gz = gasZoneNotes.get(b.id);
+    if (gz && Array.isArray(res.log)) {
+      res.log.unshift(
+        `Зона загазирования по РБ №343, формула (${gz.formula}): ${gz.length_m} м, `
+        + `${gz.volume_m3} м³ (сечение в расчёте ${gz.areaTotal_m2} м²`
+        + (gz.areaCaved_m2 > 0 ? `, в т.ч. закрепное пространство ${gz.areaCaved_m2} м²` : "")
+        + ")",
+      );
+      if (gz.clampedByLength) res.log.unshift(gz.note);
     }
     results.push(res);
     resultByBranch.set(b.id, res);
