@@ -62,6 +62,7 @@ import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
 import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, junctionTransmission, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { BLAST_MIXES, blastMixById, blastMixAge, blastMixAgeLabel, calcBlastBulkheadThickness, bulkheadDimensions, reflectedPressure, BLAST_SAFETY_FACTOR } from "@/lib/blastBulkhead";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -1841,6 +1842,14 @@ export default function CadPage() {
   // Пороги зон поражения взрывом — справочник «Аварии → Зоны поражения взрывом».
   // Ряд различается в разных документах, поэтому хранится в проекте.
   const [blastThresholds, setBlastThresholds] = useState<ExplosionThresholds>(DEFAULT_EXPLOSION_THRESHOLDS);
+  // Расчёт толщины взрывоустойчивой перемычки (РБ №343, п. 26–27).
+  // Смесь и условия расчёта — свойство проекта, а не отдельной перемычки:
+  // на объекте применяют одну смесь, и задавать её у каждой — лишняя работа.
+  const [blastMixId, setBlastMixId] = useState<string>("gypsum_fast");
+  // Прочность своей смеси из паспорта, МПа. 0 — берётся справочное значение.
+  const [blastMixCustomR, setBlastMixCustomR] = useState(0);
+  // true — расчёт в ходе ликвидации аварии: прочность берётся суточная (п. 27).
+  const [blastDuringEmergency, setBlastDuringEmergency] = useState(false);
   const [showVentSections, setShowVentSections] = useState(false);
   const [showAirDemand, setShowAirDemand] = useState(false);
 
@@ -3194,6 +3203,9 @@ export default function CadPage() {
     ventSections,
     ventNorms,
     blastThresholds,
+    blastMixId,
+    blastMixCustomR,
+    blastDuringEmergency,
     calcMode,
     solverTolerance,
     solverMaxIter,
@@ -3776,6 +3788,11 @@ export default function CadPage() {
     setBlastThresholds(data.blastThresholds
       ? { ...DEFAULT_EXPLOSION_THRESHOLDS, ...(data.blastThresholds as Partial<ExplosionThresholds>) }
       : DEFAULT_EXPLOSION_THRESHOLDS);
+    // Смесь для взрывоустойчивых перемычек. В проектах, сохранённых до появления
+    // расчёта толщины, полей нет — берутся значения по умолчанию.
+    if (typeof data.blastMixId === "string") setBlastMixId(data.blastMixId);
+    if (typeof data.blastMixCustomR === "number") setBlastMixCustomR(data.blastMixCustomR);
+    setBlastDuringEmergency(data.blastDuringEmergency === true);
     if (data.calcMode) setCalcMode(data.calcMode as "cross" | "mkr");
     // Данные ОПО. В файлах, сохранённых до появления этой вкладки, поля нет —
     // normalizeOpoData вернёт значения по умолчанию, старый проект откроется.
@@ -9606,6 +9623,125 @@ export default function CadPage() {
                       <span style={{ color: "#7f1d1d" }}>Маркер разрушения + давление разрушения (МПа)</span>
                     </div>
                   </div>
+
+                  {/* ═══ Толщина взрывоустойчивой перемычки (РБ №343, п. 26–27) ═══
+                      Расчёт разрушения отвечает «устоит ли то, что построено».
+                      Здесь обратный и практический вопрос — «что строить»: какой
+                      толщины нужна перемычка под посчитанное давление отражения. */}
+                  {explosionCalcDone && (() => {
+                    // Перемычки, до которых волна дошла: только для них есть
+                    // ΔP_отр, а без него расчёт толщины лишён смысла.
+                    const withBulkheads = branches.filter(br => br.hasBulkhead);
+                    if (withBulkheads.length === 0) return null;
+
+                    const mix = blastMixById(blastMixId);
+                    const age = blastMixAge(mix.binder, blastDuringEmergency);
+                    const rBend = blastMixId === "custom" && blastMixCustomR > 0
+                      ? blastMixCustomR
+                      : mix.rBend[age];
+
+                    const rows = withBulkheads.map(br => {
+                      const dim = bulkheadDimensions(br);
+                      // Давление НАБЕГАЮЩЕЙ волны на перемычке — из расчёта взрыва.
+                      const inc_kPa = br.explosionComputedDeltaP ?? 0;
+                      // Перемычка стоит поперёк хода волны и тормозит её до нуля,
+                      // поэтому в формулу идёт давление ОТРАЖЕНИЯ (п. 25): оно вдвое
+                      // и более выше набегающего. По набегающему перемычка вышла бы
+                      // тоньше потребной.
+                      const refl_kPa = reflectedPressure(inc_kPa);
+                      const res = calcBlastBulkheadThickness({
+                        reflectedPressure_MPa: refl_kPa / 1000,
+                        height_m: dim.height_m,
+                        width_m: dim.width_m,
+                        rBend_MPa: rBend,
+                      });
+                      return { br, dim, inc_kPa, refl_kPa, res };
+                    }).filter(r => r.res !== null);
+
+                    if (rows.length === 0) return null;
+
+                    return (<>
+                      <div className="px-1 py-0.5 text-[10px] font-semibold mt-2" style={{ background: "var(--c-tint-blue, #dbeafe)", borderBottom: "1px solid #93c5fd", color: "var(--c-blue-ink, #1e40af)" }}>
+                        🧱 Толщина взрывоустойчивой перемычки ({rows.length})
+                      </div>
+                      <div className="px-2 py-1 text-[10px]" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f0f0f0" }}>
+                        РБ №343 от 08.11.2024, п. 26, формулы (6)–(7). Плита шарнирно
+                        опёрта, k<sub>з</sub> = {BLAST_SAFETY_FACTOR}.
+                      </div>
+
+                      {/* Смесь и условия — общие для объекта */}
+                      <div className="px-2 py-1" style={{ borderBottom: "1px solid #f0f0f0" }}>
+                        <div className="text-[10px] text-gray-500 mb-0.5">Материал перемычки</div>
+                        <select value={blastMixId} onChange={e => setBlastMixId(e.target.value)}
+                          className="w-full px-1.5 py-1 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-blue-400">
+                          {BLAST_MIXES.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}
+                        </select>
+                        {blastMixId === "custom" && (
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-[10px] text-gray-600">R<sub>раст</sub>, МПа:</span>
+                            <input type="number" min={0} step={0.1} value={blastMixCustomR || ""}
+                              onChange={e => setBlastMixCustomR(parseFloat(e.target.value) || 0)}
+                              placeholder="из паспорта"
+                              className="flex-1 px-1.5 py-0.5 text-[11px] border border-gray-300 rounded focus:outline-none focus:border-blue-400" />
+                          </div>
+                        )}
+                        <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer select-none">
+                          <input type="checkbox" checked={blastDuringEmergency}
+                            onChange={e => setBlastDuringEmergency(e.target.checked)}
+                            className="mt-0.5" />
+                          <span className="text-[10px] text-gray-600">
+                            Расчёт в ходе ликвидации аварии
+                            <span className="block text-[9px] text-gray-400">
+                              п. 27: прочность берётся через 24 ч застывания — перемычку
+                              возводят сейчас, а нагрузку она получит уже завтра
+                            </span>
+                          </span>
+                        </label>
+                        <div className="mt-1 px-1.5 py-1 rounded text-[10px]" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "#1e3a8a" }}>
+                          R<sub>раст</sub> = {rBend} МПа · возраст раствора {blastMixAgeLabel(age)}
+                          <div className="text-[9px] mt-0.5" style={{ color: "#3730a3" }}>{mix.note}</div>
+                        </div>
+                      </div>
+
+                      {/* Результат по каждой перемычке */}
+                      {rows.map(({ br, dim, inc_kPa, refl_kPa, res }) => {
+                        const r = res!;
+                        const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === br.id);
+                        const name = (bkSym?.bkBulkheadName ?? br.bulkheadName) || br.id;
+                        return (
+                          <div key={br.id} className="px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-gray-700 flex-1 truncate" title={name}>{name}</span>
+                              <span className="text-[12px] font-bold" style={{ color: "var(--c-blue, #2563eb)" }}>
+                                {r.thickness_m} м
+                              </span>
+                            </div>
+                            <div className="text-[9px] text-gray-500 mt-0.5">
+                              ΔP<sub>падающей</sub> = {Math.round(inc_kPa / 100) / 10} МПа → ΔP<sub>отр</sub> = {Math.round(refl_kPa / 100) / 10} МПа
+                            </div>
+                            <div className="text-[9px] text-gray-500">
+                              сечение {dim.height_m}×{dim.width_m} м · формула ({r.formula})
+                            </div>
+                            {(r.clampedMin || r.clampedMax || dim.approximate) && (
+                              <div className="text-[9px] mt-0.5" style={{ color: r.clampedMax ? "var(--c-red, #dc2626)" : "#a16207" }}>
+                                {r.clampedMin && `Расчёт ${r.thicknessRaw_m} м → принято 2 м (п. 26: меньше не принимается)`}
+                                {r.clampedMax && `Расчёт ${r.thicknessRaw_m} м > 5 м! Схема шарнирной плиты неприменима, нужны доп. решения`}
+                                {dim.approximate && !r.clampedMin && !r.clampedMax &&
+                                  "Размеры приведены к прямоугольнику — сечение непрямоугольное"}
+                                {dim.approximate && (r.clampedMin || r.clampedMax) &&
+                                  " · размеры приведены к прямоугольнику"}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+
+                      <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "var(--c-amber-ink, #92400e)" }}>
+                        Прочность материала п. 27 требует принимать <b>по паспорту изделия</b>.
+                        Справочные значения — для предварительной оценки.
+                      </div>
+                    </>);
+                  })()}
 
                   {!explosionCalcDone && (
                     <div className="mx-2 my-2 px-2 py-2 text-[11px] rounded" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "var(--c-amber-ink, #92400e)" }}>

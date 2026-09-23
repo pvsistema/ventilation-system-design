@@ -390,15 +390,22 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     const fp = (bkSym?.bkFailurePressure && bkSym.bkFailurePressure > 0
       ? bkSym.bkFailurePressure
       : b.bulkheadFailurePressure) || 0; // МПа
-    if (!fp || fp <= 0) return {...b, bulkheadDestroyedByExplosion: false};
     // Конец ветви, куда волна пришла СИЛЬНЕЕ (а не просто ближе)
     const wFrom = netWave.get(b.fromId);
     const wTo   = netWave.get(b.toId);
     const reach = !wFrom ? wTo : !wTo ? wFrom : (wFrom.att >= wTo.att ? wFrom : wTo);
     if (!reach || results.length === 0) return {...b, bulkheadDestroyedByExplosion: false};
-    const dp_MPa = pressureAtNode(reach) / 1000;
-    const destroyed = dp_MPa >= fp;
-    return {...b, bulkheadDestroyedByExplosion: destroyed};
+
+    // Давление набегающей волны на перемычке. Сохраняем в ветви ДАЖЕ когда
+    // давление разрушения не задано: по нему считается потребная толщина
+    // взрывоустойчивой перемычки (РБ №343, п. 26), а она нужна как раз там,
+    // где сооружения ещё нет и паспортного давления взять неоткуда.
+    const dp_kPa = pressureAtNode(reach);
+    const withDp = { ...b, explosionComputedDeltaP: Math.round(dp_kPa * 10) / 10 };
+
+    if (!fp || fp <= 0) return { ...withDp, bulkheadDestroyedByExplosion: false };
+    const destroyed = (dp_kPa / 1000) >= fp;
+    return { ...withDp, bulkheadDestroyedByExplosion: destroyed };
   });
 
   return { branches: finalBranches, results, resultByBranch, netWave, pressureAtNode };
