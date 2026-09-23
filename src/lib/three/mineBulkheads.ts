@@ -711,7 +711,10 @@ export function buildMineBulkheads(input: BulkheadsInput): MineBulkheads | null 
     // координаты к трёхмерной схеме отношения не имеют.
     if (!sym.branchId) continue;
     const b = branchById.get(sym.branchId);
-    if (!b || b.isDead) continue;
+    // Перемычка в тупике — сооружение, которое там И СТОИТ: сплошь и рядом
+    // именно ею выработку и заглушили, отчего она стала тупиковой. Скрывать
+    // её — значит убирать со схемы причину нулевого расхода.
+    if (!b) continue;
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
     if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;

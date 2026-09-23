@@ -305,7 +305,11 @@ export function buildMineSymbols(input: SymbolsInput): MineSymbols | null {
     // их экранные координаты к трёхмерной схеме отношения не имеют.
     if (!sym.branchId) continue;
     const b = branchById.get(sym.branchId);
-    if (!b || b.isDead) continue;
+    // Обозначения на тупиковой выработке показываем: очаг пожара, датчик,
+    // дверь или знак в тупике — ровно то, ради чего схему и читают при ПЛА.
+    // Сама выработка теперь тоже строится (см. mineScene), значит и знакам
+    // на ней есть на чём стоять.
+    if (!b) continue;
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
     if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;

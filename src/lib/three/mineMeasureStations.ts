@@ -205,7 +205,9 @@ export function buildMineMeasureStations(
     // координаты к трёхмерной схеме отношения не имеют.
     if (!sym.branchId) continue;
     const b = branchById.get(sym.branchId);
-    if (!b || b.isDead) continue;
+    // Замерная станция в тупике остаётся на схеме: это размеченный участок
+    // выработки, он никуда не девается от того, что сквозного тока нет.
+    if (!b) continue;
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
     if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;

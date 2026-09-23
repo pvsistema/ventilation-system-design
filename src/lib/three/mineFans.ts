@@ -371,7 +371,11 @@ export function buildMineFans(input: FansInput): MineFans | null {
     if (sym.typeId !== "fan") continue;
     if (!sym.branchId) continue;
     const b = branchById.get(sym.branchId);
-    if (!b || b.isDead) continue;
+    // Вентилятор В ТУПИКЕ — не ошибка, а основной случай для ВМП: именно так
+    // проветривают забой, куда сквозного тока нет. Раньше такая машина
+    // пропадала из объёма вместе с выработкой, хотя расход у неё ненулевой —
+    // сервер считает ей рабочую точку отдельно. Показываем.
+    if (!b) continue;
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
     if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;

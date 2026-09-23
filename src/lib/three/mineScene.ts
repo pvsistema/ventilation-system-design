@@ -41,6 +41,29 @@ import { sectionOutline } from "@/lib/tube3d";
  */
 const EDGE_LIMIT = 6000;
 
+/**
+ * Цвет тупиковой выработки — тот же серый, что на чертеже (см. svgExporter,
+ * canvasRenderer). Раскраска по расходу или скорости к ней неприменима: расход
+ * там нулевой, и любой «горячий» цвет читался бы как работающая струя.
+ */
+const DEAD_COLOR = "#9ca3af";
+
+/**
+ * Насколько тупик бледнее обычной выработки.
+ *
+ * Тупики РИСУЮТСЯ — иначе схема врёт: человек видит обрыв там, где выработка
+ * есть, просто через неё нет сквозного тока. Но заметность у них должна быть
+ * ниже: они не участвуют в проветривании, и перетягивать внимание с рабочих
+ * струй им нельзя. Ровно так же с ними поступает режим «Чертёж»: серый цвет и
+ * прозрачность 0.35.
+ */
+const DEAD_OPACITY = 0.35;
+
+/** Цвет выработки с учётом тупика: тупик всегда серый, остальное — от режима. */
+function branchColor(b: TopoBranch, colorOf: (b: TopoBranch) => string): string {
+  return b.isDead ? DEAD_COLOR : colorOf(b);
+}
+
 /** Мир → three.js: у нас вверх Z, у three — Y. */
 export function toThree(x: number, y: number, z: number): THREE.Vector3 {
   return new THREE.Vector3(x, z, -y);
@@ -128,6 +151,9 @@ function shapeKey(b: TopoBranch): string {
   // Округление до 0,1 м² оставляет группировку рабочей: сечения на схеме
   // повторяются, и число групп остаётся в десятках.
   const a = `:${Math.round((b.area ?? 0) * 10) / 10}`;
+  // Тупики выделяются в отдельные группы: у них своя, пониженная
+  // непрозрачность, а она задаётся материалом — одним на всю группу.
+  if (b.isDead) return `dead|${s}${a}:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.diameter ?? 0)}`;
   if (s === "round") return `round:${r(b.diameter ?? 0)}${a}`;
   if (s === "trap") return `trap:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.trapTopWidth ?? 0)}${a}`;
   if (s === "arch") return `arch:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.archHeight ?? 0)}${a}`;
@@ -281,7 +307,18 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   // ── Группировка выработок по форме сечения ────────────────────────────
   const groups = new Map<string, TopoBranch[]>();
   for (const b of branches) {
-    if (b.isDead) continue;
+    // Тупиковые выработки СТРОЯТСЯ наравне с остальными.
+    //
+    // Раньше они здесь отсекались, и режим «Модель» показывал схему с дырами:
+    // тупиковый забой, куда ведёт выработка, просто исчезал, а вместе с ним —
+    // и всё, что на нём стоит (перемычки, ВМП, замерные станции). Человек
+    // видел обрыв там, где выработка есть: нулевой расход означает лишь
+    // отсутствие сквозного тока, а не отсутствие горной выработки. Режим
+    // «Чертёж» такие выработки рисовал всегда, и два режима расходились.
+    //
+    // Заметность у тупика понижена (серый цвет, прозрачность 0.35) — ровно
+    // так же, как на чертеже: выработка видна, но внимание с рабочих струй
+    // не оттягивает.
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
     // Узел без нормальных координат отбрасываем целиком.
@@ -308,6 +345,14 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   for (const [, list] of groups) {
     if (list.length === 0) continue;
 
+    // Тупик в группе может быть только со своими: ключ формы их разделяет.
+    const dead = list[0].isDead === true;
+    // Тупик всегда полупрозрачен, даже в сплошном режиме: в этом и состоит
+    // его пометка на схеме. В «стеклянном» режиме он ещё бледнее общего фона,
+    // иначе на просвет он спорил бы с рабочими выработками за внимание.
+    const bodyOpacity = dead ? Math.min(opacity, DEAD_OPACITY) : opacity;
+    const bodyGlass = glass || dead;
+
     const geom = buildProfileGeometry(list[0]);
     // Материал один на группу: цвет каждой выработки задаётся через
     // setColorAt (instanceColor), а не отдельным материалом — иначе пакетная
@@ -331,19 +376,19 @@ export function buildMineScene(input: SceneInput): BuiltScene {
       // Обе стороны: в «стеклянном» режиме сквозь ближнюю стенку видна
       // внутренняя поверхность дальней, и без DoubleSide выработка выглядела
       // бы рассечённой.
-      side: glass ? THREE.DoubleSide : THREE.FrontSide,
-      transparent: glass,
-      opacity,
+      side: bodyGlass ? THREE.DoubleSide : THREE.FrontSide,
+      transparent: bodyGlass,
+      opacity: bodyOpacity,
       // Прозрачное тело в буфер глубины не пишем: иначе выработка, нарисованная
       // первой, закрывала бы собой всё, что за ней, и «просвечивание» не
       // работало бы вовсе — получилось бы мутное стекло вместо CAD-режима.
-      depthWrite: !glass,
+      depthWrite: !bodyGlass,
     });
     const mesh = new THREE.InstancedMesh(geom, mat, list.length);
     mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
     // Прозрачные тела рисуются после непрозрачных — иначе смешивание цветов
     // зависит от случайного порядка в сцене.
-    if (glass) mesh.renderOrder = 1;
+    if (bodyGlass) mesh.renderOrder = 1;
 
     const ids: string[] = [];
     let idx = 0;
@@ -356,7 +401,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
       // Сечение масштабируется по плану — тем же множителем по всем осям,
       // иначе круглый ствол превратился бы в эллипс при «Масштаб Z ×14».
       mesh.setMatrixAt(idx, branchMatrix(a, c, kx));
-      tmpColor.set(colorOf(b));
+      tmpColor.set(branchColor(b, colorOf));
       mesh.setColorAt(idx, tmpColor);
       ids.push(b.id);
       box.expandByPoint(a);
@@ -397,7 +442,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
         mesh.getMatrixAt(i, m);
         // Ребро темнее заливки — так контур читается на своей же выработке,
         // а не спорит с ней по яркости.
-        tmpColor.set(colorOf(list[i])).multiplyScalar(0.45);
+        tmpColor.set(branchColor(list[i], colorOf)).multiplyScalar(0.45);
         for (let k = 0; k < cnt; k++) {
           v.fromBufferAttribute(src, k).applyMatrix4(m);
           dst[o] = v.x; dst[o + 1] = v.y; dst[o + 2] = v.z;
@@ -503,7 +548,8 @@ export function recolorScene(built: BuiltScene | null, colorOf: (b: TopoBranch) 
     let edgeChanged = false;
 
     for (let i = 0; i < list.length; i++) {
-      const col = colorOf(list[i]);
+      // Тупик остаётся серым при любом режиме заливки — как и при сборке.
+      const col = branchColor(list[i], colorOf);
       if (prev && prev[i] === col) continue;
       next[i] = col;
       tmp.set(col);

@@ -123,7 +123,13 @@ export function buildMineLabels(input: LabelBuildInput): MineLabel[] {
 
   const out: MineLabel[] = [];
   for (const b of branches) {
-    if (b.isDead) continue;
+    // Тупик подписываем НАРАВНЕ с остальными — ровно как на чертеже.
+    //
+    // Числа расчёта у него всё равно не появятся: branchLabelLines сам гасит
+    // расход, скорость и депрессию при isDead, потому что показывать нули как
+    // результат расчёта нельзя. Остаётся номер и название — то, по чему
+    // выработку и опознают. Вес подписи у тупика нулевой (weight = |Q|),
+    // поэтому при нехватке места на экране он уступит рабочим струям сам.
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
     // Та же защита, что и в сборке геометрии: узел без координат уводит
@@ -168,7 +174,9 @@ export function buildMineLabels(input: LabelBuildInput): MineLabel[] {
     if (sym.typeId !== MEASURE_STATION_TYPE_ID) continue;
     if (!sym.branchId) continue;
     const b = branchById.get(sym.branchId);
-    if (!b || b.isDead) continue;
+    // Станция на тупиковой выработке показывает свои замеры так же: они
+    // сняты приборами на месте и от расчёта сети не зависят.
+    if (!b) continue;
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
     if (!fn || !tn) continue;
     if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;
