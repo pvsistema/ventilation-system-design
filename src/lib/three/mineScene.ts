@@ -64,102 +64,6 @@ function branchColor(b: TopoBranch, colorOf: (b: TopoBranch) => string): string 
   return b.isDead ? DEAD_COLOR : colorOf(b);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// СОЧЛЕНЕНИЯ ВЫРАБОТОК В УЗЛАХ
-//
-// ЧТО БЫЛО НЕ ТАК. Каждая выработка строилась от центра одного узла до центра
-// другого — целой трубой с плоскими торцами на обоих концах. В узле, где
-// сходятся три-четыре выработки, эти трубы въезжали друг в друга, и торцевые
-// заглушки оказывались ВНУТРИ соседних тел. На просвет это читалось как
-// двойное пересечение: сквозь бок одной выработки просвечивал торец другой, а
-// на изломе трассы в наружном углу зияла клиновидная щель. Сопряжения, которое
-// в натуре есть всегда, на модели не было вовсе.
-//
-// КАК СДЕЛАНО. Как в горной графике и в профильных пакетах вентиляции: труба
-// не доводится до центра узла, а обрезается чуть раньше, и сам узел закрывается
-// телом сопряжения — сферической камерой. Торцы прячутся внутрь неё, стыки
-// становятся скруглёнными, а на изломе трассы щель закрывается той же камерой.
-//
-// ЦЕНА ВОПРОСА. Сопряжения рисуются одним пакетом (InstancedMesh) на всю схему,
-// то есть это один-два дополнительных вызова отрисовки независимо от числа
-// узлов. Скорость режима «Модель» держится именно на пакетной отрисовке, и
-// ломать её ради красоты стыков нельзя.
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Насколько камера сопряжения крупнее самой широкой выработки узла.
- *
- * Меньше — торцы начинают выглядывать наружу, и возвращается ровно та картина,
- * ради которой всё и затевалось. Больше — на каждом узле вырастает заметный
- * шар, и схема становится похожа на молекулярную модель, а не на рудник.
- */
-const JOINT_GROW = 1.12;
-
-/**
- * Зазор между обрезанным торцом и поверхностью камеры (доля от расчётной
- * глубины). Без запаса торец садится ровно на поверхность, и из-за огранки
- * сферы он местами прорезает её наружу тонкой каймой.
- */
-const JOINT_INSET = 0.92;
-
-/**
- * Больше этой доли длины выработка не обрезается (суммарно с двух концов).
- *
- * Короткая перемычка между двумя крупными узлами иначе съедалась бы целиком:
- * обрезка с двух сторон превысила бы её длину, выработка схлопнулась бы в
- * точку и пропала со схемы. Лучше оставить стык чуть грубее, чем потерять
- * выработку.
- */
-const JOINT_MAX_TRIM = 0.7;
-
-/**
- * Насколько прямым должен быть проход через узел, чтобы обойтись без камеры.
- *
- * Две выработки, идущие сквозь узел почти по одной линии, стыкуются сами:
- * торцы совпадают, прятать нечего. Ставить там камеру — значит сажать бусину
- * на ровный участок трассы. Порог в 8° отделяет настоящий поворот от дробления
- * прямой выработки на звенья.
- */
-const JOINT_STRAIGHT_COS = Math.cos((180 - 8) * Math.PI / 180);
-
-/** Сопряжение в одном узле. */
-interface Joint {
-  /** Центр — узел схемы в координатах сцены. */
-  pos: THREE.Vector3;
-  /** Радиус камеры в координатах сцены. */
-  radius: number;
-  /** Выработка, задающая цвет камеры — самая крупная из сходящихся в узле. */
-  driver: TopoBranch;
-}
-
-/**
- * Наибольший радиус сечения выработки, метры.
- *
- * Берём по фактическому контуру, а не по габаритам из карточки: контур уже
- * приведён к расчётной площади сечения, и именно он рисуется на схеме.
- */
-function sectionRadius(b: TopoBranch): number {
-  let m = 0;
-  for (const p of sectionOutline(b)) {
-    const d = Math.hypot(p.r, p.u);
-    if (d > m) m = d;
-  }
-  return m;
-}
-
-/**
- * Глубина обрезки трубы у сопряжения.
- *
- * Торец должен уйти ВНУТРЬ камеры целиком. Труба радиуса r, входящая в сферу
- * радиуса R по её центру, касается поверхности на глубине √(R²−r²) — дальше
- * этого резать нельзя, иначе край торца вылезет наружу. Отсюда и формула.
- */
-function jointTrim(sphereR: number, tubeR: number): number {
-  const d2 = sphereR * sphereR - tubeR * tubeR;
-  if (!(d2 > 0)) return 0;
-  return Math.sqrt(d2) * JOINT_INSET;
-}
-
 /** Мир → three.js: у нас вверх Z, у three — Y. */
 export function toThree(x: number, y: number, z: number): THREE.Vector3 {
   return new THREE.Vector3(x, z, -y);
@@ -215,15 +119,6 @@ export interface BuiltScene {
    * группы, и цвет i-й выработки занимает в нём vertsPerBranch вершин подряд.
    */
   edgeOf: Map<THREE.InstancedMesh, { lines: THREE.LineSegments; vertsPerBranch: number }>;
-  /**
-   * Камеры сопряжений в узлах и выработки, задающие их цвет.
-   *
-   * Отдельно от instanceBranches намеренно: сопряжения не участвуют в выборе
-   * мышью (щелчок по стыку должен выбирать выработку), но перекрашиваться со
-   * схемой обязаны — иначе при смене режима заливки узлы остались бы от
-   * прежней раскраски и схема пошла бы пятнами.
-   */
-  joints: { mesh: THREE.InstancedMesh; drivers: TopoBranch[] } | null;
   /** Габаритная сфера — по ней выставляется камера. */
   bounds: THREE.Sphere;
   /** Сколько выработок попало в сцену. */
@@ -368,120 +263,21 @@ function branchMatrix(
   from: THREE.Vector3,
   to: THREE.Vector3,
   sectionScale: number,
-  /** На сколько укоротить у начального узла — торец прячется в сопряжение. */
-  trimA = 0,
-  /** То же у конечного узла. */
-  trimB = 0,
 ): THREE.Matrix4 {
   const dir = new THREE.Vector3().subVectors(to, from);
   const len = dir.length();
   if (!(len > 1e-6)) return new THREE.Matrix4().makeScale(0, 0, 0);
   dir.normalize();
 
-  // Обрезка не должна съесть выработку целиком: короткая перемычка между
-  // двумя крупными узлами иначе схлопнулась бы в точку и пропала со схемы.
-  // Ужимаем оба конца пропорционально — стык останется симметричным.
-  let ta = Math.max(0, trimA), tb = Math.max(0, trimB);
-  const room = len * JOINT_MAX_TRIM;
-  const sum = ta + tb;
-  if (sum > room && sum > 1e-9) {
-    const k = room / sum;
-    ta *= k; tb *= k;
-  }
-
-  const start = new THREE.Vector3().copy(dir).multiplyScalar(ta).add(from);
-  const body = len - ta - tb;
-  if (!(body > 1e-6)) return new THREE.Matrix4().makeScale(0, 0, 0);
-
   // Поворот, переводящий +X в направление выработки.
   const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(1, 0, 0), dir);
 
   return new THREE.Matrix4().compose(
-    start,
+    from,
     q,
     // По оси выработки — её длина, поперёк — масштаб сечения.
-    new THREE.Vector3(body, sectionScale, sectionScale),
+    new THREE.Vector3(len, sectionScale, sectionScale),
   );
-}
-
-/**
- * Находит узлы, которым нужна камера сопряжения, и её размер.
- *
- * Камера ставится не везде. Она нужна там, где стык видно как дефект:
- *   • сходятся три и более выработки — классический узел-сопряжение;
- *   • сходятся две, но под углом — на изломе трассы в наружном углу щель;
- *   • сходятся две разного сечения — уступ в месте перехода.
- * Прямой стык двух одинаковых труб обходится без неё: там прятать нечего, а
- * лишняя бусина на ровном участке только мусорит схему.
- *
- * Тупиковый конец камеры не получает: у выработки, которая никуда не ведёт,
- * торец — это забой, и он должен остаться плоским.
- */
-function planJoints(
-  branches: TopoBranch[],
-  posOf: Map<string, THREE.Vector3>,
-  kx: number,
-): Map<string, Joint> {
-  /** Что сходится в узле: выработка, её радиус и направление ОТ узла. */
-  interface Incoming { b: TopoBranch; r: number; dir: THREE.Vector3 }
-  const at = new Map<string, Incoming[]>();
-
-  const radiusCache = new Map<string, number>();
-  const radiusOf = (b: TopoBranch): number => {
-    const k = shapeKey(b);
-    let r = radiusCache.get(k);
-    if (r === undefined) { r = sectionRadius(b) * kx; radiusCache.set(k, r); }
-    return r;
-  };
-
-  for (const b of branches) {
-    const a = posOf.get(b.fromId), c = posOf.get(b.toId);
-    if (!a || !c) continue;
-    const axis = new THREE.Vector3().subVectors(c, a);
-    if (!(axis.length() > 1e-6)) continue;
-    axis.normalize();
-    const r = radiusOf(b);
-    if (!(r > 0)) continue;
-
-    const push = (id: string, dir: THREE.Vector3) => {
-      let arr = at.get(id);
-      if (!arr) { arr = []; at.set(id, arr); }
-      arr.push({ b, r, dir });
-    };
-    // Направление всегда ОТ узла наружу — так сравнение углов не зависит от
-    // того, в какую сторону выработка записана в схеме.
-    push(b.fromId, axis.clone());
-    push(b.toId, axis.clone().negate());
-  }
-
-  const joints = new Map<string, Joint>();
-  for (const [id, list] of at) {
-    const p = posOf.get(id);
-    if (!p || list.length === 0) continue;
-
-    // Тупиковый конец оставляем как есть: торец там — забой.
-    if (list.length === 1) continue;
-
-    if (list.length === 2) {
-      const [u, w] = list;
-      // Направления смотрят В РАЗНЫЕ стороны от узла, поэтому у прямого
-      // прохода их скалярное произведение близко к −1.
-      const straight = u.dir.dot(w.dir) <= JOINT_STRAIGHT_COS;
-      const sameSize = Math.abs(u.r - w.r) < Math.max(u.r, w.r) * 0.06;
-      if (straight && sameSize) continue;
-    }
-
-    // Камера кроет самую крупную выработку узла — иначе её торец вылезет.
-    let driver = list[0];
-    for (const it of list) if (it.r > driver.r) driver = it;
-
-    joints.set(id, {
-      pos: p,
-      radius: driver.r * JOINT_GROW,
-      driver: driver.b,
-    });
-  }
-  return joints;
 }
 
 /**
@@ -540,33 +336,6 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     arr.push(b);
   }
 
-  // ── Сопряжения в узлах ────────────────────────────────────────────────
-  // Считаем по ТЕМ ЖЕ выработкам, что попали в группы: узел, все выработки
-  // которого отброшены как испорченные, сопряжения получить не должен.
-  const kept: TopoBranch[] = [];
-  for (const [, arr] of groups) for (const b of arr) kept.push(b);
-
-  const posOf = new Map<string, THREE.Vector3>();
-  for (const b of kept) {
-    for (const id of [b.fromId, b.toId]) {
-      if (posOf.has(id)) continue;
-      const n = nodeById.get(id);
-      if (n) posOf.set(id, toThree(n.x * kx, n.y * kx, n.z * kz));
-    }
-  }
-  const joints = planJoints(kept, posOf, kx);
-
-  /**
-   * Глубина обрезки трубы у данного узла.
-   *
-   * Ноль там, где сопряжения нет: свободный конец выработки и торец-забой в
-   * тупике остаются на месте, иначе выработка недотянулась бы до своей точки.
-   */
-  const trimAt = (nodeId: string, tubeR: number): number => {
-    const j = joints.get(nodeId);
-    return j ? jointTrim(j.radius, tubeR) : 0;
-  };
-
   const box = new THREE.Box3();
   let branchCount = 0;
   let drawCalls = 0;
@@ -621,9 +390,6 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     // зависит от случайного порядка в сцене.
     if (bodyGlass) mesh.renderOrder = 1;
 
-    // Радиус сечения у всей группы один — ключ формы это гарантирует.
-    const tubeR = sectionRadius(list[0]) * kx;
-
     const ids: string[] = [];
     let idx = 0;
     for (const b of list) {
@@ -634,16 +400,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
 
       // Сечение масштабируется по плану — тем же множителем по всем осям,
       // иначе круглый ствол превратился бы в эллипс при «Масштаб Z ×14».
-      //
-      // По длине труба не доводится до центра узла: торец прячется внутрь
-      // камеры сопряжения. Габарит схемы при этом считаем по ПОЛНОЙ длине
-      // (точки a и c ниже) — камера всё равно стоит в узле, и подрезанная
-      // труба поля зрения не уменьшает.
-      mesh.setMatrixAt(idx, branchMatrix(
-        a, c, kx,
-        trimAt(b.fromId, tubeR),
-        trimAt(b.toId, tubeR),
-      ));
+      mesh.setMatrixAt(idx, branchMatrix(a, c, kx));
       tmpColor.set(branchColor(b, colorOf));
       mesh.setColorAt(idx, tmpColor);
       ids.push(b.id);
@@ -718,54 +475,6 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     }
   }
 
-  // ── Камеры сопряжений ─────────────────────────────────────────────────
-  // Одна сфера единичного радиуса на всю схему, размноженная матрицами: узлов
-  // тысячи, но вызов отрисовки остаётся один. Сегментов немного — на схеме
-  // сопряжение занимает десятки пикселей, и гладкость там не видна, а вершины
-  // множатся на число узлов.
-  //
-  // Цвет берётся у самой крупной выработки узла: сопряжение — это её
-  // продолжение, и красить его отдельным цветом значило бы дробить струю на
-  // разноцветные куски в каждом узле.
-  let jointBuilt: { mesh: THREE.InstancedMesh; drivers: TopoBranch[] } | null = null;
-  if (joints.size > 0) {
-    const jg = new THREE.SphereGeometry(1, 12, 8);
-    const jm = new THREE.MeshPhongMaterial({
-      shininess: 18,
-      specular: 0x2a2f38,
-      side: glass ? THREE.DoubleSide : THREE.FrontSide,
-      transparent: glass,
-      opacity,
-      depthWrite: !glass,
-    });
-    const mesh = new THREE.InstancedMesh(jg, jm, joints.size);
-    mesh.instanceMatrix.setUsage(THREE.StaticDrawUsage);
-    if (glass) mesh.renderOrder = 1;
-
-    const jmat = new THREE.Matrix4();
-    const noRot = new THREE.Quaternion();
-    const drivers: TopoBranch[] = [];
-    let ji = 0;
-    for (const [, j] of joints) {
-      jmat.compose(j.pos, noRot, new THREE.Vector3(j.radius, j.radius, j.radius));
-      mesh.setMatrixAt(ji, jmat);
-      tmpColor.set(branchColor(j.driver, colorOf));
-      mesh.setColorAt(ji, tmpColor);
-      drivers.push(j.driver);
-      ji++;
-    }
-    mesh.instanceMatrix.needsUpdate = true;
-    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
-    mesh.frustumCulled = false;
-    root.add(mesh);
-    drawCalls++;
-
-    // Сопряжения в выбор мышью НЕ попадают: в instanceBranches их не кладём.
-    // Щелчок по стыку должен выбирать выработку, а не «узел» — узлы в режиме
-    // «Модель» самостоятельными объектами не являются.
-    jointBuilt = { mesh, drivers };
-  }
-
   // ── Освещение ─────────────────────────────────────────────────────────
   // Два источника: направленный сверху-сбоку даёт объём, рассеянный не даёт
   // теневой стороне почернеть. Тени не считаем — на схеме в тысячи выработок
@@ -805,10 +514,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     bounds.center.set(0, 0, 0);
   }
 
-  return {
-    root, instanceToBranch, instanceBranches, edgeOf,
-    joints: jointBuilt, bounds, branchCount, drawCalls,
-  };
+  return { root, instanceToBranch, instanceBranches, edgeOf, bounds, branchCount, drawCalls };
 }
 
 /**
@@ -864,27 +570,6 @@ export function recolorScene(built: BuiltScene | null, colorOf: (b: TopoBranch) 
     holder.__lastColors = next;
     if (changed && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     if (edgeChanged && eCol) eCol.needsUpdate = true;
-  }
-
-  // Камеры сопряжений красятся по своей ведущей выработке. Пропустить их
-  // нельзя: узлы остались бы от прежнего режима заливки, и схема пошла бы
-  // пятнами ровно в тех местах, где струи сходятся.
-  const j = built.joints;
-  if (j && j.mesh.instanceColor) {
-    const holder = j.mesh as THREE.InstancedMesh & { __lastColors?: string[] };
-    const prev = holder.__lastColors;
-    const next: string[] = prev ?? new Array<string>(j.drivers.length);
-    let jChanged = false;
-    for (let i = 0; i < j.drivers.length; i++) {
-      const col = branchColor(j.drivers[i], colorOf);
-      if (prev && prev[i] === col) continue;
-      next[i] = col;
-      tmp.set(col);
-      j.mesh.setColorAt(i, tmp);
-      jChanged = true;
-    }
-    holder.__lastColors = next;
-    if (jChanged) { j.mesh.instanceColor.needsUpdate = true; changed = true; }
   }
   return changed;
 }
