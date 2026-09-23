@@ -64,6 +64,7 @@ import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, co
 import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, junctionTransmission, calcExplosion, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { BLAST_MIXES, blastMixById, blastMixAge, blastMixAgeLabel, calcBlastBulkheadThickness, bulkheadDimensions, reflectedPressure, BLAST_SAFETY_FACTOR } from "@/lib/blastBulkhead";
 import { calcGasZone, gasZoneTime, EXPLOSIVE_CH4_CONC, DEFAULT_I_NEPOGASH, GAS_TIME_PLA, GAS_TIME_EMERGENCY_MIN } from "@/lib/gasZone";
+import { collectBarriers, crossBarriers, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -1334,6 +1335,16 @@ export default function CadPage() {
    */
   const [explosionResultByBranch, setExplosionResultByBranch] = useState<Map<string, ExplosionResult>>(new Map());
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
+  /**
+   * Перемычки из последнего полного расчёта взрыва и что с ними стало.
+   * Окраска схемы берёт решения ОТСЮДА, а не пересчитывает их по-своему:
+   * иначе схема могла бы красить выработку за перемычкой, которую расчёт
+   * признал устоявшей.
+   */
+  const [explosionBarriers, setExplosionBarriers] = useState<{
+    byBranch: Map<string, BlastBarrier[]>;
+    hits: Map<string, BarrierHit>;
+  } | null>(null);
   // Предварительный расчёт очага — считается на месте, как только на ветви
   // выставлены параметры взрыва. Наполняется ниже (см. explosionPreview).
   const [explosionPreview, setExplosionPreview] = useState<{
@@ -2163,7 +2174,7 @@ export default function CadPage() {
           if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
           removeSymbol(s.id);
         });
-        setExplosionResult(null); setExplosionResultByBranch(new Map());
+        setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
         setExplosionCalcDone(false);
       }
     }
@@ -3694,7 +3705,7 @@ export default function CadPage() {
     setNormalFlows({});
     setFireResult(null);
     setFireCalcDone(false);
-    setExplosionResult(null); setExplosionResultByBranch(new Map());
+    setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
     setExplosionCalcDone(false);
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
     setVcSolving(false);
@@ -4038,7 +4049,7 @@ export default function CadPage() {
     setNormalFlows({});
     setFireResult(null);
     setFireCalcDone(false);
-    setExplosionResult(null); setExplosionResultByBranch(new Map());
+    setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
     setExplosionCalcDone(false);
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
     setVcSolving(false);
@@ -6519,7 +6530,7 @@ export default function CadPage() {
                   if (s.branchId) updateBranch(s.branchId, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
                   removeSymbol(s.id);
                 });
-                setExplosionResult(null); setExplosionResultByBranch(new Map());
+                setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
                 setExplosionCalcDone(false);
               }}
             />
@@ -6553,6 +6564,7 @@ export default function CadPage() {
                 });
                 if (!run) return;
                 const { branches: finalBranches, results, resultByBranch } = run;
+                setExplosionBarriers({ byBranch: run.barriers, hits: run.barrierHits });
 
                 setBranches(finalBranches);
                 if (results.length > 0) {
@@ -6652,7 +6664,7 @@ export default function CadPage() {
               sublabel="взрыв"
               disabled={!explosionCalcDone}
               onClick={() => {
-                setExplosionResult(null); setExplosionResultByBranch(new Map());
+                setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
                 setExplosionCalcDone(false);
                 setShowExplosionZones(false);
                 setBranches(prev => prev.map(b => ({ ...b, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0, bulkheadDestroyedByExplosion: false })));
@@ -9443,7 +9455,7 @@ export default function CadPage() {
                       <button onClick={() => {
                         removeSymbol(expSymId.id);
                         updateBranch(b.id, { hasExplosion: false, explosionComputedQtnt: 0, explosionComputedMaxP: 0, explosionComputedWaveSpeed: 0, explosionComputedR_lethal: 0, explosionComputedR_heavy: 0, explosionComputedR_medium: 0, explosionComputedR_light: 0, explosionComputedDeltaP: 0 });
-                        setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionCalcDone(false);
+                        setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null); setExplosionCalcDone(false);
                       }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)" }}>
                         Убрать
                       </button>
@@ -9849,6 +9861,53 @@ export default function CadPage() {
                       <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "var(--c-red-ink, #991b1b)" }}>
                         Разрушенные перемычки окрашены красным и отмечены «РАЗР.» на схеме. Пересчитайте сеть (F9).
                       </div>
+                    </>);
+                  })()}
+
+                  {/* Перемычки на пути волны: что с каждой произошло. Решения
+                      приняты прямо при распространении волны — устоявшая волну
+                      гасит, разрушенная пропускает ослабленную. */}
+                  {explosionCalcDone && explosionBarriers && explosionBarriers.hits.size > 0 && (() => {
+                    const rows: Array<{ bar: BlastBarrier; hit: BarrierHit }> = [];
+                    for (const list of explosionBarriers.byBranch.values()) {
+                      for (const bar of list) {
+                        const hit = explosionBarriers.hits.get(bar.key);
+                        if (hit && hit.incident_kPa > 0) rows.push({ bar, hit });
+                      }
+                    }
+                    if (rows.length === 0) return null;
+                    rows.sort((a, b) => b.hit.incident_kPa - a.hit.incident_kPa);
+                    return (<>
+                      <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>
+                        Перемычки на пути волны ({rows.length})
+                      </div>
+                      <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
+                        Разрушение — по давлению отражения ΔP<sub>отр</sub>. Устоявшая
+                        перемычка волну останавливает; за разрушенной идёт
+                        ΔP·(1 − P<sub>разр</sub>/ΔP<sub>отр</sub>).
+                      </div>
+                      {rows.map(({ bar, hit }) => {
+                        const sym = schemaSymbols.find(s => s.id === bar.key);
+                        const br = branches.find(x => x.id === bar.branchId);
+                        const name = (sym?.bkBulkheadName ?? br?.bulkheadName) || `Ветвь ${bar.branchId}`;
+                        const status = !(bar.failure_MPa > 0)
+                          ? { text: "прочность не задана", color: "#6b7280" }
+                          : hit.destroyed
+                            ? { text: `разрушена, прошло ${Math.round(hit.transmit * 100)} %`, color: "#dc2626" }
+                            : { text: "устояла, волна остановлена", color: "#16a34a" };
+                        return (
+                          <div key={bar.key} className="px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                            <div className="flex items-center gap-1">
+                              <span className="text-[11px] text-gray-700 flex-1 truncate" title={name}>{name}</span>
+                              <span className="text-[10px] font-semibold flex-shrink-0" style={{ color: status.color }}>{status.text}</span>
+                            </div>
+                            <div className="text-[9px] text-gray-500">
+                              ΔP = {(hit.incident_kPa / 1000).toFixed(3)} МПа → ΔP<sub>отр</sub> = {(hit.reflected_kPa / 1000).toFixed(3)} МПа
+                              {bar.failure_MPa > 0 && <> · P<sub>разр</sub> = {bar.failure_MPa} МПа</>}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </>);
                   })()}
 
@@ -13070,7 +13129,7 @@ export default function CadPage() {
                     explosionComputedR_heavy: 0, explosionComputedR_medium: 0,
                     explosionComputedR_light: 0, explosionComputedDeltaP: 0,
                   }, false);
-                  setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionCalcDone(false);
+                  setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null); setExplosionCalcDone(false);
                 }
                 // Сброс редуктора при удалении символа клапана
                 if (sym && REDUCER_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
@@ -13361,6 +13420,33 @@ export default function CadPage() {
                   }
                 };
 
+                // Давление в точке по состоянию волны — та же формула, что и
+                // при окрашивании участков ниже.
+                const pressureOfC = (d: number, att: number, srcId: string): number => {
+                  const resR = resFor(srcId);
+                  if (!resR) return 0;
+                  const rTrR = resR.transitionRadius_m ?? 0;
+                  return (resR.channelMode && d > rTrR)
+                    ? Math.round(resR.pressureAtDistance(rTrR) * att * 10) / 10
+                    : Math.round(resR.pressureAtDistance(d) * att * 10) / 10;
+                };
+
+                // ПЕРЕМЫЧКИ НА ПУТИ ВОЛНЫ. После полного расчёта решения по ним
+                // берутся из расчёта (схема показывает то же, что он решил); до
+                // него — считаются здесь же по предварительной оценке очага.
+                const barrierMap = explosionCalcDone && explosionBarriers
+                  ? explosionBarriers.byBranch
+                  : collectBarriers(branches, schemaSymbols, BULKHEAD_SYMBOL_IDS);
+                const barrierHitsC = new Map<string, BarrierHit>(
+                  explosionCalcDone && explosionBarriers ? explosionBarriers.hits : [],
+                );
+                const fixedHits = explosionCalcDone && explosionBarriers ? explosionBarriers.hits : null;
+                const recordHitC = (bar: BlastBarrier, hit: BarrierHit) => {
+                  if (fixedHits) return;
+                  const prev = barrierHitsC.get(bar.key);
+                  if (!prev || hit.incident_kPa > prev.incident_kPa) barrierHitsC.set(bar.key, hit);
+                };
+
                 // Начальные состояния у концов ветви-очага
                 // (символ взрыва стоит на позиции t вдоль ветви)
                 sources.forEach(src => {
@@ -13371,19 +13457,27 @@ export default function CadPage() {
                   const beta = channelDecay({ area_m2: branchArea(src), lambda: LAMBDA_DEFAULT });
                   const attTo = (d: number) => d <= rTr ? 1 : Math.exp(-beta * (d - rTr));
                   const dF = len * t, dT = len * (1 - t);
-                  upd(src.fromId, { d: dF, srcId: src.id, att: attTo(dF) });
-                  upd(src.toId,   { d: dT, srcId: src.id, att: attTo(dT) });
+                  const list = barrierMap.get(src.id);
+                  const common = {
+                    list, len, d0: 0, attAt: attTo, srcId: src.id,
+                    pressureOf: pressureOfC, onHit: recordHitC,
+                    decided: fixedHits ? (bar: BlastBarrier) => fixedHits.get(bar.key) : undefined,
+                  };
+                  const kF = crossBarriers({ ...common, tFrom: t, tTo: 0 });
+                  const kT = crossBarriers({ ...common, tFrom: t, tTo: 1 });
+                  if (kF > 0) upd(src.fromId, { d: dF, srcId: src.id, att: attTo(dF) * kF });
+                  if (kT > 0) upd(src.toId,   { d: dT, srcId: src.id, att: attTo(dT) * kT });
                 });
 
-                // Граф смежности: nodeId → [{nodeId, длина, сечение}]
-                type Edge = { to: string; len: number; area: number };
+                // Граф смежности: nodeId → [{nodeId, длина, сечение, ветвь, откуда вход}]
+                type Edge = { to: string; len: number; area: number; branchId: string; tStart: 0 | 1 };
                 const adj = new Map<string, Edge[]>();
                 branches.forEach(b => {
                   const len = branchLen(b), area = branchArea(b);
                   if (!adj.has(b.fromId)) adj.set(b.fromId, []);
                   if (!adj.has(b.toId))   adj.set(b.toId,   []);
-                  adj.get(b.fromId)!.push({ to: b.toId,   len, area });
-                  adj.get(b.toId)!.push  ({ to: b.fromId, len, area });
+                  adj.get(b.fromId)!.push({ to: b.toId,   len, area, branchId: b.id, tStart: 0 });
+                  adj.get(b.toId)!.push  ({ to: b.fromId, len, area, branchId: b.id, tStart: 1 });
                 });
 
                 // Обход по убыванию силы волны
@@ -13408,7 +13502,17 @@ export default function CadPage() {
                     // Прохождение через сопряжение — акустическая модель (см. ядро).
                     const split = junctionTransmission(inArea, outArea);
                     const beta = channelDecay({ area_m2: e.area, lambda: LAMBDA_DEFAULT });
-                    const att = curAtt * split * Math.exp(-beta * e.len);
+                    const attIn = curAtt * split;
+                    // Перемычки ветви по ходу волны: устоявшая волну гасит,
+                    // разрушенная пропускает ослабленную.
+                    const kBar = crossBarriers({
+                      list: barrierMap.get(e.branchId),
+                      tFrom: e.tStart, tTo: e.tStart === 0 ? 1 : 0, len: e.len, d0: curD,
+                      attAt: dist => attIn * Math.exp(-beta * dist),
+                      srcId, pressureOf: pressureOfC, onHit: recordHitC,
+                      decided: fixedHits ? bar => fixedHits.get(bar.key) : undefined,
+                    });
+                    const att = attIn * Math.exp(-beta * e.len) * kBar;
                     if (att < 1e-4) continue;
                     upd(e.to, { d: nd, srcId, att, fromNode: cur });
                   }
@@ -13431,6 +13535,26 @@ export default function CadPage() {
                   // Затухание вдоль САМОЙ этой ветви — по её сечению
                   const betaB = channelDecay({ area_m2: branchArea(b), lambda: LAMBDA_DEFAULT });
 
+                  // Множитель от перемычек этой ветви, пройденных по дороге от
+                  // точки входа tIn до точки t. Решения берутся уже принятые
+                  // при обходе — перемычка не «пересчитывается» на каждом
+                  // участке и не может быть одновременно целой и разрушенной.
+                  const barList = barrierMap.get(b.id);
+                  const barK = (tIn: number, t: number): number => {
+                    if (!barList || barList.length === 0) return 1;
+                    const lo = Math.min(tIn, t), hi = Math.max(tIn, t);
+                    let k = 1;
+                    for (const bar of barList) {
+                      if (bar.t <= lo || bar.t >= hi) continue;
+                      const hit = barrierHitsC.get(bar.key);
+                      // Волна до перемычки не доходила — решения нет. Считаем
+                      // её прозрачной только если прочность не задана.
+                      k *= hit ? hit.transmit : (bar.failure_MPa > 0 ? 0 : 1);
+                      if (k <= 0) return 0;
+                    }
+                    return k;
+                  };
+
                   /** Состояние волны в точке t вдоль ветви (0 = fromId, 1 = toId) */
                   const reachAt = (t: number): NodeReach | null => {
                     let best: NodeReach | null = null;
@@ -13438,18 +13562,21 @@ export default function CadPage() {
                     // путь короче: через узкую сбойку путь может быть короче,
                     // а давление — заметно ниже.
                     const take = (d: number, srcId: string, att: number) => {
+                      if (att <= 0) return;
                       if (d <= blastWaveRadius && (!best || att > best.att)) best = { d, srcId, att };
                     };
                     const decay = (dd: number) => Math.exp(-betaB * dd);
                     // Путь через fromId / через toId — с дозатуханием внутри ветви
-                    if (rFrom) take(rFrom.d + len * t,       rFrom.srcId, rFrom.att * decay(len * t));
-                    if (rTo)   take(rTo.d   + len * (1 - t), rTo.srcId,   rTo.att   * decay(len * (1 - t)));
+                    // и с учётом перемычек между узлом и точкой t.
+                    if (rFrom) take(rFrom.d + len * t,       rFrom.srcId, rFrom.att * decay(len * t) * barK(0, t));
+                    if (rTo)   take(rTo.d   + len * (1 - t), rTo.srcId,   rTo.att   * decay(len * (1 - t)) * barK(1, t));
                     // Если очаг стоит на самой этой ветви — идём по ней напрямую,
                     // не огибая через узлы
                     if (isSource) {
-                      const dSrc = Math.abs(t - (b.explosionT ?? 0.5)) * len;
+                      const tSrc = b.explosionT ?? 0.5;
+                      const dSrc = Math.abs(t - tSrc) * len;
                       const rTrS = resFor(b.id)?.transitionRadius_m ?? 0;
-                      take(dSrc, b.id, dSrc <= rTrS ? 1 : decay(dSrc - rTrS));
+                      take(dSrc, b.id, (dSrc <= rTrS ? 1 : decay(dSrc - rTrS)) * barK(tSrc, t));
                     }
                     return best;
                   };
@@ -13668,7 +13795,7 @@ export default function CadPage() {
                       setSelectedBranchId(branchId);
                       setSelectedNodeId(null);
                       setFanSymbolBranchId(null);
-                      setExplosionResult(null); setExplosionResultByBranch(new Map());
+                      setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
                       setExplosionCalcDone(false);
                       setActiveSide("blast");
                       setActiveRibbon("involve");

@@ -29,6 +29,7 @@ function defaultConc(gasId: string | undefined): number {
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { withLicense } from "@/lib/license";
 import { calcGasZone, gasZoneTime, DEFAULT_I_NEPOGASH } from "@/lib/gasZone";
+import { collectBarriers, crossBarriers, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 
 export interface ExplosionRunParams {
   branches: TopoBranch[];
@@ -87,6 +88,14 @@ export interface ExplosionRunResult {
   netWave: Map<string, { d: number; att: number; srcId: string }>;
   /** Давление в узле по состоянию волны, кПа */
   pressureAtNode: (st: { d: number; att: number; srcId: string }) => number;
+  /**
+   * Что произошло с каждой перемычкой (ключ — BlastBarrier.key). Нужно схеме:
+   * за устоявшей перемычкой ветвь не красится, за разрушенной — красится
+   * ослабленной волной.
+   */
+  barrierHits: Map<string, BarrierHit>;
+  /** Перемычки по ветвям — те же, по которым шёл расчёт. */
+  barriers: Map<string, BlastBarrier[]>;
 }
 
 /**
@@ -348,6 +357,51 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
    * идёт насквозь.
    */
   type WaveState = { d: number; att: number; srcId: string; fromNode?: string };
+
+  /**
+   * Давление в точке, кПа: функция давления СВОЕГО очага от длины пути, к
+   * которой применяется накопленный по графу множитель ослабления (трение,
+   * сопряжения, пройденные перемычки). Объявлена ДО обхода: перемычки
+   * проверяются прямо во время распространения волны и нуждаются в давлении.
+   */
+  const pressureAtNode = (st: { d: number; att: number; srcId: string }): number => {
+    const res = resultByBranch.get(st.srcId) ?? results[0];
+    if (!res) return 0;
+    const q = res.q_tnt_kg ?? 0;
+    const ch = res.channel;
+    // ГАЗ: внутри загазованного участка — плато ΔP₀, снаружи затухание уже
+    // накоплено в st.att при обходе графа, поэтому здесь берётся ΔP₀ × att.
+    if (res.gasSource && ch) {
+      const half = res.gasSource.zoneLength_m / 2;
+      if (st.d <= half) return gasChannelPressureAt(st.d, res.gasSource, ch, st.att);
+      return Math.round(res.gasSource.initialPressure_kPa * st.att * 10) / 10;
+    }
+    if (res.channelMode && ch && q > 0) {
+      // Трение уже накоплено в st.att по фактическим сечениям пути, поэтому
+      // берётся только ближняя (сферическая) часть — иначе трение учлось бы
+      // дважды.
+      const rTr = res.transitionRadius_m ?? 0;
+      if (st.d <= rTr) return channelPressureAt(st.d, q, ch, st.att);
+      const dpAtTr = channelPressureAt(rTr, q, ch, 1);
+      return Math.round(dpAtTr * st.att * 10) / 10;
+    }
+    return Math.round(res.pressureAtDistance(st.d) * st.att * 10) / 10;
+  };
+  const pressureOf = (d: number, att: number, srcId: string) => pressureAtNode({ d, att, srcId });
+
+  // ── ПЕРЕМЫЧКИ НА ПУТИ ВОЛНЫ ────────────────────────────────────────────
+  // Раньше перемычки проверялись после расчёта и волну не останавливали.
+  // Теперь при переходе волны по ветви она проходит через каждую перемычку
+  // этой ветви по очереди (см. blastBarriers.ts): устоявшая волну гасит,
+  // разрушенная пропускает ослабленную.
+  const barriers = collectBarriers(updatedBranches, symbols, bulkheadSymbolIds);
+  const barrierHits = new Map<string, BarrierHit>();
+  /** Запоминаем самый сильный удар по перемычке — с какой бы стороны он ни пришёл. */
+  const recordHit = (bar: BlastBarrier, hit: BarrierHit) => {
+    const prev = barrierHits.get(bar.key);
+    if (!prev || hit.incident_kPa > prev.incident_kPa) barrierHits.set(bar.key, hit);
+  };
+
   const netWave = new Map<string, WaveState>();
   const pq2: Array<{ id: string } & WaveState> = [];
   // Сильнее = больше att при сопоставимом пути. Сравниваем по ослаблению.
@@ -374,18 +428,31 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     // поэтому от неё и считается экспоненциальное затухание.
     const attTo = (d: number) => d <= freeSpan ? 1 : Math.exp(-betaSrc * (d - freeSpan));
     const dFrom = len * t, dTo = len * (1 - t);
-    pushWave(src.fromId, { d: dFrom, att: attTo(dFrom), srcId: src.id });
-    pushWave(src.toId,   { d: dTo,   att: attTo(dTo),   srcId: src.id });
+    // Перемычка может стоять на самой ветви очага — между очагом и узлом.
+    const list = barriers.get(src.id);
+    const kFrom = crossBarriers({
+      list, tFrom: t, tTo: 0, len, d0: 0, attAt: attTo,
+      srcId: src.id, pressureOf, onHit: recordHit,
+    });
+    const kTo = crossBarriers({
+      list, tFrom: t, tTo: 1, len, d0: 0, attAt: attTo,
+      srcId: src.id, pressureOf, onHit: recordHit,
+    });
+    if (kFrom > 0) pushWave(src.fromId, { d: dFrom, att: attTo(dFrom) * kFrom, srcId: src.id });
+    if (kTo > 0)   pushWave(src.toId,   { d: dTo,   att: attTo(dTo) * kTo,     srcId: src.id });
   });
 
-  // Смежность с геометрией ребра
-  const adjMap = new Map<string, Array<{ to: string; len: number; area: number }>>();
+  // Смежность с геометрией ребра. Для каждого направления помним, откуда
+  // волна входит в ветвь (0 — со стороны fromId, 1 — со стороны toId): по
+  // этому порядку она и проходит перемычки ветви.
+  type AdjEdge = { to: string; len: number; area: number; branchId: string; tStart: 0 | 1 };
+  const adjMap = new Map<string, AdjEdge[]>();
   updatedBranches.forEach(b => {
     const len = bLen(b), area = bArea(b);
     if (!adjMap.has(b.fromId)) adjMap.set(b.fromId, []);
     if (!adjMap.has(b.toId))   adjMap.set(b.toId, []);
-    adjMap.get(b.fromId)!.push({ to: b.toId,   len, area });
-    adjMap.get(b.toId)!.push  ({ to: b.fromId, len, area });
+    adjMap.get(b.fromId)!.push({ to: b.toId,   len, area, branchId: b.id, tStart: 0 });
+    adjMap.get(b.toId)!.push  ({ to: b.fromId, len, area, branchId: b.id, tStart: 1 });
   });
 
   const vis2 = new Set<string>();
@@ -417,75 +484,49 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       const split = junctionTransmission(inArea, outArea);
       // Затухание на трении вдоль ребра
       const beta = channelDecay({ area_m2: e.area, lambda: LAMBDA_DEFAULT });
-      const att  = curAtt * split * Math.exp(-beta * e.len);
-      // Волна угасла — ветвь не продолжаем (порог 1e-4 от начальной)
+      const attIn = curAtt * split;
+      // Перемычки этой ветви — по ходу волны. Устоявшая обнуляет волну,
+      // разрушенная пропускает ослабленную (см. blastBarriers.ts).
+      const kBar = crossBarriers({
+        list: barriers.get(e.branchId),
+        tFrom: e.tStart, tTo: e.tStart === 0 ? 1 : 0, len: e.len, d0: curD,
+        attAt: dist => attIn * Math.exp(-beta * dist),
+        srcId, pressureOf, onHit: recordHit,
+      });
+      const att = attIn * Math.exp(-beta * e.len) * kBar;
+      // Волна угасла (или остановлена перемычкой) — ветвь не продолжаем
       if (att < 1e-4) continue;
       pushWave(e.to, { d: curD + e.len, att, srcId, fromNode: cur });
     }
   }
 
-  /**
-   * Давление в узле, кПа: берётся функция давления СВОЕГО очага от длины
-   * пути, и к ней применяется накопленный по графу множитель ослабления
-   * (деление на сопряжениях + трение на пройденных ветвях).
-   */
-  const pressureAtNode = (st: WaveState): number => {
-    const res = resultByBranch.get(st.srcId) ?? results[0];
-    if (!res) return 0;
-    const q = res.q_tnt_kg ?? 0;
-    const ch = res.channel;
-    // ГАЗ: внутри загазованного участка — плато ΔP₀, снаружи затухание уже
-    // накоплено в st.att при обходе графа, поэтому здесь берётся ΔP₀ × att.
-    if (res.gasSource && ch) {
-      const half = res.gasSource.zoneLength_m / 2;
-      if (st.d <= half) return gasChannelPressureAt(st.d, res.gasSource, ch, st.att);
-      return Math.round(res.gasSource.initialPressure_kPa * st.att * 10) / 10;
-    }
-    if (res.channelMode && ch && q > 0) {
-      // ВАЖНО: затухание на трении уже накоплено в st.att при обходе графа —
-      // по каждой ветви со СВОИМ сечением. Поэтому здесь берётся только
-      // ближняя (сферическая) часть: давление на границе сшивки, к которому
-      // применяется накопленный множитель. Иначе трение учлось бы дважды —
-      // один раз по фактическим сечениям пути, второй раз по сечению
-      // ветви-очага.
-      const rTr = res.transitionRadius_m ?? 0;
-      // До точки сшивки волна ещё сферическая — считаем как есть
-      if (st.d <= rTr) return channelPressureAt(st.d, q, ch, st.att);
-      // Дальше: давление на сшивке × накопленное по графу ослабление
-      const dpAtTr = channelPressureAt(rTr, q, ch, 1);
-      return Math.round(dpAtTr * st.att * 10) / 10;
-    }
-    return Math.round(res.pressureAtDistance(st.d) * st.att * 10) / 10;
-  };
-
-  // Помечаем перемычки разрушенными если ΔP > failurePressure
-  // fp берём из символа (bkFailurePressure) или из ветви как fallback
+  // ── ИТОГ ПО ПЕРЕМЫЧКАМ ─────────────────────────────────────────────────
+  // Разрушение определено прямо на пути волны — по давлению ОТРАЖЕНИЯ, а не
+  // набегающей волны: перемычка стоит поперёк хода и тормозит волну до нуля.
+  // В ветвь пишется давление набегающей волны: от него считается толщина
+  // взрывоустойчивой перемычки (там отражение применяется отдельно).
   const finalBranches = updatedBranches.map(b => {
-    if (!b.hasBulkhead) return {...b, bulkheadDestroyedByExplosion: false};
-    const bkSym = symbols.find(s =>
-      bulkheadSymbolIds.has(s.typeId) && s.branchId === b.id
-    );
-    // давление разрушения: из символа (если задано > 0) или из ветви (из справочника)
-    const fp = (bkSym?.bkFailurePressure && bkSym.bkFailurePressure > 0
-      ? bkSym.bkFailurePressure
-      : b.bulkheadFailurePressure) || 0; // МПа
-    // Конец ветви, куда волна пришла СИЛЬНЕЕ (а не просто ближе)
-    const wFrom = netWave.get(b.fromId);
-    const wTo   = netWave.get(b.toId);
-    const reach = !wFrom ? wTo : !wTo ? wFrom : (wFrom.att >= wTo.att ? wFrom : wTo);
-    if (!reach || results.length === 0) return {...b, bulkheadDestroyedByExplosion: false};
-
-    // Давление набегающей волны на перемычке. Сохраняем в ветви ДАЖЕ когда
-    // давление разрушения не задано: по нему считается потребная толщина
-    // взрывоустойчивой перемычки (РБ №343, п. 26), а она нужна как раз там,
-    // где сооружения ещё нет и паспортного давления взять неоткуда.
-    const dp_kPa = pressureAtNode(reach);
-    const withDp = { ...b, explosionComputedDeltaP: Math.round(dp_kPa * 10) / 10 };
-
-    if (!fp || fp <= 0) return { ...withDp, bulkheadDestroyedByExplosion: false };
-    const destroyed = (dp_kPa / 1000) >= fp;
-    return { ...withDp, bulkheadDestroyedByExplosion: destroyed };
+    const list = barriers.get(b.id);
+    if (!list || list.length === 0) {
+      return b.hasBulkhead ? { ...b, bulkheadDestroyedByExplosion: false } : b;
+    }
+    let destroyed = false;
+    let maxIncident = 0;
+    for (const bar of list) {
+      const hit = barrierHits.get(bar.key);
+      if (!hit) continue;
+      if (hit.destroyed) destroyed = true;
+      if (hit.incident_kPa > maxIncident) maxIncident = hit.incident_kPa;
+    }
+    return {
+      ...b,
+      explosionComputedDeltaP: Math.round(maxIncident * 10) / 10,
+      bulkheadDestroyedByExplosion: destroyed,
+    };
   });
 
-  return { branches: finalBranches, results, resultByBranch, netWave, pressureAtNode };
+  return {
+    branches: finalBranches, results, resultByBranch, netWave, pressureAtNode,
+    barrierHits, barriers,
+  };
 }
