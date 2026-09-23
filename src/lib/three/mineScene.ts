@@ -127,6 +127,54 @@ export interface BuiltScene {
   drawCalls: number;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// СТЫКИ ВЫРАБОТОК В УЗЛАХ
+//
+// ЧТО БЫЛО НЕ ТАК. Каждая выработка строилась целой трубой, ЗАГЛУШЕННОЙ с обоих
+// концов. В узле, где сходятся три-четыре выработки, трубы входят друг в друга,
+// и эти заглушки оказываются ВНУТРИ соседних тел — плоскими пластинами поперёк
+// потока. На просвет («Стекло», «Каркас») они и читались как двойное
+// пересечение: сквозь бок одной выработки просвечивал торец другой.
+//
+// ЧЕГО ДЕЛАТЬ БЫЛО НЕЛЬЗЯ (проверено на схеме). Укорачивать трубы, освобождая
+// место под тело сопряжения, — сеть распадается на отдельные бочонки: там, где
+// расчёт ждёт сплошного хода воздуха, человек видит разорванную цепочку. Схема
+// вентиляции обязана читаться как СВЯЗНАЯ сеть, это её главное свойство.
+//
+// КАК СДЕЛАНО. Длина выработки не трогается вовсе — труба как шла от центра
+// узла до центра узла, так и идёт. Убирается только сама заглушка на том конце,
+// где выработка с чем-то стыкуется. Боковые поверхности соседних труб смыкаются
+// внутри узла и образуют непрерывный ход: сечение сохраняет свою форму, сеть
+// остаётся цельной, а пластин поперёк потока больше нет.
+//
+// Заглушка остаётся там, где она и должна быть: на свободном конце и в тупике —
+// это забой, его видно и он обязан быть закрыт.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Какие торцы выработки нужно закрыть заглушкой. */
+interface CapMask {
+  /** Начало (узел fromId) — свободный конец, стыка нет. */
+  start: boolean;
+  /** Конец (узел toId) — свободный конец, стыка нет. */
+  end: boolean;
+}
+
+/**
+ * Считает, сколько выработок сходится в каждом узле.
+ *
+ * По этому числу и решается судьба заглушки: единица — свободный конец, его
+ * надо закрыть; два и больше — стык, заглушка уйдёт внутрь соседней трубы и
+ * будет только мешать.
+ */
+function nodeDegrees(branches: TopoBranch[]): Map<string, number> {
+  const deg = new Map<string, number>();
+  for (const b of branches) {
+    deg.set(b.fromId, (deg.get(b.fromId) ?? 0) + 1);
+    deg.set(b.toId, (deg.get(b.toId) ?? 0) + 1);
+  }
+  return deg;
+}
+
 /**
  * Ключ формы сечения. Выработки с одинаковым ключом рисуются одним
  * InstancedMesh — это и даёт выигрыш по скорости.
@@ -134,10 +182,16 @@ export interface BuiltScene {
  * Размеры округляем до 10 см: разница в сантиметрах на экране не видна, а без
  * округления почти каждая выработка получала бы собственный меш, и смысл
  * пакетной отрисовки терялся.
+ *
+ * Набор заглушек тоже входит в ключ: он задаёт саму геометрию профиля, а
+ * профиль у пакетной отрисовки один на всю группу. В худшем случае групп
+ * становится вчетверо больше, но на деле почти вся схема — сплошные стыки
+ * без заглушек, и групп прибавляется единицы.
  */
-function shapeKey(b: TopoBranch): string {
+function shapeKey(b: TopoBranch, cap?: CapMask): string {
   const r = (v: number) => Math.round((v ?? 0) * 10) / 10;
   const s = b.shape ?? "rect";
+  const c = cap ? `${cap.start ? "S" : ""}${cap.end ? "E" : ""}|` : "";
   // Площадь — обязательная часть ключа.
   //
   // Профиль группы строится по ПЕРВОЙ её выработке и надевается на все
@@ -153,12 +207,12 @@ function shapeKey(b: TopoBranch): string {
   const a = `:${Math.round((b.area ?? 0) * 10) / 10}`;
   // Тупики выделяются в отдельные группы: у них своя, пониженная
   // непрозрачность, а она задаётся материалом — одним на всю группу.
-  if (b.isDead) return `dead|${s}${a}:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.diameter ?? 0)}`;
-  if (s === "round") return `round:${r(b.diameter ?? 0)}${a}`;
-  if (s === "trap") return `trap:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.trapTopWidth ?? 0)}${a}`;
-  if (s === "arch") return `arch:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.archHeight ?? 0)}${a}`;
-  if (s === "custom") return `custom${a}`;
-  return `rect:${r(b.rectWidth)}:${r(b.rectHeight)}${a}`;
+  if (b.isDead) return `${c}dead|${s}${a}:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.diameter ?? 0)}`;
+  if (s === "round") return `${c}round:${r(b.diameter ?? 0)}${a}`;
+  if (s === "trap") return `${c}trap:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.trapTopWidth ?? 0)}${a}`;
+  if (s === "arch") return `${c}arch:${r(b.rectWidth)}:${r(b.rectHeight)}:${r(b.archHeight ?? 0)}${a}`;
+  if (s === "custom") return `${c}custom${a}`;
+  return `${c}rect:${r(b.rectWidth)}:${r(b.rectHeight)}${a}`;
 }
 
 /**
@@ -171,7 +225,7 @@ function shapeKey(b: TopoBranch): string {
  * Единичная длина позволяет растянуть один и тот же меш на любую выработку
  * матрицей экземпляра — именно так работает InstancedMesh.
  */
-function buildProfileGeometry(b: TopoBranch): THREE.BufferGeometry {
+function buildProfileGeometry(b: TopoBranch, cap: CapMask): THREE.BufferGeometry {
   const outline = sectionOutline(b);
   const n = outline.length;
 
@@ -197,16 +251,29 @@ function buildProfileGeometry(b: TopoBranch): THREE.BufferGeometry {
     for (let k = 0; k < 6; k++) nor.push(0, nu, nr);
   }
 
-  // Торцы — веером от центра контура. Без них выработка выглядит открытым
-  // рукавом: на повороте и в тупике сквозь неё видно то, что позади.
+  // Торцы — веером от центра контура, и ТОЛЬКО на свободных концах.
+  //
+  // На свободном конце заглушка обязательна: без неё выработка выглядит
+  // открытым рукавом, сквозь который видно то, что позади. В тупике это ещё и
+  // забой — физически существующая стенка.
+  //
+  // А вот на стыке заглушку ставить нельзя. Труба входит в узел, где её ждут
+  // другие выработки, и торец оказывается внутри их тел — плоской пластиной
+  // поперёк потока. Именно эти пластины и читались на просвет как двойное
+  // пересечение. Без них боковые поверхности соседних труб смыкаются, и через
+  // узел идёт непрерывный ход нужного сечения.
   for (let i = 1; i < n - 1; i++) {
     const c = outline[0], p = outline[i], q = outline[i + 1];
-    // Начало (нормаль против оси)
-    pos.push(0, c.u, c.r, 0, q.u, q.r, 0, p.u, p.r);
-    for (let k = 0; k < 3; k++) nor.push(-1, 0, 0);
-    // Конец (нормаль по оси)
-    pos.push(1, c.u, c.r, 1, p.u, p.r, 1, q.u, q.r);
-    for (let k = 0; k < 3; k++) nor.push(1, 0, 0);
+    if (cap.start) {
+      // Начало (нормаль против оси)
+      pos.push(0, c.u, c.r, 0, q.u, q.r, 0, p.u, p.r);
+      for (let k = 0; k < 3; k++) nor.push(-1, 0, 0);
+    }
+    if (cap.end) {
+      // Конец (нормаль по оси)
+      pos.push(1, c.u, c.r, 1, p.u, p.r, 1, q.u, q.r);
+      for (let k = 0; k < 3; k++) nor.push(1, 0, 0);
+    }
   }
 
   const g = new THREE.BufferGeometry();
@@ -232,7 +299,7 @@ function buildProfileGeometry(b: TopoBranch): THREE.BufferGeometry {
  * У круглого сечения продольные рёбра берём не все: 12 линий вдоль ствола
  * превращают его в решётку. Достаточно четырёх — они и дают ощущение трубы.
  */
-function buildProfileEdges(b: TopoBranch): THREE.BufferGeometry {
+function buildProfileEdges(b: TopoBranch, cap: CapMask): THREE.BufferGeometry {
   const outline = sectionOutline(b);
   const n = outline.length;
   const round = (b.shape ?? "rect") === "round";
@@ -241,9 +308,14 @@ function buildProfileEdges(b: TopoBranch): THREE.BufferGeometry {
   for (let i = 0; i < n; i++) {
     const p0 = outline[i];
     const p1 = outline[(i + 1) % n];
-    // Контур сечения на обоих торцах.
-    pos.push(0, p0.u, p0.r, 0, p1.u, p1.r);
-    pos.push(1, p0.u, p0.r, 1, p1.u, p1.r);
+    // Контур сечения — только там же, где и заглушка.
+    //
+    // Замкнутое кольцо на стыке обводит торец, которого больше нет, и в
+    // режиме «Каркас» именно оно рисует поперечную перемычку в каждом узле.
+    // Продольные рёбра при этом остаются и идут через узел насквозь — сеть
+    // читается сплошной линией, как и должна.
+    if (cap.start) pos.push(0, p0.u, p0.r, 0, p1.u, p1.r);
+    if (cap.end) pos.push(1, p0.u, p0.r, 1, p1.u, p1.r);
     // Продольное ребро. У круга — только каждое третье, иначе получается сетка.
     if (!round || i % 3 === 0) pos.push(0, p0.u, p0.r, 1, p0.u, p0.r);
   }
@@ -305,7 +377,20 @@ export function buildMineScene(input: SceneInput): BuiltScene {
   const kz = zScale > 0 ? zScale : 1;
 
   // ── Группировка выработок по форме сечения ────────────────────────────
+  //
+  // Сколько выработок сходится в узле, считаем по ВСЕЙ схеме, а не по
+  // уцелевшим: узел с испорченными координатами всё равно остаётся стыком, и
+  // заглушка на нём не нужна.
+  const degree = nodeDegrees(branches);
+  /** Заглушка нужна только там, где выработка ни с чем не стыкуется. */
+  const capOf = (b: TopoBranch): CapMask => ({
+    start: (degree.get(b.fromId) ?? 0) < 2,
+    end: (degree.get(b.toId) ?? 0) < 2,
+  });
+
   const groups = new Map<string, TopoBranch[]>();
+  /** Заглушки группы — те же, что у любой её выработки: они часть ключа. */
+  const groupCap = new Map<string, CapMask>();
   for (const b of branches) {
     // Тупиковые выработки СТРОЯТСЯ наравне с остальными.
     //
@@ -330,9 +415,10 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     // попадаются, и терять из-за одного всю картину нельзя.
     if (!isFinite(fn.x) || !isFinite(fn.y) || !isFinite(fn.z)) continue;
     if (!isFinite(tn.x) || !isFinite(tn.y) || !isFinite(tn.z)) continue;
-    const k = shapeKey(b);
+    const cap = capOf(b);
+    const k = shapeKey(b, cap);
     let arr = groups.get(k);
-    if (!arr) { arr = []; groups.set(k, arr); }
+    if (!arr) { arr = []; groups.set(k, arr); groupCap.set(k, cap); }
     arr.push(b);
   }
 
@@ -342,9 +428,11 @@ export function buildMineScene(input: SceneInput): BuiltScene {
 
   const tmpColor = new THREE.Color();
 
-  for (const [, list] of groups) {
+  for (const [key, list] of groups) {
     if (list.length === 0) continue;
 
+    // Набор заглушек у всей группы один — он входит в ключ формы.
+    const cap = groupCap.get(key) ?? { start: true, end: true };
     // Тупик в группе может быть только со своими: ключ формы их разделяет.
     const dead = list[0].isDead === true;
     // Тупик всегда полупрозрачен, даже в сплошном режиме: в этом и состоит
@@ -353,7 +441,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     const bodyOpacity = dead ? Math.min(opacity, DEAD_OPACITY) : opacity;
     const bodyGlass = glass || dead;
 
-    const geom = buildProfileGeometry(list[0]);
+    const geom = buildProfileGeometry(list[0], cap);
     // Материал один на группу: цвет каждой выработки задаётся через
     // setColorAt (instanceColor), а не отдельным материалом — иначе пакетная
     // отрисовка распалась бы обратно на отдельные вызовы.
@@ -376,7 +464,14 @@ export function buildMineScene(input: SceneInput): BuiltScene {
       // Обе стороны: в «стеклянном» режиме сквозь ближнюю стенку видна
       // внутренняя поверхность дальней, и без DoubleSide выработка выглядела
       // бы рассечённой.
-      side: bodyGlass ? THREE.DoubleSide : THREE.FrontSide,
+      //
+      // Открытый торец (стык в узле) — вторая причина для DoubleSide, уже и в
+      // сплошном режиме. Соседняя труба закрывает его не всегда: на остром
+      // повороте или при переходе на меньшее сечение часть отверстия остаётся
+      // открытой. С отсечением задних граней там была бы сквозная дыра на фон;
+      // с DoubleSide видна внутренняя поверхность выработки — то есть ровно то,
+      // что и должно быть видно внутри хода.
+      side: (bodyGlass || !cap.start || !cap.end) ? THREE.DoubleSide : THREE.FrontSide,
       transparent: bodyGlass,
       opacity: bodyOpacity,
       // Прозрачное тело в буфер глубины не пишем: иначе выработка, нарисованная
@@ -429,7 +524,7 @@ export function buildMineScene(input: SceneInput): BuiltScene {
     // считаные пиксели, рёбра сливаются в сплошную сетку и только мешают, а
     // памяти под них уходит вдвое против заливки.
     if (wantEdges && list.length > 0 && branches.length <= EDGE_LIMIT) {
-      const proto = buildProfileEdges(list[0]);
+      const proto = buildProfileEdges(list[0], cap);
       const src = proto.getAttribute("position") as THREE.BufferAttribute;
       const cnt = src.count;
       const dst = new Float32Array(cnt * 3 * list.length);
