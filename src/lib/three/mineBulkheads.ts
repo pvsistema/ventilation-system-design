@@ -49,7 +49,7 @@ import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { sectionOutline } from "@/lib/tube3d";
 import { BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
-import { toThree } from "./mineScene";
+import { toThree, branchSectionQuaternion } from "./mineScene";
 
 /**
  * Потолок числа объёмных перемычек в сцене.
@@ -749,8 +749,6 @@ export function buildMineBulkheads(input: BulkheadsInput): MineBulkheads | null 
   let drawCalls = 0;
   const wantEdges = total <= EDGE_LIMIT;
 
-  // Ось, вдоль которой построены и труба выработки, и плита сооружения.
-  const axisX = new THREE.Vector3(1, 0, 0);
   // Масштаб сечения — тот же множитель плана, которым растянуто тело выработки
   // (см. branchMatrix в mineScene): иначе перемычка и труба разошлись бы в
   // размере при «Масштаб XY ×2,7». Одинаковый по всем осям — иначе круглый
@@ -765,13 +763,13 @@ export function buildMineBulkheads(input: BulkheadsInput): MineBulkheads | null 
     const thick = Math.max(0.06, THICK[g.kind] * sizeK);
 
     // ── Матрицы экземпляров ──────────────────────────────────────────────
-    // Поворот берётся РОВНО ТОТ ЖЕ, что у тела выработки (branchMatrix в
-    // mineScene): кратчайший поворот оси +X на направление ветви. Считать
-    // собственный базис «вверх поперёк оси» нельзя — на наклонной выработке он
-    // разойдётся с трубой, и свод плиты окажется повёрнут относительно свода
-    // выработки. Плита обязана сидеть в трубе как влитая, а не «примерно там».
+    // Поворот берётся РОВНО ТОТ ЖЕ, что у тела выработки — общей функцией из
+    // mineScene. Считать его здесь по-своему нельзя: на наклонном съезде два
+    // разных способа дают разный разворот вокруг оси, и свод плиты оказывается
+    // повёрнут относительно свода выработки. Плита обязана сидеть в трубе как
+    // влитая, а не «примерно там».
     const matrices: THREE.Matrix4[] = g.items.map(p => {
-      const q = new THREE.Quaternion().setFromUnitVectors(axisX, p.dir);
+      const q = branchSectionQuaternion(p.dir);
       return new THREE.Matrix4().compose(p.pos, q, scl);
     });
 
