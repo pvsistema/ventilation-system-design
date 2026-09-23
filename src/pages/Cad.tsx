@@ -61,7 +61,7 @@ import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult, type VehicleFireResult } from "@/lib/fireCalculator";
-import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, junctionTransmission, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
+import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, junctionTransmission, calcExplosion, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { BLAST_MIXES, blastMixById, blastMixAge, blastMixAgeLabel, calcBlastBulkheadThickness, bulkheadDimensions, reflectedPressure, BLAST_SAFETY_FACTOR } from "@/lib/blastBulkhead";
 import { calcGasZone, gasZoneTime, EXPLOSIVE_CH4_CONC, DEFAULT_I_NEPOGASH, GAS_TIME_PLA, GAS_TIME_EMERGENCY_MIN } from "@/lib/gasZone";
 import { type LogEntry } from "@/components/cad/LogPanel";
@@ -1334,7 +1334,29 @@ export default function CadPage() {
    */
   const [explosionResultByBranch, setExplosionResultByBranch] = useState<Map<string, ExplosionResult>>(new Map());
   const [explosionCalcDone, setExplosionCalcDone] = useState(false);
+  // Предварительный расчёт очага — считается на месте, как только на ветви
+  // выставлены параметры взрыва. Наполняется ниже (см. explosionPreview).
+  const [explosionPreview, setExplosionPreview] = useState<{
+    /** Давление набегающей волны в данной ветви, кПа. */
+    pressureAt: (b: TopoBranch) => number;
+    /** Полный результат — им же подсвечиваются зоны на схеме до полного расчёта. */
+    res: ExplosionResult;
+    /** Ветвь-очаг. */
+    srcId: string;
+    /** Радиусы зон поражения от очага. */
+    zones: { lethal: number; heavy: number; medium: number; light: number };
+  } | null>(null);
   const [showExplosionZones, setShowExplosionZones] = useState(false);
+  /**
+   * Результат взрыва, по которому сейчас строится картинка.
+   *
+   * После полного расчёта — он; до него — предварительная оценка очага. Одна
+   * переменная на всё: легенда, шкала волны и окраска схемы обязаны показывать
+   * ОДНО И ТО ЖЕ, иначе на шкале будут одни радиусы, а на схеме другие.
+   */
+  const activeExplosionRes = explosionCalcDone
+    ? explosionResult
+    : (explosionPreview?.res ?? null);
   // Текущее расстояние фронта волны на шкале (метры)
   const [blastWaveRadius, setBlastWaveRadius] = useState(0);
   // Максимум шкалы (м) — радиус безопасной зоны
@@ -1946,6 +1968,86 @@ export default function CadPage() {
   const [uoTooltip, setUoTooltip] = useState<{ name: string; x: number; y: number } | null>(null);
   // ID ветви, для которой открыли панель через клик на fan-символ
   const [fanSymbolBranchId, setFanSymbolBranchId] = useState<string | null>(null);
+
+  /**
+   * ПРЕДВАРИТЕЛЬНЫЙ РАСЧЁТ ОЧАГА — сразу по введённым параметрам.
+   *
+   * ЗАЧЕМ. Толщину перемычки и зоны поражения подбирают перебором: меняют
+   * смесь, время загазирования, массу ВВ — и хотят видеть результат сразу.
+   * Раньше для этого требовалось нажать «Расчёт взрыва»: обращение к серверу,
+   * обход всей сети. Для подбора это неприемлемо долго.
+   *
+   * Здесь тот же расчёт идёт НА МЕСТЕ и только для очага: давление в точке по
+   * канальной модели от расстояния. Полный сетевой расчёт остаётся за кнопкой —
+   * он ведёт волну по графу с потерями на сопряжениях и даёт более низкие,
+   * более точные значения. Поэтому предварительная оценка всегда КОНСЕРВАТИВНА
+   * ((завышает), и перемычка по ней не окажется тоньше потребной.
+   */
+  useEffect(() => {
+    const src = branches.find(b => b.hasExplosion);
+    if (!src) { setExplosionPreview(null); return; }
+
+    const zoneLen = src.explosionGasZoneAuto
+      ? (calcGasZone({
+          kind: src.explosionGasZoneKind ?? "heading",
+          time_min: gasZoneTime(blastDuringEmergency, blastGasTimeFactual),
+          emission_m3min: src.explosionGasEmission
+            ?? ((src.explosionGasZoneKind ?? "heading") === "preserved" ? DEFAULT_I_NEPOGASH : 0),
+          area_m2: src.area ?? 0,
+          seamThickness_m: src.explosionSeamThickness,
+          caveStep_m: src.explosionCaveStep,
+          branchLength_m: src.length,
+        })?.length_m ?? (src.explosionGasZoneLength ?? 100))
+      : (src.explosionGasZoneLength ?? 100);
+
+    const res = calcExplosion({
+      sourceType: src.explosionSourceType ?? "mass",
+      gasId: src.explosionGasId ?? "methane",
+      gasVolume_m3: src.explosionGasVolume ?? 100,
+      gasZoneLength_m: zoneLen,
+      gasInitialPressure_kPa: src.explosionGasP0 ?? 0,
+      gasConcentration: src.explosionGasConcentration
+        ?? (GAS_TYPES.find(g => g.id === (src.explosionGasId ?? "methane"))?.stoichConc ?? 9.5),
+      explosiveId: src.explosionExplosiveId ?? "ammonit",
+      explosiveMass_kg: src.explosionExplosiveMass ?? 100,
+      excavationArea_m2: src.area ?? 12,
+      excavationLength_m: src.length ?? 100,
+      ambientPressure_kPa: 101.3,
+      considerWalls: src.explosionConsiderWalls ?? true,
+      zParticipation: src.explosionZ ?? 0.5,
+      thresholds: blastThresholds,
+    });
+    if (res.noExplosion) { setExplosionPreview(null); return; }
+
+    // Расстояние от очага до середины ветви — по координатам узлов. Это прямая
+    // линия, а не путь по выработкам: для предварительной оценки её достаточно,
+    // и она заведомо не длиннее реального пути, то есть давление не занижает.
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    const midOf = (b: TopoBranch) => {
+      const f = nodeById.get(b.fromId), t = nodeById.get(b.toId);
+      if (!f || !t) return null;
+      return { x: (f.x + t.x) / 2, y: (f.y + t.y) / 2, z: (f.z + t.z) / 2 };
+    };
+    const srcMid = midOf(src);
+
+    const zoneOf = (level: "lethal" | "heavy" | "medium" | "light") =>
+      res.zones.find(z => z.hazardLevel === level)?.radius_m ?? 0;
+
+    setExplosionPreview({
+      pressureAt: (b: TopoBranch) => {
+        const m = midOf(b), s = srcMid;
+        if (!m || !s) return 0;
+        const d = Math.sqrt((m.x - s.x) ** 2 + (m.y - s.y) ** 2 + (m.z - s.z) ** 2);
+        return res.pressureAtDistance(d);
+      },
+      res,
+      srcId: src.id,
+      zones: {
+        lethal: zoneOf("lethal"), heavy: zoneOf("heavy"),
+        medium: zoneOf("medium"), light: zoneOf("light"),
+      },
+    });
+  }, [branches, nodes, blastThresholds, blastDuringEmergency, blastGasTimeFactual]);
 
   // Если активна вкладка "fan", но у ветви нет вентилятора — сбросить на "topology".
   // Исключение: вкладку открыли кликом по УО вентилятора на этой же ветви —
@@ -6517,9 +6619,25 @@ export default function CadPage() {
               icon={showExplosionZones ? "EyeOff" : "Eye"}
               label={showExplosionZones ? "Скрыть" : "Показать"}
               sublabel="зоны взрыва"
-              disabled={!explosionCalcDone}
+              // Доступна и до полного расчёта: зоны строятся по предварительной
+              // оценке очага, как только заданы его параметры.
+              disabled={!explosionCalcDone && !explosionPreview}
               active={showExplosionZones}
-              onClick={() => setShowExplosionZones(v => !v)}
+              onClick={() => {
+                const next = !showExplosionZones;
+                setShowExplosionZones(next);
+                // Шкала волны стоит на нуле, пока не было полного расчёта, —
+                // без неё окраска не появится вовсе. Ставим на безопасный
+                // радиус: видна вся картина поражения целиком.
+                if (next && blastWaveRadius <= 0 && explosionPreview) {
+                  const rMax = Math.max(
+                    explosionPreview.zones.light,
+                    explosionPreview.zones.medium, 1,
+                  );
+                  setBlastMaxRadius(Math.ceil(rMax * 1.2));
+                  setBlastWaveRadius(Math.ceil(rMax * 1.2));
+                }
+              }}
             />
             <RibbonBigBtn
               icon="RefreshCw"
@@ -9764,9 +9882,16 @@ export default function CadPage() {
                       Расчёт разрушения отвечает «устоит ли то, что построено».
                       Здесь обратный и практический вопрос — «что строить»: какой
                       толщины нужна перемычка под посчитанное давление отражения. */}
-                  {explosionCalcDone && (() => {
-                    // Перемычки, до которых волна дошла: только для них есть
-                    // ΔP_отр, а без него расчёт толщины лишён смысла.
+                  {(() => {
+                    // Расчёт идёт СРАЗУ по введённым параметрам очага, не дожидаясь
+                    // нажатия «Расчёт взрыва».
+                    //
+                    // ЗАЧЕМ. Толщина перемычки — проектное решение, и подбирают его
+                    // перебором: меняют смесь, время загазирования, массу ВВ и смотрят,
+                    // что выходит. Требовать на каждый такой шаг полного расчёта сети
+                    // (обращение к серверу, обход графа) — значит превратить подбор в
+                    // ожидание. Параметры очага уже введены здесь же, рядом, и этого
+                    // достаточно, чтобы посчитать давление в любой точке.
                     const withBulkheads = branches.filter(br => br.hasBulkhead);
                     if (withBulkheads.length === 0) return null;
 
@@ -9776,10 +9901,20 @@ export default function CadPage() {
                       ? blastMixCustomR
                       : mix.rBend[age];
 
+                    // Давление от ТЕКУЩЕГО очага по прямому расстоянию до перемычки.
+                    // Это предварительная оценка: полный расчёт ведёт волну по графу
+                    // выработок с потерями на сопряжениях, и там давление ниже. После
+                    // «Расчёта взрыва» берётся уже оно — см. ветвление ниже.
+                    const src = explosionPreview;
+
                     const rows = withBulkheads.map(br => {
                       const dim = bulkheadDimensions(br);
-                      // Давление НАБЕГАЮЩЕЙ волны на перемычке — из расчёта взрыва.
-                      const inc_kPa = br.explosionComputedDeltaP ?? 0;
+                      // Давление НАБЕГАЮЩЕЙ волны на перемычке.
+                      // После полного расчёта — из сети; до него — прямая оценка.
+                      const fromNet = br.explosionComputedDeltaP ?? 0;
+                      const inc_kPa = explosionCalcDone && fromNet > 0
+                        ? fromNet
+                        : (src ? src.pressureAt(br) : 0);
                       // Перемычка стоит поперёк хода волны и тормозит её до нуля,
                       // поэтому в формулу идёт давление ОТРАЖЕНИЯ (п. 25): оно вдвое
                       // и более выше набегающего. По набегающему перемычка вышла бы
@@ -9804,6 +9939,13 @@ export default function CadPage() {
                         РБ №343 от 08.11.2024, п. 26, формулы (6)–(7). Плита шарнирно
                         опёрта, k<sub>з</sub> = {BLAST_SAFETY_FACTOR}.
                       </div>
+                      {!explosionCalcDone && (
+                        <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px]" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "var(--c-amber-ink, #92400e)" }}>
+                          Предварительная оценка по прямому расстоянию до очага.
+                          Нажмите «Расчёт взрыва» — волна пойдёт по выработкам с
+                          потерями на сопряжениях, и давление уточнится (обычно вниз).
+                        </div>
+                      )}
 
                       {/* Смесь и условия — общие для объекта */}
                       <div className="px-2 py-1" style={{ borderBottom: "1px solid #f0f0f0" }}>
@@ -9863,11 +10005,16 @@ export default function CadPage() {
                                 {r.thickness_m} м
                               </span>
                             </div>
+                            {/* Давление в МПа с ТРЕМЯ знаками: на перемычках вдали
+                                от очага оно составляет сотые доли МПа, и округление
+                                до десятых показывало «0 МПа» там, где волна есть.
+                                Именно от этого нуля толщина выходила нулевой. */}
                             <div className="text-[9px] text-gray-500 mt-0.5">
-                              ΔP<sub>падающей</sub> = {Math.round(inc_kPa / 100) / 10} МПа → ΔP<sub>отр</sub> = {Math.round(refl_kPa / 100) / 10} МПа
+                              ΔP<sub>падающей</sub> = {(inc_kPa / 1000).toFixed(3)} МПа → ΔP<sub>отр</sub> = {(refl_kPa / 1000).toFixed(3)} МПа
                             </div>
                             <div className="text-[9px] text-gray-500">
                               сечение {dim.height_m}×{dim.width_m} м · формула ({r.formula})
+                              {!explosionCalcDone && <span style={{ color: "#a16207" }}> · предварительно</span>}
                             </div>
                             {(r.clampedMin || r.clampedMax || dim.approximate) && (
                               <div className="text-[9px] mt-0.5" style={{ color: r.clampedMax ? "var(--c-red, #dc2626)" : "#a16207" }}>
@@ -13153,9 +13300,15 @@ export default function CadPage() {
                 return map.size > 0 ? map : undefined;
               })()}
               branchExplosionColors={(() => {
-                if (!showExplosionZones || !explosionCalcDone || !explosionResult) return undefined;
+                // Подсветка работает и ДО полного расчёта — по предварительной
+                // оценке очага. Иначе, чтобы увидеть зоны на схеме, приходилось
+                // каждый раз запускать расчёт сети, хотя параметры очага уже
+                // введены и давление по ним считается мгновенно.
+                const previewRes = !explosionCalcDone ? explosionPreview?.res : null;
+                const baseRes = explosionCalcDone ? explosionResult : previewRes;
+                if (!showExplosionZones || !baseRes) return undefined;
                 // Взрыва не было — окрашивать выработки не по чему.
-                if (explosionResult.noExplosion) return undefined;
+                if (baseRes.noExplosion) return undefined;
                 if (blastWaveRadius <= 0) return undefined;
                 const map = new Map<string, {
                   color: string; hazardLevel: string;
@@ -13171,10 +13324,13 @@ export default function CadPage() {
 
                 // Очаги взрыва. У каждого — СВОЙ результат расчёта: при
                 // нескольких очагах давление нельзя считать по чужому заряду.
-                const sources = branches.filter(b => b.hasExplosion && b.explosionComputedMaxP > 0);
+                // До полного расчёта поле explosionComputedMaxP ещё нулевое —
+                // очаг берётся по самой отметке взрыва на ветви.
+                const sources = branches.filter(b => b.hasExplosion
+                  && (explosionCalcDone ? b.explosionComputedMaxP > 0 : true));
                 if (sources.length === 0) return undefined;
                 const resFor = (branchId: string) =>
-                  explosionResultByBranch.get(branchId) ?? explosionResult;
+                  explosionResultByBranch.get(branchId) ?? baseRes;
 
                 // Длина ветви по координатам узлов (3D)
                 const nodeByIdMap = new Map(nodes.map(n => [n.id, n]));
@@ -13709,7 +13865,7 @@ export default function CadPage() {
             )}
 
             {/* ── Легенда зон взрыва с радиусами ────────────────────── */}
-            {showExplosionZones && explosionCalcDone && explosionResult && !explosionResult.noExplosion && (
+            {showExplosionZones && activeExplosionRes && !activeExplosionRes.noExplosion && (
               <div style={{
                 position: "absolute", bottom: 12, left: 12, zIndex: 20,
                 background: "rgba(10,6,0,0.88)", borderRadius: 10,
@@ -13732,7 +13888,7 @@ export default function CadPage() {
                     { color: EXPLOSION_HAZARD_COLORS.safe,   label: "Безопасно",      dp: `ΔP < ${blastThresholds.safeLimit} кПа`, hazard: "safe" },
                   ];
                   return zoneDefs.map(({ color, label, dp, hazard }) => {
-                    const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);
+                    const zone = activeExplosionRes.zones.find(z => z.hazardLevel === hazard);
                     const r = zone?.radius_m ?? 0;
                     const isActive = blastWaveRadius > 0 && r > 0 && blastWaveRadius >= r;
                     return (
@@ -14250,7 +14406,7 @@ export default function CadPage() {
             )}
 
             {/* ─── Шкала распространения взрывной волны ────────────── */}
-            {showExplosionZones && explosionCalcDone && explosionResult && !explosionResult.noExplosion && (
+            {showExplosionZones && activeExplosionRes && !activeExplosionRes.noExplosion && (
               <div style={{
                 position: "absolute", bottom: 0, left: 0, right: 0,
                 background: "rgba(10,8,0,0.93)", borderTop: "2px solid var(--c-amber, #b45309)",
@@ -14321,14 +14477,14 @@ export default function CadPage() {
                   }} />
 
                   {/* Маркеры радиусов зон */}
-                  {explosionResult && blastMaxRadius > 0 && [
+                  {activeExplosionRes && blastMaxRadius > 0 && [
                     { hazard: "lethal",  color: EXPLOSION_HAZARD_COLORS.lethal, label: "Л" },
                     { hazard: "heavy",   color: EXPLOSION_HAZARD_COLORS.heavy, label: "Т" },
                     { hazard: "medium",  color: EXPLOSION_HAZARD_COLORS.medium, label: "С" },
                     { hazard: "light",   color: EXPLOSION_HAZARD_COLORS.light, label: "Л" },
                     { hazard: "safe",    color: EXPLOSION_HAZARD_COLORS.safe, label: "Б" },
                   ].map(({ hazard, color, label }) => {
-                    const zone = explosionResult.zones.find(z => z.hazardLevel === hazard);
+                    const zone = activeExplosionRes.zones.find(z => z.hazardLevel === hazard);
                     const r = zone?.radius_m ?? 0;
                     if (r <= 0 || r > blastMaxRadius) return null;
                     const pct = Math.min(100, (r / blastMaxRadius) * 100);
@@ -14371,7 +14527,7 @@ export default function CadPage() {
                     <span style={{
                       fontSize: 10, color: "#fde68a", whiteSpace: "nowrap",
                     }}>
-                      ΔP = {explosionResult.pressureAtDistance(blastWaveRadius).toFixed(1)} кПа
+                      ΔP = {activeExplosionRes.pressureAtDistance(blastWaveRadius).toFixed(1)} кПа
                     </span>
                   )}
                 </div>

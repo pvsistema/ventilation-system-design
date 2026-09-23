@@ -51,6 +51,19 @@ export interface ExplosionRunParams {
   duringEmergency?: boolean;
   /** Фактическое время загазирования, мин (п. 12); учитывается при аварии. */
   gasZoneTimeFactual?: number;
+  /**
+   * Считать ТОЛЬКО на месте, не обращаясь к серверу.
+   *
+   * ЗАЧЕМ. Толщину перемычки подбирают перебором: меняют смесь, время
+   * загазирования, массу ВВ — и сразу смотрят результат. Ходить на сервер на
+   * каждое нажатие клавиши нельзя, да и незачем: формулы на клиенте те же
+   * самые. Поэтому предварительный расчёт идёт локально, а полный (с записью
+   * в схему и протокол) — как раньше, через сервер.
+   *
+   * Физика в обоих случаях ОДНА И ТА ЖЕ — это один и тот же код, а не вторая
+   * его копия «для предпросмотра». Разойтись они не могут.
+   */
+  localOnly?: boolean;
 }
 
 export interface ExplosionRunResult {
@@ -169,7 +182,8 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   // Ответы сервера по номеру ветви. Если связи нет — карта пустая,
   // и каждый взрыв считается на месте (резервный расчёт ниже).
   const expServerData = new Map<string, ExplosionResult>();
-  try {
+  // Предварительный расчёт на сервер не ходит — см. localOnly.
+  if (!p.localOnly) try {
     const respAll = await fetch(explosionUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
