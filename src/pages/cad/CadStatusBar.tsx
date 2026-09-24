@@ -56,18 +56,18 @@ export default function CadStatusBar({
           <span className="text-gray-400">|</span>
         </>
       )}
-      {selectedNode && <span>Узел: <b>{selectedNode.number || selectedNode.id}</b> · X={selectedNode.x} Y={selectedNode.y} Z={selectedNode.z}</span>}
-      {selectedBranch && <span>Ветвь: <b>{selectedBranch.id}</b> ({selectedBranch.fromId} → {selectedBranch.toId}) · L={selectedBranch.length} м</span>}
+      {selectedNode && <span>Узел: <b className="font-num">{selectedNode.number || selectedNode.id}</b> · <span className="font-num">X={selectedNode.x} Y={selectedNode.y} Z={selectedNode.z}</span></span>}
+      {selectedBranch && <span>Ветвь: <b>{selectedBranch.id}</b> ({selectedBranch.fromId} → {selectedBranch.toId}) · <span className="font-num">L={selectedBranch.length}</span> м</span>}
       {!selectedNode && !selectedBranch && <span>Выделите узел или ветвь</span>}
     </div>
     <div className="flex items-center gap-3">
       <span>Инструмент: <b>{toolLabel(tool)}</b></span>
       <span className="text-gray-400">|</span>
       <span style={{ color: viewInfo.is3D ? "var(--c-purple, #7c3aed)" : "var(--c-blue, #0369a1)", fontWeight: 600 }}>
-        {viewInfo.is3D ? `3D · Az ${viewInfo.azimuth.toFixed(0)}° / El ${viewInfo.elevation.toFixed(0)}°` : "2D План"}
+        <span className="font-num">{viewInfo.is3D ? `3D · Az ${viewInfo.azimuth.toFixed(0)}° / El ${viewInfo.elevation.toFixed(0)}°` : "2D План"}</span>
       </span>
       <span className="text-gray-400">|</span>
-      <span>Z-уровень: {zLevel} м</span>
+      <span>Z-уровень: <span className="font-num">{zLevel}</span> м</span>
       <span className="text-gray-400">|</span>
       {solveResult ? (
         <>

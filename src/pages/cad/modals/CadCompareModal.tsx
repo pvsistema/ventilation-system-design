@@ -38,7 +38,7 @@ export default function CadCompareModal(p: CadCompareModalProps) {
           style={{ background: "rgba(0,0,0,0.45)" }}
           onClick={() => p.setCompareShowDialog(false)}>
           <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[480px]"
-            style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
+            style={{ fontFamily: "var(--font-ui)" }}
             onClick={e => e.stopPropagation()}>
             {/* Шапка */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"

@@ -168,7 +168,7 @@ export default function AppUpdateBanner() {
       style={{
         background: "linear-gradient(90deg,var(--c-blue-bg, #2563eb),var(--c-blue, #1d4ed8))",
         color: "#fff",
-        fontFamily: "Segoe UI, Arial, sans-serif",
+        fontFamily: "var(--font-ui)",
         fontSize: 13,
         boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
       }}>
@@ -238,7 +238,7 @@ export default function AppUpdateBanner() {
     {showSavePrompt && (
       <div
         className="fixed inset-0 z-[100001] flex items-center justify-center"
-        style={{ background: "rgba(15,23,42,0.55)", fontFamily: "Segoe UI, Arial, sans-serif" }}>
+        style={{ background: "rgba(15,23,42,0.55)", fontFamily: "var(--font-ui)" }}>
         <div className="bg-white rounded-xl shadow-2xl w-[440px] max-w-[92vw] overflow-hidden">
           <div className="px-5 py-4 flex items-center gap-2.5 border-b border-gray-100">
             <div className="w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0"
@@ -286,7 +286,7 @@ export default function AppUpdateBanner() {
     {showReminder && !showSavePrompt && (
       <div
         className="fixed bottom-4 right-4 z-[100001] w-[360px] max-w-[92vw] bg-white rounded-xl overflow-hidden"
-        style={{ fontFamily: "Segoe UI, Arial, sans-serif", boxShadow: "0 10px 30px rgba(0,0,0,0.25)", border: "1px solid var(--c-b1, #e5e7eb)" }}>
+        style={{ fontFamily: "var(--font-ui)", boxShadow: "0 10px 30px rgba(0,0,0,0.25)", border: "1px solid var(--c-b1, #e5e7eb)" }}>
         <div className="px-4 py-3 flex items-center gap-2.5" style={{ background: "linear-gradient(90deg,var(--c-blue-bg, #2563eb),var(--c-blue, #1d4ed8))", color: "#fff" }}>
           <Icon name="Sparkles" size={16} className="flex-shrink-0" />
           <div className="flex-1 font-semibold text-[13px]">Установлена устаревшая версия</div>

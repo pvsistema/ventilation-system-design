@@ -42,7 +42,7 @@ export default function CadAppInfoModals(p: CadAppInfoModalsProps) {
           <div className="fixed inset-0 z-[9999] flex items-center justify-center"
             style={{ background: "rgba(0,0,0,0.45)" }}>
             <div className="bg-white rounded shadow-xl border border-gray-300 w-[340px]"
-              style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
+              style={{ fontFamily: "var(--font-ui)" }}>
               <div className="flex items-center gap-2 px-4 py-3 border-b border-gray-200"
                 style={{ background: "var(--c-s2, #f5f5f5)", borderRadius: "8px 8px 0 0" }}>
                 <Icon name="FileQuestion" size={16} className="text-yellow-600" />
@@ -83,7 +83,7 @@ export default function CadAppInfoModals(p: CadAppInfoModalsProps) {
           style={{ background: "rgba(0,0,0,0.45)" }}
           onClick={() => p.setShowAbout(false)}>
           <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[460px] overflow-hidden"
-            style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}
+            style={{ fontFamily: "var(--font-ui)" }}
             onClick={(e) => e.stopPropagation()}>
             {/* Шапка диалога */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"

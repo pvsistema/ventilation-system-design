@@ -1963,7 +1963,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
       <div className="flex flex-col shadow-2xl border border-gray-400"
-        style={{ width: 900, height: 580, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+        style={{ width: 900, height: 580, background: "var(--c-s1, #fff)", fontFamily: "var(--font-ui)" }}
         onClick={e => e.stopPropagation()}>
 
         {/* Заголовок */}

@@ -51,7 +51,7 @@ export default function CadTopologyModals(p: CadTopologyModalsProps) {
       {p.resetSurveyDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
           <div className="flex flex-col shadow-2xl border border-gray-400"
-            style={{ width: 400, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+            style={{ width: 400, background: "var(--c-s1, #fff)", fontFamily: "var(--font-ui)" }}>
             <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
               style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
               <span className="text-[12px] font-semibold text-gray-800">
@@ -109,7 +109,7 @@ export default function CadTopologyModals(p: CadTopologyModalsProps) {
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
             <div className="flex flex-col shadow-2xl border border-gray-400"
-              style={{ width: 420, maxHeight: "85vh", background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+              style={{ width: 420, maxHeight: "85vh", background: "var(--c-s1, #fff)", fontFamily: "var(--font-ui)" }}>
               <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300 flex-shrink-0"
                 style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
                 <span className="text-[12px] font-semibold text-gray-800">
@@ -217,7 +217,7 @@ export default function CadTopologyModals(p: CadTopologyModalsProps) {
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}>
             <div className="flex flex-col shadow-2xl border border-gray-400"
-              style={{ width: 360, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+              style={{ width: 360, background: "var(--c-s1, #fff)", fontFamily: "var(--font-ui)" }}>
               {/* Заголовок */}
               <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
                 style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
@@ -268,7 +268,7 @@ export default function CadTopologyModals(p: CadTopologyModalsProps) {
         <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
           onClick={() => p.setSquadDialog(null)}>
           <div className="flex flex-col shadow-2xl border border-gray-400"
-            style={{ width: 320, background: "var(--c-s1, #fff)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}
+            style={{ width: 320, background: "var(--c-s1, #fff)", fontFamily: "var(--font-ui)" }}
             onClick={e => e.stopPropagation()}>
             <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300"
               style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>

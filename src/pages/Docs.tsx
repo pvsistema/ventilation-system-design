@@ -89,7 +89,7 @@ export default function Docs() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900"
-      style={{ fontFamily: "Segoe UI, Arial, sans-serif" }}>
+      style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* Шапка */}
       <div className="bg-white border-b border-slate-200">

@@ -1544,7 +1544,7 @@ body{background:white;font-family:Arial,sans-serif}
           position: "absolute",
           left: pos.x, top: pos.y,
           width: winSize.w, height: winSize.h,
-          fontFamily: "Tahoma, Segoe UI, Arial, sans-serif", fontSize: 12, borderRadius: 2,
+          fontFamily: "var(--font-ui)", fontSize: 12, borderRadius: 2,
           pointerEvents: "auto",
           userSelect: winDragRef.current || resizeRef.current ? "none" : undefined,
         }}>

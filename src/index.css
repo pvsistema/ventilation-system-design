@@ -74,6 +74,13 @@
    в отдельном окне), цвет останется прежним.
    ═══════════════════════════════════════════════════════════════════════════ */
 :root {
+  /* ── Шрифты ────────────────────────────────────────────────────────────
+     Golos Text — интерфейс (российский шрифт, хорошая кириллица, узнаваемее
+     системного Segoe UI). JetBrains Mono — числа: координаты, расходы,
+     давления в таблицах и строке состояния стоят ровными колонками. */
+  --font-ui: "Golos Text", "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
+  --font-num: "JetBrains Mono", "IBM Plex Mono", Consolas, monospace;
+
   /* Светлая тема — ровно те цвета, что были в коде до перевода на переменные */
   --c-s1: #ffffff; /* «бумага»: карточки, тело диалогов */
   --c-s2: #f9f9f9; /* панели, подвалы окон */
@@ -693,7 +700,7 @@
   height: 22px;
   outline: none;
   border-radius: 0;
-  font-family: "Segoe UI", Tahoma, sans-serif;
+  font-family: var(--font-ui);
   min-width: 0;
 }
 .cad-input:focus {
@@ -849,7 +856,7 @@ select.cad-input {
 }
 
 .results-table td {
-  font-family: "IBM Plex Mono", monospace;
+  font-family: var(--font-num);
   font-size: 0.8rem;
 }
 
@@ -871,4 +878,17 @@ select.cad-input {
 .tool-btn.active {
   background: hsl(210, 100%, 56%);
   color: hsl(220, 20%, 8%);
+}
+
+
+/* ── Числа ровными колонками ──────────────────────────────────────────────
+   Цифры одинаковой ширины во всём интерфейсе: в таблицах и полях ввода
+   значения не «пляшут» при пересчёте. Поля ввода чисел и ячейки таблиц
+   дополнительно получают моноширинный шрифт. */
+body { font-variant-numeric: tabular-nums; }
+input[type="number"],
+table td.tabular-nums,
+.font-num {
+  font-family: var(--font-num);
+  font-feature-settings: "zero" 0;
 }

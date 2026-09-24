@@ -5710,7 +5710,7 @@ export default function CadPage() {
   return (
     <>
     <div className="w-full flex flex-col"
-      style={{ background: "var(--c-s3, #f0f0f0)", fontFamily: "Segoe UI, Tahoma, sans-serif", fontSize: "12px", color: "var(--c-t1, #1f1f1f)", height: "100dvh" }}>
+      style={{ background: "var(--c-s3, #f0f0f0)", fontFamily: "var(--font-ui)", fontSize: "12px", color: "var(--c-t1, #1f1f1f)", height: "100dvh" }}>
 
       {/* ═══ TITLE BAR ════════════════════════════════════════════════════ */}
       <CadTitleBar

@@ -19,8 +19,8 @@ export default {
 			}
 		},
 		fontFamily: {
-			sans: ['"IBM Plex Sans"', 'sans-serif'],
-			mono: ['"IBM Plex Mono"', 'monospace'],
+			sans: ['"Golos Text"', '"IBM Plex Sans"', 'sans-serif'],
+			mono: ['"JetBrains Mono"', '"IBM Plex Mono"', 'monospace'],
 		},
 		extend: {
 			colors: {

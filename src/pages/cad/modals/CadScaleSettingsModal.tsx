@@ -197,7 +197,7 @@ export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
         transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
         willChange: "transform",
         width: W, background: "var(--c-s1, #fff)", borderColor: "var(--c-b2, #e2e8f0)",
-        fontFamily: "Segoe UI, Tahoma, sans-serif",
+        fontFamily: "var(--font-ui)",
         boxShadow: dragging ? "0 4px 12px rgba(0,0,0,0.18)" : "0 20px 40px -12px rgba(0,0,0,0.3)",
       }}>
       {/* Заголовок — за него окно перетаскивается */}

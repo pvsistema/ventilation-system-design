@@ -62,7 +62,7 @@ export default function MoveSchemaDialog({ counts, onConfirm, onClose }: Props) 
 
   const S = {
     overlay: { position: "fixed" as const, inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" },
-    dialog: { width: 360, background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #aaa)", borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "Segoe UI, Arial, sans-serif", fontSize: 12, color: "var(--c-t1, #1a1a1a)" },
+    dialog: { width: 360, background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #aaa)", borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--c-t1, #1a1a1a)" },
     header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", background: "linear-gradient(180deg,#dde4ef,#c5cfe0)", borderBottom: "1px solid #9aa8bf" },
     headerTitle: { display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 13, color: "var(--c-t1, #1a1a1a)" },
     closeBtn: { width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", background: "transparent", fontSize: 12, color: "var(--c-t2, #333)", borderRadius: 2 },

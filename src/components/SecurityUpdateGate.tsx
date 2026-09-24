@@ -101,7 +101,7 @@ export default function SecurityUpdateGate() {
       style={{
         background: "rgba(15,23,42,0.75)",
         backdropFilter: "blur(3px)",
-        fontFamily: "Segoe UI, Arial, sans-serif",
+        fontFamily: "var(--font-ui)",
       }}>
       <div className="bg-white rounded-2xl shadow-2xl w-[480px] max-w-[94vw] overflow-hidden">
         {/* Шапка */}

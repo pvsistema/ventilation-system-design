@@ -744,7 +744,7 @@ export function renderSymbolNode(
                 <text key={i}
                   x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                   textAnchor="middle" fontSize={fSize}
-                  fill="#1a2a4a" fontFamily="Segoe UI, sans-serif"
+                  fill="#1a2a4a" fontFamily="var(--font-ui)"
                   fontWeight={i === 0 && sym.indDescription ? "600" : "normal"}
                   style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
                   {line}
@@ -840,7 +840,7 @@ export function renderSymbolNode(
                 <text key={i}
                   x={bxF} y={byF - boxHF / 2 + (i + 1) * lineHF}
                   textAnchor="middle" fontSize={fSizeF}
-                  fill={fanFg} fontFamily="Segoe UI, sans-serif"
+                  fill={fanFg} fontFamily="var(--font-ui)"
                   style={fanBg
                     ? undefined
                     : { paintOrder: "stroke", stroke: "white", strokeWidth: 2.5, strokeLinejoin: "round" }}>
@@ -927,7 +927,7 @@ export function renderSymbolNode(
                 <text key={i}
                   x={bx} y={by - boxH / 2 + (i + 1) * lineH}
                   textAnchor="middle" fontSize={fSize}
-                  fill={msFg} fontFamily="Segoe UI, sans-serif"
+                  fill={msFg} fontFamily="var(--font-ui)"
                   fontWeight={i === 0 && msFlags.number ? "700" : "normal"}
                   style={msBg
                     ? undefined

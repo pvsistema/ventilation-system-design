@@ -117,7 +117,7 @@ export default function LicenseExpiryBanner() {
   return (
     <div
       className="fixed left-0 right-0 z-[99999] flex items-center gap-3 px-4 py-2 text-white"
-      style={{ top: topOffset, background: st.bg, fontFamily: "Segoe UI, Arial, sans-serif",
+      style={{ top: topOffset, background: st.bg, fontFamily: "var(--font-ui)",
                boxShadow: "0 2px 10px rgba(0,0,0,0.18)" }}>
       <Icon name={st.icon} size={17} className="flex-shrink-0" />
 
