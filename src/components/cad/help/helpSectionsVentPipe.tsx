@@ -17,7 +17,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
           до забоя доходит меньше, чем даёт вентилятор. Став в программе
           отвечает на два главных вопроса:
         </p>
-        <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
+        <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc" }}>
           <span className="text-[11px] text-blue-800">
             Расчёт ведётся <b>только для нагнетательной схемы</b>: вентилятор
             подаёт свежий воздух по ставу в забой, отработанный выходит по
@@ -26,7 +26,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
           </span>
         </div>
         <div className="grid grid-cols-2 gap-2">
-          <Block title="Сколько воздуха дойдёт до забоя" color="#dbeafe">
+          <Block title="Сколько воздуха дойдёт до забоя" color="#d7e7ee">
             Вентилятор даёт Q<sub>вент</sub> → часть уходит в утечки →
             в забой приходит Q<sub>забой</sub>. Сравнивается с требуемым
             расходом по газу, людям и взрывным работам.
@@ -292,7 +292,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
             углы наклона, естественная тяга и напор в водопроводе.
             Перетаскивание узлов мышью их не меняет.
           </Block>
-          <Block title="Координаты отрисовки" color="#dbeafe">
+          <Block title="Координаты отрисовки" color="#d7e7ee">
             Где узел нарисован на схеме. Их и двигает мышь. На расчёт
             не влияют — схему можно свободно раздвигать для читаемости.
           </Block>
@@ -341,7 +341,7 @@ export const HELP_SECTIONS_VENTPIPE: Section[] = [
             положение узлов выверенным. Применяйте, когда схема сверена
             с маркшейдерским планом</li>
         </ul>
-        <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
+        <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #81b0c4" }}>
           <span className="text-[11px] text-blue-800">
             Любое из этих действий отменяется через <KBD>Ctrl+Z</KBD>.
           </span>

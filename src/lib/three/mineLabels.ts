@@ -430,7 +430,7 @@ export function drawMineLabels(
       ctx.fillStyle = L.bg
         ? (L.fg ?? "#ffffff")
         : isNum
-          ? (L.id === opts.selectedId ? "#2563eb" : "#374151")
+          ? (L.id === opts.selectedId ? "#b45309" : "#374151")
           : (L.overV ? "#dc2626" : "#1e3a5f");
       ctx.fillText(L.lines[i], sx, ty);
     }

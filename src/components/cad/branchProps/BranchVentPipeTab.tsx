@@ -188,7 +188,7 @@ export default function BranchVentPipeTab({
     <div>
       <SectionHeader title="Схема проветривания" />
       <div className="mx-2 my-1 px-2 py-1 rounded text-[10px] leading-snug"
-        style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "var(--c-blue-ink, #1e40af)" }}>
+        style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc", color: "var(--c-blue-ink, #1e40af)" }}>
         Нагнетательная схема: вентилятор подаёт свежий воздух по ставу в забой,
         отработанный выходит по выработке.
       </div>
@@ -552,8 +552,8 @@ export default function BranchVentPipeTab({
                 {xCur !== null && (
                   <>
                     <line x1={xCur} y1={padT} x2={xCur} y2={H - padB}
-                      stroke="#2563eb" strokeWidth={1} />
-                    <text x={xCur + 2} y={H - padB - 3} fontSize={8} fill="#1d4ed8">
+                      stroke="#1e5a7a" strokeWidth={1} />
+                    <text x={xCur + 2} y={H - padB - 3} fontSize={8} fill="#1a4a64">
                       сейчас {numFmt(length, 0)} м
                     </text>
                   </>

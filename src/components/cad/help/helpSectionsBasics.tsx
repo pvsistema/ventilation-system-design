@@ -20,7 +20,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
 
           <H3>Основные возможности</H3>
           <ul className="space-y-2">
-            <Li icon="GitBranch" color="#2563eb">Построение топологической схемы вентиляционных выработок</Li>
+            <Li icon="GitBranch" color="#1e5a7a">Построение топологической схемы вентиляционных выработок</Li>
             <Li icon="Wind" color="#059669">Расчёт воздухораспределения методом Кросса или МКР</Li>
             <Li icon="Fan" color="#7c3aed">Подбор вентиляторов по Q-H характеристике из каталога</Li>
             <Li icon="Calculator" color="#0891b2">Расчёт количества воздуха по забоям и участкам (ФНиП № 505)</Li>
@@ -36,7 +36,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
 
           <H3>Системные требования</H3>
           <div className="space-y-3">
-            <Block title="Веб-версия (в браузере)" color="#dbeafe">
+            <Block title="Веб-версия (в браузере)" color="#d7e7ee">
               Современный веб-браузер (Chrome, Edge, Firefox). Рекомендуется разрешение экрана
               не менее 1280×800 пикселей. Для сохранения файлов через File System Access API
               (перезапись без диалога) требуется браузер на движке Chromium.
@@ -122,7 +122,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
             </QStep>
           </ol>
 
-          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc" }}>
             <span className="text-[12px] text-blue-700">
               💡 Расчёт не сходится? Проверьте, что есть поверхностный узел (атмосфера) и что вся схема связна
               (нет изолированных фрагментов). Подробнее — в разделе «Советы и приёмы».
@@ -143,7 +143,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
           </p>
 
           <div className="space-y-3">
-            <Block title="① Лента инструментов (Ribbon)" color="#dbeafe">
+            <Block title="① Лента инструментов (Ribbon)" color="#d7e7ee">
               Горизонтальная панель в верхней части экрана. Содержит вкладки:
               <br /><b>Файл</b> — создать, открыть, сохранить, импорт, экспорт, печать, лицензия.
               <br /><b>Главная</b> — основные инструменты редактирования схемы, расчёт, вентиляторы, экспорт в Excel.
@@ -324,7 +324,7 @@ export const HELP_SECTIONS_BASICS: Section[] = [
             в НаноКАДе не нужно. Из чертежа берутся линии, полилинии, окружности и подписи;
             штриховки, размеры и рамки пропускаются — на схему сети они не влияют.
           </p>
-          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc" }}>
             <span className="text-[11px] text-blue-800">
               Файл DWG крупнее и читается несколько секунд — это нормально. Если чертёж
               открыть не удалось, сохраните его в НаноКАДе как DXF и импортируйте так.

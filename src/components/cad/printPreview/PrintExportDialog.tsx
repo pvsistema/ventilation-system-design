@@ -52,9 +52,9 @@ export default function PrintExportDialog({
             <button key={f} onClick={() => setExportFormat(f)}
               className="py-1.5 rounded border text-[12px] font-semibold uppercase"
               style={{
-                background: exportFormat === f ? "#2563eb" : "white",
+                background: exportFormat === f ? "#1e5a7a" : "white",
                 color: exportFormat === f ? "white" : "#1a1a1a",
-                borderColor: exportFormat === f ? "#2563eb" : "#9ca3af",
+                borderColor: exportFormat === f ? "#1e5a7a" : "#9ca3af",
               }}>
               {f === "pdf-vector" ? "PDF ✦" : f === "png-hq" ? "PNG ★" : f.toUpperCase()}
             </button>
@@ -80,9 +80,9 @@ export default function PrintExportDialog({
               <button key={d} onClick={() => setExportDpi(d)}
                 className="flex-1 py-1 rounded border text-[11px] font-medium"
                 style={{
-                  background: exportDpi === d ? "#2563eb" : "white",
+                  background: exportDpi === d ? "#1e5a7a" : "white",
                   color: exportDpi === d ? "white" : "#1a1a1a",
-                  borderColor: exportDpi === d ? "#2563eb" : "#9ca3af",
+                  borderColor: exportDpi === d ? "#1e5a7a" : "#9ca3af",
                 }}>{d}</button>
             ))}
           </div>
@@ -119,7 +119,7 @@ export default function PrintExportDialog({
           </div>
           <input type="range" min={10} max={100} step={5}
             value={exportQuality} onChange={e => setExportQuality(+e.target.value)}
-            className="w-full" style={{ accentColor: "#2563eb" }} />
+            className="w-full" style={{ accentColor: "#1e5a7a" }} />
         </div>
       )}
     </div>
@@ -127,7 +127,7 @@ export default function PrintExportDialog({
     <div className="flex gap-2 px-5 pb-5 justify-end">
       <button onClick={handleExport} disabled={pdfExporting}
         className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60 disabled:cursor-wait"
-        style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
+        style={{ background: "#1e5a7a", border: "1px solid #1e4db7" }}>
         {pdfExporting
           ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />{exportFormat === "pdf-vector" ? "Конвертация SVG→PDF..." : exportFormat === "png-hq" ? "Рендер PNG HQ..." : "Генерация PDF..."}</>
           : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat === "pdf-vector" ? "PDF ✦ вектор" : exportFormat === "png-hq" ? "PNG ★ HQ" : exportFormat.toUpperCase()}</>

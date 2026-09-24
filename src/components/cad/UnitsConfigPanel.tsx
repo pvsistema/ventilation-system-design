@@ -52,7 +52,7 @@ export default function UnitsConfigPanel({ unitsConfig, onChange }: Props) {
                       className="w-full text-[11px] px-1"
                       style={{
                         background: isDefault ? "white" : "var(--c-tint-blue, #eff6ff)",
-                        border: `1px solid ${isDefault ? "var(--c-b2, #c8c8c8)" : "#93c5fd"}`,
+                        border: `1px solid ${isDefault ? "var(--c-b2, #c8c8c8)" : "#81b0c4"}`,
                         height: 20,
                         outline: "none",
                         borderRadius: "var(--radius-ui)",

@@ -89,7 +89,7 @@ function UnitsDialog({ units, onSave, onCancel }: {
         </div>
         <div className="flex justify-end gap-2 px-4 py-2.5" style={{ borderTop: "1px solid #e0e4ee" }}>
           <button onClick={() => onSave({ ...units, resistanceUnit: res })}
-            className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#2563eb" }}>Сохранить</button>
+            className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#1e5a7a" }}>Сохранить</button>
           <button onClick={onCancel} className="text-[12px] px-4 py-1 rounded border" style={{ borderColor: "#c8c8c8" }}>Отмена</button>
         </div>
       </div>
@@ -231,7 +231,7 @@ export default function CsvExportDialog({ branches, nodes, positions, horizons =
           </button>
           <div className="flex items-center gap-2">
             <span className="text-[11px] text-gray-400 mr-1">узлов {nodes.length} · ветвей {branches.length}</span>
-            <button onClick={handleExport} className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#2563eb" }}>Экспорт (ZIP)</button>
+            <button onClick={handleExport} className="text-[12px] px-4 py-1 rounded text-white" style={{ background: "#1e5a7a" }}>Экспорт (ZIP)</button>
             <button onClick={onClose} className="text-[12px] px-4 py-1 rounded border" style={{ borderColor: "#c8c8c8" }}>Отмена</button>
           </div>
         </div>

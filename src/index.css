@@ -13,7 +13,7 @@
     --popover: 220 18% 11%;
     --popover-foreground: 210 20% 90%;
 
-    --primary: 210 100% 56%;
+    --primary: 201 61% 30%;
     --primary-foreground: 220 20% 8%;
 
     --secondary: 220 15% 18%;
@@ -30,16 +30,16 @@
 
     --border: 220 15% 20%;
     --input: 220 15% 16%;
-    --ring: 210 100% 56%;
+    --ring: 201 61% 30%;
 
     --radius: 0.375rem;
 
-    --vent-node: #3b82f6;
+    --vent-node: #2f7290;
     --vent-node-fan: #f59e0b;
     --vent-node-supply: #10b981;
     --vent-node-exhaust: #ef4444;
     --vent-branch: #64748b;
-    --vent-branch-active: #3b82f6;
+    --vent-branch-active: #2f7290;
     --grid-color: rgba(100, 116, 139, 0.12);
     --grid-accent: rgba(100, 116, 139, 0.25);
   }
@@ -81,24 +81,37 @@
   --font-ui: "Golos Text", "IBM Plex Sans", "Segoe UI", Tahoma, sans-serif;
   --font-num: "JetBrains Mono", "IBM Plex Mono", Consolas, monospace;
 
-  /* Светлая тема — ровно те цвета, что были в коде до перевода на переменные */
+  /* ── «Горная» палитра ────────────────────────────────────────────────
+     Основной акцент — сине-стальной #1e5a7a (воздух, металл крепи), второй —
+     сигнальный янтарь #e8a317 (каска, светоотражающие полосы). Поверхности —
+     тёплый графит с оттенком породы вместо холодного офисного серого, тёмные
+     элементы — антрацит #2b2f33 вместо чёрного. */
+  --c-accent: #1e5a7a;
+  --c-accent-lt: #2f7290;
+  --c-accent-ink: #173d52;
+  --c-signal: #e8a317;
+  --c-signal-lt: #f5b83d;
+  --c-signal-ink: #865412;
+  --c-anthracite: #2b2f33;
+
+  /* Светлая тема — тёплые нейтрали «породы» */
   --c-s1: #ffffff; /* «бумага»: карточки, тело диалогов */
-  --c-s2: #f9f9f9; /* панели, подвалы окон */
-  --c-s3: #f0f0f0; /* шапки таблиц, боковые списки */
-  --c-s4: #e5e7eb; /* поднятые блоки, ленты */
+  --c-s2: #f8f7f4; /* панели, подвалы окон */
+  --c-s3: #f1efea; /* шапки таблиц, боковые списки */
+  --c-s4: #e6e3dc; /* поднятые блоки, ленты */
 
-  --c-b1: #e5e7eb; /* тонкая граница */
-  --c-b2: #d1d5db; /* обычная граница */
-  --c-b3: #b8b8b8; /* контрастная граница, рамка окна */
+  --c-b1: #e7e4dd; /* тонкая граница */
+  --c-b2: #d5d1c8; /* обычная граница */
+  --c-b3: #b9b4a9; /* контрастная граница, рамка окна */
 
-  --c-t1: #111827; /* заголовки */
-  --c-t2: #374151; /* основной текст */
+  --c-t1: #1f2328; /* заголовки — антрацит */
+  --c-t2: #3a3f45; /* основной текст */
   --c-t3: #6b7280; /* подписи */
   --c-t4: #767f8c; /* подсказки */
 
   /* Пастельные подложки уведомлений */
-  --c-tint-blue: #eff6ff;
-  --c-tint-blue2: #dbeafe;
+  --c-tint-blue: #eef5f8;
+  --c-tint-blue2: #d7e7ee;
   --c-tint-green: #f0fdf4;
   --c-tint-green2: #dcfce7;
   --c-tint-red: #fef2f2;
@@ -106,25 +119,25 @@
   --c-tint-amber: #fffbeb;
   --c-tint-amber2: #fef3c7;
 
-  /* Градиент шапок окон и ленты — «под Windows», светлее сверху */
-  --c-grad-a: #e8e8e8;
-  --c-grad-b: #d6d6d6;
+  /* Градиент шапок окон и ленты — тёплый графит, светлее сверху */
+  --c-grad-a: #f4f3ef;
+  --c-grad-b: #e9e7e1;
 
   /* Смысловые цвета: статусы, предупреждения, значения расчёта.
      «-ink» — самый тёмный (текст на пастельной подложке),
      «-lt»  — самый светлый (иконки, акценты). */
-  --c-blue-ink: #1a3a6b;
-  --c-blue: #2563eb;
-  --c-blue-lt: #3b82f6;
+  --c-blue-ink: #173d52;
+  --c-blue: #1e5a7a;
+  --c-blue-lt: #2f7290;
   --c-red-ink: #991b1b;
   --c-red: #dc2626;
   --c-red-lt: #ef4444;
   --c-green-ink: #166534;
   --c-green: #15803d;
   --c-green-lt: #22c55e;
-  --c-amber-ink: #92400e;
-  --c-amber: #b45309;
-  --c-amber-lt: #f59e0b;
+  --c-amber-ink: #865412;
+  --c-amber: #a66b0d;
+  --c-amber-lt: #e8a317;
   --c-purple-ink: #6a1b9a;
   --c-purple: #7c3aed;
   --c-purple-lt: #8b5cf6;
@@ -133,11 +146,11 @@
   /* Заливка кнопок, шапок диалогов и цветных плашек — поверх идёт БЕЛЫЙ текст.
      Отдельная серия нужна потому, что текстовые оттенки выше в тёмной теме
      становятся светлыми, а заливка обязана остаться тёмной. */
-  --c-blue-ink-bg: #1a3a6b;
-  --c-blue-bg: #2563eb;
+  --c-blue-ink-bg: #173d52;
+  --c-blue-bg: #1e5a7a;
   --c-red-bg: #dc2626;
   --c-green-bg: #15803d;
-  --c-amber-bg: #b45309;
+  --c-amber-bg: #c98a0c;
   --c-purple-bg: #7c3aed;
 
   /* Бирюзовый — аэродинамика и водопровод в панели свойств */
@@ -162,8 +175,8 @@
   --c-t4: #8593a8;
 
   /* Подложки — полупрозрачный цвет поверх тёмного фона, а не выцветший пастель */
-  --c-tint-blue: #17263c;
-  --c-tint-blue2: #1d3350;
+  --c-tint-blue: #142631;
+  --c-tint-blue2: #19323f;
   --c-tint-green: #142a1f;
   --c-tint-green2: #1a3a29;
   --c-tint-red: #2e1a1c;
@@ -174,12 +187,12 @@
   --c-grad-a: #232c3a;
   --c-grad-b: #1a212c;
 
-  /* Смысловые цвета переворачиваются: тёмно-синий текст (#1a3a6b) на тёмном
+  /* Смысловые цвета переворачиваются: тёмно-синий текст (#173d52) на тёмном
      фоне не виден вовсе, поэтому «-ink» становится САМЫМ СВЕТЛЫМ оттенком.
      Насыщенность снижена — чистые тона на тёмном «жгут» глаза. */
-  --c-blue-ink: #9ec5fe;
-  --c-blue: #7cb8fb;
-  --c-blue-lt: #60a5fa;
+  --c-blue-ink: #a9d0e0;
+  --c-blue: #81b0c4;
+  --c-blue-lt: #5f9db7;
   --c-red-ink: #fca5a5;
   --c-red: #f98a8a;
   --c-red-lt: #f87171;
@@ -196,8 +209,8 @@
 
   /* Заливки чуть приглушены против светлой темы, но остаются тёмными —
      белые надписи на кнопках читаются. */
-  --c-blue-ink-bg: #1b365c;
-  --c-blue-bg: #2f6fd0;
+  --c-blue-ink-bg: #173d52;
+  --c-blue-bg: #2a6a88;
   --c-red-bg: #c23a3a;
   --c-green-bg: #2f7d4f;
   --c-amber-bg: #a8631a;
@@ -431,7 +444,7 @@
 /* Тёмные оттенки текста на цветных подложках — осветляем до читаемых */
 .dark .text-blue-900,
 .dark .text-blue-800 {
-  color: #93c5fd !important;
+  color: #81b0c4 !important;
 }
 .dark .text-blue-700,
 .dark .text-blue-600 {
@@ -593,7 +606,7 @@
   color: var(--t-2) !important;
 }
 /* Тёмно-синее имя проекта в заголовке окна — на тёмном фоне не читалось */
-.dark [style*="color: #1a3a6b"] {
+.dark [style*="color: #173d52"] {
   color: #7cb8fb !important;
 }
 /* Инлайн-границы светлых оттенков */
@@ -616,7 +629,7 @@
 }
 /* Голубоватые градиенты — активные/выделенные элементы ленты */
 .dark [style*="linear-gradient(180deg,#e8eef8"],
-.dark [style*="linear-gradient(180deg,#eff6ff"],
+.dark [style*="linear-gradient(180deg,#eef5f8"],
 .dark [style*="linear-gradient(180deg,#f0f6ff"] {
   background: linear-gradient(
     180deg,
@@ -704,7 +717,7 @@
   min-width: 0;
 }
 .cad-input:focus {
-  border-color: #2563eb;
+  border-color: #1e5a7a;
   box-shadow: 0 0 0 1px #2563eb33;
 }
 .cad-input:hover:not(:focus):not([readonly]) {
@@ -718,7 +731,7 @@ select.cad-input {
 /* Поля ввода в панели свойств ветви: подсветка активного поля, чтобы было
    видно, где стоит курсор, и чем поле отличается от расчётного значения. */
 .cad-edit-input:focus {
-  border-color: #2563eb !important;
+  border-color: #1e5a7a !important;
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
   background: #ffffff !important;
 }
@@ -1216,3 +1229,19 @@ select, input[type="text"], input[type="number"], input[type="search"], textarea
 .tab-file:hover { color: #ffd77a; background: rgba(232, 163, 23, 0.12); }
 .tab-icon-btn { color: #b8bec6; border-radius: 6px; }
 .tab-icon-btn:hover { color: #fff; background: rgba(255, 255, 255, 0.1); }
+
+
+/* ── Инструменты рабочей области (Выбрать, Узел, Ветвь, Панорама…) ─────────
+   Активный инструмент — сигнальный янтарь с антрацитовым текстом, как у
+   активной вкладки и кнопки «Расчёт»: инструмент, в котором сейчас работаешь,
+   видно сразу. Наведение — сине-стальной тон. */
+.tool-btn { color: var(--c-t1, #1f2328); background: transparent; border: 1px solid transparent; transition: background-color .12s ease, border-color .12s ease; }
+.tool-btn:not(:disabled):hover { background: var(--c-tint-blue, #eef5f8); border-color: var(--c-b2, #d5d1c8); }
+.tool-btn[data-active="1"] {
+  background: linear-gradient(180deg, #f5b83d, #e8a317);
+  border-color: #c98a0c;
+  color: #1f2328;
+  font-weight: 600;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4);
+}
+.tool-btn[data-active="1"]:hover { background: linear-gradient(180deg, #f7c258, #eaa91f); border-color: #c98a0c; }

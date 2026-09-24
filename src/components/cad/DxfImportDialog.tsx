@@ -290,7 +290,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                   { label: "Ветвей",         value: result.stats.branches, hi: true },
                 ].map((s) => (
                   <div key={s.label} className="rounded px-2 py-2 text-center border"
-                    style={{ background: s.hi ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#93c5fd" : "var(--c-b1, #e0e0e0)" }}>
+                    style={{ background: s.hi ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f9f9f9)", borderColor: s.hi ? "#81b0c4" : "var(--c-b1, #e0e0e0)" }}>
                     <div className="text-xl font-bold" style={{ color: s.hi ? "var(--c-blue, #1d4ed8)" : "var(--c-t1, #1f2937)" }}>{s.value}</div>
                     <div className="text-[10px] text-gray-500 leading-tight">{s.label}</div>
                   </div>
@@ -405,7 +405,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                   <input type="range" min={0.01} max={10} step={0.01}
                     value={epsilon}
                     onChange={(e) => handleEpsilonChange(parseFloat(e.target.value))}
-                    className="w-full" style={{ accentColor: "#2563eb" }} />
+                    className="w-full" style={{ accentColor: "#1e5a7a" }} />
                   <div className="flex justify-between text-[10px] text-blue-600">
                     <span>0.01 м (точно)</span>
                     <span className="text-gray-400">← уменьшить если много узлов дублируются</span>

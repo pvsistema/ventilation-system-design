@@ -11,7 +11,7 @@ interface Props {
 
 const FILE_TYPE_LABELS: Record<string, { label: string; color: string; bg: string }> = {
   nodes:       { label: "Узлы",       color: "var(--c-green-ink, #166534)", bg: "#dcfce7" },
-  excavations: { label: "Выработки",  color: "var(--c-blue-ink, #1e40af)", bg: "#dbeafe" },
+  excavations: { label: "Выработки",  color: "var(--c-blue-ink, #1e40af)", bg: "#d7e7ee" },
   positions:   { label: "Позиции",    color: "var(--c-purple, #7c3aed)", bg: "#ede9fe" },
   bulkheads:   { label: "Перемычки",  color: "var(--c-amber-ink, #92400e)", bg: "#fef3c7" },
   fans:        { label: "Вент-ры",    color: "#9f1239", bg: "#ffe4e6" },

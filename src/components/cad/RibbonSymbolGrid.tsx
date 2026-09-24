@@ -52,7 +52,7 @@ function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick, o
             onMouseEnter={e => {
               const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
               onTooltip({ name: lt.name, x: r.left, y: r.top });
-              if (!isActive) (e.currentTarget as HTMLElement).style.background = "#e8f0fe";
+              if (!isActive) (e.currentTarget as HTMLElement).style.background = "#eef5f8";
             }}
             onMouseLeave={e => {
               onTooltip(null);

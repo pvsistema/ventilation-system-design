@@ -111,7 +111,7 @@ export default function PositionsPanel({
         <button
           onClick={onPlaceMode}
           className="flex items-center gap-1 px-1.5 py-0.5 rounded"
-          style={{ ...btnStyle, background: placeModeActive ? "#dbeafe" : "#f5f5f5", color: placeModeActive ? "#1d4ed8" : "#374151" }}>
+          style={{ ...btnStyle, background: placeModeActive ? "#d7e7ee" : "#f5f5f5", color: placeModeActive ? "#1a4a64" : "#374151" }}>
           <Icon name="MapPin" size={12} />
           На схему
         </button>
@@ -157,7 +157,7 @@ export default function PositionsPanel({
             onDoubleClick={() => { onSelect(pos.id); onFocus?.(pos); }}
             title="Двойной клик — показать позицию на схеме"
             className="flex items-center gap-2 px-2 py-1 cursor-pointer"
-            style={{ background: pos.id === selectedPositionId ? "#e8f0fe" : "transparent", borderBottom: "1px solid #f0f0f0" }}>
+            style={{ background: pos.id === selectedPositionId ? "#eef5f8" : "transparent", borderBottom: "1px solid #f0f0f0" }}>
             <div
               className="flex-shrink-0 flex items-center justify-center rounded-full font-bold"
               style={{ width: 22, height: 22, background: pos.color, border: `2px solid ${pos.borderColor}`, color: "#000", fontSize: 10 }}>
@@ -219,7 +219,7 @@ export default function PositionsPanel({
                 {selected.name || "Не задано"}
               </span>
               <button
-                style={{ fontSize: 10, color: "#2563eb", background: "none", border: "none", cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
+                style={{ fontSize: 10, color: "#1e5a7a", background: "none", border: "none", cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}
                 onClick={() => {
                   const v = window.prompt("Название позиции:", selected.name);
                   if (v !== null) upd({ name: v });
@@ -384,7 +384,7 @@ export default function PositionsPanel({
                 </div>
               </>
             ) : (
-              <label style={{ fontSize: 11, color: "#2563eb", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+              <label style={{ fontSize: 11, color: "#1e5a7a", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                 <Icon name="Paperclip" size={12} />
                 Прикрепить новый файл
                 <input type="file" style={{ display: "none" }}
@@ -448,8 +448,8 @@ export default function PositionsPanel({
           <div style={{ padding: "4px 8px", borderBottom: "1px solid #e8e8e8" }}>
             {leaderDrawMode === selected.id ? (
               /* Активен режим рисования */
-              <div style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: "var(--radius-ui)", padding: "4px 8px" }}>
-                <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 600, marginBottom: 2 }}>
+              <div style={{ background: "#eef5f8", border: "1px solid #81b0c4", borderRadius: "var(--radius-ui)", padding: "4px 8px" }}>
+                <div style={{ fontSize: 11, color: "#1a4a64", fontWeight: 600, marginBottom: 2 }}>
                   Кликните на ветви или схеме
                 </div>
                 <div style={{ fontSize: 10, color: "#64748b" }}>Snap к ветви — автоматически  ·  Esc — отмена</div>
@@ -459,7 +459,7 @@ export default function PositionsPanel({
               <div className="flex items-center gap-2">
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 10, color: "#64748b", marginBottom: 1 }}>Привязана к ветви</div>
-                  <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 600 }}>
+                  <div style={{ fontSize: 11, color: "#1a4a64", fontWeight: 600 }}>
                     {(() => {
                       const b = branches.find(br => br.id === selected.leaderBranchId);
                       return b ? `${b.id}. ${b.type || "Ветвь"}` : selected.leaderBranchId;
@@ -469,7 +469,7 @@ export default function PositionsPanel({
                 <button
                   title="Переместить выноску"
                   onClick={() => onStartLeaderDraw?.(selected.id)}
-                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#2563eb", border: "1px solid #93c5fd", background: "#eff6ff" }}>
+                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#1e5a7a", border: "1px solid #81b0c4", background: "#eef5f8" }}>
                   <Icon name="Move" size={11} />
                 </button>
                 <button
@@ -491,7 +491,7 @@ export default function PositionsPanel({
                 <button
                   title="Переместить конец выноски"
                   onClick={() => onStartLeaderDraw?.(selected.id)}
-                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#2563eb", border: "1px solid #93c5fd", background: "#eff6ff" }}>
+                  style={{ ...btnStyle, padding: "1px 6px", fontSize: 11, color: "#1e5a7a", border: "1px solid #81b0c4", background: "#eef5f8" }}>
                   <Icon name="Move" size={11} />
                 </button>
                 <button
@@ -506,7 +506,7 @@ export default function PositionsPanel({
               <button
                 onClick={() => onStartLeaderDraw?.(selected.id)}
                 className="flex items-center gap-1"
-                style={{ ...btnStyle, width: "100%", justifyContent: "center", padding: "3px 8px", color: "#2563eb", border: "1px solid #93c5fd", background: "#eff6ff" }}>
+                style={{ ...btnStyle, width: "100%", justifyContent: "center", padding: "3px 8px", color: "#1e5a7a", border: "1px solid #81b0c4", background: "#eef5f8" }}>
                 <Icon name="PlusCircle" size={12} />
                 Добавить выноску
               </button>
@@ -521,7 +521,7 @@ export default function PositionsPanel({
                       <div style={{ fontSize: 10, color: "#64748b" }}>
                         Доп. выноска {i + 1}
                       </div>
-                      <div style={{ fontSize: 11, color: el.branchId ? "#1d4ed8" : "#555", fontWeight: el.branchId ? 600 : 400 }}>
+                      <div style={{ fontSize: 11, color: el.branchId ? "#1a4a64" : "#555", fontWeight: el.branchId ? 600 : 400 }}>
                         {el.branchId
                           ? (() => { const b = branches.find(br => br.id === el.branchId); return b ? `${b.id}. ${b.type || "Ветвь"}` : el.branchId; })()
                           : `X=${Math.round(el.endX ?? 0)} Y=${Math.round(el.endY ?? 0)} м`}

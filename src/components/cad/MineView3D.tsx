@@ -1441,8 +1441,8 @@ export default function MineView3D(p: MineView3DProps) {
           title={showLabels ? "Скрыть подписи выработок" : "Показать подписи выработок"}
           className="text-[11px] px-2 py-1 rounded border hover:bg-white"
           style={{
-            borderColor: showLabels ? "#2563eb" : "var(--c-b2, #d1d5db)",
-            color: showLabels ? "#2563eb" : "var(--c-t2, #374151)",
+            borderColor: showLabels ? "#1e5a7a" : "var(--c-b2, #d1d5db)",
+            color: showLabels ? "#1e5a7a" : "var(--c-t2, #374151)",
             background: showLabels ? "rgba(219,234,254,0.9)" : "rgba(255,255,255,0.9)",
           }}
         >
@@ -1504,7 +1504,7 @@ export default function MineView3D(p: MineView3DProps) {
               className="text-[11px] px-2 py-1 hover:bg-white"
               style={{
                 background: solidity === s.key ? "rgba(219,234,254,0.95)" : "rgba(255,255,255,0.9)",
-                color: solidity === s.key ? "#2563eb" : "var(--c-t2, #374151)",
+                color: solidity === s.key ? "#1e5a7a" : "var(--c-t2, #374151)",
                 fontWeight: solidity === s.key ? 600 : 400,
               }}
             >

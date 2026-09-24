@@ -368,7 +368,7 @@ function RescueResultDialog({
           className="flex items-center justify-between px-4 py-2 border-b select-none"
           style={{ background: "var(--c-blue-bg, #1e40af)", color: "white", cursor: "move" }}>
           <div className="flex items-center gap-2">
-            <Icon name="Move" size={13} style={{ color: "#93c5fd" }} />
+            <Icon name="Move" size={13} style={{ color: "#81b0c4" }} />
             <Icon name="ShieldCheck" size={16} />
             <span className="text-[13px] font-semibold">
               График времени движения горноспасателей — {OP_LABELS[result.operationType]}

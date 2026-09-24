@@ -159,7 +159,7 @@ export default function PrintSettingsPanel({
     </Row>
     <label className="flex items-center gap-1.5 cursor-pointer pt-0.5">
       <input type="checkbox" checked={reverseOrder} onChange={e => setReverseOrder(e.target.checked)}
-        style={{ accentColor: "#2563eb" }} />
+        style={{ accentColor: "#1e5a7a" }} />
       <span style={{ fontSize: 12, color: "#1a1a1a" }}>Печать в обратном порядке</span>
     </label>
   </Section>
@@ -278,7 +278,7 @@ export default function PrintSettingsPanel({
   <Section title="Номера страниц" defaultOpen={false}>
     <label className="flex items-center gap-1.5 cursor-pointer">
       <input type="checkbox" checked={showPageNumbers} onChange={e => setShowPageNumbers(e.target.checked)}
-        style={{ accentColor: "#2563eb" }} />
+        style={{ accentColor: "#1e5a7a" }} />
       <span style={{ fontSize: 12, color: "#1a1a1a" }}>Номера страниц</span>
     </label>
     <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>

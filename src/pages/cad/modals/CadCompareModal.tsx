@@ -111,7 +111,7 @@ export default function CadCompareModal(p: CadCompareModalProps) {
                   }}
                   className="w-full flex items-center gap-3 px-4 py-3 rounded border-2 border-dashed transition-colors"
                   style={{
-                    borderColor: p.compareLoading ? "#93c5fd" : "var(--c-b2, #d1d5db)",
+                    borderColor: p.compareLoading ? "#81b0c4" : "var(--c-b2, #d1d5db)",
                     background: p.compareLoading ? "var(--c-tint-blue, #eff6ff)" : "var(--c-s2, #f9fafb)",
                     cursor: p.compareLoading ? "wait" : "pointer",
                   }}>

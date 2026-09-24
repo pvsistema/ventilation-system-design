@@ -28,7 +28,7 @@ function ThemePreview({ dark }: { dark: boolean }) {
       <rect width="120" height="74" fill={c.bg} />
       {/* лента вкладок */}
       <rect width="120" height="9" fill={c.head} />
-      <rect x="3" y="2.5" width="13" height="4" rx="1" fill="#2563eb" />
+      <rect x="3" y="2.5" width="13" height="4" rx="1" fill="#1e5a7a" />
       <rect x="19" y="2.5" width="11" height="4" rx="1" fill={c.dim} opacity="0.55" />
       <rect x="33" y="2.5" width="11" height="4" rx="1" fill={c.dim} opacity="0.55" />
       {/* боковая панель */}
@@ -37,12 +37,12 @@ function ThemePreview({ dark }: { dark: boolean }) {
       <rect x="3" y="19" width="16" height="3" rx="1" fill={c.dim} opacity="0.5" />
       <rect x="3" y="25" width="18" height="3" rx="1" fill={c.dim} opacity="0.5" />
       {/* схема на холсте */}
-      <line x1="38" y1="55" x2="62" y2="34" stroke="#3b82f6" strokeWidth="1.6" />
-      <line x1="62" y1="34" x2="88" y2="42" stroke="#3b82f6" strokeWidth="1.6" />
+      <line x1="38" y1="55" x2="62" y2="34" stroke="#2f7290" strokeWidth="1.6" />
+      <line x1="62" y1="34" x2="88" y2="42" stroke="#2f7290" strokeWidth="1.6" />
       <line x1="62" y1="34" x2="79" y2="18" stroke="#22c55e" strokeWidth="1.6" />
       <line x1="88" y1="42" x2="106" y2="30" stroke="#f59e0b" strokeWidth="1.6" />
-      <circle cx="38" cy="55" r="2.6" fill="#3b82f6" />
-      <circle cx="62" cy="34" r="2.6" fill="#3b82f6" />
+      <circle cx="38" cy="55" r="2.6" fill="#2f7290" />
+      <circle cx="62" cy="34" r="2.6" fill="#2f7290" />
       <circle cx="88" cy="42" r="2.6" fill="#f59e0b" />
       <circle cx="79" cy="18" r="2.6" fill="#22c55e" />
       <circle cx="106" cy="30" r="2.6" fill="#ef4444" />
@@ -185,7 +185,7 @@ export default function SettingsDialog({
               Свежая струя — ниже {Math.round(pollutionThreshold * 100)} %
             </span>
             <span className="flex items-center gap-1.5" style={{ color: "var(--c-blue, #2563eb)" }}>
-              <span style={{ width: 16, height: 2, background: "#2563eb", display: "inline-block" }} />
+              <span style={{ width: 16, height: 2, background: "#1e5a7a", display: "inline-block" }} />
               Загрязнённая — от {Math.round(pollutionThreshold * 100)} %
             </span>
           </div>

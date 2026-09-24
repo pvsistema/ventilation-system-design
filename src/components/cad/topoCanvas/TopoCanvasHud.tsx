@@ -31,8 +31,8 @@ export function ViewCube({ x, y, azimuth, elevation, onPick }: {
   const faces: { idx: [number, number, number, number]; preset: ViewPreset; color: string; label: string }[] = [
     { idx: [4, 5, 6, 7], preset: "plan",   color: "#fde68a", label: "ПЛАН" },
     { idx: [0, 3, 2, 1], preset: "plan",   color: "#fef3c7", label: "" },     // низ
-    { idx: [0, 1, 5, 4], preset: "front",  color: "#bfdbfe", label: "ФРНТ" },
-    { idx: [2, 3, 7, 6], preset: "back",   color: "#dbeafe", label: "ТЫЛ" },
+    { idx: [0, 1, 5, 4], preset: "front",  color: "#b0cfdc", label: "ФРНТ" },
+    { idx: [2, 3, 7, 6], preset: "back",   color: "#d7e7ee", label: "ТЫЛ" },
     { idx: [0, 4, 7, 3], preset: "left",   color: "#bbf7d0", label: "ЛЕВ" },
     { idx: [1, 2, 6, 5], preset: "right",  color: "#d1fae5", label: "ПРАВ" },
   ];

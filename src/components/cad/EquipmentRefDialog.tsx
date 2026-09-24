@@ -1370,7 +1370,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                     <span className="text-[13px] text-gray-900 font-medium">{value}</span>
                   </div>
                 ))}
-                <div className="mt-3 p-3 rounded-lg text-[11px] text-blue-800" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
+                <div className="mt-3 p-3 rounded-lg text-[11px] text-blue-800" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc" }}>
                   Чтобы применить перемычку к выработке — выберите ветвь на схеме и укажите перемычку в панели свойств ветви.
                 </div>
               </>

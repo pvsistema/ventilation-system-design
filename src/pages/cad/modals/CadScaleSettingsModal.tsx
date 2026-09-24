@@ -59,7 +59,7 @@ function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange
       <span className="text-[12px] text-gray-700">{label}<Hint text={hint} /></span>
       <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
         className="relative w-8 h-[18px] rounded-full transition-colors shrink-0"
-        style={{ background: checked ? "#3b82f6" : "#cbd5e1" }}>
+        style={{ background: checked ? "#2f7290" : "#cbd5e1" }}>
         <span className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all"
           style={{ left: checked ? 16 : 2 }} />
       </button>

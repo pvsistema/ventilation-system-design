@@ -65,7 +65,7 @@ export default function CadTopologyModals(p: CadTopologyModalsProps) {
 
             <div className="p-4 flex flex-col gap-3">
               <div className="rounded text-[11px] px-3 py-2"
-                style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
+                style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #81b0c4" }}>
                 <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
                   <Icon name="MapPin" size={12} />
                   Будет возвращено на место: {p.movedNodeCount} узл. из {p.nodeCount}
@@ -162,7 +162,7 @@ export default function CadTopologyModals(p: CadTopologyModalsProps) {
                     переставал сходиться после молчаливого удаления ветви. */}
                 {hasOrphans && (
                   <div className="rounded text-[11px] px-3 py-2"
-                    style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
+                    style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #81b0c4" }}>
                     <div className="font-semibold text-blue-800 mb-1 flex items-center gap-1">
                       <Icon name="Unlink" size={12} />
                       Останутся без выработок ({plan.orphanNodeIds.length} узл.)

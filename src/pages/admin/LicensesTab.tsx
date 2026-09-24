@@ -103,7 +103,7 @@ function LicenseRow({
                 <div className="flex items-center gap-2 flex-shrink-0">
                   <button onClick={() => loadSeats(lic.id)}
                     className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-blue-50"
-                    style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
+                    style={{ borderColor: "#81b0c4", color: "var(--c-blue, #2563eb)" }}>
                     <Icon name="Monitor" size={12} />
                     {seatsForId === lic.id ? "Скрыть" : `Места (${lic.used_seats})`}
                   </button>
@@ -298,7 +298,7 @@ export default function LicensesTab({
             {openGroup && (
               <button onClick={() => openGroup("")}
                 className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-blue-50"
-                style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
+                style={{ borderColor: "#81b0c4", color: "var(--c-blue, #2563eb)" }}>
                 <Icon name="FolderPlus" size={13} />
                 Создать группу
               </button>
@@ -341,7 +341,7 @@ export default function LicensesTab({
                         <button onClick={e => { e.stopPropagation(); openGroup(g.name); }}
                           title="Изменить состав группы: какие ключи в неё входят"
                           className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-medium border transition-colors hover:bg-white flex-shrink-0"
-                          style={{ borderColor: "#93c5fd", color: "var(--c-blue, #2563eb)" }}>
+                          style={{ borderColor: "#81b0c4", color: "var(--c-blue, #2563eb)" }}>
                           <Icon name="Settings2" size={12} />
                           Состав
                         </button>

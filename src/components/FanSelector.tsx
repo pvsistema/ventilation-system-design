@@ -325,7 +325,7 @@ function FanDetails({ sel, requiredQ, requiredH }: { sel: FanSelection; required
       {/* Параметры рабочей точки */}
       <div className="grid grid-cols-4 gap-2">
         <ParamBox label="Расход Q" value={`${point.Q}`} unit="м³/ч"
-          color="#3b82f6"
+          color="#2f7290"
           delta={point.marginQ >= 0 ? `+${point.marginQ}%` : `${point.marginQ}%`}
           deltaColor={point.marginQ >= 0 ? "#10b981" : "#ef4444"} />
         <ParamBox label="Напор H" value={`${point.H}`} unit="Па"

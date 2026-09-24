@@ -109,13 +109,13 @@ export default function BranchAirDemandTab({
           checked={branch.pollutesAir ?? false}
           onChange={(e) => onUpdate({ pollutesAir: e.target.checked })}
           className="w-3.5 h-3.5 rounded"
-          style={{ accentColor: "#2563eb" }}
+          style={{ accentColor: "#1e5a7a" }}
         />
         <span className="text-[11px] text-gray-700 leading-tight">Загрязняет воздух</span>
       </label>
       {(branch.pollutesAir ?? false) && (
         <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
-          style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe", color: "var(--c-blue-ink, #1e40af)" }}>
+          style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc", color: "var(--c-blue-ink, #1e40af)" }}>
           Выработка — источник загрязнения. Ниже по потоку доля загрязнённого
           воздуха считается по смешению струй: свежий воздух разбавляет
           загрязнённый пропорционально расходам.

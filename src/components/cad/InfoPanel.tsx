@@ -21,7 +21,7 @@ function CheckRow({ label, checked, onChange }: CheckRowProps) {
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
         className="w-3 h-3 flex-shrink-0"
-        style={{ accentColor: "#2563eb" }}
+        style={{ accentColor: "#1e5a7a" }}
       />
       <span className="text-[11px] text-gray-800 leading-tight">{label}</span>
     </label>
@@ -370,7 +370,7 @@ export default function InfoPanel({
                         checked={node.visible !== false}
                         onChange={(e) => onNodeVisibilityChange(node.id, e.target.checked)}
                         className="w-3 h-3 flex-shrink-0"
-                        style={{ accentColor: "#2563eb" }}
+                        style={{ accentColor: "#1e5a7a" }}
                       />
                       <span className="text-[11px] font-mono font-bold flex-shrink-0"
                         style={{ color: "var(--c-blue-ink, #1a3a6b)", minWidth: 24 }}>

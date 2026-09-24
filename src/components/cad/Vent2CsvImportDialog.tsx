@@ -273,9 +273,9 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
             </div>
 
             {/* Выработки */}
-            <div className="rounded border overflow-hidden" style={{ borderColor: "#93c5fd" }}>
+            <div className="rounded border overflow-hidden" style={{ borderColor: "#81b0c4" }}>
               <div className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-2"
-                style={{ background: "var(--c-tint-blue2, #dbeafe)", borderBottom: "1px solid #bfdbfe", color: "#1e3a8a" }}>
+                style={{ background: "var(--c-tint-blue2, #dbeafe)", borderBottom: "1px solid #b0cfdc", color: "#1e3a8a" }}>
                 <Icon name="GitBranch" size={13} />
                 Столбцы в файле выработок
                 <span className="ml-auto text-[10px] font-normal text-blue-500">0 = не импортировать</span>
@@ -400,7 +400,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
           <div className="flex gap-2">
             <button onClick={handleParse} disabled={!branchFile || loading}
               className="flex items-center gap-2 px-4 py-1 text-[12px] rounded border disabled:opacity-40"
-              style={{ background: "var(--c-tint-blue2, #dbeafe)", borderColor: "#93c5fd", color: "var(--c-blue-ink, #1e40af)" }}>
+              style={{ background: "var(--c-tint-blue2, #dbeafe)", borderColor: "#81b0c4", color: "var(--c-blue-ink, #1e40af)" }}>
               {loading
                 ? <><div className="w-3 h-3 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />Анализ...</>
                 : <><Icon name="Play" size={13} />Анализ</>}

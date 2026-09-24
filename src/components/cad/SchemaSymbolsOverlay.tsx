@@ -138,7 +138,7 @@ export default function SchemaSymbolsOverlay({
           const ux = jLen > 0 ? (tsx2 - fsx) / jLen : 1, uy = jLen > 0 ? (tsy2 - fsy) / jLen : 0;
           const isFreshJet = sym.typeId === "fresh_inlet" || sym.typeId === "leak_inlet";
           const isLeakJet  = sym.typeId === "leak_inlet"  || sym.typeId === "leak_outlet";
-          const jetColor = isFreshJet ? "#dc2626" : "#2563eb";
+          const jetColor = isFreshJet ? "#dc2626" : "#1e5a7a";
           let dir = isFreshJet ? 1 : -1;
           if (sym.airDirection === "reverse") dir = -dir;
           const jAngle = Math.atan2(uy * dir, ux * dir) * 180 / Math.PI;

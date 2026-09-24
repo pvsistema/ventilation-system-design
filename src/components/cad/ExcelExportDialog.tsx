@@ -195,7 +195,7 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
                     checked={allOn}
                     ref={el => { if (el) el.indeterminate = !allOn && someOn; }}
                     readOnly
-                    style={{ width: 12, height: 12, accentColor: "#2563eb", cursor: "pointer" }} />
+                    style={{ width: 12, height: 12, accentColor: "#1e5a7a", cursor: "pointer" }} />
                   <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{groupName}</span>
                 </div>
                 {/* Колонки группы */}
@@ -207,7 +207,7 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
                         type="checkbox"
                         checked={customKeys.has(col.key)}
                         onChange={() => toggleKey(col.key)}
-                        style={{ width: 12, height: 12, accentColor: "#2563eb", cursor: "pointer", flexShrink: 0 }} />
+                        style={{ width: 12, height: 12, accentColor: "#1e5a7a", cursor: "pointer", flexShrink: 0 }} />
                       <span className="text-[11px] text-gray-700 leading-tight">{col.label}</span>
                     </label>
                   ))}
@@ -233,7 +233,7 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
             onClick={handleExport}
             disabled={selectedCount === 0}
             className="px-5 py-1.5 text-[12px] rounded text-white disabled:opacity-40"
-            style={{ background: "#2563eb" }}>
+            style={{ background: "#1e5a7a" }}>
             <span className="flex items-center gap-1.5">
               <Icon name="Download" size={13} />
               Экспорт

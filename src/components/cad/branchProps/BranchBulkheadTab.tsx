@@ -41,7 +41,7 @@ export default function BranchBulkheadTab({
               bulkheadWindowArea: 0, bulkheadFailurePressure: 0,
             })
           })}
-          style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#2563eb" }} />
+          style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#1e5a7a" }} />
       </div>
       {branch.hasBulkhead && (
         <>
@@ -170,7 +170,7 @@ export default function BranchBulkheadTab({
                             }
                           : { bulkheadManualAirPerm: false }
                       )}
-                      style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#2563eb" }} />
+                      style={{ width: 11, height: 11, cursor: "pointer", accentColor: "#1e5a7a" }} />
                     <span className="text-[11px] text-gray-600">Задается вручную</span>
                   </div>
                   <InlineLabel label="Значение:">

@@ -189,7 +189,7 @@ export default function BranchWaterPipeTab({
                     <input type="range" min={5} max={400} step={5}
                       value={Math.round((reducerSymbolScale ?? 1) * 100)}
                       onChange={(e) => onReducerSymbolScale(Number(e.target.value) / 100)}
-                      className="flex-1" style={{ accentColor: "#2563eb" }} />
+                      className="flex-1" style={{ accentColor: "#1e5a7a" }} />
                     <input type="number" min={5} max={400} step={5}
                       value={Math.round((reducerSymbolScale ?? 1) * 100)}
                       onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); onReducerSymbolScale(v / 100); }}

@@ -32,7 +32,7 @@ function severityOf(days: number): Severity {
 }
 
 const STYLES: Record<Severity, { bg: string; icon: string }> = {
-  info:   { bg: "linear-gradient(90deg,#2563eb,#1d4ed8)", icon: "CalendarClock" },
+  info:   { bg: "linear-gradient(90deg,#1e5a7a,#1a4a64)", icon: "CalendarClock" },
   warn:   { bg: "linear-gradient(90deg,#d97706,#b45309)", icon: "TriangleAlert" },
   urgent: { bg: "linear-gradient(90deg,#dc2626,#b91c1c)", icon: "TriangleAlert" },
 };

@@ -56,7 +56,7 @@ export default function HelpDialog({ onClose }: Props) {
                 className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left transition-colors"
                 style={{
                   background: activeSection === s.id ? "rgba(255,255,255,0.15)" : "transparent",
-                  borderLeft: activeSection === s.id ? "3px solid #60a5fa" : "3px solid transparent",
+                  borderLeft: activeSection === s.id ? "3px solid #4f8ca6" : "3px solid transparent",
                   color: activeSection === s.id ? "white" : "rgba(255,255,255,0.7)",
                 }}>
                 <Icon name={s.icon as Parameters<typeof Icon>[0]["name"]} size={14}

@@ -30,7 +30,7 @@ export const HELP_SECTIONS_ADVANCED: Section[] = [
             <li>Кнопка <b>«Расчёт пожара»</b> (F9 уже должен быть выполнен)</li>
           </ol>
 
-          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #81b0c4" }}>
             <span className="text-[11px] text-blue-800">
               <b>Два метода тепловой депрессии.</b> <b>«Норматив (4.5)»</b> — расчёт по
               нормативным формулам с учётом геометрии выработки и времени с начала
@@ -375,7 +375,7 @@ export const HELP_SECTIONS_ADVANCED: Section[] = [
               ))}
             </tbody>
           </table>
-          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc" }}>
             <span className="text-[12px] text-blue-700">
               💡 Сочетания работают и в русской раскладке — переключать язык не нужно
               (Ctrl+Я = Ctrl+Z, Ctrl+Ы = Ctrl+S и так далее).

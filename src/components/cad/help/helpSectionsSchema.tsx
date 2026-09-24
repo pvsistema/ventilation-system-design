@@ -79,7 +79,7 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
             <li>• <b>Какие узлы останутся без выработок</b> — так называемые
               изолированные узлы</li>
           </ul>
-          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #93c5fd" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #81b0c4" }}>
             <span className="text-[11px] text-blue-800">
               Изолированные узлы разрывают связность сети, и расчёт
               воздухораспределения после этого может не сойтись. Кнопка
@@ -145,7 +145,7 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
             <li>• <b>Видимые объекты</b> — только то, что сейчас на экране (скрытые горизонты не трогаются)</li>
             <li>• <b>Выделенные объекты</b> — лишь выделенные узлы, удобно для стыковки участков</li>
           </ul>
-          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #bfdbfe" }}>
+          <div className="p-2 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc" }}>
             <span className="text-[11px] text-blue-800">
               Перенос не меняет форму схемы: расстояния между узлами сохраняются,
               поэтому длины выработок, сопротивление сети и результаты расчёта
@@ -279,7 +279,7 @@ export const HELP_SECTIONS_SCHEMA: Section[] = [
           </p>
 
           <div className="grid grid-cols-2 gap-2">
-            <Block title="Метод Кросса (Андрияшева–Кросса)" color="#dbeafe">
+            <Block title="Метод Кросса (Андрияшева–Кросса)" color="#d7e7ee">
               Итерационный метод последовательной корректировки расходов по контурам.
               Быстрый, подходит для большинства сетей. Настройка: точность, число итераций.
             </Block>

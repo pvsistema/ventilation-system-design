@@ -1829,7 +1829,7 @@ body{background:white;font-family:Arial,sans-serif}
           style={{ background: "#efefef", borderTop: "1px solid #d0d0d0" }}>
           <button onClick={handlePrint} disabled={printing}
             className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
-            style={{ background: "#2563eb", border: "1px solid #1e4db7" }}>
+            style={{ background: "#1e5a7a", border: "1px solid #1e4db7" }}>
             {printing ? (
               <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />
                 {printProgress && printProgress.total > 1

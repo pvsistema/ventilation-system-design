@@ -174,7 +174,7 @@ export function RibbonSmallBtn({ children, active, title, onClick }: {
         background: active ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
         flexShrink: 0,
       }}
-      onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; } }}
+      onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "#eef5f8"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#81b0c4"; } }}
       onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}>
       {children}
     </button>
@@ -198,7 +198,7 @@ export function RectIcon() {
 }
 
 export function MiniSquareIcon({ variant }: { variant: number }) {
-  const colors = ["#3b82f6", "#22c55e", "#f59e0b", "#a855f7"];
+  const colors = ["#2f7290", "#22c55e", "#f59e0b", "#a855f7"];
   return (
     <svg width="14" height="14" viewBox="0 0 14 14">
       <rect x="2" y="2" width="10" height="10" fill={colors[variant - 1]} opacity="0.6" stroke={colors[variant - 1]} />
@@ -343,12 +343,8 @@ export function ToolBtn({ icon, label, active, onClick, disabled }: {
 }) {
   return (
     <button onClick={onClick} disabled={disabled} title={label}
-      className="h-6 px-2 flex items-center gap-1 rounded text-[11px] disabled:opacity-40"
-      style={{
-        background: active ? "var(--c-blue, #2563eb)" : "transparent",
-        color: active ? "white" : "var(--c-t1, #1f1f1f)",
-        border: active ? "1px solid var(--c-blue, #1d4ed8)" : "1px solid transparent",
-      }}>
+      className="tool-btn h-6 px-2 flex items-center gap-1 rounded text-[11px] disabled:opacity-40"
+      data-active={active ? "1" : undefined}>
       <Icon name={icon} size={13} fallback="Square" />
       <span>{label}</span>
     </button>

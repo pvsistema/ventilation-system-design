@@ -122,7 +122,7 @@ export default function OpoDataDialog({ data, onChange, summary, horizons, onClo
                   <input type="checkbox" checked={data.hazards.includes(h)}
                     onChange={() => toggleHazard(h)}
                     className="w-[13px] h-[13px] cursor-pointer"
-                    style={{ accentColor: "#2563eb" }} />
+                    style={{ accentColor: "#1e5a7a" }} />
                   <span className="text-[11px] text-gray-800">{OPO_HAZARD_LABELS[h]}</span>
                 </label>
               ))}

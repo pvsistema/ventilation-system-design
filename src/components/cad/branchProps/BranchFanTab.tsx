@@ -68,7 +68,7 @@ export default function BranchFanTab({
           <input type="range" min={5} max={400} step={5}
             value={Math.round((fanSymbolScale ?? 1) * 100)}
             onChange={(e) => onFanSymbolScale(Number(e.target.value) / 100)}
-            className="flex-1" style={{ accentColor: "#2563eb" }} />
+            className="flex-1" style={{ accentColor: "#1e5a7a" }} />
           <input type="number" min={5} max={400} step={5}
             value={Math.round((fanSymbolScale ?? 1) * 100)}
             onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); onFanSymbolScale(v / 100); }}
@@ -89,7 +89,7 @@ export default function BranchFanTab({
           <input type="range" min={1} max={50} step={0.5}
             value={fanIndFontSize ?? 9}
             onChange={(e) => onFanIndFontSize(Number(e.target.value))}
-            className="flex-1" style={{ accentColor: "#2563eb" }} />
+            className="flex-1" style={{ accentColor: "#1e5a7a" }} />
           <input type="number" min={1} max={50} step={0.5}
             value={fanIndFontSize ?? 9}
             onChange={(e) => { const v = Math.min(50, Math.max(1, Number(e.target.value) || 9)); onFanIndFontSize(v); }}
@@ -125,7 +125,7 @@ export default function BranchFanTab({
           <button
             onClick={onReverse}
             className="text-[11px] px-2 py-0.5 rounded flex items-center gap-1"
-            style={{ background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)", border: "1px solid #bfdbfe", cursor: "pointer" }}>
+            style={{ background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)", border: "1px solid #b0cfdc", cursor: "pointer" }}>
             ⇄ Развернуть
           </button>
         )}
@@ -320,7 +320,7 @@ export default function BranchFanTab({
             <polyline key={a}
               points={pts.join(" ")}
               fill="none"
-              stroke={isSelected ? "#2563eb" : "#93c5fd"}
+              stroke={isSelected ? "#1e5a7a" : "#81b0c4"}
               strokeWidth={isSelected ? 1.8 : 1}
               strokeDasharray={isSelected ? undefined : "3,2"}
               opacity={isSelected ? 1 : 0.7}
@@ -400,7 +400,7 @@ export default function BranchFanTab({
             <text x={6} y={padT + gH / 2} textAnchor="middle" fontSize={8} fill="#6b7280"
               transform={`rotate(-90,6,${padT + gH / 2})`}>H, Па</text>
             {curve.bladeAngles.length > 0 && (
-              <text x={padL + gW - 2} y={padT + 10} textAnchor="end" fontSize={7.5} fill="#2563eb">
+              <text x={padL + gW - 2} y={padT + 10} textAnchor="end" fontSize={7.5} fill="#1e5a7a">
                 — Угол {bladeAngle}°
               </text>
             )}
@@ -479,7 +479,7 @@ export default function BranchFanTab({
                     value={rpm}
                     onChange={(e) => onUpdate({ fanRpm: Number(e.target.value) })}
                     className="flex-1"
-                    style={{ accentColor: "#2563eb" }} />
+                    style={{ accentColor: "#1e5a7a" }} />
                   <span className="text-[10px] text-gray-700 w-16 text-right flex-shrink-0">
                     {rpm} об/мин
                   </span>
@@ -495,7 +495,7 @@ export default function BranchFanTab({
               </div>
               <div className="px-2 pb-1 flex gap-3 text-[9px] text-gray-400 justify-center flex-wrap">
                 <span style={{ color: "var(--c-blue, #2563eb)" }}>— выбранный угол</span>
-                <span style={{ color: "#93c5fd" }}>-- другие углы</span>
+                <span style={{ color: "#81b0c4" }}>-- другие углы</span>
                 {Math.abs(branch.flow) > 0.01 && <span style={{ color: "var(--c-red-lt, #ef4444)" }}>● рабочая точка</span>}
               </div>
             </>
