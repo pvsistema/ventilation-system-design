@@ -1,3 +1,12 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Окно выгрузки таблицы параметров в Excel (.xlsx).
+//
+// Оформлено в едином стиле окон программы (переменные темы --c-*): слева —
+// что выгружаем (выработки / узлы), горизонт и готовый шаблон столбцов;
+// справа — сами столбцы, сгруппированные по смыслу, с поиском и счётчиками.
+// Запись файла живёт в lib/excelExport.ts — окно только собирает настройки.
+// ─────────────────────────────────────────────────────────────────────────────
+
 import { useState, useMemo } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode, Horizon } from "@/lib/topology";
@@ -5,7 +14,6 @@ import {
   BRANCH_COLUMNS,
   NODE_COLUMNS,
   BRANCH_PRESETS,
-  PRESET_LABELS,
   exportToExcel,
   type ExportAreaId,
   type ExportType,
@@ -20,46 +28,66 @@ interface Props {
   onClose: () => void;
 }
 
+/** Шаблоны столбцов: короткое имя, пояснение и иконка. */
+const TEMPLATES: Record<ExportPreset, { title: string; hint: string; icon: string }> = {
+  all:         { title: "Полная таблица",        hint: "Все доступные столбцы",                  icon: "Table" },
+  main_vent:   { title: "Модель сети",           hint: "Геометрия, сопротивления, расходы",      icon: "Network" },
+  flows:       { title: "Расходы воздуха",       hint: "Расход и скорость по выработкам",        icon: "Wind" },
+  depressions: { title: "Депрессии",             hint: "Падение давления и сопротивления",       icon: "Gauge" },
+  speed_check: { title: "Проверка скоростей",    hint: "Скорость против допустимых пределов",    icon: "ShieldCheck" },
+  stability:   { title: "Устойчивость",          hint: "Тепловые депрессии, опрокидывание",      icon: "Flame" },
+  objects:     { title: "Объекты на выработках", hint: "Сечение, сопротивление, расход",         icon: "Box" },
+  waterpipes:  { title: "Трубопроводы",          hint: "Минимальный набор для трубной сети",     icon: "Droplets" },
+  custom:      { title: "Свой набор",            hint: "Столбцы отмечены вручную",               icon: "SlidersHorizontal" },
+};
+
+const BRANCH_TEMPLATE_ORDER: ExportPreset[] =
+  ["all", "main_vent", "flows", "depressions", "speed_check", "stability", "objects", "waterpipes", "custom"];
+const NODE_TEMPLATE_ORDER: ExportPreset[] = ["all", "custom"];
+
 export default function ExcelExportDialog({ branches, nodes, horizons, projectName = "ПВ-Система", onClose }: Props) {
-  const [areaId, setAreaId]   = useState<ExportAreaId>("all");
-  const [type, setType]       = useState<ExportType>("branches");
-  const [preset, setPreset]   = useState<ExportPreset>("custom");
-  const [customKeys, setCustomKeys] = useState<Set<string>>(() => new Set(
-    BRANCH_COLUMNS.map(c => c.key)
-  ));
+  const [areaId, setAreaId] = useState<ExportAreaId>("all");
+  const [type, setType]     = useState<ExportType>("branches");
+  const [preset, setPreset] = useState<ExportPreset>("all");
+  const [keys, setKeys]     = useState<Set<string>>(() => new Set(BRANCH_COLUMNS.map(c => c.key)));
+  const [query, setQuery]   = useState("");
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
 
   const allColumns = type === "branches" ? BRANCH_COLUMNS : NODE_COLUMNS;
 
-  // Сгруппировать колонки по group
   const groups = useMemo(() => {
+    const q = query.trim().toLowerCase();
     const map = new Map<string, typeof allColumns>();
     allColumns.forEach(c => {
+      if (q && !c.label.toLowerCase().includes(q) && !c.group.toLowerCase().includes(q)) return;
       if (!map.has(c.group)) map.set(c.group, []);
       map.get(c.group)!.push(c);
     });
     return map;
-  }, [allColumns]);
+  }, [allColumns, query]);
 
-  // При смене пресета — обновить набор ключей
+  const nodeCount = useMemo(() => nodes.filter(n => !n.atmosphereLink).length, [nodes]);
+  const rowCount = type === "branches"
+    ? (areaId === "all" ? branches.length : branches.filter(b => b.horizonId === areaId).length)
+    : nodeCount;
+
   function applyPreset(p: ExportPreset) {
     setPreset(p);
-    if (type === "branches" && p !== "custom") {
-      setCustomKeys(new Set(BRANCH_PRESETS[p]));
-    } else if (p === "all") {
-      setCustomKeys(new Set(allColumns.map(c => c.key)));
-    }
+    if (p === "all") setKeys(new Set(allColumns.map(c => c.key)));
+    else if (type === "branches" && p !== "custom") setKeys(new Set(BRANCH_PRESETS[p]));
   }
 
-  // При смене типа — сбросить набор
   function changeType(t: ExportType) {
+    if (t === type) return;
     setType(t);
     setPreset("all");
-    const cols = t === "branches" ? BRANCH_COLUMNS : NODE_COLUMNS;
-    setCustomKeys(new Set(cols.map(c => c.key)));
+    setQuery("");
+    setCollapsed(new Set());
+    setKeys(new Set((t === "branches" ? BRANCH_COLUMNS : NODE_COLUMNS).map(c => c.key)));
   }
 
   function toggleKey(key: string) {
-    setCustomKeys(prev => {
+    setKeys(prev => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key); else next.add(key);
       return next;
@@ -67,180 +95,254 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
     setPreset("custom");
   }
 
-  function toggleGroup(keys: string[]) {
-    const allOn = keys.every(k => customKeys.has(k));
-    setCustomKeys(prev => {
+  function toggleGroup(groupKeys: string[]) {
+    const allOn = groupKeys.every(k => keys.has(k));
+    setKeys(prev => {
       const next = new Set(prev);
-      if (allOn) keys.forEach(k => next.delete(k));
-      else keys.forEach(k => next.add(k));
+      groupKeys.forEach(k => (allOn ? next.delete(k) : next.add(k)));
       return next;
     });
     setPreset("custom");
   }
 
+  function toggleCollapse(g: string) {
+    setCollapsed(prev => {
+      const next = new Set(prev);
+      if (next.has(g)) next.delete(g); else next.add(g);
+      return next;
+    });
+  }
+
+  const selectedCount = keys.size;
+  const ready = selectedCount > 0 && rowCount > 0;
+
   function handleExport() {
+    if (!ready) return;
     exportToExcel({
-      areaId,
+      areaId: type === "branches" ? areaId : "all",
       type,
-      selectedKeys: Array.from(customKeys),
-      branches,
-      nodes,
-      horizons,
-      projectName,
+      // Порядок столбцов — как в справочнике, а не как кликал пользователь.
+      selectedKeys: allColumns.filter(c => keys.has(c.key)).map(c => c.key),
+      branches, nodes, horizons, projectName,
     });
     onClose();
   }
 
-  const presetList: ExportPreset[] = type === "branches"
-    ? ["all","depressions","flows","main_vent","speed_check","stability","objects","waterpipes","custom"]
-    : ["all","custom"];
-
-  const selectedCount = customKeys.size;
-  const totalCount = allColumns.length;
+  const templateOrder = type === "branches" ? BRANCH_TEMPLATE_ORDER : NODE_TEMPLATE_ORDER;
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-start justify-center pt-16"
-      style={{ background: "rgba(0,0,0,0.35)" }}
+    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40"
       onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        style={{ width: 780, maxWidth: "96vw", height: "min(640px, 90vh)",
+          background: "var(--c-s1, #fff)", border: "1.5px solid var(--c-b2, #d1d5db)" }}>
 
-      <div className="bg-white rounded shadow-2xl flex flex-col"
-        style={{ width: 520, maxHeight: "80vh", border: "1px solid #b0b8cc" }}>
-
-        {/* Заголовок */}
-        <div className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: "#e8edf5", borderBottom: "1px solid #c0cad8" }}>
-          <span className="text-[13px] font-semibold text-gray-800">Экспорт параметров выработок</span>
-          <button onClick={onClose} className="hover:bg-black/10 rounded p-0.5">
-            <Icon name="X" size={15} className="text-gray-600" />
+        {/* ── Шапка ── */}
+        <div className="flex items-center gap-3 px-5 pt-4 pb-3"
+          style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
+          <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac" }}>
+            <Icon name="FileSpreadsheet" size={19} style={{ color: "var(--c-green, #15803d)" }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[15px] font-bold" style={{ color: "var(--c-t1, #111827)" }}>Выгрузка таблицы в Excel</div>
+            <div className="text-[11px] mt-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
+              Файл .xlsx с закреплённой шапкой и автофильтром — проект «{projectName}»
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded p-1 hover:bg-black/5" style={{ color: "var(--c-t4, #9ca3af)" }}>
+            <Icon name="X" size={18} />
           </button>
         </div>
 
-        {/* Фильтры */}
-        <div className="px-4 pt-3 pb-2 space-y-2" style={{ borderBottom: "1px solid #e0e4ee" }}>
-          {/* Область */}
-          <div className="flex items-center gap-3">
-            <span className="text-[12px] text-gray-600 w-16 flex-shrink-0">Область:</span>
-            <select
-              value={areaId}
-              onChange={e => setAreaId(e.target.value as ExportAreaId)}
-              className="flex-1 text-[12px] border border-gray-300 rounded px-2 py-1"
-              style={{ background: "white" }}>
-              <option value="all">Все</option>
-              {horizons.map(h => (
-                <option key={h.id} value={h.id}>{h.name}</option>
-              ))}
-            </select>
-          </div>
+        <div className="flex flex-1 min-h-0">
+          {/* ── Левая колонка: что и откуда ── */}
+          <div className="flex flex-col gap-4 px-4 py-4 overflow-y-auto shrink-0"
+            style={{ width: 270, background: "var(--c-s2, #f9fafb)", borderRight: "1px solid var(--c-b1, #e5e7eb)" }}>
 
-          {/* Тип */}
-          <div className="flex items-center gap-3">
-            <span className="text-[12px] text-gray-600 w-16 flex-shrink-0">Тип:</span>
-            <select
-              value={type}
-              onChange={e => changeType(e.target.value as ExportType)}
-              className="flex-1 text-[12px] border border-gray-300 rounded px-2 py-1"
-              style={{ background: "white" }}>
-              <option value="branches">Выработки</option>
-              <option value="nodes">Конечные вершины</option>
-            </select>
-          </div>
+            {/* Объект выгрузки */}
+            <div>
+              <SectionTitle>Что выгружать</SectionTitle>
+              <div className="grid grid-cols-2 gap-1.5">
+                {([
+                  { t: "branches" as const, label: "Выработки", icon: "GitCommitHorizontal", count: branches.length },
+                  { t: "nodes" as const,    label: "Узлы",      icon: "CircleDot",           count: nodeCount },
+                ]).map(o => {
+                  const on = type === o.t;
+                  return (
+                    <button key={o.t} onClick={() => changeType(o.t)}
+                      className="rounded-lg px-2 py-2 text-left transition-colors"
+                      style={{
+                        background: on ? "var(--c-tint-blue, #eef5f8)" : "var(--c-s1, #fff)",
+                        border: `1.5px solid ${on ? "var(--c-accent, #1e5a7a)" : "var(--c-b2, #d1d5db)"}`,
+                      }}>
+                      <Icon name={o.icon} size={15} style={{ color: on ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)" }} />
+                      <div className="text-[12px] font-semibold mt-1" style={{ color: "var(--c-t1, #111827)" }}>{o.label}</div>
+                      <div className="text-[10px]" style={{ color: "var(--c-t4, #9ca3af)" }}>{o.count} шт.</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
 
-          {/* Пресет */}
-          <div className="flex items-center gap-3">
-            <span className="text-[12px] text-gray-600 w-16 flex-shrink-0"></span>
-            <select
-              value={preset}
-              onChange={e => applyPreset(e.target.value as ExportPreset)}
-              className="flex-1 text-[12px] border border-gray-300 rounded px-2 py-1"
-              style={{ background: "white" }}>
-              {presetList.map(p => (
-                <option key={p} value={p}>{PRESET_LABELS[p]}</option>
-              ))}
-            </select>
-          </div>
-        </div>
+            {/* Горизонт */}
+            {type === "branches" && (
+              <div>
+                <SectionTitle>Горизонт</SectionTitle>
+                <select value={areaId} onChange={e => setAreaId(e.target.value as ExportAreaId)}
+                  className="w-full text-[12px] rounded-md px-2 py-1.5 outline-none"
+                  style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)" }}>
+                  <option value="all">Вся схема</option>
+                  {horizons.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                </select>
+              </div>
+            )}
 
-        {/* Список параметров */}
-        <div className="flex-1 overflow-y-auto px-3 py-2">
-          {/* Шапка со сводкой */}
-          <div className="flex items-center justify-between mb-1 px-1">
-            <span className="text-[10px] text-gray-500">{selectedCount} из {totalCount} параметров</span>
-            <div className="flex gap-2">
-              <button
-                className="text-[10px] text-blue-600 hover:underline"
-                onClick={() => { setCustomKeys(new Set(allColumns.map(c => c.key))); setPreset("all"); }}>
-                Выбрать все
-              </button>
-              <button
-                className="text-[10px] text-gray-400 hover:underline"
-                onClick={() => { setCustomKeys(new Set()); setPreset("custom"); }}>
-                Снять все
-              </button>
+            {/* Шаблоны */}
+            <div>
+              <SectionTitle>Шаблон столбцов</SectionTitle>
+              <div className="flex flex-col gap-1">
+                {templateOrder.map(p => {
+                  const t = TEMPLATES[p];
+                  const on = preset === p;
+                  const n = p === "all" ? allColumns.length : p === "custom" ? null : BRANCH_PRESETS[p].length;
+                  return (
+                    <button key={p} onClick={() => applyPreset(p)}
+                      disabled={p === "custom" && !on}
+                      className="flex items-start gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-black/[0.03] disabled:cursor-default"
+                      style={{
+                        background: on ? "var(--c-tint-blue, #eef5f8)" : "transparent",
+                        border: `1px solid ${on ? "var(--c-tint-blue2, #d7e7ee)" : "transparent"}`,
+                        opacity: p === "custom" && !on ? 0.55 : 1,
+                      }}>
+                      <Icon name={t.icon} size={14} className="mt-0.5 shrink-0"
+                        style={{ color: on ? "var(--c-accent, #1e5a7a)" : "var(--c-t4, #9ca3af)" }} />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[12px] leading-tight"
+                          style={{ color: "var(--c-t1, #111827)", fontWeight: on ? 600 : 400 }}>{t.title}</div>
+                        <div className="text-[10px] leading-tight mt-0.5" style={{ color: "var(--c-t4, #9ca3af)" }}>{t.hint}</div>
+                      </div>
+                      {n !== null && (
+                        <span className="text-[10px] tabular-nums mt-0.5" style={{ color: "var(--c-t4, #9ca3af)" }}>{n}</span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </div>
 
-          {/* Группы и чекбоксы */}
-          {Array.from(groups.entries()).map(([groupName, cols]) => {
-            const groupKeys = cols.map(c => c.key);
-            const allOn = groupKeys.every(k => customKeys.has(k));
-            const someOn = groupKeys.some(k => customKeys.has(k));
-            return (
-              <div key={groupName} className="mb-1">
-                {/* Заголовок группы */}
-                <div className="flex items-center gap-2 py-0.5 px-1 cursor-pointer select-none"
-                  style={{ borderBottom: "1px solid #e5e9f0" }}
-                  onClick={() => toggleGroup(groupKeys)}>
-                  <input
-                    type="checkbox"
-                    checked={allOn}
-                    ref={el => { if (el) el.indeterminate = !allOn && someOn; }}
-                    readOnly
-                    style={{ width: 12, height: 12, accentColor: "#1e5a7a", cursor: "pointer" }} />
-                  <span className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide">{groupName}</span>
-                </div>
-                {/* Колонки группы */}
-                <div className="pt-0.5">
-                  {cols.map(col => (
-                    <label key={col.key}
-                      className="flex items-center gap-2 py-0.5 px-2 cursor-pointer hover:bg-blue-50 rounded">
-                      <input
-                        type="checkbox"
-                        checked={customKeys.has(col.key)}
-                        onChange={() => toggleKey(col.key)}
-                        style={{ width: 12, height: 12, accentColor: "#1e5a7a", cursor: "pointer", flexShrink: 0 }} />
-                      <span className="text-[11px] text-gray-700 leading-tight">{col.label}</span>
-                    </label>
-                  ))}
-                </div>
+          {/* ── Правая колонка: столбцы таблицы ── */}
+          <div className="flex-1 min-w-0 flex flex-col">
+            <div className="flex items-center gap-2 px-4 py-2.5" style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
+              <div className="flex-1 flex items-center gap-1.5 rounded-md px-2 py-1"
+                style={{ background: "var(--c-s2, #f9fafb)", border: "1px solid var(--c-b2, #d1d5db)" }}>
+                <Icon name="Search" size={13} style={{ color: "var(--c-t4, #9ca3af)" }} />
+                <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Найти столбец…"
+                  className="flex-1 bg-transparent text-[12px] outline-none" style={{ color: "var(--c-t2, #374151)" }} />
+                {query && (
+                  <button onClick={() => setQuery("")} style={{ color: "var(--c-t4, #9ca3af)" }}>
+                    <Icon name="X" size={12} />
+                  </button>
+                )}
               </div>
-            );
-          })}
+              <button onClick={() => applyPreset("all")}
+                className="text-[11px] px-2 py-1 rounded hover:bg-black/5" style={{ color: "var(--c-accent, #1e5a7a)" }}>
+                Все
+              </button>
+              <button onClick={() => { setKeys(new Set()); setPreset("custom"); }}
+                className="text-[11px] px-2 py-1 rounded hover:bg-black/5" style={{ color: "var(--c-t3, #6b7280)" }}>
+                Сбросить
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+              {groups.size === 0 && (
+                <div className="text-[12px] text-center py-8" style={{ color: "var(--c-t4, #9ca3af)" }}>
+                  Столбцов по запросу «{query}» нет
+                </div>
+              )}
+              {Array.from(groups.entries()).map(([groupName, cols]) => {
+                const groupKeys = cols.map(c => c.key);
+                const onCount = groupKeys.filter(k => keys.has(k)).length;
+                const allOn = onCount === groupKeys.length;
+                const isOpen = !collapsed.has(groupName) || !!query;
+                return (
+                  <div key={groupName} className="rounded-lg overflow-hidden"
+                    style={{ border: "1px solid var(--c-b1, #e5e7eb)" }}>
+                    <div className="flex items-center gap-2 px-2.5 py-1.5 select-none"
+                      style={{ background: "var(--c-s3, #f3f4f6)" }}>
+                      <button onClick={() => toggleCollapse(groupName)} style={{ color: "var(--c-t3, #6b7280)" }}>
+                        <Icon name={isOpen ? "ChevronDown" : "ChevronRight"} size={14} />
+                      </button>
+                      <input type="checkbox" checked={allOn}
+                        ref={el => { if (el) el.indeterminate = !allOn && onCount > 0; }}
+                        onChange={() => toggleGroup(groupKeys)}
+                        className="w-3.5 h-3.5 cursor-pointer" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+                      <span className="flex-1 text-[12px] font-semibold cursor-pointer"
+                        style={{ color: "var(--c-t1, #111827)" }} onClick={() => toggleCollapse(groupName)}>
+                        {groupName}
+                      </span>
+                      <span className="text-[10px] tabular-nums px-1.5 py-0.5 rounded-full"
+                        style={{
+                          background: onCount ? "var(--c-tint-blue2, #d7e7ee)" : "transparent",
+                          color: onCount ? "var(--c-accent-ink, #173d52)" : "var(--c-t4, #9ca3af)",
+                        }}>
+                        {onCount}/{groupKeys.length}
+                      </span>
+                    </div>
+                    {isOpen && (
+                      <div className="grid grid-cols-2 gap-x-3 px-2.5 py-1.5">
+                        {cols.map(col => (
+                          <label key={col.key}
+                            className="flex items-start gap-2 py-1 px-1 rounded cursor-pointer hover:bg-black/[0.03]">
+                            <input type="checkbox" checked={keys.has(col.key)} onChange={() => toggleKey(col.key)}
+                              className="w-3.5 h-3.5 mt-px shrink-0 cursor-pointer"
+                              style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+                            <span className="text-[11.5px] leading-snug" style={{ color: "var(--c-t2, #374151)" }}>
+                              {col.label}
+                            </span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
         </div>
 
-        {/* Кнопки */}
-        <div className="flex items-center justify-end gap-2 px-4 py-2.5"
-          style={{ borderTop: "1px solid #d8dde8", background: "#f5f7fc" }}>
-          <span className="text-[10px] text-gray-400 mr-auto">
-            {type === "branches"
-              ? `${areaId === "all" ? branches.length : branches.filter(b => b.horizonId === areaId).length} выработок`
-              : `${nodes.filter(n => !n.atmosphereLink).length} вершин`}
-          </span>
-          <button onClick={onClose}
-            className="px-4 py-1.5 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
-            Закрыть
+        {/* ── Подвал ── */}
+        <div className="flex items-center gap-3 px-5 py-3"
+          style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)", background: "var(--c-s2, #f9fafb)" }}>
+          <button onClick={onClose} className="px-4 py-1.5 text-sm rounded hover:bg-black/5"
+            style={{ color: "var(--c-t3, #6b7280)" }}>
+            Отмена
           </button>
-          <button
-            onClick={handleExport}
-            disabled={selectedCount === 0}
-            className="px-5 py-1.5 text-[12px] rounded text-white disabled:opacity-40"
-            style={{ background: "#1e5a7a" }}>
-            <span className="flex items-center gap-1.5">
-              <Icon name="Download" size={13} />
-              Экспорт
-            </span>
+          <div className="flex-1 text-[11px] text-right" style={{ color: "var(--c-t4, #9ca3af)" }}>
+            {rowCount === 0
+              ? (type === "branches" ? "На выбранном горизонте нет выработок" : "В схеме нет узлов")
+              : selectedCount === 0
+                ? "Отметьте хотя бы один столбец"
+                : `${rowCount} строк × ${selectedCount} столбцов`}
+          </div>
+          <button onClick={handleExport} disabled={!ready}
+            className="flex items-center gap-1.5 px-5 py-1.5 text-sm font-semibold text-white rounded-lg transition-colors"
+            style={{ background: ready ? "var(--c-green, #15803d)" : "#9ca3af", cursor: ready ? "pointer" : "not-allowed" }}>
+            <Icon name="Download" size={14} />
+            Выгрузить .xlsx
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: "var(--c-t3, #6b7280)" }}>
+      {children}
     </div>
   );
 }
