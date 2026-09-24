@@ -194,14 +194,17 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
           )}
 
           {/* Таблица сегментов */}
-          <div className="border rounded overflow-hidden">
-            <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 border-b" style={{ background: "var(--c-s2, #f8fafc)" }}>
-              Маршрут по выработкам
+          <div className="border rounded overflow-hidden flex flex-col min-h-[180px]">
+            <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 border-b flex items-center justify-between" style={{ background: "var(--c-s2, #f8fafc)" }}>
+              <span>Маршрут по выработкам</span>
+              <span className="font-normal text-gray-500">{segs.length} уч.</span>
             </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-[11px]">
-                <thead>
-                  <tr style={{ background: "var(--c-s3, #f1f5f9)" }}>
+            {/* Своя прокрутка таблицы: шапка и ИТОГО закреплены, длинный
+                маршрут листается, не выталкивая итог за край окна. */}
+            <div className="overflow-auto" style={{ maxHeight: "min(420px, 45vh)" }}>
+              <table className="w-full text-[11px] border-separate border-spacing-0">
+                <thead className="sticky top-0 z-10">
+                  <tr style={{ background: "var(--c-s3, #f1f5f9)", boxShadow: "0 1px 0 #e2e8f0" }}>
                     <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">№</th>
                     <th className="px-2 py-1 text-left font-medium text-gray-600 whitespace-nowrap">Выработка</th>
                     <th className="px-2 py-1 text-right font-medium text-gray-600 whitespace-nowrap">Длина, м</th>
@@ -236,10 +239,11 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                     );
                   })}
                 </tbody>
-                <tfoot>
-                  <tr style={{ background: "var(--c-tint-blue, #e0f2fe)", borderTop: "2px solid #bae6fd" }}>
+                <tfoot className="sticky bottom-0 z-10">
+                  <tr style={{ background: "var(--c-tint-blue, #e0f2fe)", boxShadow: "0 -2px 0 #bae6fd" }}>
                     <td className="px-2 py-1 font-bold text-blue-900" colSpan={2}>ИТОГО</td>
                     <td className="px-2 py-1 text-right font-bold text-blue-900">{totalLen}</td>
+                    <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
                     <td className="px-2 py-1"></td>
