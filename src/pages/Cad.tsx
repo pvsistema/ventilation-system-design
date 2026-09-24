@@ -15043,11 +15043,13 @@ export default function CadPage() {
 
             {/* ── Подвал панели: быстрые действия ── */}
             <div className="border-t border-gray-300 p-2 flex gap-1" style={{ background: "var(--c-s2, #f5f5f5)" }}>
-              <button onClick={handleSolve}
-                className="flex-1 h-7 text-xs rounded flex items-center justify-center gap-1"
-                style={{ background: "var(--c-green-bg, #16a34a)", color: "white" }}
+              {/* Фирменная кнопка главного действия: янтарь + антрацит. */}
+              <button onClick={handleSolve} disabled={vcSolving}
+                className="btn-brand flex-1 h-7 text-xs flex items-center justify-center gap-1.5"
                 title="Расчёт воздухораспределения (F9)">
-                <Icon name="Play" size={11} /> Расчёт (F9)
+                <Icon name={vcSolving ? "Loader" : "Play"} size={12} className={vcSolving ? "animate-spin" : ""} />
+                {vcSolving && solveProgress !== null ? `Расчёт… ${solveProgress}%` : "Расчёт"}
+                <kbd className="btn-brand-kbd">F9</kbd>
               </button>
               <button onClick={() => setThinLines((v) => !v)}
                 className="h-7 px-2 text-xs rounded border border-gray-300 hover:bg-blue-50"

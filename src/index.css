@@ -999,3 +999,44 @@ table td.tabular-nums,
 .rb-btn[data-tone]:not([data-solid]) .rb-progress {
   background: color-mix(in srgb, var(--rb-tone) 28%, transparent);
 }
+
+
+/* ── Фирменная кнопка главного действия («Расчёт F9») ──────────────────────
+   Сигнальный янтарь (цвет шахтной каски) и антрацитовый текст — отличает
+   главное действие программы от обычных «зелёных» кнопок других программ. */
+:root {
+  --brand-amber: #e8a317;
+  --brand-amber-hi: #f5b83d;
+  --brand-amber-lo: #c98a0c;
+  --brand-ink: #1f2328;
+}
+.btn-brand {
+  border-radius: 6px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: var(--brand-ink);
+  background: linear-gradient(180deg, var(--brand-amber-hi), var(--brand-amber));
+  border: 1px solid var(--brand-amber-lo);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 2px rgba(120, 70, 0, .25);
+  transition: filter .12s ease, transform .12s ease, box-shadow .12s ease;
+}
+.btn-brand:not(:disabled):hover {
+  filter: brightness(1.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 3px 8px -2px rgba(160, 95, 0, .45);
+}
+.btn-brand:not(:disabled):active {
+  transform: translateY(1px);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15);
+}
+.btn-brand:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 1px; }
+.btn-brand:disabled { cursor: wait; filter: saturate(.8); }
+.btn-brand-kbd {
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: var(--brand-amber-hi);
+  background: var(--brand-ink);
+}
