@@ -107,9 +107,8 @@ export default function CadAppInfoModals(p: CadAppInfoModalsProps) {
             {/* Данные */}
             <div className="px-6 pt-4 pb-3" style={{ background: "var(--c-s1, #fff)" }}>
               <div className="about-rows">
-                <div className="about-row"><span className="about-k">Версия</span><span className="about-v font-num">{APP_VERSION}</span></div>
+                {/* Версия и дата сборки показаны в шапке — здесь не дублируем */}
                 <CoreVersionRow />
-                <div className="about-row"><span className="about-k">Сборка</span><span className="about-v font-num">{APP_BUILD_DATE}</span></div>
                 <div className="about-row"><span className="about-k">Назначение</span><span className="about-v">Вентиляция и водоснабжение</span></div>
                 <div className="about-row"><span className="about-k">Платформа</span><span className="about-v">Web / Desktop</span></div>
                 {(() => {
