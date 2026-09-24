@@ -32,7 +32,10 @@ interface Props {
 
 function RibbonReferencesInner({ onOpenRef, onOpenLegend }: Props) {
   return (
-    <div className="h-[92px] flex items-stretch px-1 py-1 gap-0.5"
+    // Размеры ленты — как у остальных вкладок (Главная, Схема, Аварии):
+    // 80 px по высоте, те же отступы и прокрутка при узком окне. Раньше здесь
+    // было 92 px и свои отступы — лента «Справочников» выделялась из ряда.
+    <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
       style={{ background: "linear-gradient(180deg,var(--c-s2, #fafafa),var(--c-s3, #ececec))", borderBottom: "1px solid var(--c-b3, #b8b8b8)" }}>
       <RibbonGroup label="Вентиляция">
         <div className="flex items-stretch gap-1">
