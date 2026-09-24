@@ -7045,11 +7045,14 @@ export default function CadPage() {
           <RibbonGroup label="Вентилятор">
               {/* calc — пересчитать сеть */}
               <button onClick={handleSolve} disabled={vcSolving}
-                data-tone=""
-                className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-50"
-                style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: "pointer", ["--rb-tone" as string]: "var(--c-green, #15803d)" }}
+                data-brand=""
+                className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-100"
+                style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: vcSolving ? "wait" : "pointer" }}
                 title="Пересчитать (F9)">
-                <span className="rb-tile"><Icon name="RefreshCw" size={18} /></span>
+                <span className="rb-tile">
+                  {solveProgress !== null && <span className="rb-progress" style={{ height: `${solveProgress}%` }} />}
+                  <Icon name={vcSolving ? "Loader" : "Play"} size={18} className={`relative ${vcSolving ? "animate-spin" : ""}`} />
+                </span>
                 <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>Расчёт</span>
               </button>
               {/* reverse — переключить реверс */}
