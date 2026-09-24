@@ -892,3 +892,110 @@ table td.tabular-nums,
   font-family: var(--font-num);
   font-feature-settings: "zero" 0;
 }
+
+
+/* ── Крупные кнопки ленты: иконка в скруглённой подложке ─────────────────
+   Фирменный акцент — сигнальный янтарь (цвет шахтной каски): подложка иконки
+   подсвечивается им при наведении. Активная кнопка — заполненная подложка. */
+:root {
+  --rb-tile-bg: rgba(15, 23, 42, 0.045);
+  --rb-tile-border: rgba(15, 23, 42, 0.07);
+  --rb-hover-bg: #fef3c7;
+  --rb-hover-border: #f5b83d;
+  --rb-hover-ink: #92400e;
+  /* Активная (включённая) кнопка — антрацит с янтарной обводкой: так она
+     не путается со сплошными кнопками-действиями (Расчёт взрыва — янтарная). */
+  --rb-active-bg: #2b2f33;
+  --rb-active-ring: #e8a317;
+  --rb-active-ink: #fbbf24;
+}
+.dark {
+  --rb-active-bg: #e8a317;
+  --rb-active-ink: #1f2328;
+  --rb-tile-bg: rgba(255, 255, 255, 0.06);
+  --rb-tile-border: rgba(255, 255, 255, 0.08);
+  --rb-hover-bg: rgba(232, 163, 23, 0.18);
+  --rb-hover-border: #e8a317;
+  --rb-hover-ink: #fbd38d;
+}
+.rb-btn {
+  border-radius: 8px;
+  color: var(--c-t2, #374151);
+  background: transparent;
+  outline: none;
+}
+.rb-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  background: var(--rb-tile-bg);
+  border: 1px solid var(--rb-tile-border);
+  color: var(--c-t2, #4b5563);
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease, transform .14s ease, box-shadow .14s ease;
+}
+.rb-sub { color: var(--c-t3, #6b7280); }
+.rb-btn:not(:disabled):hover .rb-tile,
+.rb-btn:focus-visible .rb-tile {
+  background: var(--rb-hover-bg);
+  border-color: var(--rb-hover-border);
+  color: var(--rb-hover-ink);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px -2px rgba(180, 110, 0, 0.35);
+}
+.rb-btn:not(:disabled):hover .rb-label { color: var(--c-t1, #111827); }
+.rb-btn:not(:disabled):active .rb-tile { transform: translateY(0); box-shadow: none; }
+.rb-btn[data-active="1"] .rb-tile {
+  background: var(--rb-active-bg);
+  border-color: var(--rb-active-bg);
+  color: var(--rb-active-ink);
+  box-shadow: 0 0 0 2px var(--rb-active-ring, transparent), 0 2px 6px -2px rgba(0, 0, 0, 0.35);
+}
+.rb-btn[data-active="1"] .rb-label { color: var(--c-t1, #111827); font-weight: 600; }
+.rb-btn[data-active="1"] .rb-sub { color: var(--c-amber, #b45309); }
+/* Картинки-иконки (очаг пожара, взрыв) на активной подложке — светлые */
+.rb-btn[data-active="1"] .rb-tile img { filter: brightness(0) invert(1); }
+.rb-btn[data-active="1"]:not(:disabled):hover .rb-tile {
+  background: var(--rb-active-bg);
+  color: var(--rb-active-ink);
+}
+
+/* Тонированная подложка — для кнопок-действий со своим цветом
+   (Расчёт сети — зелёная, Расчёт пожара — красная, Расчёт взрыва — янтарная,
+   Экспорт в Excel — зелёная). Цвет задаётся переменной --rb-tone на кнопке. */
+.rb-btn[data-tone] .rb-tile {
+  background: color-mix(in srgb, var(--rb-tone) 12%, transparent);
+  border-color: color-mix(in srgb, var(--rb-tone) 30%, transparent);
+  color: var(--rb-tone);
+}
+.rb-btn[data-tone] .rb-label { color: var(--rb-tone); }
+.rb-btn[data-tone]:not(:disabled):hover .rb-tile {
+  background: color-mix(in srgb, var(--rb-tone) 20%, transparent);
+  border-color: var(--rb-tone);
+  color: var(--rb-tone);
+  box-shadow: 0 2px 6px -2px color-mix(in srgb, var(--rb-tone) 55%, transparent);
+}
+/* «Сплошная» кнопка — главное действие вкладки (Расчёт пожара, взрыва) */
+.rb-btn[data-tone][data-solid] .rb-tile {
+  background: var(--rb-tone);
+  border-color: var(--rb-tone);
+  color: #fff;
+}
+.rb-btn[data-tone][data-solid] .rb-tile img { filter: brightness(0) invert(1); }
+.rb-btn[data-tone][data-solid]:not(:disabled):hover .rb-tile {
+  background: color-mix(in srgb, var(--rb-tone) 85%, #000);
+  color: #fff;
+}
+/* Полоса прогресса внутри подложки */
+.rb-tile { position: relative; overflow: hidden; }
+.rb-progress {
+  position: absolute; left: 0; bottom: 0; width: 100%;
+  background: rgba(255, 255, 255, 0.35);
+  transition: height .2s linear;
+  pointer-events: none;
+}
+.rb-btn[data-tone]:not([data-solid]) .rb-progress {
+  background: color-mix(in srgb, var(--rb-tone) 28%, transparent);
+}

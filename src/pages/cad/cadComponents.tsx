@@ -146,29 +146,32 @@ export function RibbonGroup({ children }: { label?: string; children: React.Reac
 export function RibbonBigBtn({ icon, iconImg, label, sublabel, disabled, onClick, active, title, style }: {
   icon: string; iconImg?: string; label: string; sublabel: string; disabled?: boolean; onClick?: () => void; active?: boolean; title?: string; style?: React.CSSProperties;
 }) {
+  // Единый стиль крупных кнопок ленты: иконка в скруглённом квадрате-подложке.
+  // В покое подложка едва заметна, при наведении — янтарная (фирменный
+  // акцент), у активной кнопки — заполненная. Подсветка задаётся классами
+  // .rb-* в index.css, а не ручными onMouseEnter: так она работает и в тёмной
+  // теме и не «залипает», если мышь ушла с кнопки во время перерисовки.
   return (
     <button disabled={disabled} onClick={onClick} title={title ?? `${label}${sublabel ? " " + sublabel : ""}`}
-      className="flex flex-col items-center justify-center gap-0.5 rounded disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+      data-active={active ? "1" : undefined}
+      className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
       style={{
         // Ширина растёт под длинную подпись («Устойчивость», «Типы выработок»):
         // при жёстких 52px текст вылезал за границы и налезал на соседнюю кнопку.
-        minWidth: 52, height: 60,
-        paddingLeft: 4, paddingRight: 4,
-        border: active ? "1.5px solid var(--c-blue-lt, #3b82f6)" : "1px solid transparent",
-        background: active ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
-        color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)",
+        minWidth: 54, height: 62,
+        paddingLeft: 3, paddingRight: 3, paddingTop: 3,
         flexShrink: 0,
         ...style,
-      }}
-      onMouseEnter={e => { if (!disabled && !active) (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; }}
-      onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}>
-      {iconImg
-        ? <img src={iconImg} alt={label} style={{ width: 22, height: 22, objectFit: "contain" }} />
-        : <Icon name={icon} size={20} fallback="Square" style={{ color: active ? "var(--c-blue, #2563eb)" : "var(--c-t2, #4b5563)" }} />}
-      <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500 }}>
-        <div style={{ whiteSpace: "nowrap" }}>{label}</div>
-        {sublabel && <div style={{ color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t3, #6b7280)", whiteSpace: "nowrap" }}>{sublabel}</div>}
-      </div>
+      }}>
+      <span className="rb-tile">
+        {iconImg
+          ? <img src={iconImg} alt={label} style={{ width: 20, height: 20, objectFit: "contain" }} />
+          : <Icon name={icon} size={18} fallback="Square" />}
+      </span>
+      <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>
+        <span className="block" style={{ whiteSpace: "nowrap" }}>{label}</span>
+        {sublabel && <span className="rb-sub block" style={{ whiteSpace: "nowrap" }}>{sublabel}</span>}
+      </span>
     </button>
   );
 }

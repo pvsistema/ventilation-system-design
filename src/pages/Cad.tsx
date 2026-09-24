@@ -6472,21 +6472,21 @@ export default function CadPage() {
                 }
               }}
               disabled={fireCalcProgress !== null || !schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
-              className="relative flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] overflow-hidden"
-              style={{ width: 52, height: 60, background: "var(--c-red-bg, #dc2626)", color: "white", borderColor: "var(--c-red, #b91c1c)",
-                cursor: fireCalcProgress !== null ? "wait" : "pointer", flexShrink: 0,
-                opacity: (fireCalcProgress === null && !schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))) ? 0.4 : 1 }}
+              data-tone="" data-solid=""
+              className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-40"
+              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0,
+                ["--rb-tone" as string]: "var(--c-red, #dc2626)",
+                cursor: fireCalcProgress !== null ? "wait" : "pointer" }}
               title="Расчёт распространения задымления и тепловой депрессии">
-              {fireCalcProgress !== null && (
-                <div style={{ position: "absolute", left: 0, bottom: 0, width: "100%", height: `${fireCalcProgress}%`,
-                  background: "rgba(255,255,255,0.28)", transition: "height 0.25s ease" }} />
-              )}
-              <img src="icons/fire-source.png" alt="Расчёт пожара" style={{ width: 22, height: 22, objectFit: "contain", filter: "brightness(0) invert(1)", position: "relative" }} />
-              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2, position: "relative" }}>
+              <span className="rb-tile">
+                {fireCalcProgress !== null && <span className="rb-progress" style={{ height: `${fireCalcProgress}%` }} />}
+                <img src="icons/fire-source.png" alt="Расчёт пожара" style={{ width: 20, height: 20, objectFit: "contain", position: "relative" }} />
+              </span>
+              <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 600 }}>
                 {fireCalcProgress !== null
-                  ? <div style={{ fontWeight: 700 }}>{fireCalcProgress}%</div>
-                  : <><div>Расчёт</div><div>пожара</div></>}
-              </div>
+                  ? <span className="block">{fireCalcProgress}%</span>
+                  : <><span className="block">Расчёт</span><span className="block">пожара</span></>}
+              </span>
             </button>
             <RibbonBigBtn
               icon={showSmoke ? "EyeOff" : "Eye"}
@@ -6645,11 +6645,16 @@ export default function CadPage() {
                 }
               }}
               disabled={!schemaSymbols.some(s => EXPLOSION_SYMBOL_IDS.has(s.typeId))}
-              className="flex flex-col items-center justify-center rounded border transition-colors min-w-[52px] disabled:opacity-40"
-              style={{ width: 52, height: 60, background: "var(--c-amber-bg, #d97706)", color: "white", borderColor: "var(--c-amber, #b45309)", cursor: "pointer", flexShrink: 0 }}
+              data-tone="" data-solid=""
+              className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, ["--rb-tone" as string]: "var(--c-amber-lt, #e8a317)" }}
               title="Расчёт параметров воздушной ударной волны">
-              <img src="icons/blast-source.png" alt="Расчёт взрыва" style={{ width: 22, height: 22, objectFit: "contain", filter: "brightness(0) invert(1)" }} />
-              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, marginTop: 2 }}><div>Расчёт</div><div>взрыва</div></div>
+              <span className="rb-tile">
+                <img src="icons/blast-source.png" alt="Расчёт взрыва" style={{ width: 20, height: 20, objectFit: "contain" }} />
+              </span>
+              <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 600 }}>
+                <span className="block">Расчёт</span><span className="block">взрыва</span>
+              </span>
             </button>
             <RibbonBigBtn
               icon={showExplosionZones ? "EyeOff" : "Eye"}
@@ -7040,56 +7045,48 @@ export default function CadPage() {
           <RibbonGroup label="Вентилятор">
               {/* calc — пересчитать сеть */}
               <button onClick={handleSolve} disabled={vcSolving}
-                className="flex flex-col items-center justify-center rounded disabled:opacity-50 transition-colors"
-                style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: "pointer" }}
-                onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f0fdf4"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#86efac"; }}
-                onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; }}
+                data-tone=""
+                className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-50"
+                style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: "pointer", ["--rb-tone" as string]: "var(--c-green, #15803d)" }}
                 title="Пересчитать (F9)">
-                <Icon name="RefreshCw" size={20} className="text-green-600" />
-                <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "var(--c-green, #15803d)", marginTop: 2 }}>Расчёт</div>
+                <span className="rb-tile"><Icon name="RefreshCw" size={18} /></span>
+                <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>Расчёт</span>
               </button>
               {/* reverse — переключить реверс */}
               <button
                 disabled={selectedBranch.fanStopped}
                 onClick={() => updateBranch(selectedBranch.id, { fanReverse: !selectedBranch.fanReverse })}
-                className="flex flex-col items-center justify-center px-2 py-1 border rounded min-w-[52px]"
-                style={{
-                  background: selectedBranch.fanReverse ? "var(--c-tint-red2, #fee2e2)" : "var(--c-tint-green, #f0fdf4)",
-                  borderColor: selectedBranch.fanReverse ? "#fca5a5" : "#86efac",
-                  opacity: selectedBranch.fanStopped ? 0.4 : 1,
-                  cursor: selectedBranch.fanStopped ? "not-allowed" : "pointer",
-                }}
+                data-tone=""
+                className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0,
+                  ["--rb-tone" as string]: selectedBranch.fanReverse ? "var(--c-red, #dc2626)" : "var(--c-green, #15803d)" }}
                 title="Ctrl+R — переключить реверс">
-                <Icon name={selectedBranch.fanReverse ? "ArrowLeft" : "ArrowRight"} size={18}
-                  className={selectedBranch.fanReverse ? "text-red-600" : "text-green-600"} />
-                <div className="text-[10px] mt-0.5" style={{ color: selectedBranch.fanReverse ? "var(--c-red, #b91c1c)" : "var(--c-green, #15803d)" }}>
+                <span className="rb-tile"><Icon name={selectedBranch.fanReverse ? "ArrowLeft" : "ArrowRight"} size={18} /></span>
+                <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>
                   {selectedBranch.fanReverse ? "Реверс" : "Прямой"}
-                </div>
+                </span>
               </button>
               {/* off — остановить/запустить */}
               <button
                 onClick={() => updateBranch(selectedBranch.id, { fanStopped: !selectedBranch.fanStopped })}
-                className="flex flex-col items-center justify-center px-2 py-1 border rounded min-w-[52px]"
-                style={{
-                  background: selectedBranch.fanStopped ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-s2, #f9fafb)",
-                  borderColor: selectedBranch.fanStopped ? "#fcd34d" : "var(--c-b2, #d1d5db)",
-                  cursor: "pointer",
-                }}
+                data-active={selectedBranch.fanStopped ? "1" : undefined}
+                className="rb-btn flex flex-col items-center justify-start gap-1"
+                style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: "pointer" }}
                 title={selectedBranch.fanStopped ? "Запустить вентилятор" : "Остановить вентилятор"}>
-                <Icon name={selectedBranch.fanStopped ? "Play" : "Square"} size={18}
-                  className={selectedBranch.fanStopped ? "text-amber-600" : "text-gray-500"} />
-                <div className="text-[10px] mt-0.5" style={{ color: selectedBranch.fanStopped ? "var(--c-amber-ink, #92400e)" : "var(--c-t3, #6b7280)" }}>
+                <span className="rb-tile"><Icon name={selectedBranch.fanStopped ? "Play" : "Square"} size={18} /></span>
+                <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>
                   {selectedBranch.fanStopped ? "Запуск" : "Стоп"}
-                </div>
+                </span>
               </button>
               {/* report — диагностика */}
               <button
                 onClick={() => setShowDiagnostics(true)}
                 disabled={!solveResult}
-                className="flex flex-col items-center justify-center px-2 py-1 border border-transparent hover:border-blue-300 hover:bg-blue-50 rounded min-w-[52px] disabled:opacity-40"
+                className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
+                style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0 }}
                 title="Отчёт и диагностика">
-                <Icon name="FileText" size={18} className="text-blue-600" />
-                <div className="text-[10px] mt-0.5 text-blue-700">Отчёт</div>
+                <span className="rb-tile"><Icon name="FileText" size={18} /></span>
+                <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>Отчёт</span>
               </button>
           </RibbonGroup>
         )}
@@ -7100,19 +7097,15 @@ export default function CadPage() {
             <button
               onClick={() => setShowPlaPanel(v => !v)}
               title="План ликвидации аварии — настройки отображения позиций"
-              style={{
-                width: 52, height: 60,
-                display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
-                borderRadius: 4,
-                border: showPlaPanel ? "1.5px solid var(--c-blue, #2563eb)" : (showPositions || posColorInner || posColorOuter) ? "1.5px solid var(--c-purple, #7c3aed)" : "1px solid transparent",
-                background: showPlaPanel ? "var(--c-tint-blue2, #dbeafe)" : (showPositions || posColorInner || posColorOuter) ? "var(--c-tint-purple, #f5f3ff)" : "transparent",
-                cursor: "pointer", padding: 0, flexShrink: 0,
-              }}>
-              <Icon name="MapPin" size={20} style={{ color: (showPositions || posColorInner || posColorOuter) ? "var(--c-purple, #7c3aed)" : "var(--c-t2, #4b5563)" }} />
-              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", color: (showPositions || posColorInner || posColorOuter) ? "var(--c-purple, #7c3aed)" : "var(--c-t2, #374151)", fontWeight: 500 }}>
-                <div>ПЛА</div>
-              </div>
-              <Icon name="ChevronDown" size={9} style={{ color: "var(--c-t4, #9ca3af)", marginTop: -1 }} />
+              data-active={showPlaPanel ? "1" : undefined}
+              data-tone={!showPlaPanel && (showPositions || posColorInner || posColorOuter) ? "" : undefined}
+              className="rb-btn flex flex-col items-center justify-start gap-1"
+              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: "pointer",
+                ["--rb-tone" as string]: "var(--c-purple, #7c3aed)" }}>
+              <span className="rb-tile"><Icon name="MapPin" size={18} /></span>
+              <span className="rb-label flex items-center gap-0.5" style={{ fontSize: 9.5, lineHeight: "1.15", fontWeight: 500 }}>
+                ПЛА<Icon name="ChevronDown" size={9} style={{ opacity: 0.6 }} />
+              </span>
             </button>
 
             {showPlaPanel && (
@@ -7175,33 +7168,30 @@ export default function CadPage() {
         <RibbonGroup label="Расчёт сети">
             {/* Кнопка запуска */}
             <button onClick={handleSolve} disabled={vcSolving}
-              className="relative overflow-hidden flex flex-col items-center justify-center rounded disabled:opacity-100 transition-colors"
-              style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: vcSolving ? "wait" : "pointer" }}
-              onMouseEnter={e => { if (!vcSolving) { (e.currentTarget as HTMLButtonElement).style.background = "#f0fdf4"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#86efac"; } }}
-              onMouseLeave={e => { if (!vcSolving) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}
+              data-tone=""
+              className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-100"
+              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, ["--rb-tone" as string]: "var(--c-green, #15803d)", cursor: vcSolving ? "wait" : "pointer" }}
               title="Запустить расчёт воздухораспределения (F9)">
-              {solveProgress !== null && (
-                <div style={{ position: "absolute", left: 0, bottom: 0, width: "100%", height: `${solveProgress}%`,
-                  background: "rgba(34,197,94,0.20)", transition: "height 0.2s linear" }} />
-              )}
-              <Icon name={vcSolving ? "Loader" : "Play"} size={20} className={`relative ${vcSolving ? "text-green-500 animate-spin" : "text-green-600"}`} />
-              <div style={{ position: "relative", fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "var(--c-green, #15803d)", marginTop: 2 }}>
+              <span className="rb-tile">
+                {solveProgress !== null && <span className="rb-progress" style={{ height: `${solveProgress}%` }} />}
+                <Icon name={vcSolving ? "Loader" : "Play"} size={18} className={`relative ${vcSolving ? "animate-spin" : ""}`} />
+              </span>
+              <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 600 }}>
                 {solveProgress !== null
-                  ? <div style={{ fontWeight: 700 }}>{solveProgress}%</div>
-                  : <><div>Расчёт</div><div>сети</div></>}
-              </div>
+                  ? <span className="block">{solveProgress}%</span>
+                  : <><span className="block">Расчёт</span><span className="block">сети</span></>}
+              </span>
             </button>
 
             {/* Кнопка параметров */}
             <div className="relative">
               <button onClick={() => setShowSolverParams(v => !v)}
-                className="flex flex-col items-center justify-center rounded transition-colors"
-                style={{ width: 52, height: 60, border: showSolverParams ? "1.5px solid var(--c-blue-lt, #3b82f6)" : "1px solid transparent", background: showSolverParams ? "var(--c-tint-blue2, #dbeafe)" : "transparent", flexShrink: 0, cursor: "pointer" }}
-                onMouseEnter={e => { if (!showSolverParams) { (e.currentTarget as HTMLButtonElement).style.background = "#e8f0fe"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#93c5fd"; } }}
-                onMouseLeave={e => { if (!showSolverParams) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}
+                data-active={showSolverParams ? "1" : undefined}
+                className="rb-btn flex flex-col items-center justify-start gap-1"
+                style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: "pointer" }}
                 title="Параметры расчёта">
-                <Icon name="Settings" size={20} className="text-gray-500" />
-                <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "var(--c-t3, #6b7280)", marginTop: 2 }}>Параметры</div>
+                <span className="rb-tile"><Icon name="Settings" size={18} /></span>
+                <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>Параметры</span>
               </button>
               {showSolverParams && (
                 <div
@@ -7525,15 +7515,14 @@ export default function CadPage() {
         <RibbonGroup label="Анализ">
             <button
               onClick={() => setShowExcelExport(true)}
-              className="flex flex-col items-center justify-center rounded transition-colors"
-              style={{ width: 52, height: 60, border: "1px solid transparent", background: "transparent", flexShrink: 0, cursor: "pointer" }}
-              onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = "#f0fdf4"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#86efac"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; }}
+              data-tone=""
+              className="rb-btn flex flex-col items-center justify-start gap-1"
+              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: "pointer", ["--rb-tone" as string]: "var(--c-green, #15803d)" }}
               title="Экспорт параметров выработок в Excel">
-              <Icon name="FileSpreadsheet" size={20} className="text-green-700" />
-              <div style={{ fontSize: 9.5, lineHeight: "1.2", textAlign: "center", fontWeight: 500, color: "var(--c-green, #15803d)", marginTop: 2 }}>
-                <div>Экспорт</div><div>в Excel</div>
-              </div>
+              <span className="rb-tile"><Icon name="FileSpreadsheet" size={18} /></span>
+              <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>
+                <span className="block">Экспорт</span><span className="block">в Excel</span>
+              </span>
             </button>
         </RibbonGroup>
 
