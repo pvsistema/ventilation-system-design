@@ -1150,7 +1150,10 @@ export function calcWorkerPath(
     const toNodeId   = isForward ? b.toId   : b.fromId;
     const fromNode   = nodeMap.get(fromNodeId);
     const toNode     = nodeMap.get(toNodeId);
-    const branchLabel = b.name?.trim() || "";
+    // Как у горноспасателей: наименование выработки — из типа (TopoBranch.type),
+    // затем из name. Раньше бралось только name, а у выработок оно обычно
+    // пустое, поэтому в таблице стояли номера узлов вместо названия.
+    const branchLabel = b.type?.trim() || b.name?.trim() || "";
     const nodeFrom = fromNode?.name || (fromNode?.number ? `Узел ${fromNode.number}` : fromNodeId);
     const nodeTo   = toNode?.name   || (toNode?.number   ? `Узел ${toNode.number}`   : toNodeId);
     const branchName = branchLabel ? `${branchLabel} (${nodeFrom} → ${nodeTo})` : `${nodeFrom} → ${nodeTo}`;

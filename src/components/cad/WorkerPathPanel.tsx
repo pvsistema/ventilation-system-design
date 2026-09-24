@@ -30,6 +30,8 @@ interface BranchLite {
   length: number;
   angle: number;
   area: number;
+  /** Тип / наименование выработки из схемы */
+  type?: string;
   name?: string;
   hasBulkhead?: boolean;
   bulkheadId?: string;
@@ -100,7 +102,9 @@ function zoneLabel(z: "clean" | "smoky_low" | "smoky_high" | undefined) {
   return { label: "Задым. (<5м)", color: "var(--c-red-ink, #991b1b)", bg: "#fef2f2" };
 }
 
-function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: () => void }) {
+function ResultDialog({ result, onClose, nodes }: { result: WorkerPathResult; onClose: () => void; nodes: NodeLite[] }) {
+  const nodeNoMap = useMemo(() => new Map(nodes.map(n => [n.id, n.number || n.id])), [nodes]);
+  const nodeNo = (id: string) => nodeNoMap.get(id) ?? id;
   const method = result.method === "rd" ? "РД 15-11-2007" : "ФНиП №467";
   // segments может отсутствовать, если результат пришёл неполным — не роняем диалог
   const segs = result.segments ?? [];
@@ -222,8 +226,13 @@ function ResultDialog({ result, onClose }: { result: WorkerPathResult; onClose: 
                     return (
                     <tr key={s.branchId + i} style={{ background: rowBg }}>
                       <td className="px-2 py-0.5 text-gray-400">{s.segmentNumber}</td>
-                      <td className="px-2 py-0.5 text-gray-800 max-w-[200px] truncate" title={s.branchName}>
+                      <td className="px-2 py-0.5 text-gray-800 max-w-[220px] truncate" title={s.branchName}>
                         {s.branchLabel || s.branchName}
+                        {s.branchLabel && (
+                          <span className="ml-1 text-[10px] text-gray-400">
+                            ({nodeNo(s.fromNodeId)}→{nodeNo(s.toNodeId)})
+                          </span>
+                        )}
                       </td>
                       <td className="px-2 py-0.5 text-right">{Math.round(s.length)}</td>
                       <td className="px-2 py-0.5 text-right">{s.angle.toFixed(0)}°</td>
@@ -585,7 +594,7 @@ export default function WorkerPathPanel({
       </div>
 
       {showDialog && result && (
-        <ResultDialog result={result} onClose={() => setShowDialog(false)} />
+        <ResultDialog result={result} nodes={nodes} onClose={() => setShowDialog(false)} />
       )}
     </div>
   );
