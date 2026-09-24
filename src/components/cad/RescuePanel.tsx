@@ -57,6 +57,8 @@ interface BranchLite {
   isLeakage?: boolean;
   /** Нить вентрубопровода — в маршрутном графе не участвует */
   isVentPipeBranch?: boolean;
+  /** Перемычка глухая — ветвь исключается из маршрута */
+  bulkheadSolid?: boolean;
   /** Очаг пожара — маршрут обходит эту выработку */
   hasFire?: boolean;
   resistance?: number;

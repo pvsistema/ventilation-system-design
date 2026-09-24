@@ -116,7 +116,13 @@ def is_bulkhead_passable(bulkhead_id: str) -> bool:
 def is_blocked_by_bulkhead(b) -> bool:
     if not b.get("hasBulkhead"):
         return False
-    if not is_bulkhead_passable(b.get("bulkheadId") or ""):
+    # Признак глухоты вычислен на клиенте по справочнику рудника и значкам.
+    solid = b.get("bulkheadSolid")
+    if isinstance(solid, bool):
+        return solid
+    bid = (b.get("bulkheadId") or "").lower()
+    # id справочника рудника («mb_…») кода типа не несёт — судим по названию.
+    if bid and not bid.startswith("mb_") and not is_bulkhead_passable(bid):
         return True
     return "глух" in (b.get("bulkheadName") or "").lower()
 

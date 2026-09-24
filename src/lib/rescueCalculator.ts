@@ -206,6 +206,11 @@ export interface TopoBranchLite {
   bulkheadR?: number;
   bulkheadAirPerm?: number;
   isLeakage?: boolean;
+  /**
+   * Перемычка на ветви глухая (непроходимая для людей). Вычисляется заранее
+   * по справочнику рудника и значку на схеме — см. resolveBulkheadSolid.
+   */
+  bulkheadSolid?: boolean;
   /** В ветви установлен очаг пожара — маршрут обходит её, если есть обход */
   hasFire?: boolean;
   /**
@@ -248,12 +253,54 @@ export function isBulkheadPassable(bulkheadId?: string): boolean {
 }
 
 /**
+ * Глухая ли перемычка на ветви — по всем источникам сразу.
+ *
+ * id справочника рудника имеет вид «mb_…» и кода типа не содержит, поэтому
+ * тип берётся из самой записи справочника (поле type). Значки на схеме несут
+ * код типа (door_closed, sail, bk_concrete…). Глухой ветвь считается, только
+ * если ВСЕ её перемычки глухие — шлюз «глухая + дверь» не бывает.
+ */
+export function resolveBulkheadSolid(
+  branch: { hasBulkhead?: boolean; bulkheadId?: string; bulkheadName?: string },
+  symbols: Array<{ typeId: string; bkBulkheadId?: string; bkBulkheadName?: string }>,
+  mineBulkheads: Array<{ id: string; type: string; name: string }>,
+): boolean {
+  if (!branch.hasBulkhead) return false;
+  const refById = new Map(mineBulkheads.map(m => [m.id, m]));
+  const verdicts: boolean[] = [];
+  const byRef = (id?: string): boolean | null => {
+    if (!id) return null;
+    const ref = refById.get(id);
+    if (!ref) return null;
+    if (ref.type === "solid") return true;
+    if (ref.type === "custom") return /глух/i.test(ref.name);
+    return false;
+  };
+  for (const s of symbols) {
+    const r = byRef(s.bkBulkheadId);
+    if (r !== null) { verdicts.push(r); continue; }
+    if (/глух/i.test(s.bkBulkheadName ?? "")) { verdicts.push(true); continue; }
+    verdicts.push(!isBulkheadPassable(s.typeId));
+  }
+  if (verdicts.length > 0) return verdicts.every(Boolean);
+  const r = byRef(branch.bulkheadId);
+  if (r !== null) return r;
+  const id = (branch.bulkheadId ?? "").toLowerCase();
+  if (id && !id.startsWith("mb_") && !isBulkheadPassable(id)) return true;
+  return /глух/i.test(branch.bulkheadName ?? "");
+}
+
+/**
  * Ветвь закрыта глухой перемычкой. Кроме кода типа смотрим и название — у
  * импортированных схем тип бывает не задан, а в названии стоит «Глухая».
  */
 function isBlockedByBulkhead(b: TopoBranchLite): boolean {
   if (!b.hasBulkhead) return false;
-  if (!isBulkheadPassable(b.bulkheadId)) return true;
+  // Признак уже определён по справочнику рудника и значку на схеме — ему и верим.
+  if (typeof b.bulkheadSolid === "boolean") return b.bulkheadSolid;
+  const id = (b.bulkheadId ?? "").toLowerCase();
+  // id справочника рудника («mb_…») кода типа не несёт — решаем по названию.
+  if (!id.startsWith("mb_") && !isBulkheadPassable(id)) return true;
   return /глух/i.test(b.bulkheadName ?? "");
 }
 

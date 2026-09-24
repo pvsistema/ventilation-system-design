@@ -101,6 +101,7 @@ import ScrollArrows from "@/components/cad/ScrollArrows";
 import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonReferences";
 import { runFireMode } from "@/lib/fireModeRun";
 import { runExplosionMode } from "@/lib/explosionModeRun";
+import { resolveBulkheadSolid } from "@/lib/rescueCalculator";
 import { exportExplosionReport } from "@/lib/explosionReport";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
@@ -1757,6 +1758,27 @@ export default function CadPage() {
   // Каждый символ: тип (из справочника), мировые координаты, привязка к ветви
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
   useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
+
+  /**
+   * Ветви для расчёта маршрутов горноспасателей и горнорабочего.
+   *
+   * Глухота перемычки определяется здесь, по справочнику рудника и значкам на
+   * схеме: в bulkheadId ветви лежит id справочника («mb_…»), кода типа в нём
+   * нет, и расчёт сам по нему судить не может. Непроходимы только глухие.
+   */
+  const routeBranches = useMemo(() => {
+    const symsByBranch = new Map<string, SchemaSymbol[]>();
+    for (const s of schemaSymbols) {
+      if (!s.branchId || !BULKHEAD_SYMBOL_IDS.has(s.typeId)) continue;
+      const arr = symsByBranch.get(s.branchId);
+      if (arr) arr.push(s); else symsByBranch.set(s.branchId, [s]);
+    }
+    return branches.map(b => {
+      if (!b.hasBulkhead) return b;
+      const syms = symsByBranch.get(b.id) ?? [];
+      return { ...b, bulkheadSolid: resolveBulkheadSolid(b, syms, mineBulkheads) };
+    });
+  }, [branches, schemaSymbols, mineBulkheads]);
 
   // Сопротивление перемычек по ветвям (кМюрг) — для экспорта в CSV.
   // Перемычка чаще задаётся символом на схеме (bk*) и её R сворачивается
@@ -12120,12 +12142,7 @@ export default function CadPage() {
               <PanelErrorBoundary title="горноспасатели">
               <RescuePanel
                 nodes={nodes}
-                branches={branches.map(b => {
-                  // Если bulkheadId не задан на ветви — берём typeId символа перемычки на этой ветви
-                  if (!b.hasBulkhead || b.bulkheadId) return b;
-                  const sym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
-                  return sym ? { ...b, bulkheadId: sym.typeId, bulkheadName: sym.typeId } : b;
-                })}
+                branches={routeBranches}
                 fireCalcDone={fireCalcDone}
                 pickMode={rescuePickMode}
                 onPickModeChange={setRescuePickMode}
@@ -12151,15 +12168,7 @@ export default function CadPage() {
               <PanelErrorBoundary title="время хода горнорабочего">
               <WorkerPathPanel
                 nodes={nodes}
-                branches={branches.map(b => {
-                  // Как у горноспасателей: если bulkheadId не задан на ветви —
-                  // берём typeId символа перемычки на этой ветви, иначе ветвь
-                  // ошибочно считается глухой непроходимой перемычкой и выпадает
-                  // из графа (маршрут «не найден»).
-                  if (!b.hasBulkhead || b.bulkheadId) return b;
-                  const sym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
-                  return sym ? { ...b, bulkheadId: sym.typeId, bulkheadName: sym.typeId } : b;
-                })}
+                branches={routeBranches}
                 fireCalcDone={fireCalcDone}
                 pickMode={workerPickMode}
                 onPickModeChange={setWorkerPickMode}
