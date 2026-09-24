@@ -16,6 +16,7 @@ import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
 import '@fontsource/jetbrains-mono/600.css'
 import { applyTheme, getStoredTheme } from './lib/theme'
+import { APP_VERSION, APP_BUILD_DATE } from './lib/appVersion'
 import { installAntiDebug } from './lib/antiDebug'
 
 // __IS_DESKTOP__ инжектируется Vite только в десктопной сборке
@@ -45,6 +46,9 @@ if (typeof caches !== 'undefined' && caches.keys) {
 }
 
 const splash = document.getElementById('app-splash');
+// Версия на заставке — из того же источника, что и «О программе».
+const splashStatus = document.getElementById('splash-status');
+if (splashStatus) splashStatus.innerHTML = `версия <b>${APP_VERSION}</b> · ${APP_BUILD_DATE}`;
 if (splash) {
   const hideSplash = () => {
     if (!document.getElementById('app-splash')) return;

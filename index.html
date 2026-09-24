@@ -39,6 +39,9 @@
         overflow: hidden;
       }
       /* ─── Сплеш-экран при запуске ─── */
+      /* Фирменный стиль: антрацит + сигнальный янтарь + сине-стальной.
+         Фон — тёмная «шахтная» глубина с едва заметной миллиметровкой,
+         как рабочая область программы; логотип — в янтарном свечении. */
       #app-splash {
         position: fixed;
         inset: 0;
@@ -47,45 +50,105 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        background: linear-gradient(160deg, #ffffff 0%, #eaf4fc 60%, #d2e8f7 100%);
-        font-family: 'IBM Plex Sans', 'Segoe UI', Tahoma, sans-serif;
+        color: #e8eaed;
+        background:
+          radial-gradient(ellipse 60% 50% at 50% 42%, rgba(232, 163, 23, 0.10), transparent 70%),
+          radial-gradient(ellipse 90% 70% at 50% 110%, rgba(30, 90, 122, 0.45), transparent 70%),
+          linear-gradient(180deg, #2b2f33 0%, #1f2328 100%);
+        font-family: 'Golos Text', 'IBM Plex Sans', 'Segoe UI', Tahoma, sans-serif;
         transition: opacity 0.5s ease, visibility 0.5s ease;
+        overflow: hidden;
+      }
+      /* Миллиметровка */
+      #app-splash::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background-image:
+          linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.045) 1px, transparent 1px),
+          linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+        background-size: 100px 100px, 100px 100px, 20px 20px, 20px 20px;
+        background-position: center center;
+        mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 20%, transparent 80%);
+        -webkit-mask-image: radial-gradient(ellipse 70% 65% at 50% 45%, #000 20%, transparent 80%);
+        pointer-events: none;
+      }
+      /* Янтарная сигнальная полоса по верхнему краю */
+      #app-splash::after {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, transparent, #e8a317 20%, #f5b83d 50%, #e8a317 80%, transparent);
+        opacity: .85;
       }
       #app-splash.hide {
         opacity: 0;
         visibility: hidden;
         pointer-events: none;
       }
+      #app-splash .splash-card {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      #app-splash .splash-logo-wrap {
+        position: relative;
+        width: 132px;
+        height: 132px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 32px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 0 0 6px rgba(232, 163, 23, 0.06), 0 20px 50px -10px rgba(0, 0, 0, 0.6);
+      }
+      #app-splash .splash-logo-wrap::before {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: 34px;
+        padding: 2px;
+        background: conic-gradient(from 0deg, transparent 0deg, #e8a317 60deg, transparent 120deg);
+        -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+        -webkit-mask-composite: xor;
+        mask-composite: exclude;
+        animation: splashSpin 2.4s linear infinite;
+      }
       #app-splash .splash-logo {
         display: block;
-        width: 160px;
-        max-width: 60vw;
-        height: auto;
+        width: 92px;
+        height: 92px;
         object-fit: contain;
-        margin: 0 auto;
-        animation: splashPulse 2.2s ease-in-out infinite;
-        filter: drop-shadow(0 6px 20px rgba(14, 99, 176, 0.18));
+        filter: drop-shadow(0 4px 14px rgba(232, 163, 23, 0.25));
       }
       #app-splash .splash-title {
-        margin-top: 24px;
+        margin-top: 28px;
         font-size: 34px;
         font-weight: 700;
-        letter-spacing: 0.5px;
-        color: #0E3A6E;
+        letter-spacing: 0.01em;
+        color: #ffffff;
+        line-height: 1;
       }
+      #app-splash .splash-title span { color: #e8a317; }
       #app-splash .splash-subtitle {
-        margin-top: 8px;
-        font-size: 14px;
-        color: #4a6a8a;
-        letter-spacing: 1.5px;
+        margin-top: 12px;
+        font-size: 12px;
+        font-weight: 500;
+        color: #9aa3ad;
+        letter-spacing: 0.22em;
         text-transform: uppercase;
       }
       #app-splash .splash-progress {
-        margin-top: 36px;
+        margin-top: 34px;
         width: 240px;
         height: 3px;
-        background: rgba(14, 99, 176, 0.15);
-        border-radius: 2px;
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 3px;
         overflow: hidden;
         position: relative;
       }
@@ -96,15 +159,19 @@
         top: 0;
         width: 40%;
         height: 100%;
-        background: linear-gradient(90deg, transparent, #1FA0E8, #0E63B0, transparent);
+        border-radius: 3px;
+        background: linear-gradient(90deg, transparent, #f5b83d, #e8a317, transparent);
+        box-shadow: 0 0 10px rgba(232, 163, 23, 0.7);
         animation: splashBar 1.4s ease-in-out infinite;
       }
-      #app-splash .splash-version {
-        margin-top: 18px;
-        font-size: 12px;
-        color: #5a7a9a;
-        letter-spacing: 0.4px;
+      #app-splash .splash-status {
+        margin-top: 14px;
+        font-family: 'JetBrains Mono', Consolas, monospace;
+        font-size: 11px;
+        color: #7c848d;
+        letter-spacing: 0.04em;
       }
+      #app-splash .splash-status b { color: #fbc348; font-weight: 500; }
       #app-splash .splash-footer {
         position: absolute;
         bottom: 18px;
@@ -112,16 +179,18 @@
         right: 0;
         text-align: center;
         font-size: 11px;
-        color: #6b8aa8;
-        letter-spacing: 0.3px;
+        color: #6b737c;
+        letter-spacing: 0.03em;
       }
-      @keyframes splashPulse {
-        0%, 100% { transform: scale(1); }
-        50%      { transform: scale(1.05); }
+      @keyframes splashSpin {
+        to { transform: rotate(360deg); }
       }
       @keyframes splashBar {
         0%   { left: -40%; }
         100% { left: 100%; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-splash .splash-logo-wrap::before, #app-splash .splash-progress::after { animation: none; }
       }
     </style>
     <!-- Блокируем Ctrl+колесо на уровне браузера — масштабирует только схема внутри приложения -->
@@ -283,15 +352,21 @@
 
 <body>
 <div id="app-splash">
-  <!-- Логотип берём из файла программы, а не из интернета: в десктопе на
-       руднике связи нет, и внешняя картинка не загружалась — на стартовом
-       экране была «сломанная» иконка. -->
-  <img class="splash-logo"
-       src="logo-256.png"
-       onerror="this.onerror=null;this.src='icon.svg'"
-       alt="ПВ-Система"/>
-  <div class="splash-subtitle">Проектирование вентиляции и водоснабжения</div>
-  <div class="splash-progress"></div>
+  <div class="splash-card">
+    <!-- Логотип берём из файла программы, а не из интернета: в десктопе на
+         руднике связи нет, и внешняя картинка не загружалась — на стартовом
+         экране была «сломанная» иконка. -->
+    <div class="splash-logo-wrap">
+      <img class="splash-logo"
+           src="logo-256.png"
+           onerror="this.onerror=null;this.src='icon.svg'"
+           alt="ПВ-Система"/>
+    </div>
+    <div class="splash-title">ПВ<span>-</span>Система</div>
+    <div class="splash-subtitle">Проектирование вентиляции и водоснабжения</div>
+    <div class="splash-progress"></div>
+    <div class="splash-status" id="splash-status">загрузка модулей…</div>
+  </div>
 
   <div class="splash-footer">© 2026 ПВ-Система. Все права защищены.</div>
 </div>
