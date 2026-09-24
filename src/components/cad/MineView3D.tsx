@@ -41,6 +41,7 @@ import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { flowTime } from "@/lib/flowAnim";
 import Icon from "@/components/ui/icon";
+import { onCanvasFontsReady } from "@/lib/canvasFont";
 
 export interface MineView3DProps {
   width: number;
@@ -957,6 +958,10 @@ export default function MineView3D(p: MineView3DProps) {
 
   // Размер изменился — нужен новый кадр.
   useEffect(() => { needsRenderRef.current = true; }, [p.width, p.height]);
+  // Подписи в объёме рисуются тем же шрифтом, что и на чертеже (Golos Text):
+  // когда он догрузится, просим новый кадр — иначе подписи остались бы
+  // нарисованы запасным шрифтом.
+  useEffect(() => onCanvasFontsReady(() => { needsRenderRef.current = true; }), []);
 
   // ── Ракурс, пришедший из режима «Чертёж» ──────────────────────────────
   //

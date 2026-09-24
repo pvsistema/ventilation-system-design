@@ -13,6 +13,7 @@ import {
   type SymbolSizing, makeSymbolSizing, symbolSizeOnBranch,
   indicatorFontSize, indicatorOffsetSF,
 } from "@/lib/symbolSizing";
+import { measureLabelW } from "@/lib/canvasFont";
 
 interface Props {
   symbols: SchemaSymbol[];
@@ -350,7 +351,7 @@ export default function SchemaSymbolsOverlay({
           const indSF = indicatorOffsetSF(sz);
           const fSize = indicatorFontSize(hostW, sym.msIndFontSize, sz);
           const lineH = fSize + 3 * sz.indZoomSF;
-          const boxW  = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * sz.indZoomSF;
+          const boxW  = measureLabelW(lines, fSize) + 10 * sz.indZoomSF;
           const boxH  = lines.length * lineH + 6 * sz.indZoomSF;
           const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
           const brLen = Math.hypot(brDx, brDy);
@@ -413,7 +414,7 @@ export default function SchemaSymbolsOverlay({
           const indSF = indicatorOffsetSF(sz);
           const fSize = indicatorFontSize(hostW, sym.indFontSize, sz);
           const lineH = fSize + 3 * sz.indZoomSF;
-          const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * sz.indZoomSF;
+          const boxW = measureLabelW(lines, fSize) + 10 * sz.indZoomSF;
           const boxH = lines.length * lineH + 6 * sz.indZoomSF;
 
           const brDx = tsx2 - fsx, brDy = tsy2 - fsy;

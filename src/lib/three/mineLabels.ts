@@ -29,6 +29,7 @@ import {
 } from "@/lib/msIndicatorLines";
 import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { toThree } from "./mineScene";
+import { canvasFont } from "@/lib/canvasFont";
 
 /**
  * Сколько подписей показываем за кадр.
@@ -296,7 +297,7 @@ export function drawMineLabels(
   // всегда смотрит на человека и всегда одного кегля, иначе дальние подписи
   // превратились бы в нечитаемую пыль.
   const LH = 11;
-  const dataFont = `600 8.5px "Segoe UI",sans-serif`;
+  const dataFont = canvasFont(8.5, 600);
 
   for (const L of labels) {
     if (drawn >= MAX_LABELS) break;
@@ -445,5 +446,5 @@ interface Box { x0: number; y0: number; x1: number; y1: number }
 
 /** Шрифт строки с номером: длинный номер набирается мельче — как на чертеже. */
 function numFont(text: string): string {
-  return `600 ${text.length > 2 ? 7.5 : 9}px "Segoe UI",sans-serif`;
+  return canvasFont(text.length > 2 ? 7.5 : 9, 600);
 }

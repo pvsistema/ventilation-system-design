@@ -7,6 +7,7 @@ import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { type Props, type ViewState, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
 import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
+import { measureLabelW } from "@/lib/canvasFont";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Отрисовка ОДНОГО условного обозначения в canvas-оверлее.
@@ -702,7 +703,7 @@ export function renderSymbolNode(
         const baseFontPx = 8.5 * bkTextSc * ((sym.indFontSize ?? 9) / 9);
         const fSize = Math.max(3, baseFontPx);
         const lineH = fSize + 3 * _indZoomSF;
-        const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+        const boxW = measureLabelW(lines, fSize) + 10 * _indZoomSF;
         const boxH = lines.length * lineH + 6 * _indZoomSF;
 
         const brDxI = tsx2 - fsx, brDyI = tsy2 - fsy;
@@ -790,7 +791,7 @@ export function renderSymbolNode(
         const fTextSc = Math.max(0.3, fBwLbl * 0.28) * _indZoomSF;
         const fSizeF = Math.max(3, 8.5 * fTextSc * ((sym.fanIndFontSize ?? 9) / 9));
         const lineHF = fSizeF + 3 * _indZoomSF;
-        const boxWF = Math.max(...fanLines.map(l => l.length)) * fSizeF * 0.52 + 10 * _indZoomSF;
+        const boxWF = measureLabelW(fanLines, fSizeF) + 10 * _indZoomSF;
         const boxHF = fanLines.length * lineHF + 6 * _indZoomSF;
         const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
         const brLenF = Math.hypot(brDxF, brDyF);
@@ -875,7 +876,7 @@ export function renderSymbolNode(
         const baseFontPx = 8.5 * msTextSc * ((sym.msIndFontSize ?? 9) / 9);
         const fSize = Math.max(3, baseFontPx);
         const lineH = fSize + 3 * _indZoomSF;
-        const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+        const boxW  = measureLabelW(msLines, fSize) + 10 * _indZoomSF;
         const boxH  = msLines.length * lineH + 6 * _indZoomSF;
         const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
         const brLen = Math.hypot(brDx, brDy);

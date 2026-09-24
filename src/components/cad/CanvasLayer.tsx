@@ -13,6 +13,7 @@ import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "@/lib/waterHydraulics";
 import { flowTime } from "@/lib/flowAnim";
+import { onCanvasFontsReady } from "@/lib/canvasFont";
 
 
 
@@ -332,6 +333,11 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     rafRef.current = requestAnimationFrame(loop);
     return () => { if (rafRef.current) cancelAnimationFrame(rafRef.current); };
   }, [needsAnim, draw]);
+
+  // Шрифт подписей (Golos Text) догружается после первого кадра — без этой
+  // перерисовки подписи так и остались бы нарисованы запасным шрифтом, а их
+  // рамки — посчитаны по чужой ширине символов.
+  useEffect(() => onCanvasFontsReady(() => draw()), [draw]);
 
   // Перерисовка при изменении данных (без анимации).
   // ВАЖНО: deps перечислены явно — иначе draw() вызывается при КАЖДОМ рендере React,

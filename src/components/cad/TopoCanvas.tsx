@@ -47,6 +47,7 @@ import { useCanvasTheme } from "@/hooks/useTheme";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
+import { measureLabelW } from "@/lib/canvasFont";
 
 export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
@@ -3525,7 +3526,7 @@ export default function TopoCanvas(props: Props) {
                 const baseFontPx = 8.5 * msTextSc * ((sym.msIndFontSize ?? 9) / 9);
                 const fSize = Math.max(3, baseFontPx);
                 const lineH = fSize + 3 * _indZoomSF;
-                const boxW  = Math.max(...msLines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+                const boxW  = measureLabelW(msLines, fSize) + 10 * _indZoomSF;
                 const boxH  = msLines.length * lineH + 6 * _indZoomSF;
                 const brDx  = tsx2 - fsx, brDy = tsy2 - fsy;
                 const brLen = Math.hypot(brDx, brDy);
@@ -3630,7 +3631,7 @@ export default function TopoCanvas(props: Props) {
                 // (поле «Размер»), по умолчанию 9 — как у замерных станций.
                 const fSizeF = Math.max(3, 8.5 * fTextSc * ((sym.fanIndFontSize ?? 9) / 9));
                 const lineHF = fSizeF + 3 * _indZoomSF;
-                const boxWF = Math.max(...fanLines.map(l => l.length)) * fSizeF * 0.52 + 10 * _indZoomSF;
+                const boxWF = measureLabelW(fanLines, fSizeF) + 10 * _indZoomSF;
                 const boxHF = fanLines.length * lineHF + 6 * _indZoomSF;
                 const brDxF = tsx2 - fsx, brDyF = tsy2 - fsy;
                 const brLenF = Math.hypot(brDxF, brDyF);
@@ -3746,7 +3747,7 @@ export default function TopoCanvas(props: Props) {
                 const baseFontPx = 8.5 * bkTextSc * ((sym.indFontSize ?? 9) / 9);
                 const fSize = Math.max(3, baseFontPx);
                 const lineH = fSize + 3 * _indZoomSF;
-                const boxW = Math.max(...lines.map(l => l.length)) * fSize * 0.52 + 10 * _indZoomSF;
+                const boxW = measureLabelW(lines, fSize) + 10 * _indZoomSF;
                 const boxH = lines.length * lineH + 6 * _indZoomSF;
 
                 // Базовая позиция — поперёк ветви, плюс пользовательское смещение

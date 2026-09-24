@@ -14,6 +14,20 @@ import {
   type SymbolSizing, makeSymbolSizing, symbolSizeOnBranch,
   indicatorFontSize, indicatorOffsetSF,
 } from "@/lib/symbolSizing";
+import { canvasFont } from "@/lib/canvasFont";
+
+/**
+ * Ширина самой длинной строки подписи в пикселях — по реальному шрифту.
+ * Раньше ширина плашки оценивалась как «символов × кегль × 0,52»: это средняя
+ * ширина символа Segoe UI, и при другом шрифте рамка расходилась с текстом.
+ */
+function measureLinesW(ctx: CanvasRenderingContext2D, lines: string[], fontOf: (i: number) => string): number {
+  ctx.save();
+  let w = 0;
+  lines.forEach((l, i) => { ctx.font = fontOf(i); w = Math.max(w, ctx.measureText(l).width); });
+  ctx.restore();
+  return w;
+}
 
 // Кэш SVG-иконок, преобразованных в Image (по svgContent)
 const svgImageCache = new Map<string, HTMLImageElement>();
@@ -281,7 +295,7 @@ export async function drawSymbolsToCanvas(
     // ── Подпись label (не перемычки) ──────────────────────────────────
     if (!isBulkhead && sym.label) {
       ctx.save();
-      ctx.font = `${Math.round(9 * sc)}px "Segoe UI", sans-serif`;
+      ctx.font = canvasFont(Math.round(9 * sc));
       ctx.fillStyle = "#374151";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
@@ -310,8 +324,10 @@ export async function drawSymbolsToCanvas(
         const brLenMs = Math.hypot(brDxMs, brDyMs);
         const perpXms = brLenMs > 0 ? -brDyMs / brLenMs : 0;
         const perpYms = brLenMs > 0 ?  brDxMs / brLenMs : 0;
-        const maxLen = Math.max(...msLines.map(l => l.length));
-        const boxWMs = maxLen * fsMs * 0.52 + 10 * sz.indZoomSF;
+        // Ширина плашки — по реальному шрифту (measureText), а не по числу
+        // символов: так рамка не съезжает при смене шрифта подписей.
+        const boxWMs = measureLinesW(ctx, msLines, i => canvasFont(fsMs, i === 0 && msFlags.number ? "700" : "400"))
+          + 10 * sz.indZoomSF;
         const gapMs = 16 * indSFms;
         const bxMs = px + perpXms * (gapMs + boxWMs / 2) + (sym.msIndOffsetX ?? 0) * indSFms;
         const byMs = py + perpYms * (gapMs + boxHMs / 2) + (sym.msIndOffsetY ?? 0) * indSFms;
@@ -344,7 +360,7 @@ export async function drawSymbolsToCanvas(
         msLines.forEach((line, i) => {
           const tyMs = byMs - boxHMs / 2 + i * lhMs + 3 * sz.indZoomSF;
           const fw = i === 0 && msFlags.number ? "700" : "400";
-          ctx.font = `${fw} ${fsMs}px "Segoe UI", sans-serif`;
+          ctx.font = canvasFont(fsMs, fw);
           // Обводка нужна только без подложки: на плашке она размывает буквы.
           if (!bgMs) {
             ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
@@ -402,8 +418,7 @@ export async function drawSymbolsToCanvas(
         // Смещаем подпись перпендикулярно ветви — чтобы не легла на выработку.
         const perpXf = brLenF > 0 ? -brDyF / brLenF : 0;
         const perpYf = brLenF > 0 ?  brDxF / brLenF : 0;
-        const maxLenF = Math.max(...fanLines.map(l => l.length));
-        const boxWF = maxLenF * fsF * 0.52 + 10 * sz.indZoomSF;
+        const boxWF = measureLinesW(ctx, fanLines, () => canvasFont(fsF, 400)) + 10 * sz.indZoomSF;
         // Смещение подписи, заданное перетаскиванием мышью (см. TopoCanvas).
         const fanOffX = (sym as { fanIndOffsetX?: number }).fanIndOffsetX ?? 0;
         const fanOffY = (sym as { fanIndOffsetY?: number }).fanIndOffsetY ?? 0;
@@ -437,7 +452,7 @@ export async function drawSymbolsToCanvas(
         ctx.textBaseline = "top";
         fanLines.forEach((line, i) => {
           const tyF = byF - boxHF / 2 + i * lhF + 3 * sz.indZoomSF;
-          ctx.font = `400 ${fsF}px "Segoe UI", sans-serif`;
+          ctx.font = canvasFont(fsF, 400);
           // Обводка только без плашки: на фоне она размывает буквы.
           if (!bgF) {
             ctx.strokeStyle = "white"; ctx.lineWidth = 2.5; ctx.lineJoin = "round";
@@ -620,8 +635,8 @@ function drawBulkheadIndicators(
   const brLen = Math.hypot(brDx, brDy);
   const perpX = brLen > 0 ? -brDy / brLen : 0;
   const perpY = brLen > 0 ?  brDx / brLen : 0;
-  const maxLen = Math.max(...lines.map(l => l.length));
-  const boxW  = maxLen * fSize * 0.52 + 10 * sz.indZoomSF;
+  const boxW  = measureLinesW(ctx, lines, i => canvasFont(fSize, i === 0 && sym.indDescription ? 600 : 400))
+    + 10 * sz.indZoomSF;
   const gap   = 16 * indSF;
   const bx = px + perpX * (gap + boxW / 2) + (sym.indOffsetX ?? 0) * indSF;
   const by = py + perpY * (gap + boxH / 2) + (sym.indOffsetY ?? 0) * indSF;
@@ -634,7 +649,7 @@ function drawBulkheadIndicators(
   ctx.setLineDash([]);
 
   // Текст с белым обводом
-  ctx.font = `${fSize}px "Segoe UI", sans-serif`;
+  ctx.font = canvasFont(fSize);
   ctx.textAlign = "center";
   ctx.textBaseline = "top";
   lines.forEach((line, i) => {
@@ -643,8 +658,8 @@ function drawBulkheadIndicators(
     ctx.strokeText(line, bx, ty);
     ctx.fillStyle = "#1a2a4a";
     ctx.font = i === 0 && sym.indDescription
-      ? `600 ${fSize}px "Segoe UI", sans-serif`
-      : `${fSize}px "Segoe UI", sans-serif`;
+      ? canvasFont(fSize, 600)
+      : canvasFont(fSize);
     ctx.fillText(line, bx, ty);
   });
   ctx.restore();

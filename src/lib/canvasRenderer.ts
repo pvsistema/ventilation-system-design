@@ -15,6 +15,7 @@ import {
   arrowSpeedMps, FLOW_PX_MIN, FLOW_PX_MAX,
   ARROW_TIP_H, ARROW_TIP_W, ARROW_TAIL_LEN, ARROW_TAIL_W,
 } from "./flowAnim";
+import { canvasFont } from "@/lib/canvasFont";
 
 /**
  * Порог переключения SVG → Canvas по числу видимых ветвей.
@@ -1455,8 +1456,8 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       // Вычисляем оба размера шрифта заранее — ctx.font меняется только при смене размера
       const numFontSize = (branchNum.length > 2 ? 7.5 : 9) * textSc;
       const dataFontSize = 8.5 * textSc;
-      const numFont  = `600 ${numFontSize}px "Segoe UI",sans-serif`;
-      const dataFont = `600 ${dataFontSize}px "Segoe UI",sans-serif`;
+      const numFont  = canvasFont(numFontSize, 600);
+      const dataFont = canvasFont(dataFontSize, 600);
       let lastFont = "";
 
       let maxLineW = 0;
@@ -1966,7 +1967,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
               ? Math.min(_sl.textMax / 100, Math.max(_sl.textMin / 100, rawTextSF))
               : Math.max(rawTextSF, 0.25);
           const fontSize = Math.max(6, Math.round(9 * textSF));
-          ctx.font = `500 ${fontSize}px "Segoe UI",sans-serif`;
+          ctx.font = canvasFont(fontSize, 500);
           ctx.textAlign = "left";
           ctx.textBaseline = "alphabetic";
           ctx.globalAlpha = nodeOpacity;
@@ -1989,7 +1990,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         ctx.fillStyle = "white"; ctx.fill();
         ctx.strokeStyle = col; ctx.lineWidth = Math.max(1, badgeR * 0.18); ctx.stroke();
         ctx.fillStyle = col;
-        ctx.font = `700 ${Math.round(badgeR * 1.4)}px "Segoe UI",sans-serif`;
+        ctx.font = canvasFont(Math.round(badgeR * 1.4), 700);
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         ctx.fillText(rescueLetter, bx, by + badgeR * 0.05);
         // Подпись меняет выравнивание/шрифт — возвращаем значения по умолчанию,
