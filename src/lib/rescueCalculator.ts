@@ -206,8 +206,6 @@ export interface TopoBranchLite {
   bulkheadR?: number;
   bulkheadAirPerm?: number;
   isLeakage?: boolean;
-  /** В ветви установлен очаг пожара — через неё маршрут не прокладывается */
-  hasFire?: boolean;
   /**
    * Ветвь САМА является нитью вентиляционного трубопровода (става труб).
    * Человек по трубе не идёт — такие ветви в маршрутном графе не участвуют.
@@ -250,23 +248,6 @@ export function isBulkheadPassable(bulkheadId?: string): boolean {
   if (id.startsWith("regulator_") || id === "regulator") return true;
   if (id === "fire_door" || id === "fire_door_pp") return true;
   return false;
-}
-
-/**
- * Выработка с очагом пожара. Через очаг люди не проходят — ни горноспасатели,
- * ни горнорабочие. Раньше такая ветвь участвовала в поиске пути наравне с
- * остальными (дым лишь снижал скорость), и кратчайший маршрут между двумя
- * узлами мог пройти прямо через пожар.
- */
-export function isFireBranch(b: TopoBranchLite): boolean {
-  return !!b.hasFire;
-}
-
-/** Сообщение, если маршрут не найден, а на схеме есть очаг пожара. */
-function fireBlockHint(branches: TopoBranchLite[]): string {
-  return branches.some(isFireBranch)
-    ? " (выработка с очагом пожара исключена из маршрута — задайте обход через промежуточные узлы)"
-    : "";
 }
 
 // ─── Дейкстра: одиночный запуск от одного источника ──────────────────────────
@@ -505,7 +486,6 @@ export function findRescueRoutes(
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
     if (isVirtualBranch(b)) continue;
-    if (isFireBranch(b)) continue; // через очаг пожара не ходят
     if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
@@ -577,7 +557,6 @@ export function calcRescue(
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
     if (isVirtualBranch(b)) continue;
-    if (isFireBranch(b)) continue; // через очаг пожара не ходят
     // NaN-длина не отсекалась `<= 0` (NaN <= 0 === false) и ломала Дейкстру
     if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
@@ -603,7 +582,7 @@ export function calcRescue(
     const to   = checkpoints[i + 1];
     const { dist, prev } = buildDijkstra(nodes, branches, adj, from);
     if ((dist.get(to) ?? Infinity) === Infinity) {
-      warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети${fireBlockHint(branches)}`);
+      warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети`);
       routeOk = false;
       continue;
     }
@@ -984,7 +963,6 @@ export function calcWorkerPath(
   for (const n of nodes) adj.set(n.id, []);
   for (const b of branches) {
     if (isVirtualBranch(b)) continue;
-    if (isFireBranch(b)) continue; // через очаг пожара не ходят
     // Узлы ветви обязаны существовать в графе (иначе adj.get вернёт undefined)
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     // Горнорабочий проходит через двери, паруса, регуляторы; глухие перемычки — нет
@@ -1038,7 +1016,7 @@ export function calcWorkerPath(
     const to = checkpoints[i + 1];
     const { dist, prev } = dijkstraWorker(from);
     if ((dist.get(to) ?? Infinity) === Infinity) {
-      warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети${fireBlockHint(branches)}`);
+      warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети`);
       routeOk = false;
       continue;
     }
