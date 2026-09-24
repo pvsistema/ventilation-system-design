@@ -35,7 +35,7 @@ function EditInput({
       <input type={type} step={step} value={value}
         onChange={(e) => onChange(e.target.value)}
         className="flex-1 text-[11px] text-right px-1 cad-edit-input"
-        style={{ background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #94a3b8)", borderRadius: 2, height: 18, outline: "none", fontFamily: "inherit", minWidth: 0, color: "var(--c-t1, #0f172a)" }}
+        style={{ background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #94a3b8)", borderRadius: "var(--radius-ui)", height: 18, outline: "none", fontFamily: "inherit", minWidth: 0, color: "var(--c-t1, #0f172a)" }}
       />
       {suffix && <span className="text-[10px] text-gray-500 px-1 flex-shrink-0">{suffix}</span>}
     </div>
@@ -46,7 +46,7 @@ function ComputedInput({ value, empty }: { value: string; empty?: boolean }) {
   return (
     <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
       title="Расчётное значение — изменить нельзя"
-      style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+      style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px",
         color: empty ? "var(--c-t4, #94a3b8)" : "var(--c-t1, #0f172a)", userSelect: "text", cursor: "default" }}>
       {value}
     </div>

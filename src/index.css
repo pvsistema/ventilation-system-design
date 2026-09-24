@@ -1061,3 +1061,110 @@ table td.tabular-nums,
 }
 .rb-btn[data-brand] .rb-progress { background: rgba(31, 35, 40, .22); }
 .dark .rb-btn[data-brand] .rb-label { color: var(--brand-amber-hi); }
+
+/* ── Строка состояния: панель инженерного прибора ──────────────────────────
+   Тёмная антрацитовая полоса в любой теме; подписи приглушены, числа —
+   моноширинные янтарные, как показания на табло. Индикаторы — светящиеся точки. */
+.sb-bar {
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 10px;
+  font-size: 11px;
+  background: linear-gradient(180deg, #2b2f33, #22262a);
+  border-top: 1px solid #111316;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  color: #c9cdd2;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sb-sep { width: 1px; height: 12px; background: rgba(255, 255, 255, 0.12); flex-shrink: 0; }
+.sb-kv { display: inline-flex; align-items: baseline; gap: 4px; }
+.sb-k { color: #8b929a; }
+.sb-v {
+  font-family: var(--font-num);
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: #fbc348;
+  letter-spacing: 0.01em;
+}
+.sb-strong { color: #e8eaed; font-weight: 600; }
+.sb-tag {
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  color: #1f2328;
+  background: #e8a317;
+}
+.sb-key {
+  font-family: var(--font-num);
+  font-size: 10px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: #e8eaed;
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+.sb-led { display: inline-flex; align-items: center; gap: 5px; color: #e8eaed; }
+.sb-led::before {
+  content: "";
+  width: 7px; height: 7px; border-radius: 50%;
+  background: #6b7280;
+  flex-shrink: 0;
+}
+.sb-led-on::before   { background: #34d399; box-shadow: 0 0 6px 1px rgba(52, 211, 153, 0.7); }
+.sb-led-warn::before { background: #fbbf24; box-shadow: 0 0 6px 1px rgba(251, 191, 36, 0.7); }
+.sb-led-err::before  { background: #f87171; box-shadow: 0 0 6px 1px rgba(248, 113, 113, 0.75); }
+.sb-warn { color: #fbbf24; }
+.sb-alert {
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 3px;
+  color: #fff;
+  background: #dc2626;
+  box-shadow: 0 0 8px rgba(220, 38, 38, 0.6);
+}
+.sb-btn {
+  height: 16px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #c9cdd2;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  cursor: pointer;
+  display: inline-flex; align-items: center;
+}
+.sb-btn:hover { background: rgba(255, 255, 255, 0.12); color: #fff; }
+.sb-btn-on { background: #e8a317; border-color: #e8a317; color: #1f2328; }
+.sb-btn-on .sb-v { color: #1f2328; }
+
+/* ── Единые скругления ─────────────────────────────────────────────────────
+   Один радиус на всю программу: 6 px у окон, кнопок, полей и панелей.
+   Раньше встречались 0, 2, 4, 8 и 12 px вперемешку — общего стиля не было.
+   Tailwind-классы скругления переопределены здесь, поэтому правило действует
+   везде без правки каждого компонента. Полностью круглые элементы
+   (rounded-full) и скругление отдельных углов не трогаем. */
+:root { --radius-ui: 6px; }
+.rounded-sm, .rounded, .rounded-md, .rounded-lg, .rounded-xl, .rounded-2xl { border-radius: var(--radius-ui) !important; }
+.rounded-t, .rounded-t-sm, .rounded-t-md, .rounded-t-lg {
+  border-top-left-radius: var(--radius-ui) !important;
+  border-top-right-radius: var(--radius-ui) !important;
+}
+.rounded-b, .rounded-b-md, .rounded-b-lg {
+  border-bottom-left-radius: var(--radius-ui) !important;
+  border-bottom-right-radius: var(--radius-ui) !important;
+}
+/* Поля ввода ленты и свойств (.cad-input) раньше были квадратными */
+.cad-input { border-radius: var(--radius-ui); }
+/* Кнопки и поля без явного класса скругления (старые «виндовые» кнопки
+   с border-radius: 0 в стилях) — получают общий радиус. */
+button:not([class*="rounded"]):not(.rb-btn):not([role="tab"]),
+select, input[type="text"], input[type="number"], input[type="search"], textarea {
+  border-radius: var(--radius-ui);
+}

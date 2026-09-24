@@ -199,7 +199,7 @@ export default function PositionsPanel({
           borderTop: "1px solid #d0d0d0",
           borderBottom: "1px solid #d0d0d0",
         }}>
-        <div style={{ width: 34, height: 3, borderRadius: 2, background: "#9aa7b8" }} />
+        <div style={{ width: 34, height: 3, borderRadius: "var(--radius-ui)", background: "#9aa7b8" }} />
       </div>
 
       {/* Редактирование выбранной */}
@@ -278,10 +278,10 @@ export default function PositionsPanel({
           {/* Фон (цвет маркера) */}
           <Row label="Фон:">
             <div className="flex items-center gap-1 flex-1">
-              <div style={{ flex: 1, height: 16, background: selected.color, border: "1px solid #ccc", borderRadius: 2 }} />
+              <div style={{ flex: 1, height: 16, background: selected.color, border: "1px solid #ccc", borderRadius: "var(--radius-ui)" }} />
               <input type="color" value={selected.color}
                 onChange={(e) => upd({ color: e.target.value })}
-                style={{ width: 18, height: 18, padding: 0, border: "1px solid #ccc", borderRadius: 3, cursor: "pointer" }} />
+                style={{ width: 18, height: 18, padding: 0, border: "1px solid #ccc", borderRadius: "var(--radius-ui)", cursor: "pointer" }} />
             </div>
           </Row>
 
@@ -296,10 +296,10 @@ export default function PositionsPanel({
           {/* Цвет границы */}
           <Row label="Цвет границы:">
             <div className="flex items-center gap-1 flex-1">
-              <div style={{ flex: 1, height: 16, background: selected.borderColor, border: "1px solid #ccc", borderRadius: 2 }} />
+              <div style={{ flex: 1, height: 16, background: selected.borderColor, border: "1px solid #ccc", borderRadius: "var(--radius-ui)" }} />
               <input type="color" value={selected.borderColor}
                 onChange={(e) => upd({ borderColor: e.target.value })}
-                style={{ width: 18, height: 18, padding: 0, border: "1px solid #ccc", borderRadius: 3, cursor: "pointer" }} />
+                style={{ width: 18, height: 18, padding: 0, border: "1px solid #ccc", borderRadius: "var(--radius-ui)", cursor: "pointer" }} />
             </div>
           </Row>
 
@@ -448,7 +448,7 @@ export default function PositionsPanel({
           <div style={{ padding: "4px 8px", borderBottom: "1px solid #e8e8e8" }}>
             {leaderDrawMode === selected.id ? (
               /* Активен режим рисования */
-              <div style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: 4, padding: "4px 8px" }}>
+              <div style={{ background: "#eff6ff", border: "1px solid #93c5fd", borderRadius: "var(--radius-ui)", padding: "4px 8px" }}>
                 <div style={{ fontSize: 11, color: "#1d4ed8", fontWeight: 600, marginBottom: 2 }}>
                   Кликните на ветви или схеме
                 </div>
@@ -611,7 +611,7 @@ const btnStyle: React.CSSProperties = {
 
 const inputStyle: React.CSSProperties = {
   fontSize: 11, border: "1px solid #c8c8c8",
-  borderRadius: 2, padding: "1px 4px",
+  borderRadius: "var(--radius-ui)", padding: "1px 4px",
   background: "#fff", outline: "none", height: 18,
 };
 

@@ -55,7 +55,7 @@ export default function UnitsConfigPanel({ unitsConfig, onChange }: Props) {
                         border: `1px solid ${isDefault ? "var(--c-b2, #c8c8c8)" : "#93c5fd"}`,
                         height: 20,
                         outline: "none",
-                        borderRadius: 2,
+                        borderRadius: "var(--radius-ui)",
                         color: isDefault ? "var(--c-t2, #374151)" : "var(--c-blue, #1d4ed8)",
                       }}
                     >

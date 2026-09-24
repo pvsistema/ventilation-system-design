@@ -133,7 +133,7 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
                 style={{
                   width: "100%", textAlign: "center",
                   fontSize: titleFontSize, fontFamily: "Arial, sans-serif", fontWeight: "bold",
-                  border: "1.5px solid #7c3aed", borderRadius: 2, outline: "none",
+                  border: "1.5px solid #7c3aed", borderRadius: "var(--radius-ui)", outline: "none",
                   background: "rgba(255,253,230,0.97)", padding: "1px 4px", boxSizing: "border-box" as const,
                 }}
               />

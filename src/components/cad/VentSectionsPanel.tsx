@@ -171,7 +171,7 @@ export default function VentSectionsPanel({
               <div className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer hover:bg-gray-50"
                 onClick={() => setExpandedId(open ? "" : s.id)}>
                 <Icon name={open ? "ChevronDown" : "ChevronRight"} size={11} className="text-gray-400 flex-shrink-0" />
-                <span style={{ width: 9, height: 9, borderRadius: 2, background: s.color, flexShrink: 0 }} />
+                <span style={{ width: 9, height: 9, borderRadius: "var(--radius-ui)", background: s.color, flexShrink: 0 }} />
                 <div className="flex-1 min-w-0">
                   <div className="text-[11px] truncate">
                     {s.number ? `${s.number}. ` : ""}{s.name || "Без названия"}
@@ -251,7 +251,7 @@ export default function VentSectionsPanel({
                       + выделенные ({selectedBranchIds.length})
                     </button>
                   </div>
-                  <div style={{ border: "1px solid #e6eaf2", borderRadius: 2, background: "white", maxHeight: 130, overflow: "auto" }}>
+                  <div style={{ border: "1px solid #e6eaf2", borderRadius: "var(--radius-ui)", background: "white", maxHeight: 130, overflow: "auto" }}>
                     {s.branchIds.length === 0 ? (
                       <div className="text-[10px] text-gray-400 text-center py-2 px-2 leading-snug">
                         Выделите выработки на схеме и нажмите «+ выделенные»

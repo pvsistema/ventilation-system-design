@@ -136,7 +136,7 @@ export default function VentSectionsDialog({
                     background: s.id === selId ? "#eaf1fc" : "transparent",
                   }}>
                   <span style={{
-                    width: 10, height: 10, borderRadius: 2,
+                    width: 10, height: 10, borderRadius: "var(--radius-ui)",
                     background: s.color, flexShrink: 0,
                   }} />
                   <div className="flex-1 min-w-0">
@@ -227,7 +227,7 @@ export default function VentSectionsDialog({
                     Добавить выделенные ({selectedBranchIds.length})
                   </button>
                 </div>
-                <div style={{ border: "1px solid #e0e4ee", borderRadius: 3, maxHeight: 180, overflow: "auto" }}>
+                <div style={{ border: "1px solid #e0e4ee", borderRadius: "var(--radius-ui)", maxHeight: 180, overflow: "auto" }}>
                   {sel.branchIds.length === 0 ? (
                     <div className="text-[10px] text-gray-400 text-center py-4 px-3 leading-snug">
                       Выработок нет. Выделите их на схеме и нажмите «Добавить выделенные»,

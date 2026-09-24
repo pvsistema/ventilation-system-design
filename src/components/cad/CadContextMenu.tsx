@@ -61,7 +61,7 @@ export default function CadContextMenu({ x, y, items, onSelect, onClose }: CadCo
         background: "var(--c-s3, #f0f0f0)",
         border: "1px solid var(--c-b3, #888)",
         boxShadow: "2px 3px 8px rgba(0,0,0,0.28)",
-        borderRadius: 2,
+        borderRadius: "var(--radius-ui)",
         padding: "2px 0",
         userSelect: "none",
       }}

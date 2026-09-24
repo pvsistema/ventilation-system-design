@@ -140,7 +140,7 @@ export default function PrintSettingsPanel({
     ) : (
       <div style={{
         fontSize: 11, color: "#4b5563", background: "#f3f4f6",
-        border: "1px solid #d1d5db", borderRadius: 4, padding: "5px 7px", lineHeight: 1.45,
+        border: "1px solid #d1d5db", borderRadius: "var(--radius-ui)", padding: "5px 7px", lineHeight: 1.45,
       }}>
         Принтер, поля и двустороннюю печать выбирает Windows — окно выбора
         откроется после нажатия «Печать».

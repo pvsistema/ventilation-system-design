@@ -305,7 +305,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                       <div className="space-y-2">
                         <div>
                           <div className="text-[10px] text-gray-500 font-medium mb-1">Напор — Расход</div>
-                          <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: "var(--radius-ui)", overflow: "hidden" }}>
                             <FanChart curves={[...curves, ...reverseCurves]} type="qh" />
                           </div>
                         </div>
@@ -425,7 +425,7 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
           {catalog && (
             <div>
               <div className="text-[10px] text-gray-500 font-medium mb-1">Предпросмотр Q–H</div>
-              <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 4, overflow: "hidden" }}>
+              <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: "var(--radius-ui)", overflow: "hidden" }}>
                 <FanChart
                   curves={[
                     { pts: preview, color: "#2196f3" },
@@ -1537,7 +1537,7 @@ function VehicleCatalogSection() {
           placeholder="Поиск по названию или типу..."
           style={{
             width: "100%", boxSizing: "border-box",
-            background: "var(--c-s3, #f3f4f6)", border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 8,
+            background: "var(--c-s3, #f3f4f6)", border: "1px solid var(--c-b2, #d1d5db)", borderRadius: "var(--radius-ui)",
             color: "var(--c-t1, #111827)", fontSize: 12, padding: "8px 10px 8px 32px", outline: "none",
           }}
         />
@@ -1545,7 +1545,7 @@ function VehicleCatalogSection() {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
         {filtered.map((v, i) => (
           <div key={i} style={{
-            background: "var(--c-s2, #f8fafc)", border: "1px solid var(--c-b1, #e2e8f0)", borderRadius: 10, padding: "10px 12px",
+            background: "var(--c-s2, #f8fafc)", border: "1px solid var(--c-b1, #e2e8f0)", borderRadius: "var(--radius-ui)", padding: "10px 12px",
             cursor: "default",
           }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
@@ -1756,7 +1756,7 @@ function BlastZonesSection({ thresholds, onChange }: {
     label: string; value: number; onSet: (v: number) => void; color: string; range: string;
   }) => (
     <div className="flex items-center gap-2 py-1" style={{ borderBottom: "1px solid #f0f2f7" }}>
-      <div style={{ width: 6, height: 26, background: color, borderRadius: 3, flexShrink: 0 }} />
+      <div style={{ width: 6, height: 26, background: color, borderRadius: "var(--radius-ui)", flexShrink: 0 }} />
       <div className="flex-1 min-w-0">
         <div className="text-[11px] text-gray-700">{label}</div>
         <div className="text-[10px] text-gray-400 leading-snug">{range}</div>

@@ -194,7 +194,7 @@ export default function AirDemandDialog({
                         <td colSpan={COLSPAN} className="px-2 py-1"
                           style={{ border: "1px solid var(--c-b2, #d1d5db)", background: "var(--c-tint-blue2, #dbeafe)" }}>
                           <div className="flex items-center gap-2">
-                            <span style={{ width: 9, height: 9, borderRadius: 2, background: sec.color }} />
+                            <span style={{ width: 9, height: 9, borderRadius: "var(--radius-ui)", background: sec.color }} />
                             <b className="text-[11px]">
                               Участок {sec.number ? `${sec.number}. ` : ""}{sec.name}
                             </b>

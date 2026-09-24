@@ -57,7 +57,7 @@ export default function BranchGeometrySection({
         <button
           onClick={() => onUpdate({ manualLength: !branch.manualLength })}
           title={branch.manualLength ? "Вычислять автоматически из координат" : "Задать вручную"}
-          style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualLength ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+          style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: "var(--radius-ui)", background: branch.manualLength ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
           {branch.manualLength ? "рук" : "авт"}
         </button>
       </div>
@@ -80,7 +80,7 @@ export default function BranchGeometrySection({
         <button
           onClick={() => onUpdate({ manualAngle: !branch.manualAngle })}
           title={branch.manualAngle ? "Вычислять автоматически из координат" : "Задать вручную"}
-          style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: branch.manualAngle ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+          style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: "var(--radius-ui)", background: branch.manualAngle ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
           {branch.manualAngle ? "рук" : "авт"}
         </button>
       </div>
@@ -127,7 +127,7 @@ export default function BranchGeometrySection({
           <button
             onClick={onOpenSectionsLibrary}
             title="Справочник участков рудника"
-            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: 2, background: "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
+            style={{ fontSize: 10, padding: "1px 4px", border: "1px solid var(--c-b2, #c8c8c8)", borderRadius: "var(--radius-ui)", background: "var(--c-s2, #f5f5f5)", cursor: "pointer", flexShrink: 0, lineHeight: "14px" }}>
             …
           </button>
         )}

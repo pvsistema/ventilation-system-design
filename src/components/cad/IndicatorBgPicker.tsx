@@ -28,7 +28,7 @@ export default function IndicatorBgPicker({ value, defaultColor, onChange, label
             <button key={color} title={title}
               onClick={() => onChange(color)}
               style={{
-                width: 18, height: 18, borderRadius: 3, background: color,
+                width: 18, height: 18, borderRadius: "var(--radius-ui)", background: color,
                 border: cur === color ? "2px solid #1a3a6b" : "1px solid #c8c8c8",
                 cursor: "pointer", flexShrink: 0,
               }} />
@@ -36,7 +36,7 @@ export default function IndicatorBgPicker({ value, defaultColor, onChange, label
           <button title="Без фона"
             onClick={() => onChange(MS_IND_BG_NONE)}
             style={{
-              width: 18, height: 18, borderRadius: 3, background: "white",
+              width: 18, height: 18, borderRadius: "var(--radius-ui)", background: "white",
               border: cur === MS_IND_BG_NONE ? "2px solid #1a3a6b" : "1px solid #c8c8c8",
               cursor: "pointer", flexShrink: 0,
               color: "#dc2626", fontSize: 12, lineHeight: 1, fontWeight: 700,
@@ -47,7 +47,7 @@ export default function IndicatorBgPicker({ value, defaultColor, onChange, label
           onChange={(e) => onChange(e.target.value)}
           title="Свой цвет"
           className="mt-1 w-full h-5 cursor-pointer"
-          style={{ border: "1px solid #c8c8c8", borderRadius: 2, padding: 0, background: "white" }} />
+          style={{ border: "1px solid #c8c8c8", borderRadius: "var(--radius-ui)", padding: 0, background: "white" }} />
       </div>
     </div>
   );

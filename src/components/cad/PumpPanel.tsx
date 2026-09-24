@@ -26,7 +26,7 @@ interface Props {
 }
 
 const inputCls = "flex-1 px-1 py-0.5 text-[11px] text-right";
-const inputStyle: React.CSSProperties = { border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 };
+const inputStyle: React.CSSProperties = { border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" };
 
 export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, waterBranchResult }: Props) {
   const [showLibrary, setShowLibrary] = useState(false);

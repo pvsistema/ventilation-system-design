@@ -129,7 +129,7 @@ export default function BranchAirDemandTab({
         <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
           style={{
             background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec",
-            borderRadius: 2, height: 18, lineHeight: "16px",
+            borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px",
             color: isPolluted ? "var(--c-blue, #1d4ed8)" : "var(--c-green, #15803d)",
           }}
           title={isPolluted
@@ -307,20 +307,20 @@ export default function BranchAirDemandTab({
         </InlineLabel>
         <InlineLabel label="С коэффициентами">
           <div className="w-full text-[11px] text-right px-1 font-bold tabular-nums"
-            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px", color: "var(--c-t1, #0f172a)" }}>
+            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px", color: "var(--c-t1, #0f172a)" }}>
             {d.total > 0 ? `${d.total.toFixed(2)} м³/с` : "—"}
           </div>
         </InlineLabel>
         <InlineLabel label="Фактически, м³/с">
           <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
-            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px",
               color: d.flowOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}>
             {d.actualFlow.toFixed(2)}
           </div>
         </InlineLabel>
         <InlineLabel label="Скорость, м/с">
           <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
-            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: 2, height: 18, lineHeight: "16px",
+            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px",
               color: d.velocityOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}
             title={`Допустимо: ${d.vMin}–${d.vMax} м/с`}>
             {d.actualVelocity.toFixed(2)}

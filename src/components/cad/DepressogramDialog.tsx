@@ -410,7 +410,7 @@ export default function DepressogramDialog({
 
   return (
     // Без overlay-фона — диалог плавает поверх схемы, схема остаётся кликабельной
-    <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9000, width: W, maxHeight: window.innerHeight - pos.y - 20, background: "white", borderRadius: 7, boxShadow: "0 8px 40px rgba(0,0,0,0.32)", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--c-b2, #cbd5e1)" }}>
+    <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9000, width: W, maxHeight: window.innerHeight - pos.y - 20, background: "white", borderRadius: "var(--radius-ui)", boxShadow: "0 8px 40px rgba(0,0,0,0.32)", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--c-b2, #cbd5e1)" }}>
 
       {/* ── Заголовок (перетаскивание) ── */}
       <div
@@ -419,12 +419,12 @@ export default function DepressogramDialog({
         <Icon name="TrendingDown" size={15} style={{ color: "var(--c-blue, #2563eb)", flexShrink: 0 }} />
         <span style={{ fontWeight: 700, fontSize: 13, color: "var(--c-t1, #1e293b)" }}>Депрессиограмма</span>
         {points.length > 1 && (
-          <span style={{ fontSize: 11, background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue, #1d4ed8)", borderRadius: 12, padding: "2px 9px", fontWeight: 600, flexShrink: 0 }}>
+          <span style={{ fontSize: 11, background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue, #1d4ed8)", borderRadius: "var(--radius-ui)", padding: "2px 9px", fontWeight: 600, flexShrink: 0 }}>
             h = {totalDep.toFixed(1)} Па · L = {totalLength.toFixed(0)} м · {points.length - 1} вет.
           </span>
         )}
         {fanCount > 1 && mode === "auto" && (
-          <span style={{ fontSize: 10, background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #92400e)", borderRadius: 10, padding: "2px 8px", fontWeight: 600 }}>
+          <span style={{ fontSize: 10, background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #92400e)", borderRadius: "var(--radius-ui)", padding: "2px 8px", fontWeight: 600 }}>
             ВГП: {fanCount} · выбран маршрут с наибольшим расходом
           </span>
         )}
@@ -438,11 +438,11 @@ export default function DepressogramDialog({
         <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "5px 12px", borderRight: "1px solid var(--c-b1, #e5e7eb)" }}>
           <span style={{ fontSize: 11, color: "var(--c-t3, #6b7280)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.04em" }}>Маршрут:</span>
           <button onClick={() => handleModeChange("auto")}
-            style={{ padding: "3px 11px", fontSize: 11, fontWeight: 600, borderRadius: 4, border: "1px solid", cursor: "pointer", background: mode === "auto" ? "var(--c-blue, #2563eb)" : "var(--c-s3, #f1f5f9)", color: mode === "auto" ? "white" : "var(--c-t2, #374151)", borderColor: mode === "auto" ? "var(--c-blue, #1d4ed8)" : "var(--c-b2, #d1d5db)" }}>
+            style={{ padding: "3px 11px", fontSize: 11, fontWeight: 600, borderRadius: "var(--radius-ui)", border: "1px solid", cursor: "pointer", background: mode === "auto" ? "var(--c-blue, #2563eb)" : "var(--c-s3, #f1f5f9)", color: mode === "auto" ? "white" : "var(--c-t2, #374151)", borderColor: mode === "auto" ? "var(--c-blue, #1d4ed8)" : "var(--c-b2, #d1d5db)" }}>
             Авто
           </button>
           <button onClick={() => handleModeChange("manual")}
-            style={{ padding: "3px 11px", fontSize: 11, fontWeight: 600, borderRadius: 4, border: "1px solid", cursor: "pointer", background: mode === "manual" ? "var(--c-purple, #7c3aed)" : "var(--c-s3, #f1f5f9)", color: mode === "manual" ? "white" : "var(--c-t2, #374151)", borderColor: mode === "manual" ? "#6d28d9" : "var(--c-b2, #d1d5db)" }}>
+            style={{ padding: "3px 11px", fontSize: 11, fontWeight: 600, borderRadius: "var(--radius-ui)", border: "1px solid", cursor: "pointer", background: mode === "manual" ? "var(--c-purple, #7c3aed)" : "var(--c-s3, #f1f5f9)", color: mode === "manual" ? "white" : "var(--c-t2, #374151)", borderColor: mode === "manual" ? "#6d28d9" : "var(--c-b2, #d1d5db)" }}>
             Ручной
           </button>
           {mode === "auto" && fanBranchList.length > 0 && (
@@ -451,7 +451,7 @@ export default function DepressogramDialog({
               <select
                 value={selectedFanId}
                 onChange={e => setSelectedFanId(e.target.value)}
-                style={{ fontSize: 11, padding: "3px 6px", borderRadius: 4, border: "1px solid var(--c-b2, #d1d5db)", background: "white", color: "var(--c-t2, #374151)", cursor: "pointer", maxWidth: 220 }}
+                style={{ fontSize: 11, padding: "3px 6px", borderRadius: "var(--radius-ui)", border: "1px solid var(--c-b2, #d1d5db)", background: "white", color: "var(--c-t2, #374151)", cursor: "pointer", maxWidth: 220 }}
                 title="Ветвь главного вентилятора, от которой строится маршрут">
                 <option value="">Авто (наибольший расход)</option>
                 {fanBranchList.map(f => (
@@ -469,7 +469,7 @@ export default function DepressogramDialog({
           )}
           {mode === "manual" && manualBranchIds.size > 0 && (
             <button onClick={onClearManual}
-              style={{ padding: "2px 7px", fontSize: 10, color: "var(--c-red-lt, #ef4444)", background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5", borderRadius: 3, cursor: "pointer" }}>
+              style={{ padding: "2px 7px", fontSize: 10, color: "var(--c-red-lt, #ef4444)", background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5", borderRadius: "var(--radius-ui)", cursor: "pointer" }}>
               Сбросить
             </button>
           )}
@@ -544,11 +544,11 @@ export default function DepressogramDialog({
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {points.length > 1 && (
-            <button onClick={handleExport} style={{ padding: "4px 12px", fontSize: 11, fontWeight: 500, background: "var(--c-tint-green, #f0fdf4)", color: "var(--c-green, #15803d)", border: "1px solid #86efac", borderRadius: 4, cursor: "pointer" }}>
+            <button onClick={handleExport} style={{ padding: "4px 12px", fontSize: 11, fontWeight: 500, background: "var(--c-tint-green, #f0fdf4)", color: "var(--c-green, #15803d)", border: "1px solid #86efac", borderRadius: "var(--radius-ui)", cursor: "pointer" }}>
               Экспорт в Excel
             </button>
           )}
-          <button onClick={onClose} style={{ padding: "4px 16px", fontSize: 11, fontWeight: 600, background: "var(--c-blue-bg, #2563eb)", color: "white", border: "none", borderRadius: 4, cursor: "pointer" }}>
+          <button onClick={onClose} style={{ padding: "4px 16px", fontSize: 11, fontWeight: 600, background: "var(--c-blue-bg, #2563eb)", color: "white", border: "none", borderRadius: "var(--radius-ui)", cursor: "pointer" }}>
             Закрыть
           </button>
         </div>

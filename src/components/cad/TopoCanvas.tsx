@@ -48,6 +48,7 @@ import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
 import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 import { measureLabelW } from "@/lib/canvasFont";
+import { SEL_COLOR, SEL_MULTI_COLOR, SEL_HOVER_COLOR } from "@/lib/canvasRenderer";
 
 export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
@@ -2109,7 +2110,7 @@ export default function TopoCanvas(props: Props) {
             return (
               <line key={`hl-${b.id}`}
                 x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                stroke="#f59e0b" strokeWidth={w + 10 * objSF}
+                stroke={SEL_HOVER_COLOR} strokeWidth={w + 10 * objSF}
                 strokeLinecap="round" opacity="0.55" />
             );
           }) : null;
@@ -2207,7 +2208,7 @@ export default function TopoCanvas(props: Props) {
           const isLeakage = b.isLeakage ?? false;
           const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
           const posInnerColEarly = posInnerColors?.get(b.id);
-          const color = isSel ? (isMultiSel ? "#f59e0b" : "#2563eb")
+          const color = isSel ? (isMultiSel ? SEL_MULTI_COLOR : SEL_COLOR)
             : b.isVentPipeBranch ? "#9ca3af"
             : isLeakage ? "#f97316"
             : overV ? "#dc2626"
@@ -2353,7 +2354,7 @@ export default function TopoCanvas(props: Props) {
               {/* Подсветка ветви при tool=symbol hover */}
               {hoverBranchId === b.id && (
                 <line x1={from.sx} y1={from.sy} x2={to.sx} y2={to.sy}
-                  stroke="#f59e0b" strokeWidth={w + 8} strokeLinecap="round" opacity="0.35" />
+                  stroke={SEL_HOVER_COLOR} strokeWidth={w + 8} strokeLinecap="round" opacity="0.35" />
               )}
 
               {/* Подсветка F3-режима: привязанные ярко, непривязанные тускло */}
@@ -2710,7 +2711,7 @@ export default function TopoCanvas(props: Props) {
                           y={-bh / 2 + lh * (li + 0.6)}
                           fontSize={li === 0 && showNum ? (branchNum.length > 2 ? 7.5 : 9) * textSc : 8.5 * textSc}
                           fontWeight="600"
-                          fill={li === 0 && showNum ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f")}
+                          fill={li === 0 && showNum ? (isSel ? "#b45309" : "#374151") : (overV ? "#dc2626" : "#1e3a5f")}
                           style={{ paintOrder: "stroke", stroke: "white", strokeWidth: 3 * textSc, strokeLinejoin: "round" }}>
                           {ln}
                         </text>
@@ -3048,7 +3049,7 @@ export default function TopoCanvas(props: Props) {
               {/* Рамка выделения */}
               {isSel && (
                 <circle cx={px} cy={py} r={SZ / 2 + 4}
-                  fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2"
+                  fill="none" stroke={SEL_COLOR} strokeWidth="1.5" strokeDasharray="4 2"
                   style={{ pointerEvents: "none" }} />
               )}
               {/* SVG-символ (pointerEvents=none — события только через hitbox) */}
@@ -3896,7 +3897,7 @@ export default function TopoCanvas(props: Props) {
           const alignRole = alignRoles?.get(node.id);
           const ringColor = alignRole === "stay" ? "#10b981"
             : alignRole === "move" ? "#f59e0b"
-            : isMultiSel ? "#f59e0b" : "#2563eb";
+            : isMultiSel ? SEL_MULTI_COLOR : SEL_COLOR;
           const rawFireType = node.fireNodeType ?? "none";
           // Видимость водопроводных типов узлов управляется вкладкой «Водопровод».
           const waterTypeVisible =

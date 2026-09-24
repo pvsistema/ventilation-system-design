@@ -535,6 +535,18 @@ function getSortedNodes(projNodes: ProjNode[], sortEpoch?: number): SortedNode[]
   return _sortedNodesCache;
 }
 
+/**
+ * Фирменная палитра выделения на схеме.
+ * Выделенная ветвь/узел — сигнальный янтарь с антрацитовой обводкой (читается
+ * и на белых, и на красных, и на синих выработках). Групповое выделение —
+ * светлый янтарь, наведение — янтарное свечение. Раньше было «синее +
+ * оранжевое», как во множестве других программ.
+ */
+export const SEL_COLOR = "#e8a317";
+export const SEL_MULTI_COLOR = "#fcd34d";
+export const SEL_HOVER_COLOR = "#f5b83d";
+export const SEL_OUTLINE = "#1f2328";
+
 /** Цвета бумаги и сетки под текущую тему (светлая / тёмная). */
 function currentCanvasTheme() {
   const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
@@ -878,7 +890,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     const midX = (from.sx + to.sx) / 2, midY = (from.sy + to.sy) / 2;
     const horizonColor = b.horizonId ? horizonMap.get(b.horizonId)?.color : undefined;
     const posInnerCol = posInnerColors?.get(b.id);
-    const color = isSel ? (isMulti ? "#f59e0b" : "#2563eb")
+    const color = isSel ? (isMulti ? SEL_MULTI_COLOR : SEL_COLOR)
       : b.isVentPipeBranch ? "#9ca3af"
       : isLeakage ? "#f97316"
       : overV    ? "#dc2626"
@@ -1016,7 +1028,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
     }
     // Подсветка hover
     if (hoverBranchId === b.id) {
-      ctx.strokeStyle = "#f59e0b";
+      ctx.strokeStyle = SEL_HOVER_COLOR;
       ctx.lineWidth = p.w + 8;
       ctx.globalAlpha = 0.35;
       ctx.setLineDash([]);
@@ -1497,7 +1509,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
         if (w > maxLineW) maxLineW = w;
         ctx.strokeStyle = "white"; ctx.lineWidth = 3 * textSc;
         ctx.strokeText(ln, 0, ty);
-        ctx.fillStyle = isNumLine ? (isSel ? "#2563eb" : "#374151") : (overV ? "#dc2626" : "#1e3a5f");
+        ctx.fillStyle = isNumLine ? (isSel ? "#b45309" : "#374151") : (overV ? "#dc2626" : "#1e3a5f");
         ctx.fillText(ln, 0, ty);
       }
 
@@ -1789,7 +1801,7 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       const _alignRole = alignRoles?.get(n.id);
       const ringColor = _alignRole === "stay" ? "#10b981"
         : _alignRole === "move" ? "#f59e0b"
-        : isMultiSel ? "#f59e0b" : "#2563eb";
+        : isMultiSel ? SEL_MULTI_COLOR : SEL_COLOR;
 
       // Основной круг
       const rawFireType = n.fireNodeType ?? "none";
@@ -2204,7 +2216,7 @@ export function renderOverlay(opts: OverlayRenderOptions) {
 
   const brById = getBranchById(branches);
 
-  // ── Ветви: наведение (жёлтая полупрозрачная подсветка) ──
+  // ── Ветви: наведение (янтарное свечение) ──
   if (hoverBranchId) {
     const b = brById.get(hoverBranchId);
     const from = b ? projNodesMap.get(b.fromId) : undefined;
@@ -2212,7 +2224,7 @@ export function renderOverlay(opts: OverlayRenderOptions) {
     if (b && from && to) {
       const bw = ovBranchW(b);
       const w  = thinLines ? 1 : Math.max(bw * objSF, 1.0);
-      ctx.strokeStyle = "#f59e0b";
+      ctx.strokeStyle = SEL_HOVER_COLOR;
       ctx.lineWidth = w + 8;
       ctx.globalAlpha = 0.35;
       ctx.lineCap = "round";
@@ -2221,7 +2233,7 @@ export function renderOverlay(opts: OverlayRenderOptions) {
     }
   }
 
-  // ── Ветви: выделение (синее — одиночное, оранжевое — множественное) ──
+  // ── Ветви: выделение (янтарь — одиночное, светлый янтарь — групповое) ──
   if (hasBranchSel) {
     const ids = new Set<string>(selectedBranchIds);
     if (selectedBranchId) ids.add(selectedBranchId);
@@ -2240,13 +2252,18 @@ export function renderOverlay(opts: OverlayRenderOptions) {
       const isMulti = selectedBranchIds.has(id);
       const bw = ovBranchW(b);
       const w  = thinLines ? 1 : Math.max((bw + 1) * objSF, 1.0);
-      // Тёмная обводка под цветом — чтобы выделение читалось на любом фоне.
-      ctx.strokeStyle = "#1f2937";
-      ctx.lineWidth = w + 2;
-      ctx.globalAlpha = 0.85;
+      // Мягкое янтарное свечение вокруг — выделение видно издалека.
+      ctx.strokeStyle = SEL_COLOR;
+      ctx.lineWidth = w + 9;
+      ctx.globalAlpha = 0.22;
+      ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
+      // Антрацитовая обводка под цветом — чтобы янтарь читался на любом фоне.
+      ctx.strokeStyle = SEL_OUTLINE;
+      ctx.lineWidth = w + 2.5;
+      ctx.globalAlpha = 0.9;
       ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
       ctx.globalAlpha = 1;
-      ctx.strokeStyle = isMulti ? "#f59e0b" : "#2563eb";
+      ctx.strokeStyle = isMulti ? SEL_MULTI_COLOR : SEL_COLOR;
       ctx.lineWidth = w;
       ctx.beginPath(); ctx.moveTo(from.sx, from.sy); ctx.lineTo(to.sx, to.sy); ctx.stroke();
     }
@@ -2265,7 +2282,7 @@ export function renderOverlay(opts: OverlayRenderOptions) {
       const branchPx = (thinLines ? 1 : (avgW.get(id) ?? branchWidth)) * objSF;
       const baseNodeR = Math.max(1.5, branchPx * 0.55);
       const r = baseNodeR * 1.5;
-      const ringColor = selectedNodeIds.has(id) ? "#f59e0b" : "#2563eb";
+      const ringColor = selectedNodeIds.has(id) ? SEL_MULTI_COLOR : SEL_COLOR;
       // Пунктирное кольцо
       ctx.beginPath(); ctx.arc(pn.sx, pn.sy, r + baseNodeR * 0.5, 0, Math.PI * 2);
       ctx.strokeStyle = ringColor;

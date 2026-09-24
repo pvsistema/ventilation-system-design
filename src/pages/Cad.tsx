@@ -6887,7 +6887,7 @@ export default function CadPage() {
                     style={{
                       width: 44, height: 50, alignSelf: "center",
                       display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
-                      borderRadius: 4,
+                      borderRadius: "var(--radius-ui)",
                       border: showUOPanel ? "1.5px solid var(--c-blue, #2563eb)" : hasActive ? "1.5px solid var(--c-blue-lt, #3b82f6)" : "1px solid var(--c-b2, #c8c8c8)",
                       background: showUOPanel ? "var(--c-tint-blue2, #dbeafe)" : hasActive ? "var(--c-tint-blue, #eff6ff)" : "white",
                       cursor: "pointer", padding: 0, flexShrink: 0,
@@ -6964,7 +6964,7 @@ export default function CadPage() {
                         color: "white",
                         fontSize: 10,
                         padding: "4px 8px",
-                        borderRadius: 4,
+                        borderRadius: "var(--radius-ui)",
                         pointerEvents: "none",
                         maxWidth: 210,
                         lineHeight: 1.3,
@@ -7009,7 +7009,7 @@ export default function CadPage() {
                                   style={{
                                     width: 26, height: 26,
                                     display: "flex", alignItems: "center", justifyContent: "center",
-                                    borderRadius: 3,
+                                    borderRadius: "var(--radius-ui)",
                                     border: isActive ? "1.5px solid var(--c-blue, #2563eb)" : "1px solid transparent",
                                     background: isActive ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
                                     cursor: "pointer", padding: 0, flexShrink: 0,
@@ -9430,11 +9430,11 @@ export default function CadPage() {
                     const speed = airQ > 0 && b.area > 0 ? airQ / b.area : 0;
                     return (
                       <div style={{ margin: 4 }}>
-                        <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac", borderRadius: 3, color: "var(--c-green, #15803d)" }}>
+                        <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac", borderRadius: "var(--radius-ui)", color: "var(--c-green, #15803d)" }}>
                           ✅ Ветвь не затронута задымлением
                         </div>
                         {speed > 0 && b.length > 0 && (
-                          <div className="mt-1 px-2 py-1.5 text-[10px]" style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid var(--c-b1, #e2e8f0)", borderRadius: 3, color: "var(--c-t3, #475569)" }}>
+                          <div className="mt-1 px-2 py-1.5 text-[10px]" style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid var(--c-b1, #e2e8f0)", borderRadius: "var(--radius-ui)", color: "var(--c-t3, #475569)" }}>
                             <div className="font-semibold mb-0.5 text-[11px]">Справочно (если дым войдёт):</div>
                             <div className="flex justify-between">
                               <span>Скорость воздуха:</span>
@@ -9450,7 +9450,7 @@ export default function CadPage() {
                     );
                   })()}
                   {!fireCalcDone && (
-                    <div className="px-2 py-2 text-[11px] text-orange-700" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d", margin: 4, borderRadius: 4 }}>
+                    <div className="px-2 py-2 text-[11px] text-orange-700" style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d", margin: 4, borderRadius: "var(--radius-ui)" }}>
                       Нажмите «Расчёт пожара» на вкладке Аварии для получения результатов
                     </div>
                   )}
@@ -10319,7 +10319,7 @@ export default function CadPage() {
                       rows={2}
                       className="flex-1 px-1 py-0.5 text-[11px] resize-none"
                       placeholder="Введите описание объекта..."
-                      style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                      style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                   </div>
 
                   {/* ── Калорифер ── */}
@@ -10340,7 +10340,7 @@ export default function CadPage() {
                           value={sym.htMode ?? "winter"}
                           onChange={e => updSym({ htMode: e.target.value as "winter" | "always" | "off" })}
                           className="flex-1 text-[11px] px-1"
-                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", borderRadius: 2 }}>
+                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", borderRadius: "var(--radius-ui)" }}>
                           <option value="winter">Только зимой</option>
                           <option value="always">Круглый год</option>
                           <option value="off">Выключен</option>
@@ -10366,7 +10366,7 @@ export default function CadPage() {
                           value={method}
                           onChange={e => updSym({ htMethod: e.target.value as "power" | "temp" })}
                           className="flex-1 text-[11px] px-1"
-                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", borderRadius: 2 }}>
+                          style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", borderRadius: "var(--radius-ui)" }}>
                           <option value="power">По тепловой мощности</option>
                           <option value="temp">По температуре за калорифером</option>
                         </select>
@@ -10380,7 +10380,7 @@ export default function CadPage() {
                             onChange={e => updSym({ htPower: e.target.value === "" ? undefined : Number(e.target.value) })}
                             placeholder="0"
                             className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                           <span className="text-gray-400 flex-shrink-0">кВт</span>
                         </div>
                       ) : (
@@ -10391,7 +10391,7 @@ export default function CadPage() {
                             onChange={e => updSym({ htOutTemp: e.target.value === "" ? undefined : Number(e.target.value) })}
                             placeholder={String(MIN_SHAFT_TEMP_C)}
                             className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                           <span className="text-gray-400 flex-shrink-0">°C</span>
                         </div>
                       )}
@@ -10406,7 +10406,7 @@ export default function CadPage() {
                             updSym({ htEfficiency: v / 100 });
                           }}
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                         <span className="text-gray-400 flex-shrink-0">%</span>
                       </div>
 
@@ -10474,7 +10474,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msNumber: e.target.value })}
                           placeholder="№"
                           className="flex-1 px-1 py-0.5 text-[11px]"
-                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                       </div>
 
                       {/* Местоположение */}
@@ -10486,7 +10486,7 @@ export default function CadPage() {
                           rows={2}
                           placeholder="Введите местоположение..."
                           className="flex-1 px-1 py-0.5 text-[11px] resize-none"
-                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                       </div>
 
                       <div className="font-semibold text-[11px] text-gray-600 pb-1 border-b border-gray-200 mb-2 mt-2 uppercase tracking-wide">
@@ -10501,7 +10501,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msArea: e.target.value === "" ? undefined : Number(e.target.value) })}
                           placeholder="0.0"
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                         <span className="text-gray-400 flex-shrink-0">м²</span>
                       </div>
 
@@ -10513,7 +10513,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msFlow: e.target.value === "" ? undefined : Number(e.target.value) })}
                           placeholder="0.0"
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                         <span className="text-gray-400 flex-shrink-0">м³/с</span>
                       </div>
 
@@ -10525,7 +10525,7 @@ export default function CadPage() {
                           onChange={(e) => updSym({ msVelocity: e.target.value === "" ? undefined : Number(e.target.value) })}
                           placeholder="0.0"
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
-                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: 2 }} />
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                         <span className="text-gray-400 flex-shrink-0">м/с</span>
                       </div>
 
@@ -11367,7 +11367,7 @@ export default function CadPage() {
                   </div>
                   {activeHorizon && (
                     <div className="px-1 py-1 mt-1 text-[11px]"
-                      style={{ background: "var(--c-tint-green2, #dcfce7)", color: "var(--c-green-ink, #166534)", border: "1px solid #86efac", borderRadius: 3 }}>
+                      style={{ background: "var(--c-tint-green2, #dcfce7)", color: "var(--c-green-ink, #166534)", border: "1px solid #86efac", borderRadius: "var(--radius-ui)" }}>
                       ● Новые узлы будут создаваться на отметке <b>{activeHorizon.z} м</b>
                     </div>
                   )}
@@ -12254,7 +12254,7 @@ export default function CadPage() {
                           className={n === 0 ? "flex items-center gap-2 py-1 px-1" : "flex items-center gap-2 py-1 px-1 rounded cursor-pointer hover:bg-blue-50"}
                           style={{ opacity: n === 0 ? 0.35 : 1 }}>
                           <div style={{
-                            width: 18, height: 12, borderRadius: 2, flexShrink: 0,
+                            width: 18, height: 12, borderRadius: "var(--radius-ui)", flexShrink: 0,
                             background: SECTION_KIND_COLORS[k],
                             border: "1px solid rgba(0,0,0,0.15)",
                           }} />
@@ -12358,7 +12358,7 @@ export default function CadPage() {
                       <div style={{
                         width: 22, height: BAR_H,
                         background: `linear-gradient(to bottom, ${stopHi}, ${stopLo})`,
-                        border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 4, flexShrink: 0,
+                        border: "1px solid var(--c-b2, #d1d5db)", borderRadius: "var(--radius-ui)", flexShrink: 0,
                       }} />
                       {/* Подписи делений */}
                       <div style={{ position: "relative", height: BAR_H, width: 72, flexShrink: 0 }}>
@@ -12409,14 +12409,14 @@ export default function CadPage() {
                       <input type="number" min="0" step={isVel ? 1 : 5} value={scaleMin}
                         onChange={e => setScaleMin(Number(e.target.value))}
                         className="flex-1 text-[11px] text-right px-1"
-                        style={{ border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 3, height: 22, outline: "none" }} />
+                        style={{ border: "1px solid var(--c-b2, #d1d5db)", borderRadius: "var(--radius-ui)", height: 22, outline: "none" }} />
                     </div>
                     <div className="flex items-center gap-2 mb-3">
                       <span className="text-[11px] text-gray-600" style={{ width: 60 }}>Макс, {unit}</span>
                       <input type="number" min="1" step={isVel ? 1 : 5} value={scaleMax}
                         onChange={e => setScaleMax(Number(e.target.value))}
                         className="flex-1 text-[11px] text-right px-1"
-                        style={{ border: "1px solid var(--c-b2, #d1d5db)", borderRadius: 3, height: 22, outline: "none" }} />
+                        style={{ border: "1px solid var(--c-b2, #d1d5db)", borderRadius: "var(--radius-ui)", height: 22, outline: "none" }} />
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -12426,7 +12426,7 @@ export default function CadPage() {
                           <button key={h} onClick={() => setScaleHue(h)}
                             title={h === "red" ? "Красный" : h === "blue" ? "Синий" : "Зелёный"}
                             style={{
-                              width: 22, height: 22, borderRadius: 4,
+                              width: 22, height: 22, borderRadius: "var(--radius-ui)",
                               border: scaleHue === h ? "2px solid #111" : "1px solid var(--c-b2, #d1d5db)",
                               background: h === "red" ? "var(--c-red, #dc2626)" : h === "blue" ? "var(--c-blue, #2563eb)" : "var(--c-green, #16a34a)",
                               cursor: "pointer",
@@ -13921,7 +13921,7 @@ export default function CadPage() {
             {fireControlPreview && (
               <div style={{
                 position: "absolute", top: 12, left: "50%", transform: "translateX(-50%)",
-                zIndex: 30, background: "rgba(17,24,39,0.92)", borderRadius: 10,
+                zIndex: 30, background: "rgba(17,24,39,0.92)", borderRadius: "var(--radius-ui)",
                 padding: "9px 13px", color: "white", fontSize: 11,
                 border: "1px solid rgba(96,165,250,0.5)",
                 boxShadow: "0 4px 24px rgba(0,0,0,0.45)", maxWidth: 560,
@@ -13961,7 +13961,7 @@ export default function CadPage() {
                     <button key={m}
                       onClick={() => setFireControlPreviewMode(m)}
                       style={{
-                        fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                        fontSize: 10, padding: "2px 8px", borderRadius: "var(--radius-ui)", cursor: "pointer",
                         border: "1px solid " + (fireControlPreviewMode === m ? "#60a5fa" : "rgba(255,255,255,0.2)"),
                         background: fireControlPreviewMode === m ? "rgba(96,165,250,0.25)" : "transparent",
                         color: fireControlPreviewMode === m ? "#bfdbfe" : "var(--c-t4, #d1d5db)",
@@ -13973,7 +13973,7 @@ export default function CadPage() {
                     <button
                       onClick={() => setDepressogramHighlight(fireControlPreview.violations)}
                       style={{
-                        fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                        fontSize: 10, padding: "2px 8px", borderRadius: "var(--radius-ui)", cursor: "pointer",
                         border: "1px solid rgba(252,211,77,0.5)", background: "transparent", color: "#fcd34d",
                       }}>
                       Подсветить превышения
@@ -13986,14 +13986,14 @@ export default function CadPage() {
                       setShowFireControl(false);
                     }}
                     style={{
-                      fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                      fontSize: 10, padding: "2px 8px", borderRadius: "var(--radius-ui)", cursor: "pointer",
                       border: "1px solid rgba(134,239,172,0.5)", background: "rgba(34,197,94,0.18)", color: "#bbf7d0",
                     }}>
                     Применить к схеме
                   </button>
                   <button onClick={closeFireControlPreview}
                     style={{
-                      fontSize: 10, padding: "2px 8px", borderRadius: 5, cursor: "pointer",
+                      fontSize: 10, padding: "2px 8px", borderRadius: "var(--radius-ui)", cursor: "pointer",
                       border: "1px solid rgba(255,255,255,0.25)", background: "transparent", color: "var(--c-t4, #d1d5db)",
                     }}>
                     Вернуться к списку
@@ -14006,7 +14006,7 @@ export default function CadPage() {
             {showExplosionZones && activeExplosionRes && !activeExplosionRes.noExplosion && (
               <div style={{
                 position: "absolute", bottom: 12, left: 12, zIndex: 20,
-                background: "rgba(10,6,0,0.88)", borderRadius: 10,
+                background: "rgba(10,6,0,0.88)", borderRadius: "var(--radius-ui)",
                 padding: "10px 14px", color: "white", fontSize: 11,
                 minWidth: 220, pointerEvents: "none",
                 border: "1px solid rgba(245,158,11,0.45)",
@@ -14036,7 +14036,7 @@ export default function CadPage() {
                       }}>
                         {/* Цветная полоска */}
                         <div style={{
-                          width: 6, height: 28, background: color, borderRadius: 3,
+                          width: 6, height: 28, background: color, borderRadius: "var(--radius-ui)",
                           flexShrink: 0,
                           boxShadow: isActive ? `0 0 6px ${color}` : "none",
                         }} />
@@ -14050,7 +14050,7 @@ export default function CadPage() {
                           color: r > 0 ? color: "var(--c-t2, #4b5563)",
                           background: r > 0 ? `${color}20` : "transparent",
                           border: `1px solid ${r > 0 ? color + "60" : "transparent"}`,
-                          borderRadius: 4, padding: "1px 6px", minWidth: 54,
+                          borderRadius: "var(--radius-ui)", padding: "1px 6px", minWidth: 54,
                         }}>
                           {r > 0 ? `${r} м` : "—"}
                         </div>
@@ -14492,7 +14492,7 @@ export default function CadPage() {
                     color: tb.color,
                     background: tb.background !== "none" ? tb.background : "rgba(255,255,255,0.97)",
                     border: "2px solid var(--c-blue, #2563eb)",
-                    borderRadius: 4, padding: "4px 8px",
+                    borderRadius: "var(--radius-ui)", padding: "4px 8px",
                     outline: "none", resize: "both",
                     zIndex: 200,
                     boxShadow: "0 2px 12px rgba(0,0,0,0.18)",
@@ -14586,7 +14586,7 @@ export default function CadPage() {
                   title={blastAnimating ? "Пауза" : "Воспроизведение"}
                   style={{
                     background: blastAnimating ? "var(--c-amber-ink, #92400e)" : "var(--c-amber-lt, #f59e0b)",
-                    border: "1px solid var(--c-amber, #b45309)", borderRadius: 4, color: "#fff",
+                    border: "1px solid var(--c-amber, #b45309)", borderRadius: "var(--radius-ui)", color: "#fff",
                     fontSize: 11, fontWeight: 700, padding: "2px 10px", cursor: "pointer",
                     whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4,
                   }}>
@@ -14602,7 +14602,7 @@ export default function CadPage() {
                     setBlastWaveRadius(0);
                   }}
                   style={{
-                    background: "#1c1202", border: "1px solid var(--c-amber, #b45309)", borderRadius: 4,
+                    background: "#1c1202", border: "1px solid var(--c-amber, #b45309)", borderRadius: "var(--radius-ui)",
                     color: "#fde68a", fontSize: 11, padding: "2px 7px", cursor: "pointer",
                   }}>
                   ⏮
@@ -14613,7 +14613,7 @@ export default function CadPage() {
                   {/* Градиент фона */}
                   <div style={{
                     position: "absolute", top: "50%", left: 0, right: 0, height: 8,
-                    transform: "translateY(-50%)", borderRadius: 4,
+                    transform: "translateY(-50%)", borderRadius: "var(--radius-ui)",
                     background: "linear-gradient(to right, #7c1010, var(--c-red-bg, #dc2626) 15%, #f97316 30%, #fbbf24 50%, var(--c-green-lt, #22c55e))",
                     opacity: 0.45, pointerEvents: "none",
                   }} />
@@ -14661,7 +14661,7 @@ export default function CadPage() {
                 <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 1, flexShrink: 0 }}>
                   <span style={{
                     fontSize: 12, fontWeight: 700, color: "#fff", background: "var(--c-amber-bg, #92400e)",
-                    borderRadius: 4, padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
+                    borderRadius: "var(--radius-ui)", padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
                   }}>
                     R = {blastWaveRadius} м
                   </span>
@@ -14691,7 +14691,7 @@ export default function CadPage() {
                   }}
                   style={{
                     width: 52, fontSize: 11, background: "#1c1202", color: "#fde68a",
-                    border: "1px solid var(--c-amber, #b45309)", borderRadius: 3, padding: "1px 4px", textAlign: "center",
+                    border: "1px solid var(--c-amber, #b45309)", borderRadius: "var(--radius-ui)", padding: "1px 4px", textAlign: "center",
                   }}
                 />
                 <span style={{ fontSize: 10, color: "#fde68a" }}>м</span>
@@ -14702,7 +14702,7 @@ export default function CadPage() {
                   onChange={e => setBlastRadiusStep(Number(e.target.value))}
                   style={{
                     fontSize: 11, background: "#1c1202", color: "#fde68a",
-                    border: "1px solid var(--c-amber, #b45309)", borderRadius: 3, padding: "1px 2px",
+                    border: "1px solid var(--c-amber, #b45309)", borderRadius: "var(--radius-ui)", padding: "1px 2px",
                   }}>
                   {[1, 2, 5, 10, 25, 50, 100].map(s => (
                     <option key={s} value={s}>{s} м</option>
@@ -14753,7 +14753,7 @@ export default function CadPage() {
                   title={smokeAnimating ? "Пауза" : "Воспроизведение"}
                   style={{
                     background: smokeAnimating ? "#7f1d1d" : "var(--c-red, #dc2626)",
-                    border: "1px solid var(--c-red-ink, #991b1b)", borderRadius: 4, color: "#fff",
+                    border: "1px solid var(--c-red-ink, #991b1b)", borderRadius: "var(--radius-ui)", color: "#fff",
                     fontSize: 11, fontWeight: 700, padding: "2px 10px", cursor: "pointer",
                     whiteSpace: "nowrap", display: "flex", alignItems: "center", gap: 4,
                   }}>
@@ -14770,7 +14770,7 @@ export default function CadPage() {
                   }}
                   title="Сначала"
                   style={{
-                    background: "#3b0000", border: "1px solid #7f1d1d", borderRadius: 4,
+                    background: "#3b0000", border: "1px solid #7f1d1d", borderRadius: "var(--radius-ui)",
                     color: "#fca5a5", fontSize: 11, padding: "2px 7px", cursor: "pointer",
                     whiteSpace: "nowrap",
                   }}>
@@ -14802,7 +14802,7 @@ export default function CadPage() {
                 {/* Текущее время — крупно */}
                 <span style={{
                   fontSize: 12, fontWeight: 700, color: "#fff", background: "var(--c-red-bg, #b91c1c)",
-                  borderRadius: 4, padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
+                  borderRadius: "var(--radius-ui)", padding: "1px 9px", whiteSpace: "nowrap", minWidth: 72, textAlign: "center",
                 }}>
                   {smokeTimeMinutes > 0 && smokeTimeMinutes < 1
                     ? `T = ${Math.round(smokeTimeMinutes * 60)} сек`
@@ -14823,7 +14823,7 @@ export default function CadPage() {
                   }}
                   style={{
                     width: 48, fontSize: 11, background: "#3b0000", color: "#fca5a5",
-                    border: "1px solid #7f1d1d", borderRadius: 3, padding: "1px 4px", textAlign: "center",
+                    border: "1px solid #7f1d1d", borderRadius: "var(--radius-ui)", padding: "1px 4px", textAlign: "center",
                   }}
                 />
                 <span style={{ fontSize: 10, color: "#fca5a5" }}>мин</span>
@@ -14835,7 +14835,7 @@ export default function CadPage() {
                   onChange={e => setSmokeTimeStep(Number(e.target.value))}
                   style={{
                     fontSize: 11, background: "#3b0000", color: "#fca5a5",
-                    border: "1px solid #7f1d1d", borderRadius: 3, padding: "1px 2px",
+                    border: "1px solid #7f1d1d", borderRadius: "var(--radius-ui)", padding: "1px 2px",
                   }}>
                   {[
                     { v: 1 / 60, label: "1 сек" },
@@ -14866,7 +14866,7 @@ export default function CadPage() {
                   title="Дым распространяется, пока видимость в дыму ниже этого порога. Применяется при следующем расчёте пожара."
                   style={{
                     width: 48, fontSize: 11, background: "#3b0000", color: "#fca5a5",
-                    border: "1px solid #7f1d1d", borderRadius: 3, padding: "1px 4px", textAlign: "center",
+                    border: "1px solid #7f1d1d", borderRadius: "var(--radius-ui)", padding: "1px 4px", textAlign: "center",
                   }}
                 />
                 <span style={{ fontSize: 10, color: "#fca5a5" }}>м</span>

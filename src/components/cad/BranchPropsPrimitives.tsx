@@ -134,7 +134,7 @@ export function EditInput({
         // от расчётных значений, которые править нельзя.
         background: readOnly ? "var(--c-s3, #f1f5f9)" : "var(--c-s1, #ffffff)",
         border: readOnly ? "1px solid #d8dee6" : "1px solid var(--c-b3, #94a3b8)",
-        borderRadius: 2,
+        borderRadius: "var(--radius-ui)",
         height: 18,
         outline: "none",
         fontFamily: "inherit",
@@ -211,7 +211,7 @@ export function NumberInput({
       style={{
         background: "var(--c-s1, #ffffff)",
         border: "1px solid var(--c-b3, #94a3b8)",
-        borderRadius: 2,
+        borderRadius: "var(--radius-ui)",
         height: 18,
         outline: "none",
         fontFamily: "inherit",
@@ -231,7 +231,7 @@ export function ComputedInput({ value, color, className }: { value: string; colo
         // цифры — сразу видно, что это вывод, а не поле для правки.
         background: "var(--c-s3, #eef2f7)",
         border: "1px solid #dde3ec",
-        borderRadius: 2,
+        borderRadius: "var(--radius-ui)",
         height: 18,
         lineHeight: "16px",
         color: color ?? "var(--c-t1, #0f172a)",
@@ -262,7 +262,7 @@ export function SelectField({
       style={{
         background: "var(--c-s1, #ffffff)",
         border: "1px solid var(--c-b3, #94a3b8)",
-        borderRadius: 2,
+        borderRadius: "var(--radius-ui)",
         height: 18,
         outline: "none",
         fontFamily: "inherit",

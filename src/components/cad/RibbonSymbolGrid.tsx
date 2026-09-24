@@ -61,7 +61,7 @@ function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick, o
             style={{
               width: 18, height: 18,
               display: "flex", alignItems: "center", justifyContent: "center",
-              borderRadius: 3,
+              borderRadius: "var(--radius-ui)",
               border: isActive ? "1.5px solid var(--c-blue, #2563eb)" : "1px solid transparent",
               background: isActive ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
               cursor: "pointer", padding: 0,

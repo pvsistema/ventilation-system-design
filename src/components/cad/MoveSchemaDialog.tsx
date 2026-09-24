@@ -62,22 +62,22 @@ export default function MoveSchemaDialog({ counts, onConfirm, onClose }: Props) 
 
   const S = {
     overlay: { position: "fixed" as const, inset: 0, zIndex: 9999, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.55)" },
-    dialog: { width: 360, background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #aaa)", borderRadius: 4, boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--c-t1, #1a1a1a)" },
+    dialog: { width: 360, background: "var(--c-s1, #ffffff)", border: "1px solid var(--c-b3, #aaa)", borderRadius: "var(--radius-ui)", boxShadow: "0 8px 32px rgba(0,0,0,0.35)", fontFamily: "var(--font-ui)", fontSize: 12, color: "var(--c-t1, #1a1a1a)" },
     header: { display: "flex", alignItems: "center", justifyContent: "space-between", padding: "5px 8px", background: "linear-gradient(180deg,#dde4ef,#c5cfe0)", borderBottom: "1px solid #9aa8bf" },
     headerTitle: { display: "flex", alignItems: "center", gap: 6, fontWeight: 600, fontSize: 13, color: "var(--c-t1, #1a1a1a)" },
-    closeBtn: { width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", background: "transparent", fontSize: 12, color: "var(--c-t2, #333)", borderRadius: 2 },
+    closeBtn: { width: 20, height: 20, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", border: "none", background: "transparent", fontSize: 12, color: "var(--c-t2, #333)", borderRadius: "var(--radius-ui)" },
     body: { padding: "12px 16px", display: "flex", flexDirection: "column" as const, gap: 8, background: "var(--c-s1, #ffffff)" },
     row: { display: "flex", alignItems: "center", gap: 8 },
     label: { width: 92, flexShrink: 0, color: "var(--c-t2, #333)", fontSize: 12 },
-    select: { flex: 1, height: 22, padding: "0 4px", border: "1px solid var(--c-b3, #aaa)", borderRadius: 2, fontSize: 12, background: "var(--c-s1, #fff)", color: "var(--c-t1, #1a1a1a)", outline: "none" },
-    input: { flex: 1, height: 22, padding: "0 22px 0 4px", border: "1px solid var(--c-b3, #aaa)", borderRadius: 2, fontSize: 12, background: "var(--c-s1, #fff)", color: "var(--c-t1, #1a1a1a)", textAlign: "right" as const, outline: "none" },
+    select: { flex: 1, height: 22, padding: "0 4px", border: "1px solid var(--c-b3, #aaa)", borderRadius: "var(--radius-ui)", fontSize: 12, background: "var(--c-s1, #fff)", color: "var(--c-t1, #1a1a1a)", outline: "none" },
+    input: { flex: 1, height: 22, padding: "0 22px 0 4px", border: "1px solid var(--c-b3, #aaa)", borderRadius: "var(--radius-ui)", fontSize: 12, background: "var(--c-s1, #fff)", color: "var(--c-t1, #1a1a1a)", textAlign: "right" as const, outline: "none" },
     unit: { position: "absolute" as const, right: 6, top: 4, fontSize: 11, color: "var(--c-t3, #777)", pointerEvents: "none" as const },
     inputWrap: { position: "relative" as const, flex: 1, display: "flex" },
     hint: { fontSize: 11, color: "var(--c-t3, #555)", lineHeight: 1.4, paddingTop: 6, borderTop: "1px solid #ddd", marginTop: 2 },
     statVal: { fontWeight: 600, color: "var(--c-t1, #1a1a1a)" },
     footer: { display: "flex", justifyContent: "flex-end", gap: 6, padding: "8px 16px 10px", background: "var(--c-s3, #f0f0f0)", borderTop: "1px solid var(--c-b2, #ccc)" },
-    btnOk: { height: 26, padding: "0 20px", fontSize: 12, background: canApply ? "var(--c-blue-bg, #2563eb)" : "var(--c-s2, #e5e5e5)", color: canApply ? "#fff" : "var(--c-t3, #999)", border: `1px solid ${canApply ? "var(--c-blue, #1d4ed8)" : "var(--c-b3, #ccc)"}`, borderRadius: 2, cursor: canApply ? "pointer" : "default", fontWeight: 600 },
-    btnCancel: { height: 26, padding: "0 14px", fontSize: 12, background: "var(--c-s2, #f5f5f5)", color: "var(--c-t1, #1a1a1a)", border: "1px solid var(--c-b3, #aaa)", borderRadius: 2, cursor: "pointer" },
+    btnOk: { height: 26, padding: "0 20px", fontSize: 12, background: canApply ? "var(--c-blue-bg, #2563eb)" : "var(--c-s2, #e5e5e5)", color: canApply ? "#fff" : "var(--c-t3, #999)", border: `1px solid ${canApply ? "var(--c-blue, #1d4ed8)" : "var(--c-b3, #ccc)"}`, borderRadius: "var(--radius-ui)", cursor: canApply ? "pointer" : "default", fontWeight: 600 },
+    btnCancel: { height: 26, padding: "0 14px", fontSize: 12, background: "var(--c-s2, #f5f5f5)", color: "var(--c-t1, #1a1a1a)", border: "1px solid var(--c-b3, #aaa)", borderRadius: "var(--radius-ui)", cursor: "pointer" },
   };
 
   /**

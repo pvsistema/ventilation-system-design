@@ -2,7 +2,9 @@
 // CadStatusBar.tsx — нижняя строка состояния: выделенный объект, инструмент,
 // режим вида, Z-уровень, итог расчёта сети и кнопка журнала.
 //
-// Вынесено из Cad.tsx БЕЗ изменений разметки, стилей и текстов.
+// Оформлена как панель инженерного прибора: тёмная антрацитовая полоса,
+// светлые подписи, числа — моноширинным шрифтом янтарного цвета, индикаторы
+// состояния — светящимися точками. Стили — классы .sb-* в index.css.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { type SolveResult } from "@/lib/networkSolver";
@@ -27,98 +29,95 @@ interface CadStatusBarProps {
   movedNodeCount?: number;
 }
 
+/** Разделитель секций — тонкая вертикальная черта. */
+const Sep = () => <span className="sb-sep" />;
+
+/** Пара «подпись — значение»: подпись приглушена, значение — моноширинное. */
+const Kv = ({ k, v, unit }: { k: string; v: React.ReactNode; unit?: string }) => (
+  <span className="sb-kv"><span className="sb-k">{k}</span><span className="sb-v">{v}</span>{unit && <span className="sb-k">{unit}</span>}</span>
+);
+
 export default function CadStatusBar({
   selectedNode, selectedBranch, tool, viewInfo, zLevel,
   solveResult, branches, showLogPanel, setShowLogPanel, logEntries,
   surveyEditMode, movedNodeCount = 0,
 }: CadStatusBarProps) {
   return (
-  <div className="h-5 flex items-center justify-between px-2 text-[11px]"
-    style={{ background: "var(--c-s3, #f0f0f0)", borderTop: "1px solid var(--c-b3, #b8b8b8)", color: "var(--c-t2, #444)" }}>
-    <div className="flex items-center gap-3">
+  <div className="sb-bar">
+    <div className="flex items-center gap-2.5 min-w-0">
       {/* Режим правки координат должно быть невозможно не заметить: в нём
           перетаскивание меняет длины выработок и результат расчёта. */}
       {surveyEditMode ? (
-        <span className="px-1.5 rounded font-bold"
-          style={{ background: "var(--c-red-bg, #dc2626)", color: "#fff" }}>
-          ПРАВКА КООРДИНАТ (F2)
-        </span>
+        <span className="sb-alert">ПРАВКА КООРДИНАТ (F2)</span>
       ) : (
-        <span>Готово</span>
+        <span className="sb-led sb-led-on" title="Программа готова">Готово</span>
       )}
-      <span className="text-gray-400">|</span>
+      <Sep />
       {movedNodeCount > 0 && (
         <>
-          <span title="Узлы сдвинуты для читаемости схемы. Расчёт идёт по маркшейдерским координатам."
-            style={{ color: "var(--c-amber, #b45309)" }}>
-            Сдвинуто узлов: <b>{movedNodeCount}</b>
+          <span className="sb-warn" title="Узлы сдвинуты для читаемости схемы. Расчёт идёт по маркшейдерским координатам.">
+            Сдвинуто узлов: <span className="sb-v">{movedNodeCount}</span>
           </span>
-          <span className="text-gray-400">|</span>
+          <Sep />
         </>
       )}
-      {selectedNode && <span>Узел: <b className="font-num">{selectedNode.number || selectedNode.id}</b> · <span className="font-num">X={selectedNode.x} Y={selectedNode.y} Z={selectedNode.z}</span></span>}
-      {selectedBranch && <span>Ветвь: <b>{selectedBranch.id}</b> ({selectedBranch.fromId} → {selectedBranch.toId}) · <span className="font-num">L={selectedBranch.length}</span> м</span>}
-      {!selectedNode && !selectedBranch && <span>Выделите узел или ветвь</span>}
+      {selectedNode && (
+        <span className="flex items-center gap-2 truncate">
+          <Kv k="Узел" v={selectedNode.number || selectedNode.id} />
+          <Kv k="X" v={selectedNode.x} />
+          <Kv k="Y" v={selectedNode.y} />
+          <Kv k="Z" v={selectedNode.z} />
+        </span>
+      )}
+      {selectedBranch && (
+        <span className="flex items-center gap-2 truncate">
+          <Kv k="Ветвь" v={selectedBranch.id} />
+          <span className="sb-k truncate">({selectedBranch.fromId} → {selectedBranch.toId})</span>
+          <Kv k="L" v={selectedBranch.length} unit="м" />
+        </span>
+      )}
+      {!selectedNode && !selectedBranch && <span className="sb-k">Выделите узел или ветвь</span>}
     </div>
-    <div className="flex items-center gap-3">
-      <span>Инструмент: <b>{toolLabel(tool)}</b></span>
-      <span className="text-gray-400">|</span>
-      <span style={{ color: viewInfo.is3D ? "var(--c-purple, #7c3aed)" : "var(--c-blue, #0369a1)", fontWeight: 600 }}>
-        <span className="font-num">{viewInfo.is3D ? `3D · Az ${viewInfo.azimuth.toFixed(0)}° / El ${viewInfo.elevation.toFixed(0)}°` : "2D План"}</span>
-      </span>
-      <span className="text-gray-400">|</span>
-      <span>Z-уровень: <span className="font-num">{zLevel}</span> м</span>
-      <span className="text-gray-400">|</span>
+    <div className="flex items-center gap-2.5 shrink-0">
+      <span className="sb-k">Инструмент <span className="sb-strong">{toolLabel(tool)}</span></span>
+      <Sep />
+      {viewInfo.is3D ? (
+        <span className="flex items-center gap-2">
+          <span className="sb-tag">3D</span>
+          <Kv k="Az" v={`${viewInfo.azimuth.toFixed(0)}°`} />
+          <Kv k="El" v={`${viewInfo.elevation.toFixed(0)}°`} />
+        </span>
+      ) : (
+        <span className="sb-tag">2D ПЛАН</span>
+      )}
+      <Sep />
+      <Kv k="Z-ур." v={zLevel} unit="м" />
+      <Sep />
       {solveResult ? (
         <>
-          <span className="px-1.5 py-0.5 rounded font-semibold" style={{
-            background: solveResult.ok ? "var(--c-tint-green2, #dcfce7)" : "var(--c-tint-red2, #fee2e2)",
-            color: solveResult.ok ? "var(--c-green, #15803d)" : "var(--c-red, #b91c1c)",
-            border: `1px solid ${solveResult.ok ? "#86efac" : "#fca5a5"}`,
-          }}>
-            {solveResult.ok ? "✔" : "✘"} Расчёт: {solveResult.ok ? "сошёлся" : "не сошёлся"} за {solveResult.iterations} итер.
+          <span className={`sb-led ${solveResult.ok ? "sb-led-on" : "sb-led-err"}`}>
+            {solveResult.ok ? "Сошёлся" : "Не сошёлся"} · <span className="sb-v">{solveResult.iterations}</span> итер.
           </span>
           {/* Статус реверса по нормативу ПБ */}
           {branches.some(b => b.fanReverse) && (() => {
             const revDiag = solveResult.diagnostics?.find(d => d.category === "fan" && (d.level === "error" || d.level === "warning" || d.level === "info"));
             if (!revDiag) return null;
-            const colors = { error: "#dc2626", warning: "#d97706", info: "#16a34a" };
-            const icons  = { error: "✕", warning: "⚠", info: "✓" };
-            return (
-              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px]"
-                style={{ background: revDiag.level === "error" ? "var(--c-tint-red2, #fee2e2)" : revDiag.level === "warning" ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-tint-green, #f0fdf4)",
-                  color: colors[revDiag.level], border: `1px solid ${revDiag.level === "error" ? "#fca5a5" : revDiag.level === "warning" ? "#fcd34d" : "#86efac"}`,
-                  cursor: "pointer" }}
-                title={revDiag.message}
-                onClick={() => {}}>
-                {icons[revDiag.level]} Реверс
-              </span>
-            );
+            const cls = revDiag.level === "error" ? "sb-led-err" : revDiag.level === "warning" ? "sb-led-warn" : "sb-led-on";
+            return <span className={`sb-led ${cls}`} title={revDiag.message}>Реверс</span>;
           })()}
         </>
       ) : (
-        <span className="px-1.5 py-0.5 rounded" style={{
-          background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #92400e)", border: "1px solid #fcd34d",
-        }} title="Нажмите F9, чтобы выполнить расчёт сети">
-          ● Расчёт не выполнялся — F9
+        <span className="sb-led sb-led-warn" title="Нажмите F9, чтобы выполнить расчёт сети">
+          Расчёт не выполнялся — <span className="sb-key">F9</span>
         </span>
       )}
 
-      <span className="text-gray-400">|</span>
-      <button
-        onClick={() => setShowLogPanel(v => !v)}
-        className="px-2 py-0.5 rounded text-[11px]"
-        style={{
-          background: showLogPanel ? "#1e293b" : "var(--c-s4, #e2e8f0)",
-          color: showLogPanel ? "#e2e8f0" : "var(--c-t3, #475569)",
-          border: "1px solid var(--c-b2, #cbd5e1)",
-          cursor: "pointer",
-        }}
-      >
-        Лог{logEntries.length > 0 ? ` (${logEntries.length})` : ""}
+      <Sep />
+      <button onClick={() => setShowLogPanel(v => !v)} className={`sb-btn ${showLogPanel ? "sb-btn-on" : ""}`}>
+        Лог{logEntries.length > 0 && <span className="sb-v ml-1">{logEntries.length}</span>}
       </button>
-      <span className="text-gray-400">|</span>
-      <span style={{ color: "var(--c-t3, #6b7280)" }}>S+S — выделить подобное</span>
+      <Sep />
+      <span className="sb-k"><span className="sb-key">S</span>+<span className="sb-key">S</span> выделить подобное</span>
     </div>
   </div>
   );

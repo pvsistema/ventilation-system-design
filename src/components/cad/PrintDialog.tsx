@@ -1544,7 +1544,7 @@ body{background:white;font-family:Arial,sans-serif}
           position: "absolute",
           left: pos.x, top: pos.y,
           width: winSize.w, height: winSize.h,
-          fontFamily: "var(--font-ui)", fontSize: 12, borderRadius: 2,
+          fontFamily: "var(--font-ui)", fontSize: 12, borderRadius: "var(--radius-ui)",
           pointerEvents: "auto",
           userSelect: winDragRef.current || resizeRef.current ? "none" : undefined,
         }}>
@@ -1786,7 +1786,7 @@ body{background:white;font-family:Arial,sans-serif}
                   position: "fixed", zIndex: 9999,
                   left: ctxMenu.x, top: ctxMenu.y,
                   background: "white", border: "1px solid #ccc",
-                  borderRadius: 4, boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
+                  borderRadius: "var(--radius-ui)", boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
                   minWidth: 200, overflow: "hidden",
                   fontSize: 13, color: "#1a1a1a",
                 }}

@@ -142,7 +142,7 @@ export default function Vent2CsvImportDialog({ onImport, onClose }: Props) {
       onClick={e => e.target === e.currentTarget && onClose()}>
 
       <div className="flex flex-col shadow-2xl overflow-hidden"
-        style={{ width: 780, maxHeight: "93vh", background: "#f4f4f4", border: "1px solid var(--c-b3, #999)", borderRadius: 4 }}>
+        style={{ width: 780, maxHeight: "93vh", background: "#f4f4f4", border: "1px solid var(--c-b3, #999)", borderRadius: "var(--radius-ui)" }}>
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-3 py-2 flex-shrink-0"

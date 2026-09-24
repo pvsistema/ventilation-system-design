@@ -379,7 +379,7 @@ export default function WorkerPathPanel({
     border: `1px solid ${active ? "var(--c-blue, #2563eb)" : "var(--c-b2, #c8c8c8)"}`,
     background: active ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s2, #f5f5f5)",
     color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)",
-    cursor: "pointer", borderRadius: 2, flexShrink: 0, whiteSpace: "nowrap",
+    cursor: "pointer", borderRadius: "var(--radius-ui)", flexShrink: 0, whiteSpace: "nowrap",
   });
 
   return (
