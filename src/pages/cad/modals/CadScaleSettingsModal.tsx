@@ -98,6 +98,14 @@ const MinMax = ({ min, max, setMin, setMax }: { min: number; max: number; setMin
 export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
   const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
   const drag = useRef<{ dx: number; dy: number } | null>(null);
+  // Перетаскивание идёт мимо React: координаты живут в ref и пишутся прямо в
+  // transform окна, не чаще кадра экрана. Раньше каждое движение мыши меняло
+  // состояние → окно перерисовывалось целиком, left/top пересчитывали раскладку,
+  // а большая размытая тень перерисовывалась поверх схемы — отсюда тормоза и шлейф.
+  const boxRef = useRef<HTMLDivElement>(null);
+  const livePos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const raf = useRef(0);
+  const [dragging, setDragging] = useState(false);
   const snap = useRef<Record<string, number | boolean> | null>(null);
 
   // Снимок значений при открытии — для «Отмены».
@@ -134,19 +142,39 @@ export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.scaleSettingsOpen]);
 
+  useEffect(() => { if (pos) livePos.current = pos; }, [pos]);
+  useEffect(() => () => cancelAnimationFrame(raf.current), []);
+
+  const applyTransform = () => {
+    raf.current = 0;
+    const el = boxRef.current;
+    if (el) el.style.transform = `translate3d(${livePos.current.x}px, ${livePos.current.y}px, 0)`;
+  };
+
   const onDragStart = (e: React.PointerEvent) => {
-    if ((e.target as HTMLElement).closest("button") || !pos) return;
-    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    if (e.button !== 0 || (e.target as HTMLElement).closest("button") || !pos) return;
+    drag.current = { dx: e.clientX - livePos.current.x, dy: e.clientY - livePos.current.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    setDragging(true);
   };
   const onDragMove = (e: React.PointerEvent) => {
     if (!drag.current) return;
-    setPos({
+    livePos.current = {
       x: clamp(e.clientX - drag.current.dx, 0, window.innerWidth - W),
       y: clamp(e.clientY - drag.current.dy, 0, window.innerHeight - 40),
-    });
+    };
+    if (!raf.current) raf.current = requestAnimationFrame(applyTransform);
   };
-  const onDragEnd = () => { drag.current = null; };
+  const onDragEnd = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    drag.current = null;
+    try { (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* уже отпущен */ }
+    cancelAnimationFrame(raf.current);
+    applyTransform();
+    setDragging(false);
+    // Итоговую позицию запоминаем один раз — чтобы окно открылось там же.
+    setPos({ ...livePos.current });
+  };
 
   if (!p.scaleSettingsOpen || !pos) return null;
 
@@ -160,12 +188,22 @@ export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
   };
 
   return (
-    <div className="fixed z-50 rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-150"
-      style={{ left: pos.x, top: pos.y, width: W, background: "var(--c-s1, #fff)", borderColor: "var(--c-b2, #e2e8f0)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+    // Позиция — через transform (left/top = 0): сдвиг идёт на видеокарте без
+    // пересчёта раскладки. Окно вынесено в свой слой (will-change), а тень во
+    // время перетаскивания упрощена — большую размытую тень браузер не успевает
+    // перерисовывать поверх схемы, от неё и оставался шлейф.
+    <div ref={boxRef} className="fixed left-0 top-0 z-50 rounded-xl border overflow-hidden"
+      style={{
+        transform: `translate3d(${pos.x}px, ${pos.y}px, 0)`,
+        willChange: "transform",
+        width: W, background: "var(--c-s1, #fff)", borderColor: "var(--c-b2, #e2e8f0)",
+        fontFamily: "Segoe UI, Tahoma, sans-serif",
+        boxShadow: dragging ? "0 4px 12px rgba(0,0,0,0.18)" : "0 20px 40px -12px rgba(0,0,0,0.3)",
+      }}>
       {/* Заголовок — за него окно перетаскивается */}
-      <div className="flex items-center gap-2 px-3 h-9 cursor-move select-none border-b"
+      <div className="flex items-center gap-2 px-3 h-9 cursor-move select-none border-b touch-none"
         style={{ borderColor: "var(--c-b1, #eef0f3)", background: "var(--c-s2, #f8fafc)" }}
-        onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd}>
+        onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}>
         <Icon name="GripVertical" size={13} className="text-gray-400" />
         <Icon name="Scaling" size={14} className="text-blue-500" />
         <span className="text-[12px] font-semibold text-gray-800 flex-1">Пределы масштабов</span>
