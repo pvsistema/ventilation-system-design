@@ -78,47 +78,47 @@ export default function CadAppInfoModals(p: CadAppInfoModalsProps) {
       })()}
 
       {/* ── Окно «О программе» ──────────────────────────────────────────── */}
+      {/* Фирменный стиль, как у заставки: антрацитовая шапка с логотипом,
+          янтарная сигнальная полоса, светлое тело с данными. */}
       {p.showAbout && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.45)" }}
+          style={{ background: "rgba(15,17,20,0.55)" }}
           onClick={() => p.setShowAbout(false)}>
-          <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-[460px] overflow-hidden"
-            style={{ fontFamily: "var(--font-ui)" }}
+          <div className="about-card w-[460px] overflow-hidden"
             onClick={(e) => e.stopPropagation()}>
-            {/* Шапка диалога */}
-            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200"
-              style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d6d6d6))" }}>
-              <span className="text-[12px] font-semibold text-gray-800">О программе</span>
-              <button
-                onClick={() => p.setShowAbout(false)}
-                className="w-6 h-5 hover:bg-red-500 hover:text-white flex items-center justify-center text-xs rounded-sm">✕</button>
+            {/* Шапка — антрацит с миллиметровкой и янтарным свечением */}
+            <div className="about-hero">
+              <button onClick={() => p.setShowAbout(false)} className="about-close" title="Закрыть">
+                <Icon name="X" size={14} />
+              </button>
+              <div className="about-logo">
+                <AppLogo className="w-[76px] h-[76px] object-contain" />
+              </div>
+              <div className="about-title">ПВ<span>-</span>Система</div>
+              <div className="about-sub">Проектирование вентиляции и водоснабжения</div>
+              <div className="about-ver">
+                <span className="about-tag">v</span>
+                <span className="font-num">{APP_VERSION}</span>
+                <span className="about-dot" />
+                <span className="font-num">{APP_BUILD_DATE}</span>
+              </div>
             </div>
 
-            {/* Контент */}
-            <div className="px-6 py-6 flex flex-col items-center text-center"
-              style={{ background: "linear-gradient(160deg, var(--c-s1, #ffffff) 0%, var(--c-tint-blue, #eaf4fc) 100%)" }}>
-              <AppLogo
-                className="w-48 object-contain mb-2"
-                style={{ filter: "drop-shadow(0 4px 12px rgba(14,99,176,0.15))" }}
-              />
-
-              <div className="w-full mt-5 border-t border-gray-200 pt-4 text-left text-[12px] text-gray-700 space-y-1.5">
-                <div className="flex justify-between"><span className="text-gray-500">Версия:</span><span className="font-medium">{APP_VERSION}</span></div>
+            {/* Данные */}
+            <div className="px-6 pt-4 pb-3" style={{ background: "var(--c-s1, #fff)" }}>
+              <div className="about-rows">
+                <div className="about-row"><span className="about-k">Версия</span><span className="about-v font-num">{APP_VERSION}</span></div>
                 <CoreVersionRow />
-                <div className="flex justify-between"><span className="text-gray-500">Сборка:</span><span className="font-medium">{APP_BUILD_DATE}</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Назначение:</span><span className="font-medium">Проектирование систем вентиляции и водоснабжения</span></div>
-                <div className="flex justify-between"><span className="text-gray-500">Платформа:</span><span className="font-medium">Web / Desktop</span></div>
+                <div className="about-row"><span className="about-k">Сборка</span><span className="about-v font-num">{APP_BUILD_DATE}</span></div>
+                <div className="about-row"><span className="about-k">Назначение</span><span className="about-v">Вентиляция и водоснабжение</span></div>
+                <div className="about-row"><span className="about-k">Платформа</span><span className="about-v">Web / Desktop</span></div>
                 {(() => {
                   const isOnline = navigator.onLine;
                   return (
-                    <div className="flex justify-between">
-                      <span className="text-gray-500">Сеть:</span>
-                      <span className="font-medium flex items-center gap-1.5">
-                        <span style={{
-                          width: 8, height: 8, borderRadius: 999,
-                          background: isOnline ? "var(--c-green-lt, #22c55e)" : "var(--c-amber-lt, #f59e0b)",
-                          display: "inline-block",
-                        }} />
+                    <div className="about-row">
+                      <span className="about-k">Сеть</span>
+                      <span className="about-v flex items-center gap-1.5">
+                        <span className={`about-led ${isOnline ? "on" : "off"}`} />
                         {isOnline ? "Онлайн" : "Офлайн-режим"}
                       </span>
                     </div>
@@ -126,20 +126,20 @@ export default function CadAppInfoModals(p: CadAppInfoModalsProps) {
                 })()}
               </div>
 
-              <div className="w-full mt-4 pt-3 border-t border-gray-200 text-[11px] text-gray-500 leading-relaxed">
-                © 2026 ПВ-Система. Все права защищены.<br/>
-                Программа предназначена для проектирования систем<br/>
-                вентиляции и водоснабжения рудников и шахт.
+              <div className="mt-4 text-center text-[11px] leading-relaxed" style={{ color: "var(--c-t3, #6b7280)" }}>
+                Программа для проектирования систем вентиляции<br/>
+                и водоснабжения рудников и шахт.<br/>
+                <span style={{ color: "var(--c-t4, #8b929a)" }}>© 2026 ПВ-Система. Все права защищены.</span>
               </div>
             </div>
 
             {/* Футер */}
-            <div className="flex items-center justify-between gap-2 px-4 py-3 border-t border-gray-200 bg-gray-50">
+            <div className="flex items-center justify-between gap-2 px-4 py-3"
+              style={{ background: "var(--c-s2, #f8f7f4)", borderTop: "1px solid var(--c-b1, #e7e4dd)" }}>
               <UpdateCheckButton currentVersion={APP_VERSION} />
               <button
                 onClick={() => p.setShowAbout(false)}
-                className="h-7 px-4 text-[12px] rounded text-white font-medium flex-shrink-0"
-                style={{ background: "var(--c-blue-bg, #2563eb)" }}>
+                className="btn-brand h-7 px-5 text-[12px] flex-shrink-0">
                 OK
               </button>
             </div>

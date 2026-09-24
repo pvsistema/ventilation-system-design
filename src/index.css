@@ -1245,3 +1245,127 @@ select, input[type="text"], input[type="number"], input[type="search"], textarea
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, .4);
 }
 .tool-btn[data-active="1"]:hover { background: linear-gradient(180deg, #f7c258, #eaa91f); border-color: #c98a0c; }
+
+
+/* ── Окно «О программе» — в стиле заставки ─────────────────────────────── */
+.about-card {
+  border-radius: 10px;
+  background: var(--c-s1, #fff);
+  border: 1px solid rgba(0, 0, 0, 0.25);
+  box-shadow: 0 30px 70px -20px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(232, 163, 23, 0.08);
+  font-family: var(--font-ui);
+}
+.about-hero {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 28px 24px 20px;
+  color: #e8eaed;
+  overflow: hidden;
+  background:
+    radial-gradient(ellipse 60% 70% at 50% 35%, rgba(232, 163, 23, 0.14), transparent 70%),
+    radial-gradient(ellipse 100% 80% at 50% 130%, rgba(30, 90, 122, 0.55), transparent 70%),
+    linear-gradient(180deg, #2b2f33 0%, #1f2328 100%);
+}
+/* Миллиметровка */
+.about-hero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.05) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
+  background-size: 60px 60px, 60px 60px, 12px 12px, 12px 12px;
+  background-position: center;
+  -webkit-mask-image: radial-gradient(ellipse 75% 80% at 50% 40%, #000 20%, transparent 85%);
+  mask-image: radial-gradient(ellipse 75% 80% at 50% 40%, #000 20%, transparent 85%);
+  pointer-events: none;
+}
+/* Янтарная сигнальная полоса снизу шапки */
+.about-hero::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, #e8a317 20%, #f5b83d 50%, #e8a317 80%, transparent);
+}
+.about-hero > * { position: relative; }
+.about-close {
+  position: absolute !important;
+  top: 10px; right: 10px;
+  width: 26px; height: 26px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 6px;
+  color: #9aa3ad;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  z-index: 2;
+}
+.about-close:hover { color: #fff; background: rgba(220, 38, 38, 0.8); border-color: transparent; }
+.about-logo {
+  width: 104px; height: 104px;
+  display: flex; align-items: center; justify-content: center;
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1.5px solid rgba(232, 163, 23, 0.25);
+  box-shadow: 0 0 0 5px rgba(232, 163, 23, 0.06), 0 16px 36px -10px rgba(0, 0, 0, 0.6);
+}
+.about-logo img { filter: drop-shadow(0 4px 12px rgba(232, 163, 23, 0.25)); }
+.about-title {
+  margin-top: 16px;
+  font-size: 26px;
+  font-weight: 700;
+  color: #fff;
+  line-height: 1;
+  letter-spacing: 0.01em;
+}
+.about-title span { color: #e8a317; }
+.about-sub {
+  margin-top: 8px;
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #9aa3ad;
+}
+.about-ver {
+  margin-top: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 10px 3px 3px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  color: #fbc348;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+.about-tag {
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #1f2328;
+  background: #e8a317;
+}
+.about-dot { width: 3px; height: 3px; border-radius: 50%; background: #6b737c; }
+.about-rows { display: flex; flex-direction: column; }
+.about-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  font-size: 12px;
+  border-bottom: 1px dashed var(--c-b1, #e7e4dd);
+}
+.about-row:last-child { border-bottom: 0; }
+.about-k { color: var(--c-t3, #6b7280); }
+.about-v { color: var(--c-t1, #1f2328); font-weight: 600; text-align: right; }
+.about-led { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+.about-led.on  { background: #22c55e; box-shadow: 0 0 6px 1px rgba(34, 197, 94, 0.55); }
+.about-led.off { background: #e8a317; box-shadow: 0 0 6px 1px rgba(232, 163, 23, 0.55); }

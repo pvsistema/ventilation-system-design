@@ -28,9 +28,9 @@ export default function CoreVersionRow() {
   if (!coreVersion) return null;
 
   return (
-    <div className="flex justify-between">
-      <span className="text-gray-500">Версия ядра:</span>
-      <span className="font-medium">{coreVersion}</span>
+    <div className="about-row">
+      <span className="about-k">Версия ядра</span>
+      <span className="about-v font-num">{coreVersion}</span>
     </div>
   );
 }
