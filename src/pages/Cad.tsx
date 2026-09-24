@@ -4238,6 +4238,7 @@ export default function CadPage() {
         fanType: b.fanType ?? "ГВУ",
         fanMode: b.fanMode,
         fanPressure: b.fanPressure,
+        fanFixedQ: b.fanMode === "fixed" ? Math.max(0, b.fanFixedQ ?? 0) : 0,
         fanInstall:  b.fanInstall ?? "Внутри перемычки",
         fanCrossingR: (b.fanCrossingR ?? 0) / 1000, // Мюрг → кМюрг (для get_R в Python)
         fanReverse:  b.fanReverse ?? false,

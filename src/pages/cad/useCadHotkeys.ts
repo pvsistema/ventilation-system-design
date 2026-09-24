@@ -93,7 +93,7 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
   // Здесь снимаем настройки вентилятора с ветви и кладём их в буфер вместе
   // со значком, чтобы при вставке применить к новой ветви.
   const FAN_PRESET_FIELDS = [
-    "fanType", "fanMode", "fanPressure", "fanName", "fanCurveId", "fanRpm",
+    "fanType", "fanMode", "fanFixedQ", "fanPressure", "fanName", "fanCurveId", "fanRpm",
     "fanBladeAngle", "fanParallel", "fanInstall", "fanCrossingR",
     "fanWindowArea", "fanReverse", "fanStopped",
   ] as const;

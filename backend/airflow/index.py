@@ -324,6 +324,22 @@ def get_R(b):
     return max(r, 1e-4)
 
 
+# ── Фиксированный расход ─────────────────────────────────────────────────
+# Вентилятор с заданным расходом Qf моделируется очень крутой характеристикой
+# H(Q) = K·(Qf − Q): напор сам подстраивается под сопротивление сети так, что
+# расход через ветвь равен заданному (погрешность ≈ R·Q²/K, доли литра в
+# секунду). Так режим работает во всех ветках решателя без отдельной логики.
+FIXED_FLOW_K = 1.0e6
+
+
+def _fixed_q(e):
+    return max(0.0, float(e.get("fanFixedQ", 0) or 0))
+
+
+def _fixed_H(e, Q):
+    return max(0.0, FIXED_FLOW_K * (_fixed_q(e) - abs(Q)))
+
+
 def fan_H(e, Q):
     """Напор вентилятора H при суммарном расходе Q (м³/с → Па).
     Возвращает H>=0 (модуль характеристики). Знак (направление действия)
@@ -348,6 +364,8 @@ def fan_H(e, Q):
     # 1 вент → 53.6/755, 2 вент → 89.1/2082 — поле «Напор» показывает сумму).
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
+    if mode == "fixed":
+        return _fixed_H(e, Q)
     if mode == "curve":
         q_one = abs(Q) / N
 
@@ -413,6 +431,8 @@ def fan_H_display(e, Q):
     if not e.get("hasFan") or e.get("fanStopped"):
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
+    if e.get("fanMode") == "fixed":
+        return _fixed_H(e, Q)
     if e.get("fanMode", "constant") != "curve":
         return float(e.get("fanPressure", 0))
     q_one = abs(Q) / N
@@ -440,6 +460,8 @@ def fan_dH(e, Q):
     """|dH/dQ_total| для curve-вентилятора (с учётом параллели)."""
     if not e.get("hasFan"):
         return 0.0
+    if e.get("fanMode") == "fixed":
+        return FIXED_FLOW_K if abs(Q) < _fixed_q(e) else 0.0
     if e.get("fanMode", "constant") == "curve":
         N = max(1, int(e.get("fanParallel", 1) or 1))
         q_one = abs(Q) / N
@@ -674,6 +696,7 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0,
             "hasFan":      bool(b.get("hasFan")),
             "fanMode":     b.get("fanMode", "constant"),
             "fanPressure": float(b.get("fanPressure", 0)),
+            "fanFixedQ":   float(b.get("fanFixedQ", 0) or 0),
             "h0": float(b.get("h0", 0)),
             "h1": float(b.get("h1", 0)),
             "h2": float(b.get("h2", 0)),
@@ -1245,7 +1268,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
             if qmx > q_max_main:
                 q_max_main = qmx
 
-        af_curve = [e for e in active_fans if e.get("fanMode", "constant") == "curve"]
+        af_curve = [e for e in active_fans if e.get("fanMode", "constant") in ("curve", "fixed")]
         if af_curve:
             q_lo = 0.1
             q_hi = q_max_main if q_max_main > 0 else 90.0
@@ -1417,6 +1440,8 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
         if _e.get("hasFan") and not _e.get("fanStopped"):
             if _e.get("fanMode") == "curve":
                 h_char = max(h_char, abs(float(_e.get("h0", 0))))
+            elif _e.get("fanMode") == "fixed":
+                h_char = max(h_char, abs(float(_e.get("fanPressure", 0))), 100.0)
             else:
                 h_char = max(h_char, abs(float(_e.get("fanPressure", 0))))
         h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))
@@ -2011,6 +2036,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         """Напор вентилятора при расходе qv (общая формула для обоих методов)."""
         N = max(1, int(_e.get("fanParallel", 1) or 1))
         q_one = abs(qv) / N
+        if _e.get("fanMode") == "fixed":
+            return _fixed_H(_e, qv)
         if _e.get("fanMode", "constant") == "curve":
             h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
             q_max_f = float(_e.get("qMax", 1e9))
@@ -2249,6 +2276,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
             def _h_one(_e, qv):
                 N = max(1, int(_e.get("fanParallel", 1) or 1))
                 q_one = qv / N
+                if _e.get("fanMode") == "fixed":
+                    return _fixed_H(_e, qv)
                 if _e.get("fanMode", "constant") == "curve":
                     h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
                     q_max_f = float(_e.get("qMax", 1e9))
@@ -2317,6 +2346,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
                 """Напор ВМП по прямой характеристике (Q > 0)."""
                 N = max(1, int(_e.get("fanParallel", 1) or 1))
                 q_one = qv / N
+                if _e.get("fanMode") == "fixed":
+                    return _fixed_H(_e, qv)
                 if _e.get("fanMode", "constant") == "curve":
                     h0v = float(_e.get("h0", 0)); h1v = float(_e.get("h1", 0)); h2v = float(_e.get("h2", 0))
                     q_max_f = float(_e.get("qMax", 1e9))
@@ -2428,6 +2459,12 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         H_friction = e["R"] * q * q
         H    = H_friction - e.get("naturalDraft", 0.0) * (1.0 if q >= 0 else -1.0)
         Hv   = fan_H_display(e, abs(q))
+        # Фиксированный расход: напор, который вентилятору пришлось развить,
+        # чтобы выдать заданный Q. В сети его даёт сама крутая характеристика,
+        # а в тупике (расход задан напрямую) — это потери ветви R·Q².
+        if e.get("hasFan") and e.get("fanMode") == "fixed" and not e.get("fanStopped"):
+            if Hv < 1e-6:
+                Hv = e["R"] * q * q
         area = e.get("area", 0.0)
         vel  = abs(q) / area if area > 0.01 else 0.0
 
@@ -2559,6 +2596,8 @@ def _mkr_fan_H(e, Q):
         return 0.0
     N    = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
+    if mode == "fixed":
+        return _fixed_H(e, Q)
     if mode == "curve":
         # N вентиляторов в параллели: суммарный напор установки = N·H(Q/N) (как «АэроСеть»).
         q_one = abs(Q) / N
@@ -2606,6 +2645,8 @@ def _mkr_fan_H(e, Q):
 
 def _mkr_fan_dH(e, Q):
     """|dH/dQ_total| для знаменателя δQ."""
+    if e.get("hasFan") and e.get("fanMode") == "fixed":
+        return FIXED_FLOW_K if abs(Q) < _fixed_q(e) else 0.0
     if not e.get("hasFan") or e.get("fanMode", "constant") != "curve":
         return 0.0
     N = max(1, int(e.get("fanParallel", 1) or 1))
@@ -2799,6 +2840,8 @@ def _estimate_q0_mkr(edges, r_total):
 
     fan = max(fans, key=fan_h0)
     mode = fan.get("fanMode", "constant")
+    if mode == "fixed" and _fixed_q(fan) > 0:
+        return _fixed_q(fan)
     if mode == "curve":
         is_rev = fan.get("fanReverse") and fan.get("reverseH0") is not None
         q_hi = float(fan.get("reverseQMax", fan.get("qMax", 90.0))) if is_rev else float(fan.get("qMax", 90.0))
@@ -3252,6 +3295,8 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
         if _e.get("hasFan") and not _e.get("fanStopped"):
             if _e.get("fanMode") == "curve":
                 h_char = max(h_char, abs(float(_e.get("h0", 0))))
+            elif _e.get("fanMode") == "fixed":
+                h_char = max(h_char, abs(float(_e.get("fanPressure", 0))), 100.0)
             else:
                 h_char = max(h_char, abs(float(_e.get("fanPressure", 0))))
         h_char = max(h_char, abs(_e.get("naturalDraft", 0.0)))

@@ -149,13 +149,48 @@ export default function BranchFanTab({
     <InlineLabel label="Тип">
       <select
         value={branch.fanMode}
-        onChange={(e) => onUpdate({ fanMode: e.target.value as "constant" | "curve" })}
+        onChange={(e) => {
+          const mode = e.target.value as "constant" | "curve" | "fixed";
+          // При первом переключении подставляем текущий расход ветви —
+          // чтобы режим начинал с привычной рабочей точки, а не с нуля.
+          const patch: Partial<TopoBranch> = { fanMode: mode };
+          if (mode === "fixed" && !(branch.fanFixedQ && branch.fanFixedQ > 0)) {
+            patch.fanFixedQ = Math.round(Math.abs(branch.flow ?? 0) * 100) / 100;
+          }
+          onUpdate(patch);
+        }}
         className="w-full text-[11px] px-1"
         style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
         <option value="constant">Постоянный напор</option>
         <option value="curve">Напорная характеристика</option>
+        <option value="fixed">Фиксированный расход</option>
       </select>
     </InlineLabel>
+
+    {branch.fanMode === "fixed" && (
+      <>
+        <InlineLabel label="Расход, м³/с">
+          <EditInput type="number" step="0.1" value={branch.fanFixedQ ?? 0}
+            onChange={(v) => onUpdate({ fanFixedQ: Math.max(0, parseFloat(v) || 0) })} />
+        </InlineLabel>
+        {!(branch.fanFixedQ && branch.fanFixedQ > 0) ? (
+          <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
+            style={{ background: "var(--c-tint-amber, #fff7ed)", border: "1px solid #fed7aa", color: "var(--c-amber, #c2410c)" }}>
+            ⚠ Расход = 0. Задайте расход, который должен выдавать вентилятор.
+          </div>
+        ) : (
+          <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
+            style={{ background: "var(--c-tint-blue, #f0f9ff)", border: "1px solid #bae6fd", color: "var(--c-blue, #0369a1)" }}>
+            Вентилятор выдаёт ровно {branch.fanFixedQ} м³/с. Напор подбирается расчётом
+            под сопротивление сети и показан после расчёта.
+          </div>
+        )}
+        <InlineLabel label="КПД, %">
+          <EditInput type="number" step="1" value={Math.round(branch.fanEfficiency * 100) || 65}
+            onChange={(v) => onUpdate({ fanEfficiency: (parseFloat(v) || 65) / 100 })} />
+        </InlineLabel>
+      </>
+    )}
 
     {branch.fanType !== "ВМП" && (
       <>

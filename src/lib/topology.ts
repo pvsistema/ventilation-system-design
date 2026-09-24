@@ -124,7 +124,9 @@ export interface TopoBranch {
   // ─── Вентилятор (источник напора) ────────────────────
   hasFan: boolean;          // ветвь содержит вентилятор
   fanType: "ГВУ" | "ВВУ" | "ВМП"; // тип: главная/вспомогательная/местного проветривания
-  fanMode: "constant" | "curve"; // постоянная депрессия или Q-H хар-ка
+  fanMode: "constant" | "curve" | "fixed"; // постоянная депрессия, Q-H хар-ка или фиксированный расход
+  /** Заданный расход вентилятора, м³/с (режим fanMode = "fixed") */
+  fanFixedQ?: number;
   fanPressure: number;      // Па — депрессия (для mode=constant), или фактическая (mode=curve)
   fanName: string;
   fanCurveId: string;       // ID из справочника FAN_CATALOG (mode=curve)
