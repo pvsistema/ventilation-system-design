@@ -7168,9 +7168,9 @@ export default function CadPage() {
         <RibbonGroup label="Расчёт сети">
             {/* Кнопка запуска */}
             <button onClick={handleSolve} disabled={vcSolving}
-              data-tone=""
+              data-brand=""
               className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-100"
-              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, ["--rb-tone" as string]: "var(--c-green, #15803d)", cursor: vcSolving ? "wait" : "pointer" }}
+              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: vcSolving ? "wait" : "pointer" }}
               title="Запустить расчёт воздухораспределения (F9)">
               <span className="rb-tile">
                 {solveProgress !== null && <span className="rb-progress" style={{ height: `${solveProgress}%` }} />}
