@@ -97,22 +97,30 @@ export function canvasContextItems(): ContextMenuItem[] {
 
 // ─── Ribbon-компоненты ──────────────────────────────────────────────────────
 
+/**
+ * Единая ширина главных вкладок ленты (Файл … Помощь) — по самой длинной
+ * («Справочники», в том числе в полужирном начертании активной вкладки),
+ * чтобы вкладки не «прыгали» при переключении и стояли ровной линейкой.
+ */
+const RIBBON_TAB_W = 96;
+
 export function RibbonTabBtn({ label, active, onClick, fileStyle, highlight }: {
   label: string; active: boolean; onClick: () => void; fileStyle?: boolean; highlight?: boolean;
 }) {
   if (fileStyle) {
     return (
       <button onClick={onClick}
-        className="px-3 h-6 text-xs text-white rounded-t-sm hover:brightness-110"
-        style={{ background: "var(--c-blue-bg, #2563eb)", fontWeight: 500 }}>
+        className="h-6 text-xs text-white rounded-t-sm hover:brightness-110 text-center shrink-0 whitespace-nowrap"
+        style={{ width: RIBBON_TAB_W, background: "var(--c-blue-bg, #2563eb)", fontWeight: 500 }}>
         {label}
       </button>
     );
   }
   return (
     <button onClick={onClick}
-      className="px-3 h-6 text-xs rounded-t-sm transition-colors"
+      className="h-6 text-xs rounded-t-sm transition-colors text-center shrink-0 whitespace-nowrap"
       style={{
+        width: RIBBON_TAB_W,
         background: active ? "var(--c-s2, #fafafa)" : "transparent",
         borderTop: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
         borderLeft: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
