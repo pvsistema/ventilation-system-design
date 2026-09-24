@@ -101,6 +101,7 @@ import ScrollArrows from "@/components/cad/ScrollArrows";
 import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonReferences";
 import { runFireMode } from "@/lib/fireModeRun";
 import { runExplosionMode } from "@/lib/explosionModeRun";
+import { exportExplosionReport } from "@/lib/explosionReport";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
@@ -6657,6 +6658,24 @@ export default function CadPage() {
               sublabel="разрушения"
               disabled={!branches.some(b => b.bulkheadDestroyedByExplosion)}
               onClick={() => setBranches(prev => prev.map(b => ({ ...b, bulkheadDestroyedByExplosion: false })))}
+            />
+            <RibbonBigBtn
+              icon="FileSpreadsheet"
+              label="Протокол"
+              sublabel="в Excel"
+              disabled={!explosionCalcDone || !explosionBarriers}
+              onClick={() => {
+                if (!explosionBarriers) return;
+                exportExplosionReport({
+                  projectName: projectFileName.replace(/\.vproj$/, "") || "Подземный рудник",
+                  branches, nodes,
+                  symbols: schemaSymbols,
+                  resultByBranch: explosionResultByBranch,
+                  barriers: explosionBarriers.byBranch,
+                  barrierHits: explosionBarriers.hits,
+                  duringEmergency: blastDuringEmergency,
+                });
+              }}
             />
             <RibbonBigBtn
               icon="RotateCcw"
