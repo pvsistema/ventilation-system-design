@@ -1,7 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// CadScaleSettingsModal — диалог настройки пределов масштабов.
-// Выделен из CadModals без изменений разметки и логики (1:1).
+// CadScaleSettingsModal — компактная плавающая панель «Пределы масштабов».
+// Окно перетаскивается за заголовок, не перекрывает схему затемнением —
+// изменения видны на схеме сразу. «Отмена» возвращает значения на момент открытия.
 // ─────────────────────────────────────────────────────────────────────────────
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 
 export interface CadScaleSettingsModalProps {
@@ -22,263 +24,218 @@ export interface CadScaleSettingsModalProps {
   setScaleLimitsEnabled: (v: boolean) => void;
 }
 
-export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
+const W = 400;
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, isFinite(v) ? v : a));
+
+function Num({ value, onChange, min, max, step = 1, suffix, width = 52 }: {
+  value: number; onChange: (v: number) => void; min: number; max: number; step?: number; suffix?: string; width?: number;
+}) {
   return (
-    <>
-      {/* ═══ ДИАЛОГ НАСТРОЙКИ ПРЕДЕЛОВ МАСШТАБОВ ═══════════════════════ */}
-      {p.scaleSettingsOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }}
-          onClick={() => p.setScaleSettingsOpen(false)}>
-          {/* Боковое меню разделов убрано.
-              Из шести пунктов работал только «Пределы масштабов» — остальные
-              («Схема», «Единицы измерения», «Координатная сетка», «Размеры
-              объектов», «Цвета и шрифты») были нерабочими надписями: клик по
-              ним ничего не открывал. Пустые пункты создают ложное ожидание
-              настроек, которых нет, поэтому окно оставлено одностраничным. */}
-          <div className="bg-white shadow-2xl border border-gray-300 flex"
-            style={{ minWidth: 560, fontFamily: "Segoe UI, Tahoma, sans-serif", borderRadius: 0 }}
-            onClick={e => e.stopPropagation()}>
-            <div className="flex flex-col" style={{ flex: 1 }}>
-              {/* Заголовок */}
-              <div className="flex items-center justify-between px-4 py-2 border-b border-gray-300"
-                style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d8d8d8))" }}>
-                <span className="text-[12px] font-semibold text-gray-800">Пределы масштабов</span>
-                <button onClick={() => p.setScaleSettingsOpen(false)}
-                  className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white text-gray-600">
-                  <Icon name="X" size={12} />
-                </button>
-              </div>
+    <div className="inline-flex items-center rounded-md border overflow-hidden focus-within:ring-2 focus-within:ring-blue-400/40"
+      style={{ borderColor: "var(--c-b2, #d1d5db)", background: "var(--c-s1, #fff)" }}>
+      <input type="number" min={min} max={max} step={step} value={value}
+        onChange={e => onChange(clamp(Number(e.target.value), min, max))}
+        className="text-right text-[12px] px-1.5 outline-none bg-transparent tabular-nums"
+        style={{ width, height: 24 }} />
+      {suffix && <span className="text-[11px] pr-1.5 text-gray-400">{suffix}</span>}
+    </div>
+  );
+}
 
-              {/* Подзаголовок внутри убран: после удаления бокового меню он
-                  повторял бы заголовок окна слово в слово. */}
-              <div className="px-6 py-4 flex-1">
-                {/* Таблица */}
-                <table className="text-[12px] w-full mb-4" style={{ borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr>
-                      <th className="text-left py-1 pr-4 font-normal text-gray-500" style={{ width: "50%" }}></th>
-                      <th className="text-center py-1 px-3 font-semibold text-gray-700" style={{ width: "25%" }}>Минимум</th>
-                      <th className="text-center py-1 px-3 font-semibold text-gray-700" style={{ width: "25%" }}>Максимум</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {/* Строка 1: Текстовые объекты */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "top" }}>
-                        Размер текстовых объектов<br />
-                        <span className="text-[11px] text-gray-500">(номер узла, номер ветви, номер устройства, название и т.п.)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleTextMin}
-                            onChange={e => p.setScaleTextMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleTextMax}
-                            onChange={e => p.setScaleTextMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                    </tr>
+function Hint({ text }: { text: string }) {
+  return (
+    <span className="relative group inline-flex ml-1 align-middle cursor-help text-gray-400 hover:text-blue-500">
+      <Icon name="Info" size={12} />
+      <span className="pointer-events-none absolute left-1/2 -translate-x-1/2 top-full mt-1 z-10 w-64 rounded-md px-2.5 py-1.5 text-[11px] leading-snug text-white bg-gray-800 shadow-lg opacity-0 group-hover:opacity-100 transition-opacity">
+        {text}
+      </span>
+    </span>
+  );
+}
 
-                    {/* Строка 2: Толщина ветви + режим «по сечению».
-                        Галочка стоит здесь, а не отдельной настройкой: она
-                        управляет ровно тем же — шириной линии выработки, и
-                        пределы ниже действуют на неё же. */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "top" }}>
-                        <div>Толщина ветви</div>
-                        <label className="flex items-start gap-1.5 mt-1.5 cursor-pointer select-none">
-                          <input type="checkbox" checked={p.widthBySectionOn}
-                            onChange={e => {
-                              const on = e.target.checked;
-                              p.setWidthBySectionOn(on);
-                              // Разброс сечений на руднике — десятки раз, а
-                              // прежние пределы (80–150%) рассчитаны на ручную
-                              // подгонку толщины. В них разница между стволом и
-                              // сбойкой почти незаметна, и смысл режима теряется.
-                              // При первом включении раздвигаем их до рабочих,
-                              // но только если они остались стандартными —
-                              // осознанно выставленные числа не трогаем.
-                              if (on && p.scaleBranchMin === 80 && p.scaleBranchMax === 150) {
-                                p.setScaleBranchMin(30);
-                                p.setScaleBranchMax(300);
-                              }
-                            }}
-                            className="mt-0.5" />
-                          <span className="text-[11px]">
-                            <span className="text-gray-700">Масштаб выработок по сечению</span>
-                            <span className="block text-[11px] text-gray-500">
-                              Ширина линии зависит от площади сечения: схема выглядит как
-                              фактическая модель, а ошибки в сечении (2 вместо 20) сразу
-                              видно. Выключено — все выработки одной толщины.
-                              Пределы справа задают, насколько тонкой и толстой может
-                              стать линия.
-                            </span>
-                          </span>
-                        </label>
-                        {/* Объёмный вид — рядом с толщиной ветви: обе настройки
-                            управляют тем, как выглядит сама выработка. */}
-                        <label className="flex items-start gap-1.5 mt-2 cursor-pointer select-none">
-                          <input type="checkbox" checked={p.tube3dOn}
-                            onChange={e => p.setTube3dOn(e.target.checked)}
-                            className="mt-0.5" />
-                          <span className="text-[11px]">
-                            <span className="text-gray-700">Объёмный вид выработок (3D)</span>
-                            <span className="block text-[11px] text-gray-500">
-                              Выработка рисуется трубой по реальному сечению: ствол —
-                              круглый, квершлаг — сводчатый, штрек — трапеция. Видно
-                              только в объёмных ракурсах (ИЗО, фронт, профиль): на плане
-                              труба выглядит как обычная линия. Вблизи — объём, при
-                              отдалении автоматически возвращаются линии, чтобы схема
-                              не тормозила.
-                            </span>
-                          </span>
-                        </label>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleBranchMin}
-                            onChange={e => p.setScaleBranchMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scaleBranchMax}
-                            onChange={e => p.setScaleBranchMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                    </tr>
+function Toggle({ checked, onChange, label, hint }: { checked: boolean; onChange: (v: boolean) => void; label: string; hint: string }) {
+  return (
+    <label className="flex items-center justify-between gap-2 py-1 cursor-pointer select-none">
+      <span className="text-[12px] text-gray-700">{label}<Hint text={hint} /></span>
+      <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
+        className="relative w-8 h-[18px] rounded-full transition-colors shrink-0"
+        style={{ background: checked ? "#3b82f6" : "#cbd5e1" }}>
+        <span className="absolute top-[2px] w-[14px] h-[14px] rounded-full bg-white shadow transition-all"
+          style={{ left: checked ? 16 : 2 }} />
+      </button>
+    </label>
+  );
+}
 
-                    {/* Строка 3: Масштаб перемычек */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                        <div className="text-gray-700">Масштаб перемычек</div>
-                        <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center" colSpan={2}>
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={20} max={500} value={p.bulkheadScale}
-                            onChange={e => p.setBulkheadScale(Math.max(20, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">% от ширины ветви</span>
-                        </div>
-                      </td>
-                    </tr>
+function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2 py-1">
+      <span className="text-[12px] text-gray-700 truncate">{label}{hint && <Hint text={hint} />}</span>
+      <div className="flex items-center gap-1.5 shrink-0">{children}</div>
+    </div>
+  );
+}
 
-                    {/* Строка 4: Масштаб вентиляторов */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                        <div className="text-gray-700">Масштаб вентиляторов</div>
-                        <span className="text-[11px] text-gray-500">(размер по отношению к ширине ветви, синхронно с масштабом схемы)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center" colSpan={2}>
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={50} max={2000} value={p.fanScale}
-                            onChange={e => p.setFanScale(Math.max(50, Math.min(2000, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">% от ширины ветви</span>
-                        </div>
-                      </td>
-                    </tr>
+function Section({ title, icon, children }: { title: string; icon: string; children: React.ReactNode }) {
+  return (
+    <div className="px-3 py-2 border-b last:border-b-0" style={{ borderColor: "var(--c-b1, #eef0f3)" }}>
+      <div className="flex items-center gap-1.5 mb-1 text-[10px] font-semibold uppercase tracking-wider text-gray-400">
+        <Icon name={icon} size={11} />{title}
+      </div>
+      {children}
+    </div>
+  );
+}
 
-                    {/* Строка 5: Пределы масштаба Позиций ПЛА */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4 text-gray-700" style={{ verticalAlign: "middle" }}>
-                        Размер позиций ПЛА
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scalePositionMin}
-                            onChange={e => p.setScalePositionMin(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                      <td className="py-2 px-3 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={10} max={500} value={p.scalePositionMax}
-                            onChange={e => p.setScalePositionMax(Math.max(10, Math.min(500, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 50, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">%</span>
-                        </div>
-                      </td>
-                    </tr>
+const MinMax = ({ min, max, setMin, setMax }: { min: number; max: number; setMin: (v: number) => void; setMax: (v: number) => void }) => (
+  <>
+    <Num value={min} onChange={setMin} min={10} max={500} suffix="%" />
+    <span className="text-gray-300 text-[11px]">—</span>
+    <Num value={max} onChange={setMax} min={10} max={500} suffix="%" />
+  </>
+);
 
-                    {/* Строка 6: ГОСТ-размер маркера позиции ПЛА */}
-                    <tr style={{ borderTop: "1px solid var(--c-b1, #e5e7eb)" }}>
-                      <td className="py-2 pr-4" style={{ verticalAlign: "top" }}>
-                        <div className="text-gray-700">Размер позиции по ГОСТ</div>
-                        <span className="text-[11px] text-gray-500">(диаметр маркера позиции ПЛА на чертеже, по умолчанию 13 мм)</span>
-                      </td>
-                      <td className="py-2 px-3 text-center" colSpan={2}>
-                        <div className="flex items-center justify-center gap-1">
-                          <input type="number" min={2} max={100} step={0.5} value={p.positionGostMm}
-                            onChange={e => p.setPositionGostMm(Math.max(2, Math.min(100, Number(e.target.value))))}
-                            className="text-right text-[12px] px-1"
-                            style={{ width: 60, height: 22, border: "1px solid var(--c-b3, #999)", outline: "none" }} />
-                          <span className="text-gray-500">мм</span>
-                        </div>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+  const snap = useRef<Record<string, number | boolean> | null>(null);
 
-              {/* Подвал диалога */}
-              <div className="flex items-center justify-between px-4 py-2 border-t border-gray-300" style={{ background: "var(--c-s2, #f5f5f5)" }}>
-                <button
-                  onClick={() => {
-                    p.setScaleTextMin(80); p.setScaleTextMax(150);
-                    p.setScaleBranchMin(80); p.setScaleBranchMax(150);
-                    p.setWidthBySectionOn(false);
-                    p.setScalePositionMin(80); p.setScalePositionMax(150);
-                    p.setPositionGostMm(13);
-                    p.setBulkheadScale(150); p.setFanScale(450);
-                  }}
-                  className="px-4 py-1 text-[12px] border border-gray-400 bg-white hover:bg-gray-100"
-                  style={{ minWidth: 70 }}>
-                  Сброс
-                </button>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      p.setScaleLimitsEnabled(true);
-                      p.setScaleSettingsOpen(false);
-                    }}
-                    className="px-4 py-1 text-[12px] border border-gray-500 bg-white hover:bg-gray-100"
-                    style={{ minWidth: 70 }}>
-                    ОК
-                  </button>
-                  <button
-                    onClick={() => p.setScaleSettingsOpen(false)}
-                    className="px-4 py-1 text-[12px] border border-gray-500 bg-white hover:bg-gray-100"
-                    style={{ minWidth: 70 }}>
-                    Отмена
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </>
+  // Снимок значений при открытии — для «Отмены».
+  useEffect(() => {
+    if (p.scaleSettingsOpen) {
+      snap.current = {
+        tMin: p.scaleTextMin, tMax: p.scaleTextMax, bMin: p.scaleBranchMin, bMax: p.scaleBranchMax,
+        ws: p.widthBySectionOn, t3: p.tube3dOn, pMin: p.scalePositionMin, pMax: p.scalePositionMax,
+        gost: p.positionGostMm, bh: p.bulkheadScale, fan: p.fanScale,
+      };
+      setPos(prev => prev ?? { x: Math.max(8, window.innerWidth - W - 340), y: 150 });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.scaleSettingsOpen]);
+
+  const cancel = () => {
+    const s = snap.current;
+    if (s) {
+      p.setScaleTextMin(s.tMin as number); p.setScaleTextMax(s.tMax as number);
+      p.setScaleBranchMin(s.bMin as number); p.setScaleBranchMax(s.bMax as number);
+      p.setWidthBySectionOn(s.ws as boolean); p.setTube3dOn(s.t3 as boolean);
+      p.setScalePositionMin(s.pMin as number); p.setScalePositionMax(s.pMax as number);
+      p.setPositionGostMm(s.gost as number);
+      p.setBulkheadScale(s.bh as number); p.setFanScale(s.fan as number);
+    }
+    p.setScaleSettingsOpen(false);
+  };
+
+  useEffect(() => {
+    if (!p.scaleSettingsOpen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") cancel(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [p.scaleSettingsOpen]);
+
+  const onDragStart = (e: React.PointerEvent) => {
+    if ((e.target as HTMLElement).closest("button") || !pos) return;
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: React.PointerEvent) => {
+    if (!drag.current) return;
+    setPos({
+      x: clamp(e.clientX - drag.current.dx, 0, window.innerWidth - W),
+      y: clamp(e.clientY - drag.current.dy, 0, window.innerHeight - 40),
+    });
+  };
+  const onDragEnd = () => { drag.current = null; };
+
+  if (!p.scaleSettingsOpen || !pos) return null;
+
+  const setWidthBySection = (on: boolean) => {
+    p.setWidthBySectionOn(on);
+    // Прежние пределы 80–150% слишком узки для режима «по сечению» —
+    // раздвигаем их, только если они остались стандартными.
+    if (on && p.scaleBranchMin === 80 && p.scaleBranchMax === 150) {
+      p.setScaleBranchMin(30); p.setScaleBranchMax(300);
+    }
+  };
+
+  return (
+    <div className="fixed z-50 rounded-xl shadow-2xl border overflow-hidden animate-in fade-in zoom-in-95 duration-150"
+      style={{ left: pos.x, top: pos.y, width: W, background: "var(--c-s1, #fff)", borderColor: "var(--c-b2, #e2e8f0)", fontFamily: "Segoe UI, Tahoma, sans-serif" }}>
+      {/* Заголовок — за него окно перетаскивается */}
+      <div className="flex items-center gap-2 px-3 h-9 cursor-move select-none border-b"
+        style={{ borderColor: "var(--c-b1, #eef0f3)", background: "var(--c-s2, #f8fafc)" }}
+        onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd}>
+        <Icon name="GripVertical" size={13} className="text-gray-400" />
+        <Icon name="Scaling" size={14} className="text-blue-500" />
+        <span className="text-[12px] font-semibold text-gray-800 flex-1">Пределы масштабов</span>
+        <button onClick={cancel} title="Закрыть (Esc)"
+          className="w-6 h-6 rounded-md flex items-center justify-center text-gray-500 hover:bg-gray-200">
+          <Icon name="X" size={13} />
+        </button>
+      </div>
+
+      <div className="max-h-[70vh] overflow-y-auto">
+        <Section title="Подписи" icon="Type">
+          <Row label="Текстовые объекты" hint="Номер узла, номер ветви, номер устройства, название и т.п.">
+            <MinMax min={p.scaleTextMin} max={p.scaleTextMax} setMin={p.setScaleTextMin} setMax={p.setScaleTextMax} />
+          </Row>
+        </Section>
+
+        <Section title="Выработки" icon="Spline">
+          <Row label="Толщина ветви" hint="Насколько тонкой и толстой может стать линия выработки при масштабировании.">
+            <MinMax min={p.scaleBranchMin} max={p.scaleBranchMax} setMin={p.setScaleBranchMin} setMax={p.setScaleBranchMax} />
+          </Row>
+          <Toggle checked={p.widthBySectionOn} onChange={setWidthBySection} label="Толщина по сечению"
+            hint="Ширина линии зависит от площади сечения: схема выглядит как фактическая модель, ошибки в сечении (2 вместо 20) сразу видно. Выключено — все выработки одной толщины." />
+          <Toggle checked={p.tube3dOn} onChange={p.setTube3dOn} label="Объёмный вид (3D)"
+            hint="Выработка рисуется трубой по реальному сечению (ствол — круг, квершлаг — свод, штрек — трапеция). Видно в ИЗО, фронте и профиле; при отдалении возвращаются линии." />
+        </Section>
+
+        <Section title="Оборудование" icon="Fan">
+          <Row label="Перемычки" hint="Размер относительно ширины ветви, синхронно с масштабом схемы.">
+            <Num value={p.bulkheadScale} onChange={p.setBulkheadScale} min={20} max={500} suffix="%" width={56} />
+          </Row>
+          <Row label="Вентиляторы" hint="Размер относительно ширины ветви, синхронно с масштабом схемы.">
+            <Num value={p.fanScale} onChange={p.setFanScale} min={50} max={2000} suffix="%" width={56} />
+          </Row>
+        </Section>
+
+        <Section title="Позиции ПЛА" icon="MapPin">
+          <Row label="Размер на схеме">
+            <MinMax min={p.scalePositionMin} max={p.scalePositionMax} setMin={p.setScalePositionMin} setMax={p.setScalePositionMax} />
+          </Row>
+          <Row label="Размер по ГОСТ" hint="Диаметр маркера позиции ПЛА на чертеже, по умолчанию 13 мм.">
+            <Num value={p.positionGostMm} onChange={p.setPositionGostMm} min={2} max={100} step={0.5} suffix="мм" width={48} />
+          </Row>
+        </Section>
+      </div>
+
+      {/* Подвал */}
+      <div className="flex items-center gap-2 px-3 py-2 border-t" style={{ borderColor: "var(--c-b1, #eef0f3)", background: "var(--c-s2, #f8fafc)" }}>
+        <button
+          onClick={() => {
+            p.setScaleTextMin(80); p.setScaleTextMax(150);
+            p.setScaleBranchMin(80); p.setScaleBranchMax(150);
+            p.setWidthBySectionOn(false);
+            p.setScalePositionMin(80); p.setScalePositionMax(150);
+            p.setPositionGostMm(13);
+            p.setBulkheadScale(150); p.setFanScale(450);
+          }}
+          className="flex items-center gap-1 px-2 h-7 text-[12px] rounded-md text-gray-600 hover:bg-gray-200">
+          <Icon name="RotateCcw" size={12} />По умолчанию
+        </button>
+        <div className="flex-1" />
+        <button onClick={cancel}
+          className="px-3 h-7 text-[12px] rounded-md border text-gray-700 hover:bg-gray-100"
+          style={{ borderColor: "var(--c-b2, #d1d5db)", background: "var(--c-s1, #fff)" }}>
+          Отмена
+        </button>
+        <button onClick={() => { p.setScaleLimitsEnabled(true); p.setScaleSettingsOpen(false); }}
+          className="px-4 h-7 text-[12px] rounded-md text-white bg-blue-600 hover:bg-blue-700">
+          Применить
+        </button>
+      </div>
+    </div>
   );
 }
