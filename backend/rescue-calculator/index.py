@@ -99,28 +99,26 @@ def get_zone(smoke_density: float) -> str:
 # ─── Проходимость перемычки ────────────────────────────────────────────────────
 
 def is_bulkhead_passable(bulkhead_id: str) -> bool:
+    """Непроходимы только глухие перемычки (solid_*, bk_*, bulkhead*).
+    Двери, паруса, регуляторы, окна, проёмы, водоподпорные, барьерные и
+    перемычки без указанного типа включаются в поиск маршрута."""
     if not bulkhead_id:
-        return False
+        return True
     bid = bulkhead_id.lower()
     if bid.startswith("solid_") or bid.startswith("bk_"):
         return False
     if bid in ("bulkhead", "bulkhead_concrete", "bulkhead_wood",
                "bulkhead_brick", "bulkhead_metal"):
         return False
-    if bid.startswith("water_dam") or bid.startswith("water_"):
+    return True
+
+
+def is_blocked_by_bulkhead(b) -> bool:
+    if not b.get("hasBulkhead"):
         return False
-    if bid in ("bulkhead_barrier", "barrier"):
-        return False
-    if bid == "sail":
+    if not is_bulkhead_passable(b.get("bulkheadId") or ""):
         return True
-    if (bid.startswith("door_") or bid.startswith("auto_") or bid.startswith("open_")
-            or bid.startswith("win_") or bid.startswith("lat_") or bid.startswith("proem_")):
-        return True
-    if bid.startswith("regulator_") or bid == "regulator":
-        return True
-    if bid in ("fire_door", "fire_door_pp"):
-        return True
-    return False
+    return "глух" in (b.get("bulkheadName") or "").lower()
 
 
 # ─── Дейкстра ─────────────────────────────────────────────────────────────────
@@ -292,7 +290,7 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
         _len = float(b.get("length") or 0)
         if not math.isfinite(_len) or _len <= 0:
             continue
-        if b.get("hasBulkhead") and not is_bulkhead_passable(b.get("bulkheadId") or ""):
+        if is_blocked_by_bulkhead(b):
             continue
         if b["fromId"] in adj:
             adj[b["fromId"]].append({"toId": b["toId"], "branchId": b["id"], "forward": True})

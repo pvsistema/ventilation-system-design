@@ -232,24 +232,29 @@ export function isVirtualBranch(b: TopoBranchLite): boolean {
 }
 
 /**
- * Определяет проходимость перемычки для горноспасателей.
- * Глухие (solid) и водоподпорные (water) — непроходимы.
- * Двери (door), паруса (sail), регуляторы (regulator) — проходимы.
+ * Проходимость перемычки для горноспасателей и горнорабочих.
+ * Непроходимы ТОЛЬКО глухие перемычки (solid_*, bk_*, bulkhead*).
+ * Все остальные — двери, паруса, регуляторы, окна, проёмы, водоподпорные,
+ * барьерные, противопожарные двери и перемычки без указанного типа —
+ * включаются в поиск маршрута.
  */
 export function isBulkheadPassable(bulkheadId?: string): boolean {
-  if (!bulkheadId) return false;
+  if (!bulkheadId) return true;
   const id = bulkheadId.toLowerCase();
   if (id.startsWith("solid_") || id.startsWith("bk_")) return false;
   if (id === "bulkhead" || id === "bulkhead_concrete" || id === "bulkhead_wood"
     || id === "bulkhead_brick" || id === "bulkhead_metal") return false;
-  if (id.startsWith("water_dam") || id.startsWith("water_")) return false;
-  if (id === "bulkhead_barrier" || id === "barrier") return false;
-  if (id === "sail") return true;
-  if (id.startsWith("door_") || id.startsWith("auto_") || id.startsWith("open_")
-    || id.startsWith("win_") || id.startsWith("lat_") || id.startsWith("proem_")) return true;
-  if (id.startsWith("regulator_") || id === "regulator") return true;
-  if (id === "fire_door" || id === "fire_door_pp") return true;
-  return false;
+  return true;
+}
+
+/**
+ * Ветвь закрыта глухой перемычкой. Кроме кода типа смотрим и название — у
+ * импортированных схем тип бывает не задан, а в названии стоит «Глухая».
+ */
+function isBlockedByBulkhead(b: TopoBranchLite): boolean {
+  if (!b.hasBulkhead) return false;
+  if (!isBulkheadPassable(b.bulkheadId)) return true;
+  return /глух/i.test(b.bulkheadName ?? "");
 }
 
 /**
@@ -518,7 +523,7 @@ export function findRescueRoutes(
     if (isVirtualBranch(b)) continue;
     if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
-    if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
+    if (isBlockedByBulkhead(b)) continue; // только глухие перемычки непроходимы
     adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
     adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
   }
@@ -593,7 +598,7 @@ export function calcRescue(
     // NaN-длина не отсекалась `<= 0` (NaN <= 0 === false) и ломала Дейкстру
     if (!Number.isFinite(b.length) || (b.length as number) <= 0) continue;
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
-    if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
+    if (isBlockedByBulkhead(b)) continue; // только глухие перемычки непроходимы
     adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
     adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
   }
@@ -1003,7 +1008,7 @@ export function calcWorkerPath(
     // Узлы ветви обязаны существовать в графе (иначе adj.get вернёт undefined)
     if (!adj.has(b.fromId) || !adj.has(b.toId)) continue;
     // Горнорабочий проходит через двери, паруса, регуляторы; глухие перемычки — нет
-    if (b.hasBulkhead && !isBulkheadPassable(b.bulkheadId)) continue;
+    if (isBlockedByBulkhead(b)) continue; // только глухие перемычки непроходимы
     adj.get(b.fromId)?.push({ toId: b.toId, branchId: b.id, forward: true });
     adj.get(b.toId)?.push({ toId: b.fromId, branchId: b.id, forward: false });
   }
