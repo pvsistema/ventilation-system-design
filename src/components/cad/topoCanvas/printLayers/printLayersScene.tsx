@@ -56,7 +56,7 @@ export function renderGroundGrid(is3D: boolean, proj: ProjOptions) {
     <g>
       {lines.map((l) => (
         <line key={l.key} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2}
-          stroke="#d4d4d4" strokeWidth="0.6" opacity="0.7" />
+          stroke="rgba(120, 110, 90, 0.22)" strokeWidth="0.8" />
       ))}
       <line x1={O.sx} y1={O.sy} x2={Xa.sx} y2={Xa.sy} stroke="#ef4444" strokeWidth="2" />
       <line x1={O.sx} y1={O.sy} x2={Ya.sx} y2={Ya.sy} stroke="#22c55e" strokeWidth="2" />

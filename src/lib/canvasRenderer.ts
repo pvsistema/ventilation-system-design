@@ -16,6 +16,7 @@ import {
   ARROW_TIP_H, ARROW_TIP_W, ARROW_TAIL_LEN, ARROW_TAIL_W,
 } from "./flowAnim";
 import { canvasFont } from "@/lib/canvasFont";
+import { CANVAS_THEME } from "@/lib/theme";
 
 /**
  * Порог переключения SVG → Canvas по числу видимых ветвей.
@@ -534,38 +535,60 @@ function getSortedNodes(projNodes: ProjNode[], sortEpoch?: number): SortedNode[]
   return _sortedNodesCache;
 }
 
-// ─── Сетка 2D (план) ───────────────────────────────────────────────────────
-// Все линии одного стиля рисуются одним beginPath/stroke — вместо N отдельных stroke() вызовов.
-// При 1920×1080 и scale=1: ~150 линий → было 150 stroke(), стало 2 stroke().
-function drawGrid2D(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number, offsetX: number, offsetY: number) {
-  if (scale < 0.5) {
-    ctx.fillStyle = "#f8f9fa";
+/** Цвета бумаги и сетки под текущую тему (светлая / тёмная). */
+function currentCanvasTheme() {
+  const dark = typeof document !== "undefined" && document.documentElement.classList.contains("dark");
+  return CANVAS_THEME[dark ? "dark" : "light"];
+}
+
+// ─── Сетка 2D (план): «миллиметровка» ─────────────────────────────────────
+// Три уровня, как на чертёжной бумаге: мелкая клетка, каждая 5-я и каждая
+// 10-я линия. Шаг мелкой клетки подбирается под масштаб (1/2/5/10… м), чтобы
+// на экране он всегда был ~8–40 px: вблизи видны метры, вдали — десятки метров,
+// а густая «каша» из линий не появляется никогда.
+// Все линии одного уровня — один beginPath/stroke.
+function drawGrid2D(ctx: CanvasRenderingContext2D, w: number, h: number, scale: number, offsetX: number, offsetY: number, noFill = false) {
+  const t = currentCanvasTheme();
+  if (!noFill) {
+    ctx.fillStyle = t.paper;
     ctx.fillRect(0, 0, w, h);
-    return;
   }
-  const minor = 20 * scale;
-  const major = 100 * scale;
-  const ox = offsetX % major;
-  const oy = offsetY % major;
+
+  const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+  let stepM = steps[steps.length - 1];
+  for (const s of steps) { if (s * scale >= 8) { stepM = s; break; } }
+  const fine = stepM * scale;
+  if (!(fine > 0) || !isFinite(fine)) return;
+
+  // Номер линии от начала координат — чтобы 5-я и 10-я линии стояли на
+  // «круглых» координатах и не прыгали при прокрутке.
+  const i0x = Math.ceil(-offsetX / fine), i1x = Math.floor((w - offsetX) / fine);
+  const i0y = Math.ceil(-offsetY / fine), i1y = Math.floor((h - offsetY) / fine);
+  // Слишком много линий (гигантский холст) — не рисуем мелкую клетку.
+  const tooDense = (i1x - i0x) + (i1y - i0y) > 1200;
+
+  const level = (i: number) => (i % 10 === 0 ? 2 : i % 5 === 0 ? 1 : 0);
+  const pass = (lv: 0 | 1 | 2, color: string, lw: number) => {
+    ctx.strokeStyle = color;
+    ctx.lineWidth = lw;
+    ctx.beginPath();
+    for (let i = i0x; i <= i1x; i++) {
+      if (level(i) !== lv) continue;
+      const x = Math.round(offsetX + i * fine) + 0.5;
+      ctx.moveTo(x, 0); ctx.lineTo(x, h);
+    }
+    for (let i = i0y; i <= i1y; i++) {
+      if (level(i) !== lv) continue;
+      const y = Math.round(offsetY + i * fine) + 0.5;
+      ctx.moveTo(0, y); ctx.lineTo(w, y);
+    }
+    ctx.stroke();
+  };
 
   ctx.save();
-
-  // Minor grid — один path для всех линий
-  ctx.strokeStyle = "#f0f0f0";
-  ctx.lineWidth = 0.5;
-  ctx.beginPath();
-  for (let x = ox % minor; x < w; x += minor) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
-  for (let y = oy % minor; y < h; y += minor) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
-  ctx.stroke();
-
-  // Major grid — один path для всех линий
-  ctx.strokeStyle = "#dcdcdc";
-  ctx.lineWidth = 0.8;
-  ctx.beginPath();
-  for (let x = ox; x < w; x += major) { ctx.moveTo(x, 0); ctx.lineTo(x, h); }
-  for (let y = oy; y < h; y += major) { ctx.moveTo(0, y); ctx.lineTo(w, y); }
-  ctx.stroke();
-
+  if (!tooDense) pass(0, t.gridFine, 1);
+  pass(1, t.gridMid, 1);
+  pass(2, t.gridMajor, 1);
   ctx.restore();
 }
 
@@ -574,9 +597,10 @@ function drawGrid2D(ctx: CanvasRenderingContext2D, w: number, h: number, scale: 
 function drawGrid3D(ctx: CanvasRenderingContext2D, proj: ProjOptions) {
   const step = 500, range = 3000;
   ctx.save();
-  ctx.strokeStyle = "#d4d4d4";
-  ctx.globalAlpha = 0.7;
-  ctx.lineWidth = 0.6;
+  // Плоскость z=0 — тем же тоном, что и миллиметровка плана.
+  ctx.strokeStyle = currentCanvasTheme().gridMajor;
+  ctx.globalAlpha = 1;
+  ctx.lineWidth = 0.8;
 
   // Все линии сетки одним path
   ctx.beginPath();
@@ -736,13 +760,15 @@ export function renderCanvas(opts: CanvasRenderOptions) {
   // transparentBg: не заливаем холст, чтобы сквозь него был виден слой печати
   // (белый лист + рамка), лежащий ПОД canvas в canvas-режиме.
   if (transparentBg) {
-    // прозрачно: рисуем только линии сетки в 2D (они не мешают), в 3D — ничего
-    if (!is3D && sc >= 0.5) drawGrid2D(ctx, width, height, sc, view.offsetX, view.offsetY);
+    // Прозрачно: под холстом лежит слой печати (белый лист с рамкой).
+    // Заливку бумагой не делаем — иначе она закрыла бы лист; сетку в 2D
+    // оставляем, как было, она листу не мешает.
+    if (!is3D) drawGrid2D(ctx, width, height, sc, view.offsetX, view.offsetY, true);
   } else if (printMode) {
     ctx.fillStyle = "#ffffff";
     ctx.fillRect(0, 0, width, height);
   } else if (is3D) {
-    ctx.fillStyle = "#f5f5f4";
+    ctx.fillStyle = currentCanvasTheme().paper;
     ctx.fillRect(0, 0, width, height);
     drawGrid3D(ctx, proj);
   } else {

@@ -53,20 +53,37 @@ export interface CanvasTheme {
   bg3D: string;
   /** Заливка выработок, когда раскраска отключена */
   branchFill: string;
+  /** «Бумага» — сплошной цвет фона, которым холст заливается сам. */
+  paper: string;
+  /** Миллиметровка: мелкая клетка, клетка ×5 и крупная ×10. */
+  gridFine: string;
+  gridMid: string;
+  gridMajor: string;
 }
 
+// Фирменная «бумага для чертежей»: тёплый почти-белый тон вместо стерильного
+// белого и едва заметная миллиметровка. Схема читается как инженерный лист,
+// а не как пустое окно офисной программы.
 export const CANVAS_THEME: Record<"light" | "dark", CanvasTheme> = {
   light: {
-    bg2D: "#ffffff",
-    bg3D: "linear-gradient(to bottom, #f0f4f8 0%, #ffffff 60%, #f5f5f5 100%)",
+    bg2D: "#fbfaf7",
+    bg3D: "#fbfaf7",
     branchFill: "#ffffff",
+    paper: "#fbfaf7",
+    gridFine: "rgba(120, 110, 90, 0.07)",
+    gridMid: "rgba(120, 110, 90, 0.13)",
+    gridMajor: "rgba(120, 110, 90, 0.22)",
   },
   dark: {
     // Холст чуть темнее панелей (--c-s1 = #171d28): схема «утоплена», рамка
     // окна и панели читаются как передний план. Не чёрный — иначе тонкие
     // линии выработок дают ореол и глаза устают.
     bg2D: "#111722",
-    bg3D: "linear-gradient(to bottom, #0e131c 0%, #141b26 60%, #0e131c 100%)",
+    bg3D: "#111722",
     branchFill: "#2a3242",
+    paper: "#111722",
+    gridFine: "rgba(160, 180, 210, 0.05)",
+    gridMid: "rgba(160, 180, 210, 0.09)",
+    gridMajor: "rgba(160, 180, 210, 0.16)",
   },
 };

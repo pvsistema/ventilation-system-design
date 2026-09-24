@@ -1877,22 +1877,30 @@ export default function TopoCanvas(props: Props) {
         onContextMenu={onContextMenuSVG}>
 
         <defs>
-          {/* 2D-сетка — рисуем только если ячейка достаточно крупная */}
-          {view.scale >= 0.5 && (<>
-          <pattern id="topo-grid-minor" width={20 * view.scale} height={20 * view.scale} patternUnits="userSpaceOnUse"
-            x={view.offsetX % (20 * view.scale)} y={view.offsetY % (20 * view.scale)}>
-            <path d={`M ${20 * view.scale} 0 L 0 0 0 ${20 * view.scale}`} fill="none" stroke="#f0f0f0" strokeWidth="0.5" />
-          </pattern>
-          <pattern id="topo-grid-major" width={100 * view.scale} height={100 * view.scale} patternUnits="userSpaceOnUse"
-            x={view.offsetX % (100 * view.scale)} y={view.offsetY % (100 * view.scale)}>
-            <rect width={100 * view.scale} height={100 * view.scale} fill="url(#topo-grid-minor)" />
-            <path d={`M ${100 * view.scale} 0 L 0 0 0 ${100 * view.scale}`} fill="none" stroke="#dcdcdc" strokeWidth="0.8" />
-          </pattern>
-          </>)}
+          {/* «Миллиметровка» — как в холстовом режиме (canvasRenderer.drawGrid2D):
+              мелкая клетка, каждая 5-я и 10-я линия; шаг подбирается под масштаб. */}
+          {(() => {
+            const steps = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000];
+            const stepM = steps.find(st => st * view.scale >= 8) ?? 10000;
+            const f = stepM * view.scale, m5 = f * 5, m10 = f * 10;
+            return (<>
+              <pattern id="topo-grid-fine" width={f} height={f} patternUnits="userSpaceOnUse" x={view.offsetX} y={view.offsetY}>
+                <path d={`M ${f} 0 L 0 0 0 ${f}`} fill="none" stroke={canvasTheme.gridFine} strokeWidth="1" />
+              </pattern>
+              <pattern id="topo-grid-mid" width={m5} height={m5} patternUnits="userSpaceOnUse" x={view.offsetX} y={view.offsetY}>
+                <rect width={m5} height={m5} fill="url(#topo-grid-fine)" />
+                <path d={`M ${m5} 0 L 0 0 0 ${m5}`} fill="none" stroke={canvasTheme.gridMid} strokeWidth="1" />
+              </pattern>
+              <pattern id="topo-grid-major" width={m10} height={m10} patternUnits="userSpaceOnUse" x={view.offsetX} y={view.offsetY}>
+                <rect width={m10} height={m10} fill="url(#topo-grid-mid)" />
+                <path d={`M ${m10} 0 L 0 0 0 ${m10}`} fill="none" stroke={canvasTheme.gridMajor} strokeWidth="1" />
+              </pattern>
+            </>);
+          })()}
         </defs>
 
-        {!useCanvas && !is3D && view.scale >= 0.5 && <rect width={size.w} height={size.h} fill="url(#topo-grid-major)" />}
-        {!useCanvas && !is3D && view.scale < 0.5 && <rect width={size.w} height={size.h} fill="#f8f9fa" />}
+        {!useCanvas && !is3D && <rect width={size.w} height={size.h} fill={canvasTheme.paper} />}
+        {!useCanvas && !is3D && <rect width={size.w} height={size.h} fill="url(#topo-grid-major)" />}
         {!useCanvas && is3D && renderGroundGrid()}
 
 
