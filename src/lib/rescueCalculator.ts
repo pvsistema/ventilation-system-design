@@ -206,6 +206,8 @@ export interface TopoBranchLite {
   bulkheadR?: number;
   bulkheadAirPerm?: number;
   isLeakage?: boolean;
+  /** В ветви установлен очаг пожара — маршрут обходит её, если есть обход */
+  hasFire?: boolean;
   /**
    * Ветвь САМА является нитью вентиляционного трубопровода (става труб).
    * Человек по трубе не идёт — такие ветви в маршрутном графе не участвуют.
@@ -248,6 +250,33 @@ export function isBulkheadPassable(bulkheadId?: string): boolean {
   if (id.startsWith("regulator_") || id === "regulator") return true;
   if (id === "fire_door" || id === "fire_door_pp") return true;
   return false;
+}
+
+/**
+ * Штраф за проход через выработку с очагом пожара.
+ *
+ * Ветвь НЕ удаляется из графа (иначе при очаге на единственной связи маршрут
+ * вообще не находился), а становится «очень дорогой»: Дейкстра выберет любой
+ * обход, и пойдёт через очаг только если другого пути физически нет — тогда
+ * в результат добавляется предупреждение.
+ */
+export const FIRE_BRANCH_PENALTY = 1e4;
+
+export function isFireBranch(b: TopoBranchLite | undefined): boolean {
+  return !!b?.hasFire;
+}
+
+function fireWarning(
+  edges: Array<{ branchId: string }>,
+  branchById: Map<string, TopoBranchLite>,
+): string | null {
+  const ids = Array.from(new Set(edges.map(e => e.branchId).filter(id => isFireBranch(branchById.get(id)))));
+  if (ids.length === 0) return null;
+  const names = ids.map(id => {
+    const b = branchById.get(id);
+    return b?.name ? `«${b.name}»` : `№${b?.number ?? id}`;
+  }).join(", ");
+  return `Маршрут проходит через выработку с очагом пожара (${names}) — обходного пути нет. Задайте обход через промежуточные узлы или проверьте схему.`;
 }
 
 // ─── Дейкстра: одиночный запуск от одного источника ──────────────────────────
@@ -339,7 +368,8 @@ function buildDijkstra(
       const zone = getZone(smokeDens);
       const speed = Math.max(1, getSpeed(zone, signedAngle));
       const len = Number.isFinite(b.length) ? b.length : 0;
-      const t = (len > 0 ? len / speed : 0) * (penalty?.get(b.id) ?? 1);
+      const firePen = isFireBranch(b) ? FIRE_BRANCH_PENALTY : 1;
+      const t = (len > 0 ? len / speed : 0) * (penalty?.get(b.id) ?? 1) * firePen + (firePen > 1 ? FIRE_BRANCH_PENALTY : 0);
       const nd = curD + t;
       if (nd < (dist.get(edge.toId) ?? Infinity)) {
         dist.set(edge.toId, nd);
@@ -535,7 +565,10 @@ export function findRescueRoutes(
     }
   }
 
-  variants.sort((a, b) => a.totalTime - b.totalTime);
+  // Варианты через очаг пожара — всегда в конце (их время по нормативам
+  // может быть меньше, но идти через пожар нельзя).
+  const viaFire = (v: RescueRouteVariant) => v.branchIds.some(id => isFireBranch(branchMap.get(id))) ? 1 : 0;
+  variants.sort((a, b) => (viaFire(a) - viaFire(b)) || (a.totalTime - b.totalTime));
   variants.forEach((v, i) => { v.index = i; });
   return variants;
 }
@@ -589,6 +622,10 @@ export function calcRescue(
     const segEdges = buildPath(prev, to);
     allPathEdges.push(...segEdges);
   }
+  }
+  {
+    const fw = fireWarning(allPathEdges, new Map(branches.map(b => [b.id, b])));
+    if (fw) warnings.push(fw);
   }
 
   // ── Карта ветвей и узлов ──────────────────────────────────────────────────
@@ -995,7 +1032,8 @@ export function calcWorkerPath(
         const smokeK = sz === "clean" ? 1.0 : sz === "smoky_low" ? 0.75 : 0.55;
         const speed = Math.max(1, Math.round(getWorkerSpeed(method, signedAngle) * smokeK));
         const len = effLength(b);
-        const t = len > 0 ? len / speed : 0;
+        const firePen = isFireBranch(b) ? FIRE_BRANCH_PENALTY : 1;
+        const t = (len > 0 ? len / speed : 0) * firePen + (firePen > 1 ? FIRE_BRANCH_PENALTY : 0);
         const nd = curD + t;
         if (nd < (dist.get(edge.toId) ?? Infinity)) {
           dist.set(edge.toId, nd);
@@ -1022,6 +1060,10 @@ export function calcWorkerPath(
     }
     const segEdges = buildPath(prev, to);
     allPathEdges.push(...segEdges);
+  }
+  {
+    const fw = fireWarning(allPathEdges, branchById);
+    if (fw) warnings.push(fw);
   }
 
   const nodeMap = new Map(nodes.map(n => [n.id, n]));

@@ -125,6 +125,9 @@ def is_bulkhead_passable(bulkhead_id: str) -> bool:
 
 # ─── Дейкстра ─────────────────────────────────────────────────────────────────
 
+FIRE_BRANCH_PENALTY = 1e4
+
+
 def build_dijkstra(nodes, branch_map, adj, start_id):
     dist = {n["id"]: math.inf for n in nodes}
     prev = {n["id"]: None for n in nodes}
@@ -153,6 +156,11 @@ def build_dijkstra(nodes, branch_map, adj, start_id):
             if not math.isfinite(length):
                 length = 0.0
             t = length / speed if speed > 0 and length > 0 else 0
+            # Очаг пожара: ветвь не удаляется (иначе при единственной связи
+            # маршрут не находился), а становится очень «дорогой» — выбирается
+            # любой обход, через очаг только если другого пути нет.
+            if b.get("hasFire"):
+                t = t * FIRE_BRANCH_PENALTY + FIRE_BRANCH_PENALTY
             nd = cur_d + t
             nbr = edge["toId"]
             if nd < dist.get(nbr, math.inf):
@@ -318,6 +326,19 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
                 continue
             seg_edges = build_path(prev, to)
             all_path_edges.extend(seg_edges)
+
+    fire_ids = []
+    for e in all_path_edges:
+        bb = branch_map.get(e["branchId"])
+        if bb and bb.get("hasFire") and e["branchId"] not in fire_ids:
+            fire_ids.append(e["branchId"])
+    if fire_ids:
+        names = ", ".join(
+            f"«{branch_map[i].get('name')}»" if branch_map[i].get("name") else f"№{branch_map[i].get('number') or i}"
+            for i in fire_ids
+        )
+        warnings.append(f"Маршрут проходит через выработку с очагом пожара ({names}) — обходного пути нет. "
+                        "Задайте обход через промежуточные узлы или проверьте схему.")
 
     segments = build_segments(all_path_edges, branch_map, node_map, o2c)
     back_edges = [{"nodeId": e["nodeId"], "branchId": e["branchId"], "forward": not e["forward"]}
