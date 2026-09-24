@@ -103,6 +103,7 @@ import { runFireMode } from "@/lib/fireModeRun";
 import { runExplosionMode } from "@/lib/explosionModeRun";
 import { resolveBulkheadSolid } from "@/lib/rescueCalculator";
 import { exportExplosionReport } from "@/lib/explosionReport";
+import BrandMark from "@/components/BrandMark";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
@@ -5735,8 +5736,11 @@ export default function CadPage() {
       )}
 
       {/* ═══ RIBBON TABS ══════════════════════════════════════════════════ */}
-      <div className="flex items-end h-7 px-1 gap-0.5"
-        style={{ background: "var(--c-s3, #f0f0f0)", borderBottom: "1px solid var(--c-b3, #b8b8b8)" }}>
+      <div className="tab-bar flex items-stretch h-8 pr-1">
+        {/* Фирменный знак «ПВ» — слева от «Файла», шапка читается как бренд */}
+        <div className="tab-brand" title="ПВ-Система">
+          <BrandMark size={20} />
+        </div>
         <RibbonTabBtn label="Файл" active={activeRibbon === "file"} onClick={() => setActiveRibbon("file")} fileStyle />
         <RibbonTabBtn label="Главная" active={activeRibbon === "home"} onClick={() => selectRibbon("home")} />
         <RibbonTabBtn label="Схема" active={activeRibbon === "vent"} onClick={() => selectRibbon("vent")} />
@@ -5747,15 +5751,15 @@ export default function CadPage() {
         <RibbonTabBtn label="Справочники" active={activeRibbon === "general"} onClick={() => selectRibbon("general")} />
         <RibbonTabBtn label="Печать" active={false} onClick={() => setShowPrintDialog(true)} />
         <RibbonTabBtn label="Помощь" active={false} onClick={() => setShowHelpDialog(true)} />
-        <div className="ml-auto pr-2 pb-0.5">
+        <div className="ml-auto pr-1 flex items-center">
           {/* Сворачивание ленты. Стрелка смотрит вниз, когда лента развёрнута
               (клик — убрать), и вверх, когда свёрнута (клик — показать). */}
-          <button className="w-5 h-5 hover:bg-black/10 flex items-center justify-center"
+          <button className="tab-icon-btn w-6 h-6 flex items-center justify-center"
             onClick={toggleRibbonCollapsed}
             title={ribbonCollapsed ? "Развернуть ленту (Ctrl+F1)" : "Свернуть ленту (Ctrl+F1)"}>
             <svg width="10" height="10" viewBox="0 0 10 10">
               <path d={ribbonCollapsed ? "M1 7 L5 3 L9 7" : "M1 3 L5 7 L9 3"}
-                stroke="#444" fill="none" strokeWidth="1.2" />
+                stroke="currentColor" fill="none" strokeWidth="1.3" />
             </svg>
           </button>
         </div>
@@ -14877,17 +14881,23 @@ export default function CadPage() {
             {isDemo && (
               <div className="absolute inset-0 pointer-events-none flex items-center justify-center"
                 style={{ zIndex: 10 }}>
-                <div className="select-none"
-                  style={{
-                    fontSize: "clamp(48px, 8vw, 120px)",
-                    fontWeight: 900,
-                    color: "rgba(180,30,30,0.07)",
-                    letterSpacing: "0.15em",
-                    transform: "rotate(-35deg)",
-                    userSelect: "none",
-                    whiteSpace: "nowrap",
+                {/* Водяной знак демо — фирменной надписью «ПВ-Система» в янтаре
+                    кнопки «Расчёт сети»: полупрозрачно, под углом, не мешает работе. */}
+                <div className="select-none flex flex-col items-center"
+                  style={{ transform: "rotate(-30deg)", opacity: 0.16, userSelect: "none", whiteSpace: "nowrap" }}>
+                  <div style={{
+                    fontSize: "clamp(44px, 7vw, 108px)", fontWeight: 800, letterSpacing: "0.02em", lineHeight: 1,
+                    fontFamily: "var(--font-ui)", color: "#e8a317",
+                    WebkitTextStroke: "1.5px #c98a0c",
                   }}>
-                  ДЕМО
+                    ПВ-Система
+                  </div>
+                  <div style={{
+                    marginTop: "0.6em", fontSize: "clamp(14px, 1.6vw, 22px)", fontWeight: 700,
+                    letterSpacing: "0.5em", color: "#c98a0c", fontFamily: "var(--font-ui)",
+                  }}>
+                    ДЕМО-ВЕРСИЯ
+                  </div>
                 </div>
               </div>
             )}

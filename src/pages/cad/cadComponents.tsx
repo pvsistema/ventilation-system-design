@@ -104,31 +104,17 @@ export function canvasContextItems(): ContextMenuItem[] {
  */
 const RIBBON_TAB_W = 96;
 
-export function RibbonTabBtn({ label, active, onClick, fileStyle, highlight }: {
-  label: string; active: boolean; onClick: () => void; fileStyle?: boolean; highlight?: boolean;
+export function RibbonTabBtn({ label, active, onClick, fileStyle, highlight, title }: {
+  label: string; active: boolean; onClick: () => void; fileStyle?: boolean; highlight?: boolean; title?: string;
 }) {
-  if (fileStyle) {
-    return (
-      <button onClick={onClick}
-        className="h-6 text-xs text-white rounded-t-sm hover:brightness-110 text-center shrink-0 whitespace-nowrap"
-        style={{ width: RIBBON_TAB_W, background: "var(--c-blue-bg, #2563eb)", fontWeight: 500 }}>
-        {label}
-      </button>
-    );
-  }
+  // Вкладки — светлый текст на антрацитовой шапке. Активная отмечается
+  // янтарной полосой снизу (3 px), а не «ушком» с рамкой, как в Office.
+  // «Файл» — янтарная кнопка-меню. Стили — классы .tab-* в index.css.
   return (
-    <button onClick={onClick}
-      className="h-6 text-xs rounded-t-sm transition-colors text-center shrink-0 whitespace-nowrap"
-      style={{
-        width: RIBBON_TAB_W,
-        background: active ? "var(--c-s2, #fafafa)" : "transparent",
-        borderTop: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
-        borderLeft: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
-        borderRight: active ? "1px solid var(--c-b3, #b8b8b8)" : "1px solid transparent",
-        marginBottom: active ? "-1px" : "0",
-        color: highlight ? "var(--c-blue, #2563eb)" : "var(--c-t1, #1f1f1f)",
-        fontWeight: active || highlight ? 600 : 400,
-      }}>
+    <button onClick={onClick} title={title}
+      data-active={active ? "1" : undefined}
+      className={`${fileStyle ? "tab-file" : "tab-btn"} ${highlight ? "tab-hl" : ""} h-full text-xs text-center shrink-0 whitespace-nowrap`}
+      style={{ width: RIBBON_TAB_W }}>
       {label}
     </button>
   );
