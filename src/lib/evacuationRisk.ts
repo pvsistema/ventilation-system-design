@@ -197,7 +197,7 @@ export function calcEvacuationRisk(
     fireComputedCO: b.fireComputedCO,
     flow: b.flow,
     hasBulkhead: b.hasBulkhead, bulkheadId: b.bulkheadId,
-    isLeakage: b.isLeakage, isVentPipeBranch: b.isVentPipeBranch,
+    isLeakage: b.isLeakage, isVentPipeBranch: b.isVentPipeBranch, hasFire: b.hasFire,
     resistance: b.resistance,
   }));
 

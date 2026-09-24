@@ -36,6 +36,8 @@ interface BranchLite {
   isLeakage?: boolean;
   /** Нить вентрубопровода — по трубе человек не идёт */
   isVentPipeBranch?: boolean;
+  /** Очаг пожара — через эту выработку маршрут не строится */
+  hasFire?: boolean;
   fireComputedSmokeDens?: number;
   fireComputedCO?: number;
 }

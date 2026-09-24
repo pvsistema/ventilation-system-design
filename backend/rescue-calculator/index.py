@@ -281,6 +281,9 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
         # по ставу труб, а длина пути в дыму занижалась.
         if b.get("isLeakage") or b.get("isVentPipeBranch"):
             continue
+        # Выработка с очагом пожара — через очаг люди не проходят.
+        if b.get("hasFire"):
+            continue
         _len = float(b.get("length") or 0)
         if not math.isfinite(_len) or _len <= 0:
             continue
@@ -313,7 +316,9 @@ def calc_rescue(nodes, branches, start_node_id, target_node_id, params):
             to  = checkpoints[i + 1]
             dist, prev = build_dijkstra(nodes, branch_map, adj, frm)
             if dist.get(to, math.inf) == math.inf:
-                warnings.append(f"Маршрут от узла {frm} до узла {to} не найден — проверьте связность сети")
+                hint = (" (выработка с очагом пожара исключена из маршрута — задайте обход через промежуточные узлы)"
+                        if any(bb.get("hasFire") for bb in branches) else "")
+                warnings.append(f"Маршрут от узла {frm} до узла {to} не найден — проверьте связность сети{hint}")
                 route_ok = False
                 continue
             seg_edges = build_path(prev, to)
