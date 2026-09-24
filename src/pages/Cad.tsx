@@ -15106,6 +15106,8 @@ export default function CadPage() {
       nodes={nodes}
       branches={branches}
       horizons={horizons}
+      schemaSymbols={schemaSymbols}
+      bulkheadRByBranch={bulkheadRByBranch}
       projectFileName={suggestedFileName()}
       unitsConfig={unitsConfig}
       ventNorms={ventNorms}

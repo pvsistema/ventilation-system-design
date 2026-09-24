@@ -5,6 +5,7 @@
 // реально используется (единый объект props). Поведение 1:1 с исходником.
 // ─────────────────────────────────────────────────────────────────────────────
 import type React from "react";
+import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import ExcelImportDialog from "@/components/cad/ExcelImportDialog";
@@ -42,6 +43,10 @@ export interface CadImportDialogsProps {
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
+  /** Значки схемы (перемычки, замерные станции) — для выгрузки в Excel. */
+  schemaSymbols: SchemaSymbol[];
+  /** Сопротивление вентсооружений по ветвям, кМюрг — для выгрузки в Excel. */
+  bulkheadRByBranch: Map<string, number>;
   projectFileName: string;
   unitsConfig: UnitsConfig;
 
@@ -149,6 +154,10 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           nodes={p.nodes}
           horizons={p.horizons}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
+          unitsConfig={p.unitsConfig}
+          ventNorms={p.ventNorms}
+          schemaSymbols={p.schemaSymbols}
+          bulkheadRByBranch={p.bulkheadRByBranch}
           onClose={() => p.setShowExcelExport(false)}
         />
       )}

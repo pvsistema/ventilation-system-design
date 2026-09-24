@@ -10,10 +10,18 @@
 import { useState, useMemo } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode, Horizon } from "@/lib/topology";
+import type { SchemaSymbol } from "@/pages/cad/cadTypes";
+import type { UnitsConfig } from "@/lib/unitsConfig";
+import type { VentNorms } from "@/lib/ventSections";
 import {
   BRANCH_COLUMNS,
   NODE_COLUMNS,
   BRANCH_PRESETS,
+  NODE_PRESETS,
+  PRESET_ROW_FILTER,
+  columnLabel,
+  cleanText,
+  countRows,
   exportToExcel,
   type ExportAreaId,
   type ExportType,
@@ -25,33 +33,47 @@ interface Props {
   nodes: TopoNode[];
   horizons: Horizon[];
   projectName?: string;
+  /** Единицы проекта — те же, что на схеме и в панели свойств. */
+  unitsConfig?: UnitsConfig;
+  /** Нормы ФНиП — для допустимых скоростей. */
+  ventNorms?: VentNorms;
+  /** Значки схемы: перемычки и замерные станции. */
+  schemaSymbols?: SchemaSymbol[];
+  /** Сопротивление вентсооружений по ветвям, кМюрг. */
+  bulkheadRByBranch?: Map<string, number>;
   onClose: () => void;
 }
 
 /** Шаблоны столбцов: короткое имя, пояснение и иконка. */
 const TEMPLATES: Record<ExportPreset, { title: string; hint: string; icon: string }> = {
-  all:         { title: "Полная таблица",        hint: "Все доступные столбцы",                  icon: "Table" },
-  main_vent:   { title: "Модель сети",           hint: "Геометрия, сопротивления, расходы",      icon: "Network" },
-  flows:       { title: "Расходы воздуха",       hint: "Расход и скорость по выработкам",        icon: "Wind" },
-  depressions: { title: "Депрессии",             hint: "Падение давления и сопротивления",       icon: "Gauge" },
-  speed_check: { title: "Проверка скоростей",    hint: "Скорость против допустимых пределов",    icon: "ShieldCheck" },
-  stability:   { title: "Устойчивость",          hint: "Тепловые депрессии, опрокидывание",      icon: "Flame" },
-  objects:     { title: "Объекты на выработках", hint: "Сечение, сопротивление, расход",         icon: "Box" },
-  waterpipes:  { title: "Трубопроводы",          hint: "Минимальный набор для трубной сети",     icon: "Droplets" },
-  custom:      { title: "Свой набор",            hint: "Столбцы отмечены вручную",               icon: "SlidersHorizontal" },
+  all:         { title: "Полная таблица",        hint: "Все доступные столбцы",                          icon: "Table" },
+  main_vent:   { title: "Модель сети",           hint: "Геометрия, сопротивления, расход, депрессия",   icon: "Network" },
+  flows:       { title: "Расходы воздуха",       hint: "Расход и скорость по выработкам",                icon: "Wind" },
+  depressions: { title: "Депрессии",             hint: "Сопротивления и депрессии с вентсооружениями",   icon: "Gauge" },
+  speed_check: { title: "Проверка скоростей",    hint: "Скорость против норм ФНиП и vmax ветви",         icon: "ShieldCheck" },
+  objects:     { title: "Оборудование",          hint: "Только выработки с перемычками, вентиляторами, замерными станциями", icon: "Box" },
+  fire:        { title: "Пожар",                 hint: "Пожарная нагрузка и результаты расчёта пожара", icon: "Flame" },
+  pipes:       { title: "Трубопроводы",          hint: "Только выработки с вентставом или водопроводом", icon: "Droplets" },
+  node_coords: { title: "Координаты",            hint: "Номер, атмосфера, X / Y / Z",                    icon: "MapPin" },
+  node_air:    { title: "Параметры воздуха",     hint: "Давление, температура, влажность, газы",         icon: "Thermometer" },
+  custom:      { title: "Свой набор",            hint: "Столбцы отмечены вручную",                       icon: "SlidersHorizontal" },
 };
 
 const BRANCH_TEMPLATE_ORDER: ExportPreset[] =
-  ["all", "main_vent", "flows", "depressions", "speed_check", "stability", "objects", "waterpipes", "custom"];
-const NODE_TEMPLATE_ORDER: ExportPreset[] = ["all", "custom"];
+  ["all", "main_vent", "flows", "depressions", "speed_check", "objects", "fire", "pipes", "custom"];
+const NODE_TEMPLATE_ORDER: ExportPreset[] = ["all", "node_coords", "node_air", "custom"];
 
-export default function ExcelExportDialog({ branches, nodes, horizons, projectName = "ПВ-Система", onClose }: Props) {
+export default function ExcelExportDialog({
+  branches, nodes, horizons, projectName = "ПВ-Система",
+  unitsConfig, ventNorms, schemaSymbols, bulkheadRByBranch, onClose,
+}: Props) {
   const [areaId, setAreaId] = useState<ExportAreaId>("all");
   const [type, setType]     = useState<ExportType>("branches");
   const [preset, setPreset] = useState<ExportPreset>("all");
   const [keys, setKeys]     = useState<Set<string>>(() => new Set(BRANCH_COLUMNS.map(c => c.key)));
   const [query, setQuery]   = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [busy, setBusy] = useState(false);
 
   const allColumns = type === "branches" ? BRANCH_COLUMNS : NODE_COLUMNS;
 
@@ -59,28 +81,38 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
     const q = query.trim().toLowerCase();
     const map = new Map<string, typeof allColumns>();
     allColumns.forEach(c => {
-      if (q && !c.label.toLowerCase().includes(q) && !c.group.toLowerCase().includes(q)) return;
+      if (q && !columnLabel(c, unitsConfig).toLowerCase().includes(q) && !c.group.toLowerCase().includes(q)) return;
       if (!map.has(c.group)) map.set(c.group, []);
       map.get(c.group)!.push(c);
     });
     return map;
-  }, [allColumns, query]);
+  }, [allColumns, query, unitsConfig]);
 
-  const nodeCount = useMemo(() => nodes.filter(n => !n.atmosphereLink).length, [nodes]);
-  const rowCount = type === "branches"
-    ? (areaId === "all" ? branches.length : branches.filter(b => b.horizonId === areaId).length)
-    : nodeCount;
+  // Шаблоны «Оборудование» и «Трубопроводы» выгружают только «свои» выработки.
+  // Фильтр живёт, пока шаблон выбран; при ручной правке столбцов он остаётся.
+  const [rowFilter, setRowFilter] = useState<ExportPreset | undefined>(undefined);
+
+  const rowCount = useMemo(() => countRows({
+    areaId, type, branches, nodes, horizons,
+    units: unitsConfig, norms: ventNorms, symbols: schemaSymbols, bulkheadRByBranch,
+    rowFilter: type === "branches" ? rowFilter : undefined,
+  }), [areaId, type, branches, nodes, horizons, unitsConfig, ventNorms, schemaSymbols, bulkheadRByBranch, rowFilter]);
+
+  const presetsFor = (t: ExportType) => (t === "branches" ? BRANCH_PRESETS : NODE_PRESETS);
 
   function applyPreset(p: ExportPreset) {
     setPreset(p);
+    if (p === "custom") return;
     if (p === "all") setKeys(new Set(allColumns.map(c => c.key)));
-    else if (type === "branches" && p !== "custom") setKeys(new Set(BRANCH_PRESETS[p]));
+    else setKeys(new Set(presetsFor(type)[p] ?? []));
+    setRowFilter(PRESET_ROW_FILTER[p] ? p : undefined);
   }
 
   function changeType(t: ExportType) {
     if (t === type) return;
     setType(t);
     setPreset("all");
+    setRowFilter(undefined);
     setQuery("");
     setCollapsed(new Set());
     setKeys(new Set((t === "branches" ? BRANCH_COLUMNS : NODE_COLUMNS).map(c => c.key)));
@@ -114,18 +146,25 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
   }
 
   const selectedCount = keys.size;
-  const ready = selectedCount > 0 && rowCount > 0;
+  const ready = selectedCount > 0 && rowCount > 0 && !busy;
 
-  function handleExport() {
+  async function handleExport() {
     if (!ready) return;
-    exportToExcel({
-      areaId: type === "branches" ? areaId : "all",
-      type,
-      // Порядок столбцов — как в справочнике, а не как кликал пользователь.
-      selectedKeys: allColumns.filter(c => keys.has(c.key)).map(c => c.key),
-      branches, nodes, horizons, projectName,
-    });
-    onClose();
+    setBusy(true);
+    try {
+      await exportToExcel({
+        areaId,
+        type,
+        // Порядок столбцов — как в справочнике, а не как кликал пользователь.
+        selectedKeys: allColumns.filter(c => keys.has(c.key)).map(c => c.key),
+        branches, nodes, horizons, projectName,
+        units: unitsConfig, norms: ventNorms, symbols: schemaSymbols, bulkheadRByBranch,
+        rowFilter: type === "branches" ? rowFilter : undefined,
+      });
+      onClose();
+    } finally {
+      setBusy(false);
+    }
   }
 
   const templateOrder = type === "branches" ? BRANCH_TEMPLATE_ORDER : NODE_TEMPLATE_ORDER;
@@ -166,7 +205,7 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
               <div className="grid grid-cols-2 gap-1.5">
                 {([
                   { t: "branches" as const, label: "Выработки", icon: "GitCommitHorizontal", count: branches.length },
-                  { t: "nodes" as const,    label: "Узлы",      icon: "CircleDot",           count: nodeCount },
+                  { t: "nodes" as const,    label: "Узлы",      icon: "CircleDot",           count: nodes.length },
                 ]).map(o => {
                   const on = type === o.t;
                   return (
@@ -186,15 +225,20 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
             </div>
 
             {/* Горизонт */}
-            {type === "branches" && (
+            {(
               <div>
                 <SectionTitle>Горизонт</SectionTitle>
                 <select value={areaId} onChange={e => setAreaId(e.target.value as ExportAreaId)}
                   className="w-full text-[12px] rounded-md px-2 py-1.5 outline-none"
                   style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)" }}>
                   <option value="all">Вся схема</option>
-                  {horizons.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+                  {horizons.map(h => <option key={h.id} value={h.id}>{cleanText(h.name) || "(без названия)"}</option>)}
                 </select>
+                {type === "nodes" && areaId !== "all" && (
+                  <div className="text-[10px] mt-1 leading-snug" style={{ color: "var(--c-t4, #9ca3af)" }}>
+                    Узлы, в которые входят выработки горизонта
+                  </div>
+                )}
               </div>
             )}
 
@@ -205,7 +249,7 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
                 {templateOrder.map(p => {
                   const t = TEMPLATES[p];
                   const on = preset === p;
-                  const n = p === "all" ? allColumns.length : p === "custom" ? null : BRANCH_PRESETS[p].length;
+                  const n = p === "all" ? allColumns.length : p === "custom" ? null : (presetsFor(type)[p]?.length ?? 0);
                   return (
                     <button key={p} onClick={() => applyPreset(p)}
                       disabled={p === "custom" && !on}
@@ -294,13 +338,16 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
                     {isOpen && (
                       <div className="grid grid-cols-2 gap-x-3 px-2.5 py-1.5">
                         {cols.map(col => (
-                          <label key={col.key}
+                          <label key={col.key} title={col.hint}
                             className="flex items-start gap-2 py-1 px-1 rounded cursor-pointer hover:bg-black/[0.03]">
                             <input type="checkbox" checked={keys.has(col.key)} onChange={() => toggleKey(col.key)}
                               className="w-3.5 h-3.5 mt-px shrink-0 cursor-pointer"
                               style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
                             <span className="text-[11.5px] leading-snug" style={{ color: "var(--c-t2, #374151)" }}>
-                              {col.label}
+                              {columnLabel(col, unitsConfig)}
+                              {col.hint && (
+                                <span className="block text-[10px] leading-tight" style={{ color: "var(--c-t4, #9ca3af)" }}>{col.hint}</span>
+                              )}
                             </span>
                           </label>
                         ))}
@@ -322,7 +369,7 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
           </button>
           <div className="flex-1 text-[11px] text-right" style={{ color: "var(--c-t4, #9ca3af)" }}>
             {rowCount === 0
-              ? (type === "branches" ? "На выбранном горизонте нет выработок" : "В схеме нет узлов")
+              ? (rowFilter ? "Нет выработок для этого шаблона" : type === "branches" ? "На выбранном горизонте нет выработок" : "Нет узлов")
               : selectedCount === 0
                 ? "Отметьте хотя бы один столбец"
                 : `${rowCount} строк × ${selectedCount} столбцов`}
@@ -330,7 +377,7 @@ export default function ExcelExportDialog({ branches, nodes, horizons, projectNa
           <button onClick={handleExport} disabled={!ready}
             className="flex items-center gap-1.5 px-5 py-1.5 text-sm font-semibold text-white rounded-lg transition-colors"
             style={{ background: ready ? "var(--c-green, #15803d)" : "#9ca3af", cursor: ready ? "pointer" : "not-allowed" }}>
-            <Icon name="Download" size={14} />
+            <Icon name={busy ? "Loader2" : "Download"} size={14} className={busy ? "animate-spin" : undefined} />
             Выгрузить .xlsx
           </button>
         </div>
