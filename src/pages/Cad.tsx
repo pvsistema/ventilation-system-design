@@ -103,7 +103,6 @@ import { runFireMode } from "@/lib/fireModeRun";
 import { runExplosionMode } from "@/lib/explosionModeRun";
 import { resolveBulkheadSolid } from "@/lib/rescueCalculator";
 import { exportExplosionReport } from "@/lib/explosionReport";
-import BrandMark from "@/components/BrandMark";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
@@ -5737,10 +5736,6 @@ export default function CadPage() {
 
       {/* ═══ RIBBON TABS ══════════════════════════════════════════════════ */}
       <div className="tab-bar flex items-stretch h-8 pr-1">
-        {/* Фирменный знак «ПВ» — слева от «Файла», шапка читается как бренд */}
-        <div className="tab-brand" title="ПВ-Система">
-          <BrandMark size={20} />
-        </div>
         <RibbonTabBtn label="Файл" active={activeRibbon === "file"} onClick={() => setActiveRibbon("file")} fileStyle />
         <RibbonTabBtn label="Главная" active={activeRibbon === "home"} onClick={() => selectRibbon("home")} />
         <RibbonTabBtn label="Схема" active={activeRibbon === "vent"} onClick={() => selectRibbon("vent")} />
