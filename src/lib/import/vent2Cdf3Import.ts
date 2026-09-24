@@ -94,6 +94,46 @@ export interface Vent2Cdf3Result {
   debug: string;
 }
 
+
+/** Периметр арки на единицу √S — сверено по выгрузке рудника (P ≈ 3,84·√S). */
+const ARCH_P_K = 3.84;
+/** Соотношение сторон прямоугольного сечения при восстановлении размеров. */
+const RECT_W_TO_H = 1.25;
+
+/**
+ * Форма и размеры сечения по коду формы из .cdf3 и площади.
+ *
+ * В записи выработки лежит только площадь и код формы — ширины, высоты и
+ * диаметра нет. Размеры восстанавливаем из площади так, чтобы площадь
+ * совпала с файловой точно, а периметр соответствовал форме:
+ *   круг        — D = 2·√(S/π),  P = π·D;
+ *   прямоугол.  — стороны в отношении 1,25 : 1;
+ *   арка        — P ≈ 3,84·√S, как и раньше.
+ * Незнакомый код: вертикальная выработка (угол > 60°) — круг, иначе арка.
+ */
+function sectionFromCdf3(code: number, area: number, angleDeg: number): Partial<TopoBranch> {
+  if (!(area > 0)) return { shape: "arch", area: 0, perimeter: 0, manualSection: false };
+  const kind: "round" | "rect" | "arch" =
+    code === 3 ? "round"
+    : code === 0 ? "rect"
+    : code === 1 ? "arch"
+    : Math.abs(angleDeg) > 60 ? "round" : "arch";
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+  if (kind === "round") {
+    const d = 2 * Math.sqrt(area / Math.PI);
+    const p = Math.PI * d;
+    return { shape: "round", diameter: r2(d), area, perimeter: r2(p), dh: r2(4 * area / p), manualSection: true };
+  }
+  if (kind === "rect") {
+    const h = Math.sqrt(area / RECT_W_TO_H);
+    const w = area / h;
+    const p = 2 * (w + h);
+    return { shape: "rect", rectWidth: r2(w), rectHeight: r2(h), area, perimeter: r2(p), dh: r2(4 * area / p), manualSection: true };
+  }
+  const p = ARCH_P_K * Math.sqrt(area);
+  return { shape: "arch", area, perimeter: r2(p), dh: r2(4 * area / p), manualSection: true };
+}
+
 /** Признак файла .cdf3 — метка формата в первых 16 байтах. */
 const CDF3_GUID = "f8679fe41d73dc419553b2fc397b45cb";
 
@@ -113,6 +153,13 @@ function decodeCp1251(bytes: Uint8Array): string {
 interface RawNode { id: number; x: number; y: number; z: number; atm: boolean }
 interface RawBranch {
   from: number; to: number; area: number; name: string; layer: number;
+  /**
+   * Код формы сечения — байт сразу за площадью (+8 от поля площади).
+   * Сверено по модели «Чебачье»: 1 — арка (штреки, орты), 3 — круг (стволы,
+   * восстающие, рукава Ø1 м с S = 0,79 = π·0,5²), 0 — прямоугольник
+   * (вентканалы, калориферная). -1 — байт не прочитан.
+   */
+  shapeCode: number;
   /** Перемычки, найденные внутри записи этой выработки. */
   bulkheads: RawCdf3Bulkhead[];
 }
@@ -292,12 +339,11 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
       manualLength: true,
       angle,
       manualAngle: false,
-      area: rb.area,
-      manualSection: rb.area > 0,
-      // Периметр в файле отсутствует — оцениваем по сечению как для арочной
-      // выработки (P ≈ 3.84·√S, отношение сверено по выгрузке рудника).
-      perimeter: rb.area > 0 ? Math.round(3.84 * Math.sqrt(rb.area) * 100) / 100 : 0,
-      shape: "arch",
+      // Форма сечения — из файла (код за площадью), размеры — из площади.
+      // Периметра в файле нет, поэтому он считается по форме. Раньше форма
+      // не читалась вовсе и ВСЕМ выработкам ставилась арка — в том числе
+      // стволам и трубопроводам.
+      ...sectionFromCdf3(rb.shapeCode, rb.area, angle),
       // Сопротивление в файле не хранится — его считает сама ПВ-Система.
       resistanceMode: "alpha",
       alphaCoef: 12,
@@ -600,7 +646,8 @@ function readBranches(raw: Uint8Array, dv: DataView, nodes: RawNode[], tail: num
     }
     // Номер горизонта — 2 байта на постоянном смещении от площади сечения.
     const layer = ao + 179 <= raw.length ? dv.getUint16(ao + 177, true) : 0;
-    return { from: a, to: b, area, name, layer, bulkheads: [] };
+    const shapeCode = ao + 9 <= raw.length ? raw[ao + 8] : -1;
+    return { from: a, to: b, area, name, layer, shapeCode, bulkheads: [] };
   };
 
   const out: RawBranch[] = [];
