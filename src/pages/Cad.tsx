@@ -6727,7 +6727,7 @@ export default function CadPage() {
               disabled={!explosionCalcDone || !explosionBarriers}
               onClick={() => {
                 if (!explosionBarriers) return;
-                exportExplosionReport({
+                void exportExplosionReport({
                   projectName: projectFileName.replace(/\.vproj$/, "") || "Подземный рудник",
                   branches, nodes,
                   symbols: schemaSymbols,

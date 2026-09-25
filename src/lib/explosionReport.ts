@@ -4,14 +4,22 @@
 // Книга собирается из того же результата, по которому окрашена схема
 // (runExplosionMode): отдельного пересчёта здесь нет, чтобы протокол
 // не мог разойтись со схемой.
-//   • «Протокол»   — очаги, параметры волны, радиусы зон поражения, вывод
-//   • «Перемычки»  — давление волны и отражения, устояла ли, доля прошедшей волны
+//   • «Протокол»   — очаги, параметры источника и волны, зоны поражения, итог
+//   • «Перемычки»  — давление волны, прочность, устояла ли, доля прошедшей волны
 //   • «Выработки»  — давление волны по выработкам, куда она дошла
+//
+// Пишется через ExcelJS: бесплатная сборка xlsx не сохраняет стили, и
+// таблицы в файле выходили без рамок, заливки и формата чисел.
+//
+// Для ГАЗА И ПЫЛИ по методике ВГСЧ тротиловый эквивалент в протокол не
+// выводится: методика его не использует — расчёт ведётся от энергии взрыва Ен
+// и объёма загазования V₀. Для ВВ, наоборот, главная величина — Q_тнт.
 // ─────────────────────────────────────────────────────────────────────────────
-import * as XLSX from "xlsx";
+import type ExcelJSNs from "exceljs";
 import { type TopoBranch, type TopoNode } from "@/lib/topology";
-import { type ExplosionResult } from "@/lib/explosionCalculator";
+import { type ExplosionResult, GAS_TYPES, EXPLOSIVE_TYPES, concUnitLabel } from "@/lib/explosionCalculator";
 import { barrierDisplayName, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
+import { combustionMode } from "@/lib/vgschBlast";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 
 export interface ExplosionReportInput {
@@ -25,239 +33,332 @@ export interface ExplosionReportInput {
   duringEmergency?: boolean;
 }
 
-const COLS = 8;
-const num = (v: number | undefined, d = 1): string =>
-  v == null || !Number.isFinite(v) ? "—" : v.toLocaleString("ru-RU", { maximumFractionDigits: d, minimumFractionDigits: 0 });
+type Ws = ExcelJSNs.Worksheet;
+type Cell = string | number | null;
+type Tone = "bad" | "ok" | "muted" | "warn" | undefined;
 
-// ─── Стили (как в протоколе взрывоопасности) ─────────────────────────────────
-const border = (rgb: string) => ({
-  top: { style: "thin", color: { rgb } }, bottom: { style: "thin", color: { rgb } },
-  left: { style: "thin", color: { rgb } }, right: { style: "thin", color: { rgb } },
-});
-const titleStyle = (): XLSX.CellStyle => ({
-  font: { bold: true, sz: 12 }, alignment: { horizontal: "center", vertical: "center", wrapText: true },
-});
-const sectionStyle = (): XLSX.CellStyle => ({ font: { bold: true, sz: 10 } });
-const headerStyle = (): XLSX.CellStyle => ({
-  font: { bold: true, sz: 9, color: { rgb: "1F3864" } },
-  fill: { fgColor: { rgb: "DCE6F1" }, patternType: "solid" },
-  alignment: { horizontal: "center", vertical: "center", wrapText: true },
-  border: border("8EA9C1"),
-} as XLSX.CellStyle);
-type Tone = "bad" | "ok" | "muted" | undefined;
-const cellStyle = (i: number, tone?: Tone): XLSX.CellStyle => {
-  const fill = tone === "bad" ? "FFC7CE" : tone === "ok" ? "C6EFCE" : i % 2 === 0 ? "FFFFFF" : "F2F5FB";
-  const color = tone === "bad" ? "9C0006" : tone === "ok" ? "006100" : tone === "muted" ? "7F7F7F" : "000000";
-  return {
-    font: { sz: 9, color: { rgb: color }, bold: tone === "bad" },
-    fill: { fgColor: { rgb: fill }, patternType: "solid" },
-    alignment: { vertical: "center", wrapText: true },
-    border: border("D0D8E8"),
-  } as XLSX.CellStyle;
-};
-function style(ws: XLSX.WorkSheet, r: number, c: number, s: XLSX.CellStyle) {
-  const ref = XLSX.utils.encode_cell({ r, c });
-  if (!ws[ref]) ws[ref] = { t: "s", v: "" };
-  ws[ref].s = s;
+// ─── Оформление ──────────────────────────────────────────────────────────────
+const LINE = { style: "thin" as const, color: { argb: "FF7F8FA6" } };
+const BOX = { top: LINE, left: LINE, bottom: LINE, right: LINE };
+const HEAD_FILL = { type: "pattern" as const, pattern: "solid" as const, fgColor: { argb: "FFD7E7EE" } };
+const TONE_FILL: Record<string, string> = { bad: "FFFFC7CE", ok: "FFC6EFCE", warn: "FFFFEB9C", zebra: "FFF4F7FA" };
+const TONE_FONT: Record<string, string> = { bad: "FF9C0006", ok: "FF006100", warn: "FF7F6000", muted: "FF7F7F7F" };
+
+/** Таблица с рамками по всем ячейкам: шапка + строки. Возвращает номер следующей строки. */
+function table(
+  ws: Ws, startRow: number, headers: string[], rows: Cell[][],
+  opts: { tones?: Tone[]; numFmt?: (string | undefined)[]; align?: ("left" | "center" | "right")[] } = {},
+): number {
+  const head = ws.getRow(startRow);
+  headers.forEach((h, i) => {
+    const c = head.getCell(i + 1);
+    c.value = h;
+    c.font = { bold: true, size: 10, color: { argb: "FF173D52" } };
+    c.fill = HEAD_FILL;
+    c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    c.border = BOX;
+  });
+  head.height = Math.max(30, 15 * Math.max(...headers.map(h => Math.ceil(h.length / 14))));
+  rows.forEach((r, ri) => {
+    const row = ws.getRow(startRow + 1 + ri);
+    const tone = opts.tones?.[ri];
+    r.forEach((v, ci) => {
+      const c = row.getCell(ci + 1);
+      c.value = v ?? "—";
+      c.border = BOX;
+      c.font = { size: 10, bold: tone === "bad", color: tone ? { argb: TONE_FONT[tone] ?? "FF000000" } : undefined };
+      const fill = tone && TONE_FILL[tone] ? TONE_FILL[tone] : ri % 2 === 1 ? TONE_FILL.zebra : undefined;
+      if (fill) c.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fill } };
+      const isNum = typeof v === "number";
+      c.alignment = { vertical: "middle", wrapText: true, horizontal: opts.align?.[ci] ?? (isNum ? "right" : "left") };
+      if (isNum && opts.numFmt?.[ci]) c.numFmt = opts.numFmt[ci]!;
+    });
+  });
+  return startRow + 1 + rows.length + 1;
 }
+
+/** Заголовок раздела на всю ширину. */
+function section(ws: Ws, row: number, text: string, cols: number): number {
+  ws.mergeCells(row, 1, row, cols);
+  const c = ws.getCell(row, 1);
+  c.value = text;
+  c.font = { bold: true, size: 11, color: { argb: "FF1F2328" } };
+  c.border = { bottom: { style: "medium", color: { argb: "FFE8A317" } } };
+  return row + 1;
+}
+
+function title(ws: Ws, row: number, text: string, cols: number, size = 13): number {
+  ws.mergeCells(row, 1, row, cols);
+  const c = ws.getCell(row, 1);
+  c.value = text;
+  c.font = { bold: true, size };
+  c.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+  return row + 1;
+}
+
+const r1 = (v: number | undefined, d = 1) =>
+  v == null || !Number.isFinite(v) ? null : Math.round(v * 10 ** d) / 10 ** d;
 
 // ─── Подписи ─────────────────────────────────────────────────────────────────
 function makeLabel(nodes: TopoNode[]) {
   const byId = new Map(nodes.map(n => [n.id, n]));
+  const clean = (s?: string) => String(s ?? "").trim().replace(/^"(.*)"$/, "$1").trim();
   return (b: TopoBranch | undefined, id?: string) => {
     if (!b) return id ? `Ветвь ${id}` : "—";
     const fn = byId.get(b.fromId);
     const tn = byId.get(b.toId);
-    const nm = b.type || `Ветвь ${b.id}`;
+    const nm = clean(b.type) || `Ветвь ${b.id}`;
     return `${nm} (${fn?.number || fn?.id || "?"}→${tn?.number || tn?.id || "?"})`;
   };
 }
 
-function sourceLabel(b: TopoBranch): string {
-  const t = b.explosionSourceType ?? "mass";
-  if (t === "gas") return `Газ: ${b.explosionGasId ?? "methane"}`;
-  return `ВВ: ${b.explosionExplosiveId ?? "ammonit"}, ${num(b.explosionExplosiveMass ?? 100)} кг`;
+function isGasSource(b: TopoBranch): boolean {
+  return (b.explosionSourceType ?? "mass") === "gas";
+}
+
+function sourceText(b: TopoBranch): string {
+  if (isGasSource(b)) {
+    const g = GAS_TYPES.find(x => x.id === (b.explosionGasId ?? "methane")) ?? GAS_TYPES[0];
+    const conc = b.explosionGasConcentration ?? g.stoichConc;
+    return `${g.name}, ${conc} ${concUnitLabel(g.unit)}`;
+  }
+  const e = EXPLOSIVE_TYPES.find(x => x.id === (b.explosionExplosiveId ?? "ammonit")) ?? EXPLOSIVE_TYPES[0];
+  return `${e.name}, ${b.explosionExplosiveMass ?? 100} кг`;
+}
+
+function methodText(b: TopoBranch, r?: ExplosionResult): string {
+  if (!isGasSource(b)) return "Садовский (ВВ)";
+  if (r?.vgsch) return "ВГСЧ (Прил. 12 к Уставу ВГСЧ)";
+  return "Прямолинейная";
 }
 
 // ─── Лист «Протокол» ─────────────────────────────────────────────────────────
-function buildProtocolSheet(inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>): XLSX.WorkSheet {
-  const aoa: (string | number)[][] = [];
-  const merges: XLSX.Range[] = [];
-  const titles: number[] = [], sections: number[] = [], heads: number[] = [];
-  const rowTone = new Map<number, Tone>();
-  const push = (...row: (string | number)[]) => { aoa.push(row); return aoa.length - 1; };
-  const wide = (text: string) => {
-    const r = push(text);
-    merges.push({ s: { r, c: 0 }, e: { r, c: COLS - 1 } });
-    return r;
-  };
+function buildProtocolSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>) {
+  const COLS = 8;
+  const ws = wb.addWorksheet("Протокол", {
+    pageSetup: { paperSize: 9, orientation: "landscape", fitToPage: true, fitToWidth: 1, fitToHeight: 0 },
+  });
+  ws.columns = [34, 30, 18, 14, 14, 14, 14, 36].map(width => ({ width }));
 
-  push("", "", "", "", "", "УТВЕРЖДАЮ:");
-  push("", "", "", "", "", "Руководитель горноспасательных работ");
-  push("");
-  push("", "", "", "", "", "_______________");
-  push("", "", "", "", "", `«____»___________ ${new Date().getFullYear()} г.`);
-  push("");
-  titles.push(wide("ПРОТОКОЛ"));
-  titles.push(wide("расчёта параметров воздушной ударной волны и последствий взрыва"));
-  titles.push(wide(`«${inp.projectName}»`));
-  wide(
-    "Условия расчёта: " +
-    (inp.duringEmergency ? "в ходе ликвидации аварии (время загазирования — фактическое, не менее 150 мин)"
-      : "при разработке ПЛА (время загазирования 60 мин)") + ".",
-  );
-  push("");
+  // Гриф утверждения
+  ws.getCell(1, 7).value = "УТВЕРЖДАЮ:";
+  ws.getCell(1, 7).font = { bold: true };
+  ws.getCell(2, 7).value = "Руководитель горноспасательных работ";
+  ws.getCell(4, 7).value = "_______________";
+  ws.getCell(5, 7).value = `«____»___________ ${new Date().getFullYear()} г.`;
+
+  let row = 7;
+  row = title(ws, row, "ПРОТОКОЛ", COLS, 14);
+  row = title(ws, row, "расчёта параметров воздушной ударной волны и последствий взрыва", COLS, 12);
+  row = title(ws, row, `«${inp.projectName}»`, COLS, 12);
+  ws.mergeCells(row, 1, row, COLS);
+  ws.getCell(row, 1).value = "Условия расчёта: " + (inp.duringEmergency
+    ? "в ходе ликвидации аварии (время загазирования — фактическое, не менее 150 мин)."
+    : "при разработке ПЛА (время загазирования 60 мин).");
+  row += 2;
+
+  const srcBranches = inp.branches.filter(b => b.hasExplosion);
+  const gasSrc = srcBranches.filter(isGasSource);
+  const massSrc = srcBranches.filter(b => !isGasSource(b));
 
   // 1. Очаги
-  const srcBranches = inp.branches.filter(b => b.hasExplosion);
-  sections.push(wide("1. ОЧАГИ ВЗРЫВА И ПАРАМЕТРЫ ВОЛНЫ"));
-  heads.push(push("№", "Выработка-очаг", "Источник", "Q_тнт, кг", "ΔP_max, кПа", "I_max, Па·с", "D, м/с", "Примечание"));
-  srcBranches.forEach((b, i) => {
-    const r = inp.resultByBranch.get(b.id);
-    const row = push(
-      i + 1, label(b), sourceLabel(b),
-      r && !r.noExplosion ? num(r.q_tnt_kg, 2) : "—",
-      r && !r.noExplosion ? num(r.maxDeltaP_kPa) : "—",
-      r && !r.noExplosion ? num(r.maxImpulse_Pas) : "—",
-      r && !r.noExplosion ? num(r.waveFrontSpeed_ms, 0) : "—",
-      !r ? "нет результата" : r.noExplosion ? `Взрыв не происходит: ${r.noExplosionReason ?? "смесь не взрывоопасна"}` : "",
-    );
-    rowTone.set(row, r?.noExplosion ? "muted" : undefined);
-  });
-  push("");
+  row = section(ws, row, "1. ОЧАГИ ВЗРЫВА", COLS);
+  row = table(ws, row,
+    ["№", "Выработка-очаг", "Источник", "Методика расчёта", "Сечение, м²", "Периметр, м", "α, ×10⁻⁴", "Примечание"],
+    srcBranches.map((b, i) => {
+      const r = inp.resultByBranch.get(b.id);
+      return [
+        i + 1, label(b), sourceText(b), methodText(b, r),
+        r1(b.area, 1), r1(b.perimeter, 2), r1(b.alphaCoef, 1),
+        !r ? "нет результата" : r.noExplosion ? `Взрыв не происходит: ${r.noExplosionReason ?? "смесь не взрывоопасна"}` : "",
+      ];
+    }),
+    {
+      tones: srcBranches.map(b => inp.resultByBranch.get(b.id)?.noExplosion ? "muted" : undefined),
+      numFmt: [undefined, undefined, undefined, undefined, "0.0", "0.00", "0.0"], align: ["center"],
+    });
 
-  // 2. Зоны поражения
-  sections.push(wide("2. РАДИУСЫ ЗОН ПОРАЖЕНИЯ (для одиночной прямой выработки)"));
-  heads.push(push("Выработка-очаг", "Зона", "", "Радиус, м", "ΔP, кПа", "I, Па·с", "Характеристика", ""));
-  merges.push({ s: { r: aoa.length - 1, c: 1 }, e: { r: aoa.length - 1, c: 2 } });
+  // 2а. Газ и пыль — параметры источника по методике ВГСЧ
+  if (gasSrc.length) {
+    row = section(ws, row, "2. ПАРАМЕТРЫ ВЗРЫВА ГАЗА И ПЫЛИ (методика ВГСЧ)", COLS);
+    row = table(ws, row,
+      ["Выработка-очаг", "Вид взрыва (табл. 2)", "Длина загазования, м", "V₀, м³", "Ен, МДж",
+        "ΔP в зоне загазования, кПа", "ΔPн в месте отрыва УВВ, кПа", "Кз (табл. 3) / импульс i, Н·с/м²"],
+      gasSrc.map(b => {
+        const r = inp.resultByBranch.get(b.id);
+        const v = r?.vgsch;
+        if (!r || r.noExplosion) return [label(b), "—", null, null, null, null, null, "взрыв не происходит"];
+        if (!v) return [label(b), "прямолинейная модель", r1(b.explosionGasZoneLength, 0), null, null,
+          r1(r.maxDeltaP_kPa, 1), null, `i = ${r1(r.maxImpulse_Pas, 0)} Па·с`];
+        return [label(b), combustionMode(v.mode).label + (v.dustFactor > 1 ? " (Ен × 1,3)" : ""),
+          r1(v.zoneLength_m, 1), r1(v.V0_m3, 0), r1(v.En_MJ, 0), r1(v.dPz_kPa, 0), r1(v.dPn_kPa, 0),
+          `Кз = ${v.kz}; i = ${r1(r.maxImpulse_Pas, 0)}`];
+      }),
+      { numFmt: [undefined, undefined, "0.0", "#,##0", "#,##0", "#,##0", "#,##0"] });
+  }
+
+  // 2б. ВВ — тротиловый эквивалент и параметры волны
+  if (massSrc.length) {
+    row = section(ws, row, `${gasSrc.length ? "3" : "2"}. ПАРАМЕТРЫ ВЗРЫВА ВВ`, COLS);
+    row = table(ws, row,
+      ["Выработка-очаг", "ВВ, масса", "Q_тнт, кг ТНТ", "ΔP_max, кПа", "I_max, Па·с", "D, м/с", "Фаза сжатия, мс", "Примечание"],
+      massSrc.map(b => {
+        const r = inp.resultByBranch.get(b.id);
+        if (!r || r.noExplosion) return [label(b), sourceText(b), null, null, null, null, null, "взрыв не происходит"];
+        return [label(b), sourceText(b), r1(r.q_tnt_kg, 2), r1(r.maxDeltaP_kPa, 1), r1(r.maxImpulse_Pas, 1),
+          r1(r.waveFrontSpeed_ms, 0), r1(r.phaseDuration_ms, 1), `на границе применимости r = ${r1(r.minValidRadius_m, 2)} м`];
+      }),
+      { numFmt: [undefined, undefined, "0.00", "#,##0.0", "#,##0.0", "#,##0", "0.0"] });
+  }
+
+  // Зоны поражения
+  let n = 2 + (gasSrc.length ? 1 : 0) + (massSrc.length ? 1 : 0);
+  row = section(ws, row, `${n}. ЗОНЫ ПОРАЖЕНИЯ (расстояние от центра очага по одиночной прямой выработке)`, COLS);
+  const zRows: Cell[][] = [];
+  const zTones: Tone[] = [];
   srcBranches.forEach(b => {
     const r = inp.resultByBranch.get(b.id);
     if (!r || r.noExplosion) return;
+    const impUnit = r.vgsch ? "Н·с/м²" : "Па·с";
     r.zones.forEach(z => {
-      const row = push(label(b), z.name, "", num(z.radius_m, 0), num(z.deltaP_kPa), num(z.impulse_Pas), z.description, "");
-      merges.push({ s: { r: row, c: 1 }, e: { r: row, c: 2 } });
-      merges.push({ s: { r: row, c: 6 }, e: { r: row, c: 7 } });
-      rowTone.set(row, z.hazardLevel === "lethal" || z.hazardLevel === "heavy" ? "bad" : undefined);
+      zRows.push([label(b), z.name, r1(z.radius_m, 0), r1(z.deltaP_kPa, 2), r1(z.impulse_Pas, 1), impUnit, z.description, ""]);
+      zTones.push(z.hazardLevel === "lethal" || z.hazardLevel === "heavy" ? "bad"
+        : z.hazardLevel === "medium" || z.hazardLevel === "light" ? "warn" : "ok");
     });
   });
-  push("");
+  row = table(ws, row, ["Выработка-очаг", "Зона", "Расстояние, м", "ΔP, кПа", "Импульс", "Ед. импульса", "Характеристика", ""],
+    zRows, { tones: zTones, numFmt: [undefined, undefined, "#,##0", "0.##", "#,##0.0"] });
+  ws.getCell(row - 1, 1).value = "По схеме волна ведётся с учётом сопряжений, поворотов и перемычек — фактические расстояния зон по сети короче.";
+  ws.getCell(row - 1, 1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
+  row += 1;
 
-  // 3. Сводка по перемычкам
+  // Перемычки
+  n += 1;
   const hits = [...inp.barrierHits.values()];
   const destroyed = hits.filter(h => h.destroyed).length;
-  const held = hits.filter(h => !h.destroyed && h.transmit === 0 && h.incident_kPa > 0).length;
+  const held = hits.filter(h => !h.destroyed && h.incident_kPa > 0).length;
   const total = [...inp.barriers.values()].reduce((s, l) => s + l.length, 0);
-  sections.push(wide("3. ПЕРЕМЫЧКИ (подробно — лист «Перемычки»)"));
-  push("Всего перемычек на схеме", total);
-  push("Волна дошла", hits.length);
-  push("Разрушено", destroyed);
-  push("Устояли", held);
-  push("Волна не дошла", Math.max(0, total - hits.length));
-  push("");
+  row = section(ws, row, `${n}. ПЕРЕМЫЧКИ (подробно — лист «Перемычки»)`, COLS);
+  row = table(ws, row, ["Показатель", "Количество"], [
+    ["Всего перемычек на схеме", total],
+    ["Волна дошла", hits.length],
+    ["Разрушено", destroyed],
+    ["Устояли", held],
+    ["Волна не дошла", Math.max(0, total - hits.length)],
+  ], { tones: [undefined, undefined, destroyed ? "bad" : undefined, held ? "ok" : undefined, "muted"], numFmt: [undefined, "0"] });
 
-  // 4. Предупреждения
+  // Примечания
   const warns = [...new Set([...inp.resultByBranch.values()].flatMap(r => r.warnings))];
   if (warns.length) {
-    sections.push(wide("ПРИМЕЧАНИЯ"));
-    warns.forEach(w => wide(`• ${w}`));
-    push("");
+    row = section(ws, row, "ПРИМЕЧАНИЯ", COLS);
+    for (const w of warns) {
+      ws.mergeCells(row, 1, row, COLS);
+      ws.getCell(row, 1).value = `• ${w.replace(/^⚠\s*/, "")}`;
+      ws.getCell(row, 1).alignment = { wrapText: true };
+      row++;
+    }
+    row++;
   }
 
-  wide("Расчёт выполнен в программном комплексе «ПВ-Система».");
-  push("");
-  push("Расчёт выполнил", "_______________________");
-  push("Дата", new Date().toLocaleDateString("ru-RU"));
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 36 }, { wch: 30 }, { wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 26 }, { wch: 30 }];
-  ws["!merges"] = merges;
-  titles.forEach(r => style(ws, r, 0, titleStyle()));
-  sections.forEach(r => style(ws, r, 0, sectionStyle()));
-  heads.forEach(r => { for (let c = 0; c < COLS; c++) style(ws, r, c, headerStyle()); });
-  let i = 0;
-  rowTone.forEach((tone, r) => { for (let c = 0; c < COLS; c++) style(ws, r, c, cellStyle(i, tone)); i++; });
-  return ws;
+  ws.mergeCells(row, 1, row, COLS);
+  ws.getCell(row, 1).value = "Расчёт выполнен в программном комплексе «ПВ-Система».";
+  row += 2;
+  ws.getCell(row, 1).value = "Расчёт выполнил";
+  ws.getCell(row, 2).value = "_______________________";
+  row++;
+  ws.getCell(row, 1).value = "Дата";
+  ws.getCell(row, 2).value = new Date().toLocaleDateString("ru-RU");
 }
 
 // ─── Лист «Перемычки» ────────────────────────────────────────────────────────
-const BAR_HEADERS = [
-  "№ п/п", "Перемычка", "Выработка", "Положение на ветви, %",
-  "Прочность (давление разрушения), кПа", "ΔP набегающей волны, кПа",
-  "ΔP отражения (справочно), кПа", "Запас прочности", "Состояние",
-  "Доля волны за перемычкой, %", "ΔP за перемычкой, кПа",
-];
+function buildBarriersSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>) {
+  const headers = [
+    "№ п/п", "Перемычка", "Выработка", "Положение на ветви, %",
+    "Давление разрушения, кПа", "ΔP во фронте волны, кПа", "Запас прочности",
+    "Состояние", "Доля волны за перемычкой, %", "ΔP за перемычкой, кПа", "ΔP отражения (справочно), кПа",
+  ];
+  const ws = wb.addWorksheet("Перемычки", { views: [{ state: "frozen", ySplit: 3 }] });
+  ws.columns = [7, 34, 36, 11, 13, 13, 11, 22, 13, 13, 14].map(width => ({ width }));
+  title(ws, 1, "Действие ударной волны на перемычки", headers.length);
+  ws.mergeCells(2, 1, 2, headers.length);
+  ws.getCell(2, 1).value = "Разрушение — при ΔP во фронте ≥ давления разрушения (табл. 8 методики ВГСЧ). Устоявшая перемычка волну останавливает.";
+  ws.getCell(2, 1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
 
-function buildBarriersSheet(inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>): XLSX.WorkSheet {
   const brById = new Map(inp.branches.map(b => [b.id, b]));
   const symById = new Map(inp.symbols.map(s => [s.id, s]));
   const list = [...inp.barriers.values()].flat();
-  // Сначала те, куда дошла волна, — по убыванию давления во фронте.
   list.sort((a, b) => (inp.barrierHits.get(b.key)?.incident_kPa ?? -1) - (inp.barrierHits.get(a.key)?.incident_kPa ?? -1));
 
-  const aoa: (string | number)[][] = [["Действие ударной волны на перемычки"], [], [...BAR_HEADERS]];
   const tones: Tone[] = [];
-  list.forEach((bar, i) => {
+  const rows: Cell[][] = list.map((bar, i) => {
     const h = inp.barrierHits.get(bar.key);
-    const sym = symById.get(bar.key);
-    const name = barrierDisplayName(sym, brById.get(bar.branchId), bar.branchId);
-    const fp = bar.failure_MPa > 0 ? bar.failure_MPa * 1000 : 0;
+    const fp = bar.failure_MPa * 1000;
     let state: string, tone: Tone;
     if (!h || !(h.incident_kPa > 0)) { state = "волна не дошла"; tone = "muted"; }
     else if (h.destroyed) { state = "РАЗРУШЕНА"; tone = "bad"; }
     else { state = "устояла"; tone = "ok"; }
     tones.push(tone);
-    aoa.push([
-      i + 1, name, label(brById.get(bar.branchId), bar.branchId), num(bar.t * 100, 0),
-      fp > 0 ? num(fp) : "не задана",
-      h ? num(h.incident_kPa) : "—",
-      h ? num(h.reflected_kPa) : "—",
-      // Запас прочности — по давлению во фронте (табл. 8 методики ВГСЧ)
-      h && fp > 0 && h.incident_kPa > 0 ? num(fp / h.incident_kPa, 2) : "—",
+    return [
+      i + 1, barrierDisplayName(symById.get(bar.key), brById.get(bar.branchId), bar.branchId),
+      label(brById.get(bar.branchId), bar.branchId), r1(bar.t * 100, 0), r1(fp, 1),
+      h ? r1(h.incident_kPa, 1) : null,
+      h && fp > 0 && h.incident_kPa > 0 ? r1(fp / h.incident_kPa, 2) : null,
       state,
-      h ? num(h.transmit * 100, 0) : "—",
-      h ? num(h.incident_kPa * h.transmit) : "—",
-    ]);
+      h ? r1(h.transmit * 100, 0) : null,
+      h ? r1(h.incident_kPa * h.transmit, 1) : null,
+      h ? r1(h.reflected_kPa, 1) : null,
+    ];
   });
-  if (list.length === 0) aoa.push(["", "Перемычек на схеме нет"]);
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [8, 26, 34, 12, 16, 14, 14, 12, 30, 14, 14].map(wch => ({ wch }));
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: BAR_HEADERS.length - 1 } }];
-  style(ws, 0, 0, titleStyle());
-  for (let c = 0; c < BAR_HEADERS.length; c++) style(ws, 2, c, headerStyle());
-  tones.forEach((t, i) => { for (let c = 0; c < BAR_HEADERS.length; c++) style(ws, 3 + i, c, cellStyle(i, t)); });
-  return ws;
+  if (rows.length === 0) rows.push(["", "Перемычек на схеме нет", "", null, null, null, null, "", null, null, null]);
+  table(ws, 3, headers, rows, {
+    tones, align: ["center", "left", "left", "right", "right", "right", "right", "center"],
+    numFmt: [undefined, undefined, undefined, "0", "#,##0.0", "#,##0.0", "0.00", undefined, "0", "#,##0.0", "#,##0.0"],
+  });
+  ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: headers.length } };
 }
 
 // ─── Лист «Выработки» ────────────────────────────────────────────────────────
-function buildBranchesSheet(inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>): XLSX.WorkSheet {
+function buildBranchesSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>) {
   const headers = ["№ п/п", "Выработка", "Длина, м", "Сечение, м²", "ΔP волны, кПа", "Перемычка разрушена"];
+  const ws = wb.addWorksheet("Выработки", { views: [{ state: "frozen", ySplit: 3 }] });
+  ws.columns = [7, 50, 11, 12, 14, 14].map(width => ({ width }));
+  title(ws, 1, "Давление ударной волны по выработкам", headers.length);
   const list = inp.branches
     .filter(b => (b.explosionComputedDeltaP ?? 0) > 0 || b.hasExplosion)
     .sort((a, b) => (b.explosionComputedDeltaP ?? 0) - (a.explosionComputedDeltaP ?? 0));
-  const aoa: (string | number)[][] = [["Давление ударной волны по выработкам"], [], headers];
-  list.forEach((b, i) => aoa.push([
-    i + 1, label(b) + (b.hasExplosion ? " — очаг" : ""), num(b.length, 0), num(b.area, 1),
-    num(b.explosionComputedDeltaP), b.bulkheadDestroyedByExplosion ? "да" : "",
-  ]));
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [8, 44, 10, 12, 14, 16].map(wch => ({ wch }));
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: headers.length - 1 } }];
-  style(ws, 0, 0, titleStyle());
-  for (let c = 0; c < headers.length; c++) style(ws, 2, c, headerStyle());
-  list.forEach((b, i) => {
-    for (let c = 0; c < headers.length; c++) style(ws, 3 + i, c, cellStyle(i, b.bulkheadDestroyedByExplosion ? "bad" : undefined));
+  const rows: Cell[][] = list.map((b, i) => [
+    i + 1, label(b) + (b.hasExplosion ? " — очаг" : ""), r1(b.length, 0), r1(b.area, 1),
+    r1(b.explosionComputedDeltaP, 1), b.bulkheadDestroyedByExplosion ? "да" : "",
+  ]);
+  if (rows.length === 0) rows.push(["", "Нет данных", null, null, null, ""]);
+  table(ws, 3, headers, rows, {
+    tones: list.map(b => b.bulkheadDestroyedByExplosion ? "bad" : undefined),
+    align: ["center", "left", "right", "right", "right", "center"],
+    numFmt: [undefined, undefined, "#,##0", "0.0", "#,##0.0"],
   });
-  return ws;
+  ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: headers.length } };
 }
 
 // ─── Экспорт ─────────────────────────────────────────────────────────────────
-export function exportExplosionReport(inp: ExplosionReportInput): void {
+export async function exportExplosionReport(inp: ExplosionReportInput): Promise<void> {
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "ПВ-Система";
+  wb.created = new Date();
   const label = makeLabel(inp.nodes);
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, buildProtocolSheet(inp, label), "Протокол");
-  XLSX.utils.book_append_sheet(wb, buildBarriersSheet(inp, label), "Перемычки");
-  XLSX.utils.book_append_sheet(wb, buildBranchesSheet(inp, label), "Выработки");
+  buildProtocolSheet(wb, inp, label);
+  buildBarriersSheet(wb, inp, label);
+  buildBranchesSheet(wb, inp, label);
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
   const date = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `Протокол_расчёта_взрыва_${inp.projectName || "рудник"}_${date}.xlsx`);
+  const safe = (inp.projectName || "рудник").replace(/[\\/:*?"<>|]+/g, "_");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = `Протокол_расчёта_взрыва_${safe}_${date}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 }
