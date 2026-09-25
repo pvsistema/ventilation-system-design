@@ -37,7 +37,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
-import { OPEN_DOOR_IDS, WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
+import { OPEN_DOOR_IDS, WINDOW_BULKHEAD_IDS, LEGEND_TYPES } from "@/lib/schemaSymbols";
 import { reflectedPressure } from "@/lib/blastBulkhead";
 
 /** Перемычка на ветви. */
@@ -144,6 +144,27 @@ export function collectBarriers(
 
   for (const arr of byBranch.values()) arr.sort((a, b) => a.t - b.t);
   return byBranch;
+}
+
+const LEGEND_NAME = new Map(LEGEND_TYPES.map(l => [l.id, l.name]));
+
+/**
+ * Название перемычки для панели и протокола. После импорта в названии
+ * бывают служебные коды «vent»/«seal» — их заменяем названием значка.
+ */
+export function barrierDisplayName(
+  sym: { typeId?: string; bkBulkheadName?: string } | undefined,
+  br: { bulkheadName?: string; type?: string } | undefined,
+  branchId: string,
+): string {
+  const clean = (v?: string) => {
+    const t = String(v ?? "").trim().replace(/^"(.*)"$/, "$1").trim();
+    return t && !/^(seal|vent)$/i.test(t) ? t : "";
+  };
+  const place = clean(br?.type);
+  const base = clean(sym?.bkBulkheadName) || (sym?.typeId ? LEGEND_NAME.get(sym.typeId) ?? "" : "")
+    || clean(br?.bulkheadName) || "Перемычка";
+  return place ? `${base} — ${place}` : `${base} — ветвь ${branchId}`;
 }
 
 /** Давление в точке по состоянию волны, кПа. */

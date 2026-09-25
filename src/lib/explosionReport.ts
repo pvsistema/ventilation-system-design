@@ -11,7 +11,7 @@
 import * as XLSX from "xlsx";
 import { type TopoBranch, type TopoNode } from "@/lib/topology";
 import { type ExplosionResult } from "@/lib/explosionCalculator";
-import { type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
+import { barrierDisplayName, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 
 export interface ExplosionReportInput {
@@ -183,7 +183,7 @@ function buildProtocolSheet(inp: ExplosionReportInput, label: ReturnType<typeof 
 const BAR_HEADERS = [
   "№ п/п", "Перемычка", "Выработка", "Положение на ветви, %",
   "Прочность (давление разрушения), кПа", "ΔP набегающей волны, кПа",
-  "ΔP отражения, кПа", "Запас прочности", "Состояние",
+  "ΔP отражения (справочно), кПа", "Запас прочности", "Состояние",
   "Доля волны за перемычкой, %", "ΔP за перемычкой, кПа",
 ];
 
@@ -191,19 +191,18 @@ function buildBarriersSheet(inp: ExplosionReportInput, label: ReturnType<typeof 
   const brById = new Map(inp.branches.map(b => [b.id, b]));
   const symById = new Map(inp.symbols.map(s => [s.id, s]));
   const list = [...inp.barriers.values()].flat();
-  // Сначала те, куда дошла волна, — по убыванию давления отражения.
-  list.sort((a, b) => (inp.barrierHits.get(b.key)?.reflected_kPa ?? -1) - (inp.barrierHits.get(a.key)?.reflected_kPa ?? -1));
+  // Сначала те, куда дошла волна, — по убыванию давления во фронте.
+  list.sort((a, b) => (inp.barrierHits.get(b.key)?.incident_kPa ?? -1) - (inp.barrierHits.get(a.key)?.incident_kPa ?? -1));
 
   const aoa: (string | number)[][] = [["Действие ударной волны на перемычки"], [], [...BAR_HEADERS]];
   const tones: Tone[] = [];
   list.forEach((bar, i) => {
     const h = inp.barrierHits.get(bar.key);
     const sym = symById.get(bar.key);
-    const name = sym?.label || sym?.description || (sym ? `Перемычка ${i + 1}` : "Перемычка (без значка)");
+    const name = barrierDisplayName(sym, brById.get(bar.branchId), bar.branchId);
     const fp = bar.failure_MPa > 0 ? bar.failure_MPa * 1000 : 0;
     let state: string, tone: Tone;
     if (!h || !(h.incident_kPa > 0)) { state = "волна не дошла"; tone = "muted"; }
-    else if (!(fp > 0)) { state = "прочность не задана — волну не задерживает"; tone = "muted"; }
     else if (h.destroyed) { state = "РАЗРУШЕНА"; tone = "bad"; }
     else { state = "устояла"; tone = "ok"; }
     tones.push(tone);
@@ -212,7 +211,8 @@ function buildBarriersSheet(inp: ExplosionReportInput, label: ReturnType<typeof 
       fp > 0 ? num(fp) : "не задана",
       h ? num(h.incident_kPa) : "—",
       h ? num(h.reflected_kPa) : "—",
-      h && fp > 0 && h.reflected_kPa > 0 ? num(fp / h.reflected_kPa, 2) : "—",
+      // Запас прочности — по давлению во фронте (табл. 8 методики ВГСЧ)
+      h && fp > 0 && h.incident_kPa > 0 ? num(fp / h.incident_kPa, 2) : "—",
       state,
       h ? num(h.transmit * 100, 0) : "—",
       h ? num(h.incident_kPa * h.transmit) : "—",

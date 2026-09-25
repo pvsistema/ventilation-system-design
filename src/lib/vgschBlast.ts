@@ -156,13 +156,27 @@ export function makeVgschSource(p: {
   perimeter_m?: number;
   alpha?: number;
 }): VgschSource {
-  const m = combustionMode(p.mode);
-  const dustFactor = p.dust || m.dust ? VGSCH_DUST_K : 1;
+  // Пыль у детонации НЕ учитывается: детонация — предельный режим, её ΔPн
+  // (0,30 МПа) в табл. 2 от пыли не зависит. У дефлаграции участие пыли —
+  // это отдельная строка табл. 2 («с участием пыли», μ = 0,25).
+  let m = combustionMode(p.mode);
+  if (p.dust && m.id === "deflagration") m = combustionMode("deflagration_dust");
+  const dustFactor = m.dust ? VGSCH_DUST_K : 1;
   const En = explosionEnergyJ(p.V0_m3, p.energyRel, dustFactor);
-  const dPn_kPa = initialPressureMPa(En, p.V0_m3, m.mu) * 1000;
-  // В точке отрыва ф. (4) даёт ≈ 296 кПа — это детонация. Для других видов
-  // взрыва зоны 1–2 масштабируются так, чтобы давление было непрерывным
-  // в месте отрыва и равнялось ΔPн по ф. (2).
+  // ΔPн — ПО ТАБЛ. 2 (как в примере методики). Формула (2) при V₂ = 5V₀ даёт
+  // для дефлаграции 0,121 вместо табличных 0,15 МПа, поэтому берётся таблица.
+  // Для смеси, отличной от стехиометрической метановоздушной, табличное
+  // значение пересчитывается по ф. (2) пропорционально энергии.
+  const enRef = explosionEnergyJ(p.V0_m3, 1, dustFactor);
+  const byFormula = initialPressureMPa(En, p.V0_m3, m.mu);
+  const byFormulaRef = initialPressureMPa(enRef, p.V0_m3, m.mu);
+  const rel = byFormulaRef > 0 ? byFormula / byFormulaRef : 1;
+  const dPn_kPa = m.tablePn * 1000 * rel;
+  // Зона загазования: 1,6 МПа при детонации (табл. 1). Для других видов
+  // взрыва методика давления не даёт — пересчёт пропорционально ΔPн.
+  const dPz_kPa = VGSCH_ZONE1_KPA * dPn_kPa / (COMBUSTION_MODES[0].tablePn * 1000);
+  // Зона продуктов взрыва: ф. (4) масштабируется так, чтобы в точке отрыва
+  // (V₂ = 5V₀) давление равнялось ΔPн — без скачка на границе зон.
   const refPn = zone2DetonationKPa(1, VGSCH_PV_FACTOR);
   const k = dPn_kPa > 0 ? dPn_kPa / refPn : 0;
   return {
@@ -172,7 +186,7 @@ export function makeVgschSource(p: {
     mu: m.mu,
     En_MJ: En / 1e6,
     dustFactor,
-    dPz_kPa: VGSCH_ZONE1_KPA * k,
+    dPz_kPa,
     dPn_kPa,
     k,
     pvVolumePerSide_m3: ((VGSCH_PV_FACTOR - 1) / 2) * p.V0_m3,

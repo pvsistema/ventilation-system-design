@@ -64,7 +64,7 @@ import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, co
 import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, explosionZoneColor, concUnitLabel, tntEquivalent, DEFAULT_EXPLOSION_THRESHOLDS, channelDecay, LAMBDA_DEFAULT, gasInitialPressure, gasEnergyDensity, junctionTransmission, calcExplosion, type ExplosionThresholds, type ExplosionResult, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { BLAST_MIXES, blastMixById, blastMixAge, blastMixAgeLabel, calcBlastBulkheadThickness, bulkheadDimensions, reflectedPressure, BLAST_SAFETY_FACTOR } from "@/lib/blastBulkhead";
 import { calcGasZone, gasZoneTime, EXPLOSIVE_CH4_CONC, DEFAULT_I_NEPOGASH, GAS_TIME_PLA, GAS_TIME_EMERGENCY_MIN } from "@/lib/gasZone";
-import { collectBarriers, crossBarriers, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
+import { collectBarriers, crossBarriers, barrierDisplayName, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import RescuePanel from "@/components/cad/RescuePanel";
 import WorkerPathPanel, { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
@@ -9604,13 +9604,27 @@ export default function CadPage() {
                         </select>
                       </div>
                       <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer" style={{ borderBottom: "1px solid #f3f4f6" }}>
-                        <input type="checkbox" checked={b.explosionDust === true}
-                          disabled={combustionMode(b.explosionCombustionMode).dust}
-                          onChange={e => updateBranch(b.id, { explosionDust: e.target.checked })} />
-                        <span className="text-[11px] text-gray-700">
-                          Участие угольной пыли
-                          <span className="block text-[9px] text-gray-400">энергия взрыва × 1,3</span>
-                        </span>
+                        {(() => {
+                          const cm = combustionMode(b.explosionCombustionMode);
+                          // У детонации пыль не меняет ΔPн (предельный режим, 0,30 МПа),
+                          // у видов «с участием пыли» она уже учтена в табл. 2.
+                          const locked = cm.id !== "deflagration";
+                          return (<>
+                            <input type="checkbox" disabled={locked}
+                              checked={cm.dust || (cm.id === "deflagration" && b.explosionDust === true)}
+                              onChange={e => updateBranch(b.id, { explosionDust: e.target.checked })} />
+                            <span className={`text-[11px] ${locked ? "text-gray-400" : "text-gray-700"}`}>
+                              Участие угольной пыли
+                              <span className="block text-[9px] text-gray-400">
+                                {cm.id === "detonation"
+                                  ? "не влияет: детонация — предельный режим (0,30 МПа)"
+                                  : cm.dust
+                                    ? "уже учтено видом взрыва (табл. 2), энергия × 1,3"
+                                    : "переводит в «дефлаграцию с участием пыли» (табл. 2), энергия × 1,3"}
+                              </span>
+                            </span>
+                          </>);
+                        })()}
                       </label>
                       <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]"
                         style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc", color: "var(--c-blue-ink, #1e3a8a)" }}>
@@ -9960,7 +9974,7 @@ export default function CadPage() {
                       {destroyedBranches.map(br => {
                         const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === br.id);
                         const fp = bkSym?.bkFailurePressure ?? br.bulkheadFailurePressure;
-                        const name = (bkSym?.bkBulkheadName ?? br.bulkheadName) || br.id;
+                        const name = barrierDisplayName(bkSym, br, br.id);
                         return (
                           <div key={br.id} className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6", background: "var(--c-tint-red, #fff5f5)" }}>
                             <span className="text-[10px] mr-1">🔴</span>
@@ -9995,17 +10009,16 @@ export default function CadPage() {
                         Перемычки на пути волны ({rows.length})
                       </div>
                       <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
-                        Разрушение — по давлению отражения ΔP<sub>отр</sub>. Устоявшая
-                        перемычка волну останавливает; за разрушенной идёт
-                        ΔP·(1 − P<sub>разр</sub>/ΔP<sub>отр</sub>).
+                        Разрушение — по давлению во фронте ΔP (табл. 8 методики ВГСЧ).
+                        Устоявшая перемычка волну останавливает (с окном — пропускает
+                        долю площади окна); за разрушенной идёт ΔP·(1 − P<sub>разр</sub>/ΔP).
+                        ΔP<sub>отр</sub> — справочно, для расчёта толщины перемычки.
                       </div>
                       {rows.map(({ bar, hit }) => {
                         const sym = schemaSymbols.find(s => s.id === bar.key);
                         const br = branches.find(x => x.id === bar.branchId);
-                        const name = (sym?.bkBulkheadName ?? br?.bulkheadName) || `Ветвь ${bar.branchId}`;
-                        const status = !(bar.failure_MPa > 0)
-                          ? { text: "прочность не задана", color: "#6b7280" }
-                          : hit.destroyed
+                        const name = barrierDisplayName(sym, br, bar.branchId);
+                        const status = hit.destroyed
                             ? { text: `разрушена, прошло ${Math.round(hit.transmit * 100)} %`, color: "#dc2626" }
                             : { text: "устояла, волна остановлена", color: "#16a34a" };
                         return (
@@ -10015,8 +10028,8 @@ export default function CadPage() {
                               <span className="text-[10px] font-semibold flex-shrink-0" style={{ color: status.color }}>{status.text}</span>
                             </div>
                             <div className="text-[9px] text-gray-500">
-                              ΔP = {(hit.incident_kPa / 1000).toFixed(3)} МПа → ΔP<sub>отр</sub> = {(hit.reflected_kPa / 1000).toFixed(3)} МПа
-                              {bar.failure_MPa > 0 && <> · P<sub>разр</sub> = {bar.failure_MPa} МПа</>}
+                              ΔP = {(hit.incident_kPa / 1000).toFixed(3)} МПа · P<sub>разр</sub> = {bar.failure_MPa} МПа
+                              {" · "}ΔP<sub>отр</sub> = {(hit.reflected_kPa / 1000).toFixed(3)} МПа
                             </div>
                           </div>
                         );
@@ -13710,6 +13723,12 @@ export default function CadPage() {
                   for (let i = 0; i < SEG_N; i++) {
                     const tMid = (i + 0.5) / SEG_N;
                     const vg = vgschNetC?.pressureAt(b.id, tMid);
+                    // Ниже границы безопасной зоны волна на схеме не показывается:
+                    // иначе «безопасная» зелёная окраска тянется далеко за её радиус.
+                    if (vg && vg.p > 0 && vg.p < blastThresholds.safeLimit) {
+                      if (curColor !== null) { segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N }); curColor = null; }
+                      continue;
+                    }
                     if (vg && vg.p > 0 && vg.d <= blastWaveRadius) {
                       const { color, hazardLevel: lvlV } = zoneColor(vg.p);
                       if (RANK.indexOf(lvlV) > RANK.indexOf(worst)) worst = lvlV;

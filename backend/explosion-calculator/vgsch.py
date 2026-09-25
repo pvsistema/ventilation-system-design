@@ -19,10 +19,10 @@ C_PRODUCTS = 680.0   # м/с — скорость звука в продукта
 ALPHA_DEFAULT = 15   # ×10^-4 кгс·с2/м4 — «другие виды крепи»
 
 COMBUSTION_MODES = {
-    "detonation":        {"label": "Детонация (экстремальный режим)",       "mu": 0.50, "dust": False},
-    "deflagration":      {"label": "Дефлаграция без участия пыли",          "mu": 0.15, "dust": False},
-    "deflagration_dust": {"label": "Дефлаграция с участием пыли",           "mu": 0.25, "dust": True},
-    "layered_dust":      {"label": "Слоевое скопление ГВС с участием пыли", "mu": 0.08, "dust": True},
+    "detonation":        {"label": "Детонация (экстремальный режим)",       "mu": 0.50, "dust": False, "pn": 0.30},
+    "deflagration":      {"label": "Дефлаграция без участия пыли",          "mu": 0.15, "dust": False, "pn": 0.15},
+    "deflagration_dust": {"label": "Дефлаграция с участием пыли",           "mu": 0.25, "dust": True,  "pn": 0.21},
+    "layered_dust":      {"label": "Слоевое скопление ГВС с участием пыли", "mu": 0.08, "dust": True,  "pn": 0.08},
 }
 
 
@@ -67,10 +67,20 @@ def zone2_det_kpa(v0, v2):
 
 
 def make_source(zone_len, v0, mode_id, energy_rel, dust, area, perimeter=None, alpha=None):
+    # Пыль у детонации не учитывается (предельный режим, ΔPн = 0,30 МПа по табл. 2);
+    # у дефлаграции участие пыли — отдельная строка табл. 2 (μ = 0,25).
+    if dust and mode_id == "deflagration":
+        mode_id = "deflagration_dust"
     key, m = combustion_mode(mode_id)
-    dust_factor = DUST_K if (dust or m["dust"]) else 1.0
+    dust_factor = DUST_K if m["dust"] else 1.0
     en = RHO0 * GV * v0 * energy_rel * dust_factor
-    dpn = initial_pressure_mpa(en, v0, m["mu"]) * 1000
+    en_ref = RHO0 * GV * v0 * dust_factor
+    # ΔPн — по табл. 2; для нестехиометрической смеси — пересчёт по ф. (2)
+    f = initial_pressure_mpa(en, v0, m["mu"])
+    f_ref = initial_pressure_mpa(en_ref, v0, m["mu"])
+    rel = f / f_ref if f_ref > 0 else 1.0
+    dpn = m["pn"] * 1000 * rel
+    dpz = ZONE1_KPA * dpn / (COMBUSTION_MODES["detonation"]["pn"] * 1000)
     ref = zone2_det_kpa(1, PV_FACTOR)
     k = dpn / ref if dpn > 0 else 0.0
     return {
@@ -80,7 +90,7 @@ def make_source(zone_len, v0, mode_id, energy_rel, dust, area, perimeter=None, a
         "mu": m["mu"],
         "En_MJ": en / 1e6,
         "dustFactor": dust_factor,
-        "dPz_kPa": ZONE1_KPA * k,
+        "dPz_kPa": dpz,
         "dPn_kPa": dpn,
         "k": k,
         "pvVolumePerSide_m3": (PV_FACTOR - 1) / 2 * v0,
