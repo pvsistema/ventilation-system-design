@@ -290,13 +290,25 @@ export default function BlastBulkheadCalcDialog(p: Props) {
               ) : (
                 <>
                   <input value={query} onChange={e => setQuery(e.target.value)} placeholder="Поиск выработки…" className={inp + " mb-1"} style={inpStyle} />
-                  <select value={branchId} onChange={e => { setBranchId(e.target.value); resetManual(); }} size={5} className={inp} style={inpStyle}>
-                    {branchList.map(b => (
-                      <option key={b.id} value={b.id}>
-                        {placeOf(b)}{b.hasBulkhead ? " · перемычка" : ""}{(b.explosionComputedDeltaP ?? 0) > 0 ? ` · ${(b.explosionComputedDeltaP! / 1000).toFixed(3)} МПа` : ""}
-                      </option>
-                    ))}
-                  </select>
+                  {/* Собственный список вместо нативного <select size>: тот плохо
+                      реагирует на клик в оверлее над холстом и при перерисовке окна. */}
+                  <div role="listbox" className="rounded-md overflow-y-auto" style={{ ...inpStyle, maxHeight: 132 }}>
+                    {branchList.length === 0 && (
+                      <div className="px-2 py-1.5 text-[11px]" style={{ color: "var(--c-t4, #9ca3af)" }}>Ничего не найдено</div>
+                    )}
+                    {branchList.map(b => {
+                      const sel = b.id === branchId;
+                      return (
+                        <button key={b.id} type="button" role="option" aria-selected={sel}
+                          onClick={() => { setBranchId(b.id); resetManual(); }}
+                          className={"block w-full text-left px-2 py-[3px] text-[12px] truncate " + (sel ? "" : "hover:bg-black/5")}
+                          style={sel ? { background: "var(--c-accent, #1e5a7a)", color: "#fff" } : { color: "var(--c-t1, #111827)" }}
+                          title={placeOf(b)}>
+                          {placeOf(b)}{b.hasBulkhead ? " · перемычка" : ""}{(b.explosionComputedDeltaP ?? 0) > 0 ? ` · ${(b.explosionComputedDeltaP! / 1000).toFixed(3)} МПа` : ""}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </>
               )}
             </div>
