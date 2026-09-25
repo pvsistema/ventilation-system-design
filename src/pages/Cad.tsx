@@ -105,6 +105,7 @@ import { type VgschSource, type CombustionMode, COMBUSTION_MODES, combustionMode
 import { resolveBulkheadSolid } from "@/lib/rescueCalculator";
 import { exportExplosionReport } from "@/lib/explosionReport";
 import BlastBulkheadCalcDialog from "@/components/cad/BlastBulkheadCalcDialog";
+import BlastBarrierChartDialog from "@/components/cad/BlastBarrierChartDialog";
 import {
   RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
@@ -1937,6 +1938,7 @@ export default function CadPage() {
   // на объекте применяют одну смесь, и задавать её у каждой — лишняя работа.
   const [blastMixId, setBlastMixId] = useState<string>("gypsum_fast");
   const [showBlastBulkheadCalc, setShowBlastBulkheadCalc] = useState(false);
+  const [showBlastBarrierChart, setShowBlastBarrierChart] = useState(false);
   // Прочность своей смеси из паспорта, МПа. 0 — берётся справочное значение.
   const [blastMixCustomR, setBlastMixCustomR] = useState(0);
   // true — расчёт в ходе ликвидации аварии. Влияет сразу на два расчёта:
@@ -6740,6 +6742,14 @@ export default function CadPage() {
               }}
             />
             <RibbonBigBtn
+              icon="Activity"
+              label="Диаграмма"
+              sublabel="перемычек"
+              disabled={!explosionCalcDone || !explosionBarriers}
+              title="Нагружение перемычек ударной волной во времени: когда приходит волна, в какой момент перемычка разрушается"
+              onClick={() => setShowBlastBarrierChart(true)}
+            />
+            <RibbonBigBtn
               icon="BrickWall"
               label="Толщина"
               sublabel="перемычки"
@@ -10015,6 +10025,11 @@ export default function CadPage() {
                     return (<>
                       <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>
                         Перемычки на пути волны ({rows.length})
+                                              <button onClick={() => setShowBlastBarrierChart(true)}
+                          className="float-right px-1.5 rounded text-[9.5px] font-semibold"
+                          style={{ background: "var(--c-amber-bg, #c98a0c)", color: "#fff" }}>
+                          Диаграмма
+                        </button>
                       </div>
                       <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
                         Разрушение — по давлению во фронте ΔP (табл. 8 методики ВГСЧ).
@@ -15113,6 +15128,18 @@ export default function CadPage() {
           setShowAirDemand(false);
         }}
         onClose={() => setShowAirDemand(false)}
+      />
+    )}
+
+    {showBlastBarrierChart && explosionBarriers && (
+      <BlastBarrierChartDialog
+        branches={branches}
+        symbols={schemaSymbols}
+        barriers={explosionBarriers.byBranch}
+        hits={explosionBarriers.hits}
+        resultByBranch={explosionResultByBranch}
+        onFocusBranch={(id) => { setSelectedNodeId(null); setSelectedBranchId(id); }}
+        onClose={() => setShowBlastBarrierChart(false)}
       />
     )}
 

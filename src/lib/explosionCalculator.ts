@@ -383,7 +383,7 @@ export function tntPhaseDuration(r_m: number, q_tnt: number): number {
 }
 
 /** Скорость фронта ударной волны (м/с) через давление: D = C0 * √(1 + 6/7 * ΔP/P0) */
-function waveFrontSpeed(deltaP_kPa: number): number {
+export function waveFrontSpeed(deltaP_kPa: number): number {
   return Math.round(C0 * Math.sqrt(1 + (6 / 7) * (deltaP_kPa / P0)) * 10) / 10;
 }
 

@@ -75,6 +75,10 @@ export interface BarrierHit {
   destroyed: boolean;
   /** Доля давления, прошедшая за перемычку, 0…1. */
   transmit: number;
+  /** Путь волны от очага до перемычки, м (для диаграммы волны). */
+  d_m?: number;
+  /** Очаг, от которого пришёл этот удар. */
+  srcId?: string;
 }
 
 /**
@@ -207,7 +211,7 @@ export function crossBarriers(opts: {
   for (const bar of passed) {
     const fixed = decided?.(bar);
     const dist = Math.abs(bar.t - tFrom) * len;
-    const hit = fixed ?? barrierTransmission(pressureOf(d0 + dist, attAt(dist) * factor, srcId), bar.failure_MPa, bar.openFrac ?? 0);
+    const hit = fixed ?? { ...barrierTransmission(pressureOf(d0 + dist, attAt(dist) * factor, srcId), bar.failure_MPa, bar.openFrac ?? 0), d_m: d0 + dist, srcId };
     onHit?.(bar, hit);
     factor *= hit.transmit;
     if (factor <= 0) return 0;
