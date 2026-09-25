@@ -1759,6 +1759,37 @@ export default function CadPage() {
   const [schemaSymbols, setSchemaSymbols] = useState<SchemaSymbol[]>([]);
   useEffect(() => { symbolsRef.current = schemaSymbols; }, [schemaSymbols]);
 
+  // ─── Синхронизация «Панели информации» → замерные станции на схеме ──
+  // Как у водопровода: галочка в панели — главная. Включили — показатель
+  // виден у всех станций, выключили — гаснет у всех, включая личные галочки
+  // станций (иначе личная галочка держала бы подпись и выключение из панели
+  // «не работало»).
+  const MS_IND_KEYS = ["msIndNumber", "msIndLocation", "msIndFlow", "msIndArea", "msIndVelocity"] as const;
+  const updateInfoConfigSynced = (patch: Partial<InfoDisplayConfig>) => {
+    updateInfoConfig(patch);
+    const msPatch: Partial<Record<(typeof MS_IND_KEYS)[number], boolean>> = {};
+    let has = false;
+    for (const k of MS_IND_KEYS) {
+      if (k in patch) { msPatch[k] = !!patch[k]; has = true; }
+    }
+    if (!has) return;
+    setSchemaSymbols((prev) => prev.map((s) =>
+      s.typeId === "measure_station" ? { ...s, ...msPatch } : s));
+  };
+  // Панель показывает показатель включённым, если он включён общей галочкой
+  // ИЛИ отмечен у всех станций схемы — так состояние в панели совпадает с тем,
+  // что видно на схеме.
+  const infoPanelConfig = useMemo<InfoDisplayConfig>(() => {
+    const ms = schemaSymbols.filter((s) => s.typeId === "measure_station");
+    if (ms.length === 0) return infoConfig;
+    const out = { ...infoConfig };
+    for (const k of MS_IND_KEYS) {
+      if (!out[k] && ms.every((s) => !!s[k])) out[k] = true;
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infoConfig, schemaSymbols]);
+
   /**
    * Ветви для расчёта маршрутов горноспасателей и горнорабочего.
    *
@@ -14928,8 +14959,8 @@ export default function CadPage() {
             <div className="flex-1 flex flex-col overflow-hidden">
               <div className="flex-1 overflow-hidden">
                 <InfoPanel
-                  config={infoConfig}
-                  onChange={updateInfoConfig}
+                  config={infoPanelConfig}
+                  onChange={updateInfoConfigSynced}
                   nodes={nodes}
                   selectedNodeId={selectedNodeId}
                   onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
