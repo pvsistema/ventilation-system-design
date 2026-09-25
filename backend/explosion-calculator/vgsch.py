@@ -16,7 +16,7 @@ PV_FACTOR = 5        # объём продуктов взрыва = 5·V0
 SAFE_KPA = 9.0       # кПа — безопасное давление для человека
 SAFE_IMPULSE = 40000 # Н·с/м2 — безопасный импульс
 C_PRODUCTS = 680.0   # м/с — скорость звука в продуктах взрыва
-ALPHA_DEFAULT = 150  # ×10^-4 Н·с2/м4 — «другие виды крепи»
+ALPHA_DEFAULT = 15   # ×10^-4 кгс·с2/м4 — «другие виды крепи»
 
 COMBUSTION_MODES = {
     "detonation":        {"label": "Детонация (экстремальный режим)",       "mu": 0.50, "dust": False},
@@ -32,8 +32,9 @@ def combustion_mode(mode_id):
 
 
 def kz_from_alpha(alpha):
-    """Коэффициент затухания Кз по табл. 3 (A в ×10^-4 Н·с2/м4)."""
-    a = alpha if alpha and alpha > 0 else ALPHA_DEFAULT
+    """Коэффициент затухания Кз по табл. 3. α в программе — ×10^-4 кгс·с2/м4,
+    таблица — по A в ×10^-4 Н·с2/м4, поэтому A = α·9,81."""
+    a = (alpha if alpha and alpha > 0 else ALPHA_DEFAULT) * 9.81
     if a <= 39.2:
         return 0.5e-3
     if a <= 78.4:

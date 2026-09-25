@@ -9523,9 +9523,12 @@ export default function CadPage() {
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Алгоритм расчёта</div>
                   <div className="flex flex-col gap-1 px-2 py-1.5" style={{ borderBottom: SB }}>
                     <span className="text-[10px] text-gray-700 leading-tight">
-                      Методика газодинамического расчёта параметров воздушных ударных волн
-                      при взрывах газа и пыли (формула Садовского), тротиловый эквивалент —
-                      по Методике №415.
+                      {(b.explosionSourceType ?? "gas") === "gas" && (b.explosionGasMethod ?? "vgsch") === "vgsch"
+                        ? <>Методика определения параметров УВВ при взрывах газов и пыли в горных
+                          выработках (Прил. 12 к Уставу ВГСЧ). Перемычки разрушаются при давлении
+                          во фронте не ниже давления разрушения (табл. 8); устоявшие волну задерживают.</>
+                        : <>Методика газодинамического расчёта параметров воздушных ударных волн
+                          (формула Садовского), тротиловый эквивалент — по Методике №415.</>}
                     </span>
                     {b.explosionMethod === "fnip_494" && (
                       <span className="text-[10px] leading-tight px-1.5 py-1 rounded"
@@ -13562,6 +13565,11 @@ export default function CadPage() {
                 // Начальные состояния у концов ветви-очага
                 // (символ взрыва стоит на позиции t вдоль ветви)
                 sources.forEach(src => {
+                  // Очаг по методике ВГСЧ уже проведён своим обходом (vgschNetC).
+                  // Старую модель для него не запускаем: иначе там, куда волна
+                  // ВГСЧ не дошла (устоявшая перемычка, угасание), подмешивалась
+                  // бы волна другой модели — отсюда «хаотичная» окраска.
+                  if (vgschSrc.has(src.id)) return;
                   const len = branchLen(src);
                   const t = src.explosionT ?? 0.5;
                   const res = resFor(src.id);
@@ -13685,7 +13693,7 @@ export default function CadPage() {
                     if (rTo)   take(rTo.d   + len * (1 - t), rTo.srcId,   rTo.att   * decay(len * (1 - t)) * barK(1, t));
                     // Если очаг стоит на самой этой ветви — идём по ней напрямую,
                     // не огибая через узлы
-                    if (isSource) {
+                    if (isSource && !vgschSrc.has(b.id)) {
                       const tSrc = b.explosionT ?? 0.5;
                       const dSrc = Math.abs(t - tSrc) * len;
                       const rTrS = resFor(b.id)?.transitionRadius_m ?? 0;
@@ -13713,6 +13721,11 @@ export default function CadPage() {
                       continue;
                     }
                     const reach = reachAt(tMid);
+                    // Волна от очага ВГСЧ сюда не дошла — старая модель тоже не красит
+                    if (reach && vgschSrc.has(reach.srcId)) {
+                      if (curColor !== null) { segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N }); curColor = null; }
+                      continue;
+                    }
                     // Участок вне досягаемости волны — обрываем текущий отрезок
                     if (!reach) {
                       if (curColor !== null) {
