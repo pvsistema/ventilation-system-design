@@ -30,6 +30,8 @@ import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { withLicense } from "@/lib/license";
 import { calcGasZone, gasZoneTime, DEFAULT_I_NEPOGASH } from "@/lib/gasZone";
 import { collectBarriers, crossBarriers, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
+import { vgschPressureAt, vgschImpulseAt, type VgschSource } from "@/lib/vgschBlast";
+import { propagateVgsch, type VgschNetResult } from "@/lib/vgschNetwork";
 
 export interface ExplosionRunParams {
   branches: TopoBranch[];
@@ -96,6 +98,19 @@ export interface ExplosionRunResult {
   barrierHits: Map<string, BarrierHit>;
   /** Перемычки по ветвям — те же, по которым шёл расчёт. */
   barriers: Map<string, BlastBarrier[]>;
+  /** Расчёт по сети по методике ВГСЧ (если есть очаги газа по ней). */
+  vgschNet?: VgschNetResult;
+}
+
+/** Параметры методики ВГСЧ из ветви-очага — общие для сервера и расчёта на месте. */
+export function vgschParamsOf(b: TopoBranch) {
+  return {
+    gasMethod: b.explosionGasMethod ?? "vgsch",
+    combustionMode: b.explosionCombustionMode ?? "detonation",
+    dustParticipation: b.explosionDust === true,
+    excavationPerimeter_m: b.perimeter && b.perimeter > 0 ? b.perimeter : undefined,
+    excavationAlpha: b.alphaCoef,
+  } as const;
 }
 
 /**
@@ -186,6 +201,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     considerWalls: b.explosionConsiderWalls ?? true,
     // Коэффициент участия Z по Методике №415 (0.1 открыто / 0.5 замкнуто)
     zParticipation: b.explosionZ ?? 0.5,
+    ...vgschParamsOf(b),
     thresholds,
   }));
   // Ответы сервера по номеру ветви. Если связи нет — карта пустая,
@@ -258,7 +274,14 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         const dpKgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
         return Math.round(dpKgf * 98.07 * 10) / 10;
       };
-      res = {
+      if (data.vgsch) {
+        const v = data.vgsch as VgschSource;
+        res = {
+          ...data,
+          pressureAtDistance: (r: number) => vgschPressureAt(r, v),
+          impulseAtDistance: (r: number) => vgschImpulseAt(r, v),
+        };
+      } else res = {
         ...data,
         channel: _ch,
         pressureAtDistance: (r: number) => {
@@ -294,6 +317,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         ambientPressure_kPa: 101.3,
         considerWalls: b.explosionConsiderWalls ?? true,
         zParticipation: b.explosionZ ?? 0.5,
+        ...vgschParamsOf(b),
         thresholds,
       });
     }
@@ -396,6 +420,15 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   // разрушенная пропускает ослабленную.
   const barriers = collectBarriers(updatedBranches, symbols, bulkheadSymbolIds);
   const barrierHits = new Map<string, BarrierHit>();
+
+  // Очаги газа по Методике ВГСЧ ведутся по сети отдельно — с зонами
+  // загазования и продуктов взрыва, Кз каждой выработки и Кзат в узлах.
+  const vgschSources = new Map<string, VgschSource>();
+  for (const [bid, r] of resultByBranch) if (r.vgsch && !r.noExplosion) vgschSources.set(bid, r.vgsch);
+  const vgschNet = vgschSources.size > 0
+    ? propagateVgsch({ branches: updatedBranches, nodes, sources: vgschSources, barriers })
+    : undefined;
+  if (vgschNet) for (const [k, h] of vgschNet.hits) barrierHits.set(k, h);
   /** Запоминаем самый сильный удар по перемычке — с какой бы стороны он ни пришёл. */
   const recordHit = (bar: BlastBarrier, hit: BarrierHit) => {
     const prev = barrierHits.get(bar.key);
@@ -416,6 +449,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   // Старт: от точки очага до обоих концов его ветви
   updatedBranches.forEach(src => {
     if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
+    if (vgschSources.has(src.id)) return; // ведётся обходом по методике ВГСЧ
     const len = bLen(src); const t = src.explosionT ?? 0.5;
     const res = resultByBranch.get(src.id);
     const rTr = res?.transitionRadius_m ?? 0;
@@ -525,8 +559,19 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     };
   });
 
+  // Путь волны по методике ВГСЧ — в общую карту (нужна для шкалы на схеме)
+  if (vgschNet) {
+    for (const [nid, st] of vgschNet.nodeState) {
+      const r = vgschSources.get(st.srcId);
+      const cur = netWave.get(nid);
+      if (!r) continue;
+      const att = r.dPn_kPa > 0 ? (st.det * st.mult) : 0;
+      if (!cur || st.d > cur.d) netWave.set(nid, { d: st.d, att, srcId: st.srcId });
+    }
+  }
+
   return {
     branches: finalBranches, results, resultByBranch, netWave, pressureAtNode,
-    barrierHits, barriers,
+    barrierHits, barriers, vgschNet,
   };
 }

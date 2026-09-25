@@ -468,6 +468,15 @@ export interface TopoBranch {
   explosionGasP0: number;
   explosionGasConcentration: number;       // % — концентрация газа
   explosionZ: number;                      // коэф. участия Z по Методике №415 (0.1 / 0.5)
+  /**
+   * Методика расчёта газа/пыли: "vgsch" — Методика ВГСЧ (Прил. 12 к Уставу
+   * ВГСЧ), по умолчанию; "aeroset" — прежняя модель, подогнанная под «Аэросеть».
+   */
+  explosionGasMethod?: "vgsch" | "aeroset";
+  /** Вид взрыва ГВС по табл. 2 методики ВГСЧ. Не задан — детонация. */
+  explosionCombustionMode?: "detonation" | "deflagration" | "deflagration_dust" | "layered_dust";
+  /** Участие угольной пыли во взрыве газа (энергия × 1,3). */
+  explosionDust?: boolean;
   // По массе ВВ
   explosionExplosiveId: string;            // ID ВВ из EXPLOSIVE_TYPES
   explosionExplosiveMass: number;          // кг — масса ВВ

@@ -100,7 +100,9 @@ import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
 import ScrollArrows from "@/components/cad/ScrollArrows";
 import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonReferences";
 import { runFireMode } from "@/lib/fireModeRun";
-import { runExplosionMode } from "@/lib/explosionModeRun";
+import { runExplosionMode, vgschParamsOf } from "@/lib/explosionModeRun";
+import { propagateVgsch } from "@/lib/vgschNetwork";
+import { type VgschSource, type CombustionMode, COMBUSTION_MODES, combustionMode } from "@/lib/vgschBlast";
 import { resolveBulkheadSolid } from "@/lib/rescueCalculator";
 import { exportExplosionReport } from "@/lib/explosionReport";
 import {
@@ -2080,6 +2082,7 @@ export default function CadPage() {
       ambientPressure_kPa: 101.3,
       considerWalls: src.explosionConsiderWalls ?? true,
       zParticipation: src.explosionZ ?? 0.5,
+      ...vgschParamsOf(src),
       thresholds: blastThresholds,
     });
     if (res.noExplosion) { setExplosionPreview(null); return; }
@@ -9576,6 +9579,42 @@ export default function CadPage() {
                         {GAS_TYPES.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
                       </select>
                     </div>
+                    {/* Методика расчёта газа и пыли. По умолчанию — Методика ВГСЧ
+                        (Прил. 12 к Уставу ВГСЧ); прежняя модель «как в Аэросети»
+                        оставлена для сверки со старыми расчётами. */}
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Методика:</span>
+                      <select value={b.explosionGasMethod ?? "vgsch"}
+                        onChange={e => updateBranch(b.id, { explosionGasMethod: e.target.value as "vgsch" | "aeroset" })}
+                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                        <option value="vgsch">ВГСЧ (Прил. 12 к Уставу ВГСЧ)</option>
+                        <option value="aeroset">Как в «Аэросети» (для сверки)</option>
+                      </select>
+                    </div>
+                    {(b.explosionGasMethod ?? "vgsch") === "vgsch" && (<>
+                      <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Вид взрыва (табл. 2):</span>
+                        <select value={b.explosionCombustionMode ?? "detonation"}
+                          onChange={e => updateBranch(b.id, { explosionCombustionMode: e.target.value as CombustionMode })}
+                          className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                          {COMBUSTION_MODES.map(m => <option key={m.id} value={m.id}>{m.label} — μ {m.mu}</option>)}
+                        </select>
+                      </div>
+                      <label className="flex items-center gap-1.5 px-2 py-1 cursor-pointer" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <input type="checkbox" checked={b.explosionDust === true}
+                          disabled={combustionMode(b.explosionCombustionMode).dust}
+                          onChange={e => updateBranch(b.id, { explosionDust: e.target.checked })} />
+                        <span className="text-[11px] text-gray-700">
+                          Участие угольной пыли
+                          <span className="block text-[9px] text-gray-400">энергия взрыва × 1,3</span>
+                        </span>
+                      </label>
+                      <div className="mx-2 my-1 px-2 py-1 rounded text-[10px]"
+                        style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc", color: "var(--c-blue-ink, #1e3a8a)" }}>
+                        Если вид взрыва установить достоверно нельзя — методика требует считать детонацию.
+                        Кз берётся по α выработок (табл. 3), в узлах — коэффициент затекания (табл. 5).
+                      </div>
+                    </>)}
                     {/* Источник задаётся ДЛИНОЙ загазованного участка (как в
                         «Аэросети»), а объём смеси считается как длина × сечение.
                         Раньше вводился объём и трактовался буквально: 100 м³
@@ -9714,7 +9753,7 @@ export default function CadPage() {
                         «Аэросети»): 50 м → 209 кПа, 100 м → 282 кПа.
                         Ручной ввод нужен только для сверки с чужим расчётом,
                         поэтому включается галочкой. */}
-                    {(() => {
+                    {(b.explosionGasMethod ?? "vgsch") === "aeroset" && (() => {
                       const zoneLen = b.explosionGasZoneLength ?? 100;
                       // ΔP₀ зависит не только от длины, но и от ЭНЕРГИИ смеси:
                       // вид газа, концентрация и Z входят через E_v.
@@ -9762,7 +9801,7 @@ export default function CadPage() {
                         </div>
                       );
                     })()}
-                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    {(b.explosionGasMethod ?? "vgsch") === "aeroset" && <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Коэф. участия Z:</span>
                       <select value={String(b.explosionZ ?? 0.5)}
                         onChange={e => updateBranch(b.id, { explosionZ: parseFloat(e.target.value) || 0.5 })}
@@ -9770,7 +9809,7 @@ export default function CadPage() {
                         <option value="0.5">0.5 — замкнутый объём (выработка)</option>
                         <option value="0.1">0.1 — открытое пространство</option>
                       </select>
-                    </div>
+                    </div>}
                     {(() => {
                       const gas = GAS_TYPES.find(g => g.id === (b.explosionGasId ?? "methane"));
                       if (!gas) return null;
@@ -9852,6 +9891,23 @@ export default function CadPage() {
                       const res = explosionResultByBranch.get(b.id);
                       if (!res || !res.maxImpulse_Pas) return null;
                       const isGas = !!res.gasSource;
+                      if (res.vgsch) {
+                        const v = res.vgsch;
+                        const pvLen = Math.round(v.pvVolumePerSide_m3 / (v.area_m2 || 1));
+                        return (<>
+                          <Row label="Энергия взрыва Ен:" value={`${Math.round(v.En_MJ)} МДж`} />
+                          <Row label="ΔP в зоне загазования:" value={`${Math.round(v.dPz_kPa)} кПа`} />
+                          <Row label="ΔPн в месте отрыва УВВ:" value={`${Math.round(v.dPn_kPa)} кПа`} />
+                          <Row label="Зона продуктов взрыва:" value={`по ${pvLen} м в обе стороны`} />
+                          <Row label="Кз (табл. 3):" value={`${v.kz}`} />
+                          <Row label="Импульс (i = ΔP·θ/2):" value={`${res.maxImpulse_Pas} Н·с/м²`} />
+                          <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
+                            Методика ВГСЧ: в зоне загазования давление постоянно, в зоне продуктов
+                            взрыва (5V₀) — по ф. (4), после отрыва УВВ — затухание по ф. (3)
+                            с Кзат в сопряжениях и поворотах. Безопасно для человека — ΔP ≤ 9 кПа.
+                          </div>
+                        </>);
+                      }
                       return (<>
                         <Row label="Импульс (i = ΔP·τ):" value={`${res.maxImpulse_Pas} Па·с`} />
                         <Row label="Длительность фазы τ:" value={`${res.phaseDuration_ms ?? "—"} мс`} />
@@ -13432,6 +13488,21 @@ export default function CadPage() {
                 const resFor = (branchId: string) =>
                   explosionResultByBranch.get(branchId) ?? baseRes;
 
+                // Очаги газа по Методике ВГСЧ ведутся ОТДЕЛЬНЫМ обходом — тем
+                // же, что и в полном расчёте: зоны загазования и продуктов
+                // взрыва, Кз каждой выработки, Кзат в узлах (табл. 5).
+                const vgschSrc = new Map<string, VgschSource>();
+                sources.forEach(sb => { const v = resFor(sb.id)?.vgsch; if (v) vgschSrc.set(sb.id, v); });
+                const vgschNetC = vgschSrc.size > 0
+                  ? propagateVgsch({
+                      branches, nodes, sources: vgschSrc,
+                      barriers: explosionCalcDone && explosionBarriers
+                        ? explosionBarriers.byBranch
+                        : collectBarriers(branches, schemaSymbols, BULKHEAD_SYMBOL_IDS),
+                      decided: explosionCalcDone && explosionBarriers ? explosionBarriers.hits : undefined,
+                    })
+                  : null;
+
                 // Длина ветви по координатам узлов (3D)
                 const nodeByIdMap = new Map(nodes.map(n => [n.id, n]));
                 const branchLen = (b: typeof branches[0]): number => {
@@ -13571,7 +13642,8 @@ export default function CadPage() {
                   const isSource = b.hasExplosion && b.explosionComputedMaxP > 0;
                   const rFrom = distNode.get(b.fromId);
                   const rTo   = distNode.get(b.toId);
-                  if (!isSource && !rFrom && !rTo) return; // волна не дошла
+                  const vgHere = vgschNetC ? (vgschNetC.pressureAt(b.id, 0.5)?.p ?? 0) > 0 : false;
+                  if (!isSource && !rFrom && !rTo && !vgHere) return; // волна не дошла
 
                   // Затухание вдоль САМОЙ этой ветви — по её сечению
                   const betaB = channelDecay({ area_m2: branchArea(b), lambda: LAMBDA_DEFAULT });
@@ -13628,7 +13700,19 @@ export default function CadPage() {
                   let curStart = 0;
                   let worst = "safe";
                   for (let i = 0; i < SEG_N; i++) {
-                    const reach = reachAt((i + 0.5) / SEG_N);
+                    const tMid = (i + 0.5) / SEG_N;
+                    const vg = vgschNetC?.pressureAt(b.id, tMid);
+                    if (vg && vg.p > 0 && vg.d <= blastWaveRadius) {
+                      const { color, hazardLevel: lvlV } = zoneColor(vg.p);
+                      if (RANK.indexOf(lvlV) > RANK.indexOf(worst)) worst = lvlV;
+                      if (color !== curColor) {
+                        if (curColor !== null) segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N });
+                        curColor = color;
+                        curStart = i / SEG_N;
+                      }
+                      continue;
+                    }
+                    const reach = reachAt(tMid);
                     // Участок вне досягаемости волны — обрываем текущий отрезок
                     if (!reach) {
                       if (curColor !== null) {

@@ -30,6 +30,12 @@
 // Ориентир: Аэросеть / ВНИМИ / методика Садовского–Ефремова
 // ─────────────────────────────────────────────────────────────────────────────
 
+import {
+  makeVgschSource, vgschPressureAt, vgschImpulseAt, vgschDistanceAtPressure,
+  combustionMode, VGSCH_SAFE_KPA, VGSCH_SAFE_IMPULSE, VGSCH_ZONE1_KPA, VGSCH_PV_FACTOR,
+  type VgschSource, type CombustionMode,
+} from "./vgschBlast";
+
 // ─── Константы ────────────────────────────────────────────────────────────────
 const Q_TNT   = 4520;   // кДж/кг — теплота взрыва ТНТ
 const P0      = 101.3;  // кПа    — атмосферное давление
@@ -180,7 +186,22 @@ export interface ExplosionParams {
   zParticipation?: number;
   /** Пороги зон поражения из справочника. Не заданы — берутся по умолчанию. */
   thresholds?: Partial<ExplosionThresholds>;
+  /**
+   * Методика расчёта газа/пыли:
+   *   "vgsch"   — Методика ВГСЧ (Прил. 12 к Уставу ВГСЧ) — по умолчанию;
+   *   "aeroset" — прежняя модель, откалиброванная по «Аэросети» (для сверки).
+   */
+  gasMethod?: GasMethod;
+  /** Вид взрыва ГВС по табл. 2 методики ВГСЧ (коэффициент μ). */
+  combustionMode?: CombustionMode;
+  /** Участие угольной пыли: энергия × 1,3 (методика ВГСЧ). */
+  dustParticipation?: boolean;
+  /** Коэффициент аэродинамического сопротивления выработки α (×10⁻⁴) — для Кз. */
+  excavationAlpha?: number;
 }
+
+/** Методика расчёта взрыва газа и пыли. */
+export type GasMethod = "vgsch" | "aeroset";
 
 // ─── Результаты расчёта ───────────────────────────────────────────────────────
 export interface ExplosionZone {
@@ -229,6 +250,8 @@ export interface ExplosionResult {
    * начала и сферическая формула Садовского не применяется.
    */
   gasSource?: GasSourceParams;
+  /** Источник по методике ВГСЧ — задан, если расчёт газа шёл по ней. */
+  vgsch?: VgschSource;
   /**
    * Взрыва нет: заряд нулевой либо смесь вне пределов взрываемости.
    * В этом случае все радиусы и давления равны нулю — зоны поражения
@@ -1032,6 +1055,11 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     return emptyExplosionResult(th, noExplosionReason, log, warnings);
   }
 
+  // ── ГАЗ И ПЫЛЬ ПО МЕТОДИКЕ ВГСЧ (по умолчанию) ─────────────────────────────
+  if (params.sourceType === "gas" && (params.gasMethod ?? "vgsch") === "vgsch") {
+    return calcVgsch(params, th, gasZoneLen, gasVolume, q_tnt, log, warnings);
+  }
+
   // Граница применимости формулы для этого заряда, м (r̄ = 1).
   // Ниже её параметры волны методикой не определяются.
   const rMinValid = minValidRadius(q_tnt);
@@ -1209,6 +1237,116 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     channelDecay_per_m: channelMode ? beta : undefined,
     channel: channelMode ? channel : undefined,
     gasSource,
+    zones,
+    pressureAtDistance,
+    impulseAtDistance,
+    log,
+    warnings,
+  };
+}
+
+/**
+ * Расчёт взрыва газа/пыли по Методике ВГСЧ (Прил. 12 к Уставу ВГСЧ).
+ *
+ * Для одиночной выработки-очага: зона загазования → зона продуктов взрыва
+ * (5V₀) → затухание УВВ по ф. (3). Местные сопротивления учитываются при
+ * распространении по схеме (explosionModeRun / blastNetwork).
+ */
+function calcVgsch(
+  params: ExplosionParams,
+  th: ExplosionThresholds,
+  gasZoneLen: number,
+  gasVolume: number,
+  q_tnt: number,
+  log: string[],
+  warnings: string[],
+): ExplosionResult {
+  const gas = GAS_TYPES.find(g => g.id === params.gasId) ?? GAS_TYPES[0];
+  const area = params.excavationArea_m2 > 0 ? params.excavationArea_m2 : 12;
+  const zoneLen = gasZoneLen > 0 ? gasZoneLen : gasVolume / area;
+  const mode = combustionMode(params.combustionMode);
+  // Энергия смеси относительно стехиометрической метановоздушной, для
+  // которой составлены расчётные зависимости методики. Для других газов и
+  // нестехиометрических смесей — пересчёт по теплоте сгорания.
+  const z = 1; // коэффициент участия Z в методике ВГСЧ не применяется
+  const ev = gasEnergyDensity(gas, params.gasConcentration, z);
+  const evRef = gasEnergyDensity(GAS_TYPES[0], GAS_TYPES[0].stoichConc, z);
+  const isDust = gas.unit === "g/m3";
+  const energyRel = isDust ? 1 : (evRef > 0 ? ev / evRef : 1);
+  const src = makeVgschSource({
+    zoneLength_m: zoneLen,
+    V0_m3: gasVolume,
+    mode: mode.id,
+    energyRel,
+    dust: isDust || params.dustParticipation === true,
+    area_m2: area,
+    perimeter_m: params.excavationPerimeter_m,
+    alpha: params.excavationAlpha,
+  });
+  const S = area;
+  const P = src.perimeter_m;
+  const pvLen = src.pvVolumePerSide_m3 / S;
+
+  log.push("Методика: определение параметров УВВ при взрывах газов и пыли в горных выработках (Прил. 12 к Уставу ВГСЧ)");
+  log.push(`Объём загазования V₀ = ${Math.round(src.V0_m3)} м³ (участок ${Math.round(zoneLen * 10) / 10} м × ${S} м²)`);
+  if (energyRel !== 1) log.push(`Энергия смеси относительно стехиометрической метановоздушной: ${Math.round(energyRel * 1000) / 1000}`);
+  log.push(`Энергия взрыва Ен = ρ₀·gv·V₀${src.dustFactor > 1 ? "·1,3 (участие пыли)" : ""} = ${Math.round(src.En_MJ)} МДж`);
+  log.push(`Вид взрыва (табл. 2): ${mode.label}, μ = ${mode.mu}`);
+  log.push(`Начальное давление УВВ в месте отрыва от ПВ, ф. (2): ΔPн = ${Math.round(src.dPn_kPa)} кПа (${Math.round(src.dPn_kPa) / 1000} МПа)`);
+  log.push(`Давление в зоне загазования: ${Math.round(src.dPz_kPa)} кПа${mode.id === "detonation" ? ` (${VGSCH_ZONE1_KPA / 1000} МПа)` : " (пересчитано на вид взрыва)"}`);
+  log.push(`Зона продуктов взрыва: ${VGSCH_PV_FACTOR}V₀ = ${Math.round(VGSCH_PV_FACTOR * src.V0_m3)} м³, по ${Math.round(pvLen)} м в каждую сторону за пределами загазования`);
+  log.push(`Периметр П = ${Math.round(P * 100) / 100} м${params.excavationPerimeter_m ? "" : " (оценка 4√S)"}, Кз = ${src.kz} (табл. 3 по α = ${params.excavationAlpha ?? "—"}·10⁻⁴)`);
+  log.push(`Затухание УВВ, ф. (3): ΔPх = ΔPн·exp(−П·x·Кз/F), П·Кз/F = ${(src.kz * P / S).toExponential(3)} 1/м`);
+
+  const pressureAtDistance = (r: number) => vgschPressureAt(r, src);
+  const impulseAtDistance = (r: number) => vgschImpulseAt(r, src);
+  const maxDeltaP = pressureAtDistance(0);
+  const maxImpulse = impulseAtDistance(0);
+  const phaseDuration_ms = Math.round(src.phase_s * 1000 * 10) / 10;
+  log.push(`Время действия θ ≈ (L/2)/c_прод = ${phaseDuration_ms} мс; импульс i = ΔP·θ/2 = ${maxImpulse} Н·с/м²`);
+
+  const zoneDefs: Array<{ name: string; level: ExplosionZone["hazardLevel"]; from: number; to: number | null; what: string }> = [
+    { name: "Летальная",         level: "lethal", from: th.lethal, to: null,      what: "летальный исход, полное разрушение" },
+    { name: "Тяжёлые поражения", level: "heavy",  from: th.heavy,  to: th.lethal, what: "тяжёлые травмы, обрушение конструкций" },
+    { name: "Средние поражения", level: "medium", from: th.medium, to: th.heavy,  what: "средние травмы, повреждение оборудования" },
+    { name: "Лёгкие поражения",  level: "light",  from: th.light,  to: th.medium, what: "контузии, звуковая травма, лёгкие повреждения" },
+  ];
+  const zones: ExplosionZone[] = zoneDefs.map(d => {
+    const r = vgschDistanceAtPressure(d.from, src);
+    return {
+      name: d.name,
+      description: `ΔP ${d.to === null ? `> ${d.from}` : `${d.from}–${d.to}`} кПа — ${d.what}`,
+      radius_m: r, deltaP_kPa: d.from, impulse_Pas: impulseAtDistance(r), hazardLevel: d.level,
+    };
+  });
+  const rSafe = vgschDistanceAtPressure(th.safeLimit, src);
+  zones.push({
+    name: "Безопасная зона",
+    description: `ΔP < ${th.safeLimit} кПа — безопасно для человека`,
+    radius_m: rSafe, deltaP_kPa: th.safeLimit, impulse_Pas: impulseAtDistance(rSafe), hazardLevel: "safe",
+  });
+  zones.forEach(zz => log.push(`${zz.name}: ${zz.radius_m} м от центра очага, ΔP = ${zz.deltaP_kPa} кПа`));
+  log.push("Расстояния — по прямой выработке-очагу без местных сопротивлений; по схеме волна ведётся с учётом сопряжений и поворотов (табл. 5)");
+  if (th.safeLimit < VGSCH_SAFE_KPA) {
+    log.push(`Безопасное для человека давление по методике — ${VGSCH_SAFE_KPA} кПа, безопасный импульс — ${VGSCH_SAFE_IMPULSE} Н·с/м²`);
+  }
+  if (src.dPn_kPa <= th.light) {
+    warnings.push("Начальное давление УВВ ниже порога лёгких поражений — проверьте вид взрыва и объём загазования");
+  }
+
+  return {
+    q_tnt_kg: Math.round(q_tnt * 100) / 100,
+    maxDeltaP_kPa: maxDeltaP,
+    maxImpulse_Pas: maxImpulse,
+    phaseDuration_ms,
+    waveFrontSpeed_ms: waveFrontSpeed(src.dPn_kPa),
+    minValidRadius_m: 0,
+    thresholds: th,
+    channelMode: true,
+    transitionRadius_m: 0,
+    channelDecay_per_m: src.kz * P / S,
+    channel: { area_m2: S, perimeter_m: P },
+    vgsch: src,
     zones,
     pressureAtDistance,
     impulseAtDistance,

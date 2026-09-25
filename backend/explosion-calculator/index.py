@@ -13,6 +13,7 @@ POST: {
 """
 import json, math
 from license_guard import license_gate
+import vgsch
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -639,6 +640,12 @@ def calc_one(body: dict) -> dict:
     q_tnt_rounded = round(q_tnt * 100) / 100
     log.append(f"Тротиловый эквивалент: Q_tnt = {q_tnt_rounded} кг ТНТ")
 
+    # ГАЗ И ПЫЛЬ ПО МЕТОДИКЕ ВГСЧ (по умолчанию). Прежняя модель «как в
+    # Аэросети» доступна через gasMethod = "aeroset".
+    if source_type == "gas" and body.get("gasMethod", "vgsch") == "vgsch":
+        return calc_vgsch(body, gas, conc, volume, gas_zone_len, area_m2, perimeter_m,
+                          q_tnt_rounded, th, log, warnings, distances)
+
     # 2. Модель распространения.
     # При канальной модели wall_factor НЕ применяется: он был грубой заменой
     # канализирования постоянным множителем, и вместе с каналом эффект
@@ -781,6 +788,90 @@ def calc_one(body: dict) -> dict:
         "warnings":           warnings,
     }
     return result
+
+
+def calc_vgsch(body, gas, conc, volume, gas_zone_len, area_m2, perimeter_m,
+               q_tnt_rounded, th, log, warnings, distances):
+    """Взрыв газа/пыли по Методике ВГСЧ (Прил. 12 к Уставу ВГСЧ)."""
+    area = area_m2 if area_m2 > 0 else 12.0
+    zone_len = gas_zone_len if gas_zone_len > 0 else volume / area
+    mode_key, mode = vgsch.combustion_mode(body.get("combustionMode"))
+    is_dust = gas.get("unit") == "g/m3"
+    ev = gas_energy_density(gas, conc, 1.0)
+    ev_ref = gas_energy_density(GAS_TYPES["methane"], GAS_TYPES["methane"]["stoichConc"], 1.0)
+    energy_rel = 1.0 if is_dust else (ev / ev_ref if ev_ref > 0 else 1.0)
+    alpha = body.get("excavationAlpha")
+    alpha = float(alpha) if alpha else None
+    src = vgsch.make_source(zone_len, volume, mode_key, energy_rel,
+                            is_dust or bool(body.get("dustParticipation")),
+                            area, perimeter_m, alpha)
+    s, p = area, src["perimeter_m"]
+    pv_len = src["pvVolumePerSide_m3"] / s
+
+    log.append("Методика: определение параметров УВВ при взрывах газов и пыли в горных выработках (Прил. 12 к Уставу ВГСЧ)")
+    log.append(f"Объём загазования V₀ = {round(volume)} м³ (участок {round(zone_len, 1)} м × {s} м²)")
+    if energy_rel != 1.0:
+        log.append(f"Энергия смеси относительно стехиометрической метановоздушной: {round(energy_rel, 3)}")
+    log.append(f"Энергия взрыва Ен = ρ₀·gv·V₀{'·1,3 (участие пыли)' if src['dustFactor'] > 1 else ''} = {round(src['En_MJ'])} МДж")
+    log.append(f"Вид взрыва (табл. 2): {mode['label']}, μ = {mode['mu']}")
+    log.append(f"Начальное давление УВВ в месте отрыва от ПВ, ф. (2): ΔPн = {round(src['dPn_kPa'])} кПа")
+    log.append(f"Давление в зоне загазования: {round(src['dPz_kPa'])} кПа")
+    log.append(f"Зона продуктов взрыва: 5V₀ = {round(5 * volume)} м³, по {round(pv_len)} м в каждую сторону за пределами загазования")
+    log.append(f"Периметр П = {round(p, 2)} м{'' if perimeter_m else ' (оценка 4√S)'}, Кз = {src['kz']} (табл. 3 по α = {alpha if alpha else '—'}·10⁻⁴)")
+    log.append(f"Затухание УВВ, ф. (3): ΔPх = ΔPн·exp(−П·x·Кз/F), П·Кз/F = {src['kz'] * p / s:.3e} 1/м")
+
+    max_dp = vgsch.pressure_at(0, src)
+    max_imp = vgsch.impulse_at(0, src)
+    phase_ms = round(src["phase_s"] * 1000, 1)
+    log.append(f"Время действия θ ≈ (L/2)/c_прод = {phase_ms} мс; импульс i = ΔP·θ/2 = {max_imp} Н·с/м²")
+
+    zone_defs = [
+        ("Летальная",         "lethal", th["lethal"], None,         "летальный исход, полное разрушение"),
+        ("Тяжёлые поражения", "heavy",  th["heavy"],  th["lethal"], "тяжёлые травмы, обрушение конструкций"),
+        ("Средние поражения", "medium", th["medium"], th["heavy"],  "средние травмы, повреждение оборудования"),
+        ("Лёгкие поражения",  "light",  th["light"],  th["medium"], "контузии, звуковая травма, лёгкие повреждения"),
+    ]
+    zones = []
+    for name, lvl, lo, hi, what in zone_defs:
+        r = vgsch.distance_at_pressure(lo, src)
+        rng = f"> {lo}" if hi is None else f"{lo}–{hi}"
+        zones.append({"name": name, "description": f"ΔP {rng} кПа — {what}", "radius_m": r,
+                      "deltaP_kPa": lo, "impulse_Pas": vgsch.impulse_at(r, src), "hazardLevel": lvl})
+    r_safe = vgsch.distance_at_pressure(th["safe"], src)
+    zones.append({"name": "Безопасная зона", "description": f"ΔP < {th['safe']} кПа — безопасно для человека",
+                  "radius_m": r_safe, "deltaP_kPa": th["safe"],
+                  "impulse_Pas": vgsch.impulse_at(r_safe, src), "hazardLevel": "safe"})
+    for z in zones:
+        log.append(f"{z['name']}: {z['radius_m']} м от центра очага, ΔP = {z['deltaP_kPa']} кПа")
+    log.append("Расстояния — по прямой выработке-очагу; по схеме волна ведётся с учётом сопряжений и поворотов (табл. 5)")
+    if th["safe"] < vgsch.SAFE_KPA:
+        log.append(f"Безопасное для человека давление по методике — {vgsch.SAFE_KPA:g} кПа, импульс — {vgsch.SAFE_IMPULSE} Н·с/м²")
+
+    points = []
+    for r in distances:
+        dp = vgsch.pressure_at(float(r), src)
+        points.append({"r_m": r, "deltaP_kPa": dp, "impulse_Pas": vgsch.impulse_at(float(r), src),
+                       "hazardLevel": hazard_level(dp, th)})
+
+    return {
+        "q_tnt_kg":           q_tnt_rounded,
+        "maxDeltaP_kPa":      max_dp,
+        "maxImpulse_Pas":     max_imp,
+        "phaseDuration_ms":   phase_ms,
+        "waveFrontSpeed_ms":  wave_front_speed(src["dPn_kPa"]),
+        "minValidRadius_m":   0,
+        "thresholds":         th,
+        "channelMode":        True,
+        "transitionRadius_m": 0,
+        "channelDecay_per_m": src["kz"] * p / s,
+        "channel":            {"area_m2": s, "perimeter_m": p},
+        "gasSource":          None,
+        "vgsch":              src,
+        "zones":              zones,
+        "pressurePoints":     points,
+        "log":                log,
+        "warnings":           warnings,
+    }
 
 
 def handler(event: dict, context) -> dict:

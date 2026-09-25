@@ -112,6 +112,22 @@
         "considerWalls": true
       },
       "expectedStatus": 200
+    },
+    {
+      "name": "Взрыв метана по Методике ВГСЧ (детонация)",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "sourceType": "gas",
+        "gasId": "methane",
+        "gasZoneLength_m": 100,
+        "gasConcentration": 9.5,
+        "excavationArea_m2": 12,
+        "excavationAlpha": 65,
+        "gasMethod": "vgsch",
+        "combustionMode": "detonation"
+      },
+      "expectedStatus": 200
     }
   ]
 }
