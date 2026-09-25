@@ -9588,7 +9588,7 @@ export default function CadPage() {
                         onChange={e => updateBranch(b.id, { explosionGasMethod: e.target.value as "vgsch" | "aeroset" })}
                         className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
                         <option value="vgsch">ВГСЧ (Прил. 12 к Уставу ВГСЧ)</option>
-                        <option value="aeroset">Как в «Аэросети» (для сверки)</option>
+                        <option value="aeroset">Прямолинейная</option>
                       </select>
                     </div>
                     {(b.explosionGasMethod ?? "vgsch") === "vgsch" && (<>
