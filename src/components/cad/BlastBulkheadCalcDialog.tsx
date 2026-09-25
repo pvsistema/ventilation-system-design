@@ -8,7 +8,7 @@
 //   • размеры — по сечению выбранной выработки, их можно поправить;
 //   • материал и условия — из справочника смесей.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
@@ -41,6 +41,106 @@ interface Props {
 }
 
 type Option = { key: string; branchId: string; label: string; incident_kPa: number; fromCalc: boolean };
+
+const INP = "w-full text-[12px] rounded-md px-2 py-1 outline-none";
+const INP_STYLE = { background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t1, #111827)" };
+
+// Компоненты вынесены НА УРОВЕНЬ МОДУЛЯ. Внутри окна они пересоздавались бы
+// при каждой перерисовке, React размонтировал бы поле ввода, и фокус терялся
+// после первой же цифры — поле выглядело «некликабельным».
+function Label({ children }: { children: React.ReactNode }) {
+  return <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--c-t3, #6b7280)" }}>{children}</div>;
+}
+
+/**
+ * Числовое поле: свободный ввод с клавиатуры, стрелки ↑/↓ (Shift — ×10) меняют
+ * значение на шаг. Пока поле в фокусе, текст хранится локально — значение
+ * не округляется и не перезаписывается на каждое нажатие.
+ */
+function NumField({ value, auto, onChange, step = 0.1, digits = 2 }: {
+  value: number; auto: boolean; onChange: (v: number | null) => void; step?: number; digits?: number;
+}) {
+  const fmt = (v: number) => (Number.isFinite(v) ? String(+v.toFixed(digits)) : "");
+  const [text, setText] = useState(fmt(value));
+  const [focused, setFocused] = useState(false);
+  useEffect(() => { if (!focused) setText(fmt(value)); }, [value, focused]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const commit = (t: string) => {
+    const v = parseFloat(t.replace(",", "."));
+    if (t.trim() === "") onChange(null);
+    else if (Number.isFinite(v) && v >= 0) onChange(v);
+  };
+  const bump = (dir: 1 | -1, mult = 1) => {
+    const base = parseFloat(text.replace(",", "."));
+    const cur = Number.isFinite(base) ? base : value;
+    const next = Math.max(0, +(cur + dir * step * mult).toFixed(6));
+    setText(fmt(next));
+    onChange(next);
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <div className="flex-1 flex items-stretch rounded-md overflow-hidden" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>
+        <input type="text" inputMode="decimal" value={text}
+          onFocus={e => { setFocused(true); e.currentTarget.select(); }}
+          onBlur={() => { setFocused(false); commit(text); }}
+          onChange={e => { setText(e.target.value); commit(e.target.value); }}
+          onKeyDown={e => {
+            if (e.key === "ArrowUp") { e.preventDefault(); bump(1, e.shiftKey ? 10 : 1); }
+            else if (e.key === "ArrowDown") { e.preventDefault(); bump(-1, e.shiftKey ? 10 : 1); }
+            else if (e.key === "Enter") (e.currentTarget as HTMLInputElement).blur();
+          }}
+          className="flex-1 min-w-0 text-[12px] px-2 py-1 outline-none text-right tabular-nums"
+          style={{ background: auto ? "var(--c-s2, #f9fafb)" : "var(--c-s1, #fff)", color: "var(--c-t1, #111827)" }} />
+        <div className="flex flex-col" style={{ borderLeft: "1px solid var(--c-b2, #d1d5db)" }}>
+          <button type="button" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={e => bump(1, e.shiftKey ? 10 : 1)}
+            className="px-1 flex-1 hover:bg-black/5 leading-none" style={{ color: "var(--c-t3, #6b7280)" }} title="Больше (Shift — ×10)">
+            <Icon name="ChevronUp" size={11} />
+          </button>
+          <button type="button" tabIndex={-1} onMouseDown={e => e.preventDefault()} onClick={e => bump(-1, e.shiftKey ? 10 : 1)}
+            className="px-1 flex-1 hover:bg-black/5 leading-none" style={{ color: "var(--c-t3, #6b7280)", borderTop: "1px solid var(--c-b1, #e5e7eb)" }} title="Меньше (Shift — ×10)">
+            <Icon name="ChevronDown" size={11} />
+          </button>
+        </div>
+      </div>
+      {!auto && (
+        <button type="button" onClick={() => onChange(null)} title="Вернуть авто" className="px-1 rounded hover:bg-black/5" style={{ color: "var(--c-t3, #6b7280)" }}>
+          <Icon name="RotateCcw" size={12} />
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** Перетаскивание окна за шапку. */
+function useDraggable() {
+  const [pos, setPos] = useState<{ x: number; y: number } | null>(null);
+  const drag = useRef<{ sx: number; sy: number; px: number; py: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const onMouseDown = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("button, input, select")) return;
+    const r = boxRef.current?.getBoundingClientRect();
+    if (!r) return;
+    drag.current = { sx: e.clientX, sy: e.clientY, px: r.left, py: r.top };
+    e.preventDefault();
+  }, []);
+  useEffect(() => {
+    const move = (e: MouseEvent) => {
+      const d = drag.current;
+      if (!d) return;
+      const w = boxRef.current?.offsetWidth ?? 400;
+      setPos({
+        x: Math.min(Math.max(d.px + e.clientX - d.sx, 40 - w), window.innerWidth - 40),
+        y: Math.min(Math.max(d.py + e.clientY - d.sy, 0), window.innerHeight - 40),
+      });
+    };
+    const up = () => { drag.current = null; };
+    window.addEventListener("mousemove", move);
+    window.addEventListener("mouseup", up);
+    return () => { window.removeEventListener("mousemove", move); window.removeEventListener("mouseup", up); };
+  }, []);
+  return { pos, onMouseDown, boxRef };
+}
 
 export default function BlastBulkheadCalcDialog(p: Props) {
   const brById = useMemo(() => new Map(p.branches.map(b => [b.id, b])), [p.branches]);
@@ -129,30 +229,22 @@ export default function BlastBulkheadCalcDialog(p: Props) {
     });
   }
 
-  const inp = "w-full text-[12px] rounded-md px-2 py-1 outline-none";
-  const inpStyle = { background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t1, #111827)" };
-  const Label = ({ children }: { children: React.ReactNode }) =>
-    <div className="text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: "var(--c-t3, #6b7280)" }}>{children}</div>;
-  const Num = ({ value, auto, onChange, step = 0.1 }: { value: number; auto: boolean; onChange: (v: number | null) => void; step?: number }) => (
-    <div className="flex items-center gap-1">
-      <input type="number" step={step} min={0} value={Number.isFinite(value) ? +value.toFixed(4) : ""}
-        onChange={e => onChange(e.target.value === "" ? null : parseFloat(e.target.value))}
-        className={inp} style={{ ...inpStyle, background: auto ? "var(--c-s2, #f9fafb)" : "var(--c-s1, #fff)" }} />
-      {!auto && (
-        <button onClick={() => onChange(null)} title="Вернуть авто" className="px-1 rounded hover:bg-black/5" style={{ color: "var(--c-t3, #6b7280)" }}>
-          <Icon name="RotateCcw" size={12} />
-        </button>
-      )}
-    </div>
-  );
+  const inp = INP;
+  const inpStyle = INP_STYLE;
+  const { pos, onMouseDown: onHeaderDrag, boxRef } = useDraggable();
 
   return (
-    <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40"
-      onMouseDown={e => { if (e.target === e.currentTarget) p.onClose(); }}>
-      <div className="rounded-xl shadow-2xl flex flex-col overflow-hidden"
-        style={{ width: 820, maxWidth: "96vw", maxHeight: "92vh", background: "var(--c-s1, #fff)", border: "1.5px solid var(--c-b2, #d1d5db)" }}>
+    <div className="fixed inset-0 z-[200] pointer-events-none"
+      style={pos ? undefined : { display: "flex", alignItems: "center", justifyContent: "center" }}>
+      <div ref={boxRef} className="rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto"
+        style={{
+          width: 820, maxWidth: "96vw", maxHeight: "92vh", background: "var(--c-s1, #fff)", border: "1.5px solid var(--c-b2, #d1d5db)",
+          ...(pos ? { position: "fixed", left: pos.x, top: pos.y } : {}),
+        }}
+        onKeyDown={e => { if (e.key === "Escape") p.onClose(); }}>
 
-        <div className="flex items-center gap-3 px-5 pt-4 pb-3" style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
+        <div onMouseDown={onHeaderDrag} title="Перетащите, чтобы переместить окно"
+          className="flex items-center gap-3 px-5 pt-4 pb-3 select-none" style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)", cursor: "move" }}>
           <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
             style={{ background: "var(--c-tint-blue, #eef5f8)", border: "1px solid var(--c-tint-blue2, #d7e7ee)" }}>
             <Icon name="BrickWall" size={19} style={{ color: "var(--c-accent, #1e5a7a)" }} />
@@ -214,7 +306,7 @@ export default function BlastBulkheadCalcDialog(p: Props) {
               <div className="grid grid-cols-2 gap-2 items-end">
                 <div>
                   <div className="text-[11px] mb-0.5" style={{ color: "var(--c-t2, #374151)" }}>ΔP во фронте, кПа</div>
-                  <Num value={incident} auto={manualP == null} onChange={setManualP} step={1} />
+                  <NumField value={incident} auto={manualP == null} onChange={setManualP} step={1} digits={1} />
                 </div>
                 <div className="text-[11px] pb-1.5" style={{ color: "var(--c-t2, #374151)" }}>
                   ΔP<sub>отр</sub> = <b>{(reflected / 1000).toFixed(4)} МПа</b>
@@ -227,9 +319,9 @@ export default function BlastBulkheadCalcDialog(p: Props) {
               <Label>Размеры перемычки (сечение выработки)</Label>
               <div className="grid grid-cols-2 gap-2">
                 <div><div className="text-[11px] mb-0.5" style={{ color: "var(--c-t2, #374151)" }}>Высота h, м</div>
-                  <Num value={h} auto={manualH == null} onChange={setManualH} /></div>
+                  <NumField value={h} auto={manualH == null} onChange={setManualH} step={0.1} digits={2} /></div>
                 <div><div className="text-[11px] mb-0.5" style={{ color: "var(--c-t2, #374151)" }}>Ширина w, м</div>
-                  <Num value={w} auto={manualW == null} onChange={setManualW} /></div>
+                  <NumField value={w} auto={manualW == null} onChange={setManualW} step={0.1} digits={2} /></div>
               </div>
               {dimAuto.approximate && manualH == null && manualW == null && (
                 <div className="text-[10px] mt-1" style={{ color: "#a16207" }}>Сечение непрямоугольное — взят габарит сечения</div>
@@ -244,8 +336,9 @@ export default function BlastBulkheadCalcDialog(p: Props) {
               {p.mixId === "custom" && (
                 <div className="flex items-center gap-1.5 mt-1.5">
                   <span className="text-[11px]" style={{ color: "var(--c-t2, #374151)" }}>R<sub>раст</sub>, МПа:</span>
-                  <input type="number" min={0} step={0.1} value={p.mixCustomR || ""} placeholder="из паспорта"
-                    onChange={e => p.onMixCustomR(parseFloat(e.target.value) || 0)} className={inp} style={inpStyle} />
+                  <div className="flex-1">
+                    <NumField value={p.mixCustomR} auto={false} onChange={v => p.onMixCustomR(v ?? 0)} step={0.1} digits={2} />
+                  </div>
                 </div>
               )}
               <label className="flex items-start gap-1.5 mt-2 cursor-pointer select-none">
