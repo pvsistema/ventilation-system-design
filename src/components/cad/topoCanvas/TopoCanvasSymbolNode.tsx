@@ -150,7 +150,7 @@ export function renderSymbolNode(
   // Авто-масштаб УО «Очаг пожара» от ширины ветви (как valve_reduce).
   // Если у пользователя явно задан scale ≠ 1, используем его поверх авто-базы.
   let SZ: number;
-  if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
+  if ((sym.typeId === "fire_source" || sym.typeId === "explosion_source") && sym.branchId && hasBranchPts) {
     const fireBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
     const autoSZ = Math.max(8, fireBw * view.scale * 4);
     SZ = Math.max(8, autoSZ * sc);

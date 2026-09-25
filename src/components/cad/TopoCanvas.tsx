@@ -2906,7 +2906,7 @@ export default function TopoCanvas(props: Props) {
 
           // Авто-масштаб УО «Очаг пожара» и перемычек от ширины ветви
           let SZ: number;
-          if (sym.typeId === "fire_source" && sym.branchId && hasBranchPts) {
+          if ((sym.typeId === "fire_source" || sym.typeId === "explosion_source") && sym.branchId && hasBranchPts) {
             const fireBwSvg = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
