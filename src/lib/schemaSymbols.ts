@@ -462,6 +462,10 @@ export const HIDDEN_LEGEND_IDS = new Set([
   "acc_fire_source", "acc_explosion_place",
   "acc_squad_moving", "acc_squad_work",
   "acc_pb_base", "acc_nb_base",
+  // Группа «Узлы»: значки узла и узла-атмосферы ставились на схему как
+  // картинка и узлом не становились. Узел создаётся инструментом «Узел»,
+  // атмосфера — в свойствах узла. Скрыта вся группа.
+  "node_normal", "node_atm",
 ]);
 
 export const WINDOW_BULKHEAD_IDS = new Set([
