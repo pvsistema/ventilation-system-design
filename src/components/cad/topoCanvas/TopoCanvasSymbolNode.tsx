@@ -386,7 +386,7 @@ export function renderSymbolNode(
         const sumW = seq.reduce((s, p) => s + p.w, 0);
         let cursor = -sumW / 2;
         return (
-          <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
+          <g transform={`translate(${px},${py}) rotate(${brAngle + (sym.flipped ? 180 : 0)})`} pointerEvents="none">
             {seq.map((p, i) => {
               const x = cursor;
               cursor += p.w;
@@ -417,7 +417,7 @@ export function renderSymbolNode(
           );
         }
         return (
-          <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
+          <g transform={`translate(${px},${py}) rotate(${brAngle + (sym.flipped ? 180 : 0)})`} pointerEvents="none">
             <rect x={-pw / 2} y={-ph / 2} width={pw} height={ph}
               fill="#fff3e0" stroke="#1a1a1a" strokeWidth={sw2} />
             {lines}
@@ -463,7 +463,7 @@ export function renderSymbolNode(
         const isProem   = tid.includes("proem_");
         const isRegulatorOv = tid === "regulator";
         return (
-          <g transform={`translate(${px},${py}) rotate(${brAngle})`} pointerEvents="none">
+          <g transform={`translate(${px},${py}) rotate(${brAngle + (sym.flipped ? 180 : 0)})`} pointerEvents="none">
             {isMeasureStationOv ? (() => {
               const ml = ph * 1.1;
               const mt = Math.max(1.5, ph * 0.22);
@@ -558,6 +558,8 @@ export function renderSymbolNode(
               && !(HEATER_SYMBOL_IDS.has(sym.typeId) && sym.branchId && hasBranchPts)) ? (
         <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
           overflow="visible" pointerEvents="none"
+          // Разворот значка (Ctrl+R) — поворот на 180° вокруг его центра
+          transform={sym.flipped ? `rotate(180 ${HX + SZ / 2} ${HY + SZ / 2})` : undefined}
           opacity={isFanStoppedOv ? 0.35 : 1}
           style={isFanStoppedOv ? { filter: "grayscale(1)" } : undefined}
           dangerouslySetInnerHTML={{ __html: sym.typeId === "fan" ? fanSvgContent(brForSymOv?.fanType) : lt.svgContent }} />

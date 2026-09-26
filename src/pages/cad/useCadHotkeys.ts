@@ -39,7 +39,8 @@ export interface CadHotkeysDeps {
   handleSave: () => void;
   handleSolve: () => void;
   handleDeleteSelected: () => void;
-  handleReverseBranch: (id: string) => void;
+  /** Ctrl+R — развернуть выбранные условные обозначения. */
+  handleFlipSymbols: (ids: string[]) => void;
   toggleRibbonCollapsed: () => void;
 
   // Сеттеры
@@ -77,7 +78,7 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
     selectedSymbolId, selectedSymbolIds, selectedPositionId,
     symbolClipboard, pendingSymbol, leaderDrawMode, lastSPressRef,
     handleUndo, handleSave, handleSolve, handleDeleteSelected,
-    handleReverseBranch, toggleRibbonCollapsed,
+    handleFlipSymbols, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
     setThinLines, setSurveyEditMode, requestResetToSurvey, setPositions, setLeaderDrawMode, setLeaderExtraMode,
@@ -222,17 +223,21 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
         return;
       }
 
-      // Ctrl+R / Ctrl+К — развернуть выбранную ветвь.
-      // ВАЖНО: Ctrl+SHIFT+R не трогаем — это стандартное «обновить страницу
-      // без кэша». Раньше Shift не проверялся, и попытка сбросить кэш вместо
-      // перезагрузки разворачивала ветвь и запускала пересчёт схемы.
+      // Ctrl+R / Ctrl+К — развернуть выбранное условное обозначение (УО).
+      // Ветвь этой клавишей больше НЕ разворачивается — только через
+      // контекстное меню ветви: случайное нажатие меняло направление
+      // выработки и запускало пересчёт схемы.
+      // ВАЖНО: Ctrl+SHIFT+R не трогаем — это «обновить страницу без кэша».
       if (
         e.ctrlKey && !e.shiftKey && !e.altKey &&
         (e.key === "r" || e.key === "R" || e.key === "к" || e.key === "К") &&
         !isEditing
       ) {
         e.preventDefault();
-        if (selectedBranchId) handleReverseBranch(selectedBranchId);
+        const ids = selectedSymbolIds.size > 0
+          ? [...selectedSymbolIds]
+          : selectedSymbolId ? [selectedSymbolId] : [];
+        if (ids.length > 0) handleFlipSymbols(ids);
         return;
       }
 

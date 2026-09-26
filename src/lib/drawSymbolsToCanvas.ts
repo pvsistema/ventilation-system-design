@@ -126,9 +126,10 @@ export async function drawSymbolsToCanvas(
     const isFireSource = sym.typeId === "fire_source";
 
     // Угол поворота по направлению ветви (для символов на трубах)
-    const brAngleForSym = hasBranchPts
+    // + разворот значка пользователем (Ctrl+R) на 180°
+    const brAngleForSym = (hasBranchPts
       ? Math.atan2(tsy2 - fsy, tsx2 - fsx)
-      : 0;
+      : 0) + (sym.flipped ? Math.PI : 0);
     // Символы, которые нужно поворачивать вдоль ветви
     const ROTATE_WITH_BRANCH = new Set(["valve_reduce", "valve_water", "valve_gate", "check_valve"]);
     const needsRotate = hasBranchPts && ROTATE_WITH_BRANCH.has(sym.typeId);
@@ -248,6 +249,10 @@ export async function drawSymbolsToCanvas(
         ctx.translate(px, py);
         ctx.rotate(brAngleForSym);
         ctx.drawImage(img, -SZ / 2, -SZ / 2 - 4, SZ, SZ);
+      } else if (sym.flipped) {
+        ctx.translate(HX + SZ / 2, HY + SZ / 2);
+        ctx.rotate(Math.PI);
+        ctx.drawImage(img, -SZ / 2, -SZ / 2, SZ, SZ);
       } else {
         ctx.drawImage(img, HX, HY, SZ, SZ);
       }

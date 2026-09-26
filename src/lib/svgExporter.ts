@@ -739,7 +739,8 @@ export function generateSvg(opts: SvgExportOptions): string {
       const szOnBranch = hasBranchPts ? symbolSizeOnBranch(sym.typeId, sc, hostW, symSizing) : null;
       const SZ = szOnBranch ?? Math.max(4, 32 * sc * ss);
       const brAngle = hasBranchPts ? Math.atan2(tsy2 - fsy, tsx2 - fsx) : 0;
-      const angDeg = brAngle * 180 / Math.PI;
+      // + разворот значка пользователем (Ctrl+R) на 180°
+      const angDeg = brAngle * 180 / Math.PI + (sym.flipped ? 180 : 0);
 
       if (VENT_JET_SYMBOL_IDS.has(sym.typeId) && hasBranchPts) {
         // Вентиляционная струя — стрелка ВДОЛЬ ветви (как расчётная).
@@ -951,7 +952,9 @@ export function generateSvg(opts: SvgExportOptions): string {
           parts.push(`<svg x="${n(-SZ/2)}" y="${n(-SZ/2-4)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${svgHtml}</svg>`);
           parts.push(`</g>`);
         } else {
-          parts.push(`<g${opacityAttr}>`);
+          parts.push(sym.flipped
+            ? `<g${opacityAttr} transform="rotate(180 ${n(HX + SZ / 2)} ${n(HY + SZ / 2)})">`
+            : `<g${opacityAttr}>`);
           parts.push(`<svg x="${n(HX)}" y="${n(HY)}" width="${n(SZ)}" height="${n(SZ)}" viewBox="0 0 48 40">${svgHtml}</svg>`);
           parts.push(`</g>`);
         }

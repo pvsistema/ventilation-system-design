@@ -55,7 +55,7 @@ export function branchContextItems(branch: TopoBranch | null, hasBuffer: boolean
         : (branch?.designed ? "Снять Проектируемая" : "Проектируемая ветвь"),
       icon: "Pencil",
     },
-    { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight", shortcut: "Ctrl+R", disabled: multi },
+    { id: "reverse_branch", label: "Развернуть ветвь", icon: "ArrowLeftRight", disabled: multi },
     { id: "div3", label: "", divider: true },
     {
       id: "add_vent_pipe",

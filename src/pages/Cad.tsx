@@ -5666,6 +5666,43 @@ export default function CadPage() {
     setTimeout(() => handleSolveRef.current?.(), 100);
   };
 
+  /**
+   * Ctrl+R — развернуть выбранные условные обозначения (не ветвь).
+   *
+   * Что значит «развернуть» зависит от значка:
+   *  • вентилятор — меняет направление, куда он дует (как кнопка «Сменить
+   *    направление вентилятора»): стрелка на значке без смены расчёта
+   *    показывала бы неправду;
+   *  • насос и вентиляционные струи — переключают своё направление
+   *    (airDirection), как выбор «Направление» в их свойствах;
+   *  • остальные (перемычки, двери, калориферы, выходы…) — поворот значка
+   *    на 180°, только вид, расчёт не меняется.
+   */
+  const handleFlipSymbols = (ids: string[]) => {
+    const set = new Set(ids);
+    const targets = schemaSymbols.filter(s => set.has(s.id));
+    if (targets.length === 0) return;
+    const fanBranches = new Set(targets
+      .filter(s => FAN_SYMBOL_IDS.has(s.typeId) && s.branchId)
+      .map(s => s.branchId as string));
+    const DIR_TYPES = new Set(["pump", "fresh_inlet", "exhaust_outlet", "leak_inlet", "leak_outlet"]);
+    const others = targets.filter(s => !(FAN_SYMBOL_IDS.has(s.typeId) && s.branchId));
+    if (others.length > 0) {
+      pushHistory();
+      const otherIds = new Set(others.map(s => s.id));
+      setSchemaSymbols(prev => prev.map(s => {
+        if (!otherIds.has(s.id)) return s;
+        return DIR_TYPES.has(s.typeId)
+          ? { ...s, airDirection: s.airDirection === "reverse" ? "forward" : "reverse" }
+          : { ...s, flipped: !s.flipped };
+      }));
+      setIsDirty(true);
+    }
+    // Вентилятор — через смену направления (там свой пересчёт сети)
+    fanBranches.forEach(id => handleFlipFanDirection(id));
+    addLog("info", `Развёрнуто условных обозначений: ${targets.length}`);
+  };
+
   // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
   // Логика вынесена в useCadHotkeys без изменений: тот же обработчик и тот же
   // порядок проверок клавиш.
@@ -5675,7 +5712,7 @@ export default function CadPage() {
     selectedSymbolId, selectedSymbolIds, selectedPositionId,
     symbolClipboard, pendingSymbol, leaderDrawMode, lastSPressRef,
     handleUndo, handleSave, handleSolve, handleDeleteSelected,
-    handleReverseBranch, toggleRibbonCollapsed,
+    handleFlipSymbols, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
     setThinLines, setSurveyEditMode, requestResetToSurvey,
@@ -7153,7 +7190,7 @@ export default function CadPage() {
                 className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0,
                   ["--rb-tone" as string]: selectedBranch.fanReverse ? "var(--c-red, #dc2626)" : "var(--c-green, #15803d)" }}
-                title="Ctrl+R — переключить реверс">
+                title="Переключить прямой / реверс">
                 <span className="rb-tile"><Icon name={selectedBranch.fanReverse ? "ArrowLeft" : "ArrowRight"} size={18} /></span>
                 <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>
                   {selectedBranch.fanReverse ? "Реверс" : "Прямой"}

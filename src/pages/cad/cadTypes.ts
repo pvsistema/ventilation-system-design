@@ -15,6 +15,8 @@ export interface SchemaSymbol {
   label?: string;
   description?: string;
   airDirection?: "forward" | "reverse";
+  /** Значок развёрнут на 180° (Ctrl+R). Только вид — на расчёт не влияет. */
+  flipped?: boolean;
   showFanArrow?: boolean;
   appearYear?: number;
   appearMonth?: string;
