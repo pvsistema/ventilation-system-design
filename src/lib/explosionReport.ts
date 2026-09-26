@@ -5,7 +5,7 @@
 // (runExplosionMode): отдельного пересчёта здесь нет, чтобы протокол
 // не мог разойтись со схемой.
 //   • «Протокол»   — очаги, параметры источника и волны, зоны поражения, итог
-//   • «Перемычки»  — давление волны, прочность, устояла ли, доля прошедшей волны
+//   • «Перемычки»  — путь и время прихода волны, давление, прочность, устояла ли, доля прошедшей волны
 //   • «Выработки»  — давление волны по выработкам, куда она дошла
 //
 // Пишется через ExcelJS: бесплатная сборка xlsx не сохраняет стили, и
@@ -17,8 +17,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type ExcelJSNs from "exceljs";
 import { type TopoBranch, type TopoNode } from "@/lib/topology";
-import { type ExplosionResult, GAS_TYPES, EXPLOSIVE_TYPES, concUnitLabel } from "@/lib/explosionCalculator";
-import { barrierDisplayName, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
+import { type ExplosionResult, waveFrontSpeed, GAS_TYPES, EXPLOSIVE_TYPES, concUnitLabel } from "@/lib/explosionCalculator";
+import { barrierDisplayName, barrierArrival, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { combustionMode } from "@/lib/vgschBlast";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 
@@ -291,25 +291,35 @@ function buildProtocolSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, l
 function buildBarriersSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>) {
   const headers = [
     "№ п/п", "Перемычка", "Выработка", "Положение на ветви, %",
+    "Путь волны от очага, м", "Время прихода волны, мс", "Время действия волны θ, мс",
     "Давление разрушения, кПа", "ΔP во фронте волны, кПа", "Запас прочности",
     "Состояние", "Доля волны за перемычкой, %", "ΔP за перемычкой, кПа", "ΔP отражения (справочно), кПа",
   ];
   const ws = wb.addWorksheet("Перемычки", { views: [{ state: "frozen", ySplit: 3 }] });
-  ws.columns = [7, 34, 36, 11, 13, 13, 11, 22, 13, 13, 14].map(width => ({ width }));
+  ws.columns = [7, 34, 36, 11, 12, 12, 12, 13, 13, 11, 22, 13, 13, 14].map(width => ({ width }));
   title(ws, 1, "Действие ударной волны на перемычки", headers.length);
   ws.mergeCells(2, 1, 2, headers.length);
-  ws.getCell(2, 1).value = "Разрушение — при ΔP во фронте ≥ давления разрушения (табл. 8 методики ВГСЧ). Устоявшая перемычка волну останавливает.";
+  ws.getCell(2, 1).value = "Разрушение — при ΔP во фронте ≥ давления разрушения (табл. 8 методики ВГСЧ). Устоявшая перемычка волну останавливает. Перемычки — по порядку прихода волны; время — от момента взрыва, t = d / D (D — средняя скорость фронта на пути).";
   ws.getCell(2, 1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
 
   const brById = new Map(inp.branches.map(b => [b.id, b]));
   const symById = new Map(inp.symbols.map(s => [s.id, s]));
   const list = [...inp.barriers.values()].flat();
-  list.sort((a, b) => (inp.barrierHits.get(b.key)?.incident_kPa ?? -1) - (inp.barrierHits.get(a.key)?.incident_kPa ?? -1));
+  const firstRes = [...inp.resultByBranch.values()][0];
+  const arrival = (key: string) => {
+    const h = inp.barrierHits.get(key);
+    if (!h || !(h.incident_kPa > 0)) return null;
+    return barrierArrival(h, h.srcId ? inp.resultByBranch.get(h.srcId) : firstRes, waveFrontSpeed);
+  };
+  const arr = new Map(list.map(b => [b.key, arrival(b.key)]));
+  // По порядку прихода волны; перемычки, до которых волна не дошла, — в конце
+  list.sort((a, b) => (arr.get(a.key)?.t0_ms ?? Infinity) - (arr.get(b.key)?.t0_ms ?? Infinity));
 
   const tones: Tone[] = [];
   const rows: Cell[][] = list.map((bar, i) => {
     const h = inp.barrierHits.get(bar.key);
     const fp = bar.failure_MPa * 1000;
+    const a = arr.get(bar.key);
     let state: string, tone: Tone;
     if (!h || !(h.incident_kPa > 0)) { state = "волна не дошла"; tone = "muted"; }
     else if (h.destroyed) { state = "РАЗРУШЕНА"; tone = "bad"; }
@@ -317,7 +327,9 @@ function buildBarriersSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, l
     tones.push(tone);
     return [
       i + 1, barrierDisplayName(symById.get(bar.key), brById.get(bar.branchId), bar.branchId),
-      label(brById.get(bar.branchId), bar.branchId), r1(bar.t * 100, 0), r1(fp, 1),
+      label(brById.get(bar.branchId), bar.branchId), r1(bar.t * 100, 0),
+      a ? r1(a.d_m, 0) : null, a ? r1(a.t0_ms, 1) : null, a ? r1(a.theta_ms, 1) : null,
+      r1(fp, 1),
       h ? r1(h.incident_kPa, 1) : null,
       h && fp > 0 && h.incident_kPa > 0 ? r1(fp / h.incident_kPa, 2) : null,
       state,
@@ -326,10 +338,10 @@ function buildBarriersSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, l
       h ? r1(h.reflected_kPa, 1) : null,
     ];
   });
-  if (rows.length === 0) rows.push(["", "Перемычек на схеме нет", "", null, null, null, null, "", null, null, null]);
+  if (rows.length === 0) rows.push(["", "Перемычек на схеме нет", "", null, null, null, null, null, null, null, "", null, null, null]);
   table(ws, 3, headers, rows, {
-    tones, align: ["center", "left", "left", "right", "right", "right", "right", "center"],
-    numFmt: [undefined, undefined, undefined, "0", "#,##0.0", "#,##0.0", "0.00", undefined, "0", "#,##0.0", "#,##0.0"],
+    tones, align: ["center", "left", "left", "right", "right", "right", "right", "right", "right", "right", "center"],
+    numFmt: [undefined, undefined, undefined, "0", "#,##0", "#,##0.0", "0.0", "#,##0.0", "#,##0.0", "0.00", undefined, "0", "#,##0.0", "#,##0.0"],
   });
   ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: headers.length } };
 }

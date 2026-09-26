@@ -222,3 +222,19 @@ export function crossBarriers(opts: {
 function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
+/**
+ * Время прихода фронта волны к перемычке и время действия волны, мс — так же,
+ * как в диаграмме «Как ударная волна доходит до перемычки»: t₀ = d / D̄, где
+ * D̄ — средняя скорость фронта между очагом (ΔPн) и перемычкой (ΔP на ней).
+ */
+export function barrierArrival(
+  hit: BarrierHit,
+  res: { vgsch?: { dPn_kPa: number }; maxDeltaP_kPa?: number; phaseDuration_ms?: number } | undefined,
+  frontSpeed: (dp_kPa: number) => number,
+): { d_m: number; t0_ms: number; theta_ms: number } {
+  const d = hit.d_m ?? 0;
+  const D0 = frontSpeed(res?.vgsch?.dPn_kPa ?? res?.maxDeltaP_kPa ?? hit.incident_kPa);
+  const D1 = frontSpeed(hit.incident_kPa);
+  const t0 = d > 0 ? (d / ((D0 + D1) / 2)) * 1000 : 0;
+  return { d_m: d, t0_ms: t0, theta_ms: Math.max(res?.phaseDuration_ms ?? 50, 1) };
+}

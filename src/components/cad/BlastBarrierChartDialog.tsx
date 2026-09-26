@@ -27,7 +27,7 @@ import {
 import Icon from "@/components/ui/icon";
 import type { TopoBranch } from "@/lib/topology";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
-import { barrierDisplayName, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
+import { barrierDisplayName, barrierArrival, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { reflectedPressure } from "@/lib/blastBulkhead";
 import { waveFrontSpeed, type ExplosionResult } from "@/lib/explosionCalculator";
 import { exportBlastBarriersExcel, logBounds } from "@/lib/blastBarrierExcel";
@@ -138,12 +138,7 @@ export default function BlastBarrierChartDialog(p: Props) {
       const hit = p.hits.get(bar.key);
       if (!hit || !(hit.incident_kPa > 0)) continue;
       const res = hit.srcId ? p.resultByBranch.get(hit.srcId) : [...p.resultByBranch.values()][0];
-      const d = hit.d_m ?? 0;
-      // Средняя скорость фронта на пути: от давления у очага до давления у перемычки
-      const D0 = waveFrontSpeed(res?.vgsch?.dPn_kPa ?? res?.maxDeltaP_kPa ?? hit.incident_kPa);
-      const D1 = waveFrontSpeed(hit.incident_kPa);
-      const t0 = d > 0 ? (d / ((D0 + D1) / 2)) * 1000 : 0;
-      const theta = Math.max(res?.phaseDuration_ms ?? 50, 1);
+      const { d_m: d, t0_ms: t0, theta_ms: theta } = barrierArrival(hit, res, waveFrontSpeed);
       out.push({
         bar, hit, d, t0_ms: t0, theta_ms: theta, fp_kPa: bar.failure_MPa * 1000,
         name: barrierDisplayName(symById.get(bar.key), brById.get(bar.branchId), bar.branchId),
