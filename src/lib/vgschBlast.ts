@@ -54,22 +54,22 @@ export function combustionMode(id: string | undefined) {
 }
 
 /**
- * Коэффициент α по умолчанию (×10⁻⁴ кгс·с²/м⁴) — «другие виды крепи».
- * Берётся, если у выработки α не задан.
+ * Коэффициент α по умолчанию (×10⁻⁴ Н·с²/м⁴) — «другие виды крепи»
+ * (середина диапазона 78,4…196 табл. 3). Берётся, если у выработки α не задан.
  */
-export const VGSCH_ALPHA_DEFAULT = 15;
+export const VGSCH_ALPHA_DEFAULT = 100;
 
 /**
  * Коэффициент затухания Кз по табл. 3 — по коэффициенту аэродинамического
  * сопротивления A, ×10⁻⁴ Н·с²/м⁴.
  *
- * В программе α хранится в РУДНИЧНЫХ единицах ×10⁻⁴ кгс·с²/м⁴ — тех же, что
- * дают сопротивление в кМюрг (R = α·P·L/S³, см. aerodynamics.ts). Поэтому
- * A = α·9,81. Границы таблицы 9,8…490 соответствуют ровно α = 1…50.
- * Раньше α подставлялся как есть — Кз занижался, волна гасла медленнее.
+ * В программе α выработки хранится в тех же единицах ×10⁻⁴ Н·с²/м⁴
+ * (см. topology.ts, aerodynamics.ts), поэтому A = α БЕЗ пересчёта.
+ * Прежний множитель 9,81 переводил α в «ещё раз Ньютоны» — Кз завышался,
+ * и волна гасла быстрее, чем по методике.
  */
 export function kzFromAlpha(alpha: number | undefined): number {
-  const a = (alpha && alpha > 0 ? alpha : VGSCH_ALPHA_DEFAULT) * 9.81;
+  const a = alpha && alpha > 0 ? alpha : VGSCH_ALPHA_DEFAULT;
   if (a <= 39.2) return 0.5e-3;   // гладкая поверхность, металлические трубы
   if (a <= 78.4) return 1e-3;     // бетонная или кирпичная крепь
   if (a <= 196)  return 2e-3;     // другие виды крепи
@@ -207,6 +207,15 @@ export function vgschZone2KPa(src: VgschSource, vs: number): number {
   return zone2DetonationKPa(src.V0_m3, V2) * src.k;
 }
 
+/**
+ * Давление в зоне продуктов взрыва по ОБЩЕМУ объёму продуктов V₂, м³ (ф. 4).
+ * V₂ — суммарный объём, занятый продуктами во всех направлениях, поэтому
+ * деление потока на развилках на давление не влияет.
+ */
+export function vgschZone2KPaByV2(src: VgschSource, V2: number): number {
+  return zone2DetonationKPa(src.V0_m3, Math.max(V2, src.V0_m3)) * src.k;
+}
+
 /** Давление на расстоянии L от центра очага по ПРЯМОЙ выработке-очагу, кПа. */
 export function vgschPressureAt(L_m: number, src: VgschSource): number {
   const half = src.zoneLength_m / 2;
@@ -257,12 +266,30 @@ const KZAT_STRAIGHT = [
   [1.06, 1.07, 1.08, 1.10], [1.00, 1.00, 1.00, 1.00], [0.88, 0.88, 0.88, 0.91],
   [0.70, 0.70, 0.71, 0.79], [0.52, 0.52, 0.52, 0.60], [0.30, 0.30, 0.30, 0.37],
 ];
-/** п. 3 табл. 5 — затекание в ответвление сопряжения. */
-const KZAT_BRANCH = [
+/** п. 3 табл. 5 — затекание в ответвление, угол ответвления 0° < γ ≤ 60°. */
+const KZAT_BRANCH_60 = [
   [0.690, 0.710, 0.740, 0.800], [0.620, 0.635, 0.670, 0.740], [0.543, 0.565, 0.590, 0.640],
   [0.473, 0.505, 0.520, 0.540], [0.400, 0.420, 0.450, 0.460], [0.350, 0.365, 0.400, 0.420],
   [0.280, 0.295, 0.350, 0.360], [0.207, 0.220, 0.230, 0.280], [0.120, 0.125, 0.140, 0.170],
 ];
+/** п. 4 табл. 5 — затекание в ответвление, 60° < γ < 120°. */
+const KZAT_BRANCH_120 = [
+  [0.460, 0.520, 0.610, 0.720], [0.430, 0.470, 0.560, 0.670], [0.400, 0.430, 0.510, 0.590],
+  [0.340, 0.380, 0.450, 0.520], [0.300, 0.330, 0.400, 0.450], [0.263, 0.290, 0.350, 0.410],
+  [0.210, 0.230, 0.280, 0.360], [0.157, 0.172, 0.210, 0.270], [0.090, 0.100, 0.120, 0.170],
+];
+/** п. 5 табл. 5 — затекание в ответвление, 120° ≤ γ < 180°. */
+const KZAT_BRANCH_180 = [
+  [0.367, 0.445, 0.550, 0.640], [0.340, 0.410, 0.500, 0.580], [0.310, 0.375, 0.460, 0.540],
+  [0.280, 0.335, 0.420, 0.480], [0.250, 0.300, 0.370, 0.420], [0.220, 0.215, 0.280, 0.340],
+  [0.177, 0.185, 0.220, 0.260], [0.130, 0.155, 0.150, 0.220], [0.077, 0.110, 0.140, 0.160],
+];
+/** п. 6–8 табл. 5 — проход прямо через сопряжение; γ — угол ответвления.
+ *  От давления не зависят, поэтому хранятся одним столбцом по δ. */
+const KZAT_THROUGH_60  = [0.940, 0.880, 0.820, 0.760, 0.730, 0.620, 0.510, 0.380, 0.210];
+const KZAT_THROUGH_120 = [0.960, 0.920, 0.870, 0.830, 0.800, 0.700, 0.560, 0.420, 0.240];
+const KZAT_THROUGH_180 = [0.970, 0.940, 0.910, 0.870, 0.835, 0.730, 0.590, 0.430, 0.250];
+const col4 = (v: number[]) => v.map(x => [x, x, x, x]);
 /** п. 13 табл. 5 — угол поворота выработки. */
 const KZAT_TURN = [
   [0.860, 0.910, 1.030, 1.100], [0.810, 0.860, 0.940, 1.020], [0.780, 0.810, 0.860, 0.910],
@@ -270,11 +297,19 @@ const KZAT_TURN = [
   [0.490, 0.497, 0.520, 0.590], [0.360, 0.370, 0.360, 0.450], [0.200, 0.210, 0.220, 0.270],
 ];
 
-export type LocalResistance = "straight" | "branch" | "turn";
+/**
+ * Вид местного сопротивления:
+ *   straight — проход прямо без сопряжения, изменение сечения (п. 2);
+ *   through  — проход прямо через сопряжение (п. 6–8, по углу ответвления);
+ *   branch   — затекание в ответвление (п. 3–5, по углу ответвления);
+ *   turn     — поворот выработки без сопряжения (п. 13).
+ */
+export type LocalResistance = "straight" | "through" | "branch" | "turn";
 
 export const LOCAL_RESISTANCE_LABEL: Record<LocalResistance, string> = {
   straight: "проход прямо (табл. 5 п. 2)",
-  branch: "ответвление сопряжения (табл. 5 п. 3)",
+  through: "проход прямо через сопряжение (табл. 5 п. 6–8)",
+  branch: "ответвление сопряжения (табл. 5 п. 3–5)",
   turn: "поворот выработки (табл. 5 п. 13)",
 };
 
@@ -292,9 +327,23 @@ function interpIdx(arr: number[], v: number, descending = false): [number, numbe
   return [a.length - 1, a.length - 1, 0];
 }
 
-/** Коэффициент затекания Кзат (билинейная интерполяция по табл. 5). */
-export function kzat(kind: LocalResistance, delta: number, dP_MPa: number): number {
-  const tbl = kind === "branch" ? KZAT_BRANCH : kind === "turn" ? KZAT_TURN : KZAT_STRAIGHT;
+function kzatTable(kind: LocalResistance, gamma_deg: number): number[][] {
+  const g = gamma_deg;
+  switch (kind) {
+    case "branch":  return g <= 60 ? KZAT_BRANCH_60 : g < 120 ? KZAT_BRANCH_120 : KZAT_BRANCH_180;
+    case "through": return col4(g <= 60 ? KZAT_THROUGH_60 : g < 120 ? KZAT_THROUGH_120 : KZAT_THROUGH_180);
+    case "turn":    return KZAT_TURN;
+    default:        return KZAT_STRAIGHT;
+  }
+}
+
+/**
+ * Коэффициент затекания Кзат (билинейная интерполяция по табл. 5).
+ * gamma_deg — угол ответвления (отклонение от направления прихода волны):
+ * для «branch» — угол самого ответвления, для «through» — угол боковой ветви.
+ */
+export function kzat(kind: LocalResistance, delta: number, dP_MPa: number, gamma_deg = 90): number {
+  const tbl = kzatTable(kind, gamma_deg);
   const [r0, r1, tr] = interpIdx(KZAT_DELTA, delta > 0 ? delta : 1);
   const [c0, c1, tc] = interpIdx(KZAT_DP, dP_MPa, true);
   const v0 = tbl[r0][c0] + (tbl[r0][c1] - tbl[r0][c0]) * tc;
@@ -302,10 +351,14 @@ export function kzat(kind: LocalResistance, delta: number, dP_MPa: number): numb
   return v0 + (v1 - v0) * tr;
 }
 
-/** Вид местного сопротивления по геометрии узла. */
-export function localResistanceKind(deflection_deg: number, outCount: number): LocalResistance {
-  if (deflection_deg <= TURN_ANGLE_DEG) return "straight";
-  return outCount > 1 ? "branch" : "turn";
+/**
+ * Вид местного сопротивления для одного исходящего направления узла.
+ * isStraight — это направление является продолжением входящей выработки
+ * (наименьшее отклонение и не больше TURN_ANGLE_DEG).
+ */
+export function localResistanceKind(deflection_deg: number, outCount: number, isStraight = deflection_deg <= TURN_ANGLE_DEG): LocalResistance {
+  if (outCount <= 1) return deflection_deg <= TURN_ANGLE_DEG ? "straight" : "turn";
+  return isStraight ? "through" : "branch";
 }
 
 function round1(v: number): number {

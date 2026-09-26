@@ -6,19 +6,25 @@
 // и при окраске схемы — поэтому давления на схеме и в протоколе совпадают.
 //
 // ПО ЗОНАМ МЕТОДИКИ:
-//   • зона загазования (полудлина участка от точки очага по пути волны) —
+//   • фронт характеризуется ОБЩИМ объёмом V, который уже занят смесью и
+//     продуктами взрыва во всех направлениях. Путь несёт долю потока w:
+//     на сопряжениях она делится пропорционально сечениям, а объём растёт
+//     как dV = dx·S/w — то есть так, будто все фронты идут вровень.
+//     Поэтому давление на развилке не скачет;
+//   • зона загазования — пока V ≤ V₀ (по объёму, а не по длине участка):
 //     давление постоянно;
-//   • зона продуктов взрыва — давление по ф. (4) от заполненного объёма.
-//     На сопряжениях продукты делятся между исходящими выработками
-//     пропорционально их сечениям (как в примере методики: «ПВ разделяются
-//     пополам»). Местными сопротивлениями здесь пренебрегают (раздел 4);
+//   • зона продуктов взрыва — пока V < 5V₀: давление по ф. (4) при V₂ = V.
+//     Местными сопротивлениями здесь пренебрегают (раздел 4);
+//   • если одна сторона от очага — тупик объёмом меньше половины 5V₀,
+//     продукты заполняют его целиком, а остальное уходит в открытую сторону;
 //   • после отрыва от продуктов — затухание по ф. (3) с Кз и периметром
-//     КАЖДОЙ выработки, в узлах — коэффициент затекания Кзат (табл. 5).
-//     Тупик длиннее 130 м снижает давление на 10 %.
+//     КАЖДОЙ выработки, в узлах — коэффициент затекания Кзат (табл. 5):
+//     проход прямо через сопряжение — п. 6–8, ответвление — п. 3–5 по углу,
+//     поворот без сопряжения — п. 13. Тупик длиннее 130 м снижает давление на 10 %.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch, type TopoNode } from "@/lib/topology";
 import {
-  type VgschSource, vgschZone2KPa, kzat, kzFromAlpha, perimeterOf,
+  type VgschSource, vgschZone2KPaByV2, kzat, TURN_ANGLE_DEG, VGSCH_PV_FACTOR, kzFromAlpha, perimeterOf,
   localResistanceKind, VGSCH_DEADEND_M,
 } from "@/lib/vgschBlast";
 import { crossBarriers, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
@@ -27,8 +33,12 @@ import { crossBarriers, type BlastBarrier, type BarrierHit } from "@/lib/blastBa
 export interface VgschState {
   /** Путь от точки очага, м. */
   d: number;
-  /** Объём, уже заполненный продуктами взрыва в этом направлении, м³. */
-  vs: number;
+  /** Общий объём смеси и продуктов взрыва (все направления), м³. */
+  V: number;
+  /** Доля зоны загазования V₀, приходящаяся на этот путь (0…1). */
+  wg: number;
+  /** Доля общего потока продуктов, идущая по этому пути (0…1). */
+  w: number;
   /** Ослабление после отрыва УВВ от продуктов взрыва (ф. 3). */
   det: number;
   /** Множитель местных сопротивлений и перемычек. */
@@ -46,42 +56,61 @@ function geomOf(b: TopoBranch): EdgeGeom {
 
 /** Отношение давления в точке к ΔPн (давлению в месте отрыва УВВ). */
 export function vgschRatio(src: VgschSource, st: VgschState): number {
-  const half = src.zoneLength_m / 2;
   if (src.dPn_kPa <= 0) return 0;
   let base: number;
-  if (st.d <= half) base = src.dPz_kPa / src.dPn_kPa;
-  else if (st.vs < src.pvVolumePerSide_m3) base = vgschZone2KPa(src, st.vs) / src.dPn_kPa;
+  if (st.V <= src.V0_m3 * (1 + 1e-9)) base = src.dPz_kPa / src.dPn_kPa;
+  else if (st.V < pvTotal(src)) base = vgschZone2KPaByV2(src, st.V) / src.dPn_kPa;
   else base = st.det;
   return base * st.mult;
 }
 
+/** Полный объём продуктов взрыва 5V₀, м³. */
+function pvTotal(src: VgschSource): number {
+  return VGSCH_PV_FACTOR * src.V0_m3;
+}
+
 /** Продвинуть волну вдоль выработки на dist метров. */
 function advance(src: VgschSource, g: EdgeGeom, st: VgschState, dist: number): VgschState {
-  let { d, vs, det } = st;
+  let { d, V, det } = st;
   let rem = Math.max(dist, 0);
-  const half = src.zoneLength_m / 2;
-  const pv = src.pvVolumePerSide_m3;
-  // 1) зона загазования
-  if (d < half && rem > 0) {
-    const s = Math.min(rem, half - d);
-    d += s; rem -= s;
+  const V0 = src.V0_m3, pv = pvTotal(src);
+  // 1) зона загазования — смесь занимает объём V₀, распределённый по путям
+  if (rem > 0 && V < V0) {
+    if (st.wg > 0) {
+      const s = Math.min(rem, (V0 - V) * st.wg / g.area);
+      V += s * g.area / st.wg; d += s; rem -= s;
+      if (V0 - V < 1e-6 * V0) V = V0;
+    } else V = V0; // смеси на этом пути нет
   }
-  // 2) зона продуктов взрыва — по объёму выработок
-  if (rem > 0 && vs < pv) {
-    const s = Math.min(rem, (pv - vs) / g.area);
-    vs += s * g.area; d += s; rem -= s;
-    if (pv - vs < 1e-6) vs = pv;
+  // 2) зона продуктов взрыва — общий объём растёт до 5V₀
+  if (rem > 0 && V < pv) {
+    if (st.w > 0) {
+      const s = Math.min(rem, (pv - V) * st.w / g.area);
+      V += s * g.area / st.w; d += s; rem -= s;
+      if (pv - V < 1e-6 * pv) V = pv;
+    } else V = pv; // продукты сюда не идут — дальше только УВВ
   }
   // 3) УВВ, оторвавшаяся от продуктов: ф. (3)
   if (rem > 0) {
     det *= Math.exp(-g.kz * g.perimeter * rem / g.area);
     d += rem;
   }
-  return { ...st, d, vs, det };
+  return { ...st, d, V, det };
 }
 
 function detached(src: VgschSource, st: VgschState): boolean {
-  return st.d > src.zoneLength_m / 2 && st.vs >= src.pvVolumePerSide_m3;
+  return st.V >= pvTotal(src);
+}
+
+/** Угол отклонения направления pPrev→pNode→pNext, °. */
+function deflectionDeg(pPrev?: TopoNode, pNode?: TopoNode, pNext?: TopoNode): number {
+  if (!pPrev || !pNode || !pNext) return 0;
+  const ax = pNode.x - pPrev.x, ay = pNode.y - pPrev.y, az = pNode.z - pPrev.z;
+  const bx = pNext.x - pNode.x, by = pNext.y - pNode.y, bz = pNext.z - pNode.z;
+  const la = Math.hypot(ax, ay, az), lb = Math.hypot(bx, by, bz);
+  if (!(la > 0 && lb > 0)) return 0;
+  const c = Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / (la * lb)));
+  return Math.acos(c) * 180 / Math.PI;
 }
 
 export interface VgschNetResult {
@@ -133,6 +162,81 @@ export function propagateVgsch(opts: {
   }
   const degree = (nid: string) => adj.get(nid)?.length ?? 0;
 
+  /**
+   * Объём замкнутой (тупиковой) части сети за узлом startId, если идти в неё
+   * не через узел backId, м³. null — часть сети открыта: выходит к
+   * поверхности или обратно к backId. Поиск ограничен 300 ветвями.
+   */
+  const deadCache = new Map<string, number | null>();
+  const deadVolume = (startId: string, backId: string, viaBranch: string): number | null => {
+    const key = `${startId}|${backId}|${viaBranch}`;
+    if (deadCache.has(key)) return deadCache.get(key)!;
+    let vol = 0, open = false;
+    const seenN = new Set<string>([startId]);
+    const seenB = new Set<string>([viaBranch]);
+    const stack = [startId];
+    while (stack.length && !open) {
+      const n = stack.pop()!;
+      if (nodeById.get(n)?.atmosphereLink) { open = true; break; }
+      for (const e of adj.get(n) ?? []) {
+        if (seenB.has(e.branchId)) continue;
+        seenB.add(e.branchId);
+        if (seenB.size > 300 || e.to === backId) { open = true; break; }
+        vol += e.len * e.g.area;
+        if (!seenN.has(e.to)) { seenN.add(e.to); stack.push(e.to); }
+      }
+    }
+    const res = open ? null : vol;
+    deadCache.set(key, res);
+    return res;
+  };
+
+  /**
+   * Делит долю потока продуктов w между исходящими выработками: по сечениям,
+   * но тупик забирает не больше своего объёма, излишек уходит в открытые.
+   */
+  const splitShares = (
+    w: number, remaining: number,
+    outs: Array<{ area: number; dead: number | null }>,
+  ): number[] => {
+    const total = outs.reduce((a, o) => a + o.area, 0) || 1;
+    const shares = outs.map(o => w * o.area / total);
+    if (remaining <= 0) return shares;
+    const openIdx = outs.map((o, i) => (o.dead === null ? i : -1)).filter(i => i >= 0);
+    if (openIdx.length === 0) return shares;
+    let excess = 0;
+    outs.forEach((o, i) => {
+      if (o.dead === null) return;
+      const cap = w * o.dead / remaining;
+      if (cap < shares[i]) { excess += shares[i] - cap; shares[i] = cap; }
+    });
+    if (excess > 0) {
+      const openArea = openIdx.reduce((a, i) => a + outs[i].area, 0) || 1;
+      openIdx.forEach(i => { shares[i] += excess * outs[i].area / openArea; });
+    }
+    return shares;
+  };
+
+  /**
+   * Доли пути в зоне загазования (wg) и в зоне продуктов (w) для исходящих
+   * выработок. dead — объём замкнутой части сети за выработкой (null — открыта).
+   */
+  const splitBoth = (
+    src: VgschSource, st: { V: number; wg: number; w: number },
+    outs: Array<{ area: number; dead: number | null }>,
+  ): Array<{ wg: number; w: number }> => {
+    const V0 = src.V0_m3, pv = pvTotal(src);
+    const Rg = Math.max(V0 - st.V, 0);
+    const Rp = pv - Math.max(st.V, V0);
+    const wg = Rg > 0 ? splitShares(st.wg, st.wg * Rg, outs) : outs.map(() => st.wg);
+    const outs2 = outs.map((o, i) => ({
+      area: o.area,
+      dead: o.dead === null ? null : Math.max(o.dead - (Rg > 0 ? wg[i] * Rg : 0), 0),
+    }));
+    const w = Rp > 0 ? splitShares(st.w, st.w * Rp, outs2) : outs.map(() => st.w);
+    return outs.map((_, i) => ({ wg: wg[i], w: w[i] }));
+  };
+
   /** Проводит волну по ветви между точками tFrom → tTo через перемычки. */
   const cross = (branchId: string, g: EdgeGeom, len: number, st: VgschState, tFrom: number, tTo: number) => {
     const src = sources.get(st.srcId)!;
@@ -144,15 +248,15 @@ export function propagateVgsch(opts: {
     });
   };
 
-  const nodeState = new Map<string, VgschState & { fromNode?: string }>();
+  const nodeState = new Map<string, VgschState & { fromNode?: string; fromBranch?: string }>();
   /** Вход волны в ветвь (после узла): ключ `${branchId}:${0|1}`. */
   const edgeEntry = new Map<string, VgschState>();
-  const pq: Array<{ id: string; st: VgschState & { fromNode?: string } }> = [];
+  const pq: Array<{ id: string; st: VgschState & { fromNode?: string; fromBranch?: string } }> = [];
   const ratioOf = (st: VgschState) => {
     const s = sources.get(st.srcId);
     return s ? vgschRatio(s, st) : 0;
   };
-  const push = (nid: string, st: VgschState & { fromNode?: string }) => {
+  const push = (nid: string, st: VgschState & { fromNode?: string; fromBranch?: string }) => {
     const cur = nodeState.get(nid);
     if (!cur || ratioOf(st) > ratioOf(cur) * 1.000001) {
       nodeState.set(nid, st);
@@ -164,18 +268,32 @@ export function propagateVgsch(opts: {
     if (!cur || ratioOf(st) > ratioOf(cur)) edgeEntry.set(key, st);
   };
 
-  // Старт: от точки очага в обе стороны своей ветви
+  // Старт: от точки очага в обе стороны своей ветви. Доли потока продуктов
+  // по сторонам: поровну, но тупиковая сторона забирает не больше своего
+  // объёма — остальное уходит в открытую сторону.
+  const startShare = new Map<string, { from: { wg: number; w: number }; to: { wg: number; w: number } }>();
   for (const [bid, src] of sources) {
     const b = branchById.get(bid);
     if (!b || src.dPn_kPa <= 0) continue;
     const len = lenOf(b), g = geomOf(b), t = b.explosionT ?? 0.5;
-    const st0: VgschState = { d: 0, vs: 0, det: 1, mult: 1, srcId: bid };
-    const toFrom = advance(src, g, st0, len * t);
-    const toTo = advance(src, g, st0, len * (1 - t));
-    const kF = cross(bid, g, len, st0, t, 0);
-    const kT = cross(bid, g, len, st0, t, 1);
-    if (kF > 0 && !nodeById.get(b.fromId)?.atmosphereLink) push(b.fromId, { ...toFrom, mult: toFrom.mult * kF });
-    if (kT > 0 && !nodeById.get(b.toId)?.atmosphereLink) push(b.toId, { ...toTo, mult: toTo.mult * kT });
+    const sideVol = (nodeId: string, backId: string, part: number): number | null => {
+      if (nodeById.get(nodeId)?.atmosphereLink) return null;
+      const rest = deadVolume(nodeId, backId, bid);
+      return rest === null ? null : rest + len * part * g.area;
+    };
+    const [shF, shT] = splitBoth(src, { V: 0, wg: 1, w: 1 }, [
+      { area: g.area, dead: sideVol(b.fromId, b.toId, t) },
+      { area: g.area, dead: sideVol(b.toId, b.fromId, 1 - t) },
+    ]);
+    startShare.set(bid, { from: shF, to: shT });
+    const base: VgschState = { d: 0, V: 0, wg: 1, w: 1, det: 1, mult: 1, srcId: bid };
+    const stF = { ...base, ...shF }, stT = { ...base, ...shT };
+    const toFrom = advance(src, g, stF, len * t);
+    const toTo = advance(src, g, stT, len * (1 - t));
+    const kF = cross(bid, g, len, stF, t, 0);
+    const kT = cross(bid, g, len, stT, t, 1);
+    if (kF > 0 && !nodeById.get(b.fromId)?.atmosphereLink) push(b.fromId, { ...toFrom, mult: toFrom.mult * kF, fromNode: b.toId, fromBranch: bid });
+    if (kT > 0 && !nodeById.get(b.toId)?.atmosphereLink) push(b.toId, { ...toTo, mult: toTo.mult * kT, fromNode: b.fromId, fromBranch: bid });
   }
 
   const visited = new Set<string>();
@@ -188,52 +306,63 @@ export function propagateVgsch(opts: {
     const src = sources.get(st.srcId);
     if (!src) continue;
     const edges = adj.get(cur) ?? [];
-    const out = edges.filter(e => e.to !== st.fromNode);
+    const out = edges.filter(e => e.branchId !== st.fromBranch);
     if (out.length === 0) continue;
-    const inEdge = edges.find(e => e.to === st.fromNode);
+    const inEdge = edges.find(e => e.branchId === st.fromBranch);
     const inArea = inEdge?.g.area ?? out[0].g.area;
-    const outArea = out.reduce((s, e) => s + e.g.area, 0);
-    const pNode = nodeById.get(cur), pPrev = st.fromNode ? nodeById.get(st.fromNode) : undefined;
+    const pNode = nodeById.get(cur), pPrev = inEdge ? nodeById.get(inEdge.to) : undefined;
     const isDet = detached(src, st);
 
     // Тупик длиннее 130 м в узле снижает давление в остальных направлениях на 10 %
     const longDeadEnd = isDet && out.some(e => degree(e.to) === 1 && e.len > VGSCH_DEADEND_M
       && !nodeById.get(e.to)?.atmosphereLink);
 
-    for (const e of out) {
+    // Геометрия узла: отклонение каждого направления и «прямое» продолжение
+    const defl = out.map(e => deflectionDeg(pPrev, pNode, nodeById.get(e.to)));
+    let straightIdx = -1;
+    defl.forEach((a, i) => {
+      if (a <= TURN_ANGLE_DEG && (straightIdx < 0 || a < defl[straightIdx])) straightIdx = i;
+    });
+    // Угол боковой ветви для прохода прямо через сопряжение (п. 6–8)
+    const sideAngles = defl.filter((_, i) => i !== straightIdx);
+    const sideGamma = sideAngles.length ? Math.min(...sideAngles) : 90;
+
+    // Доли потока продуктов взрыва (пока волна подпирается продуктами)
+    const shares = !isDet
+      ? splitBoth(src, st, out.map(e => ({
+          area: e.g.area,
+          dead: nodeById.get(e.to)?.atmosphereLink ? null : (() => {
+            const rest = deadVolume(e.to, cur, e.branchId);
+            return rest === null ? null : rest + e.len * e.g.area;
+          })(),
+        })))
+      : out.map(() => ({ wg: st.wg, w: st.w }));
+
+    out.forEach((e, idx) => {
       const toNode = nodeById.get(e.to);
       let entry: VgschState = { ...st };
       if (isDet) {
         // Местное сопротивление: Кзат по табл. 5
-        let defl = 0;
-        if (pNode && pPrev && toNode) {
-          const ax = pNode.x - pPrev.x, ay = pNode.y - pPrev.y, az = pNode.z - pPrev.z;
-          const bx = toNode.x - pNode.x, by = toNode.y - pNode.y, bz = toNode.z - pNode.z;
-          const la = Math.hypot(ax, ay, az), lb = Math.hypot(bx, by, bz);
-          if (la > 0 && lb > 0) {
-            const c = Math.max(-1, Math.min(1, (ax * bx + ay * by + az * bz) / (la * lb)));
-            defl = Math.acos(c) * 180 / Math.PI;
-          }
-        }
-        const kind = localResistanceKind(defl, out.length);
+        const kind = localResistanceKind(defl[idx], out.length, idx === straightIdx);
+        const gamma = kind === "through" ? sideGamma : defl[idx];
         const delta = inArea > 0 ? e.g.area / inArea : 1;
         const pMPa = src.dPn_kPa * vgschRatio(src, st) / 1000;
-        let k = kzat(kind, delta, pMPa);
+        let k = kzat(kind, delta, pMPa, gamma);
         if (longDeadEnd && !(degree(e.to) === 1 && e.len > VGSCH_DEADEND_M)) k *= 0.9;
         entry = { ...entry, mult: entry.mult * k };
-      } else if (st.d > src.zoneLength_m / 2 && st.vs < src.pvVolumePerSide_m3 && outArea > 0) {
-        // Продукты взрыва делятся между выработками пропорционально сечениям
-        const remaining = src.pvVolumePerSide_m3 - st.vs;
-        entry = { ...entry, vs: src.pvVolumePerSide_m3 - remaining * (e.g.area / outArea) };
+      } else {
+        // Продукты взрыва делятся между выработками; общий объём V не меняется —
+        // поэтому давление на развилке без скачка
+        entry = { ...entry, ...shares[idx] };
       }
       setEntry(`${e.branchId}:${e.tStart}`, entry);
-      if (toNode?.atmosphereLink) continue;
+      if (toNode?.atmosphereLink) return;
       const kBar = cross(e.branchId, e.g, e.len, entry, e.tStart, e.tStart === 0 ? 1 : 0);
       const endSt = advance(src, e.g, entry, e.len);
-      const next = { ...endSt, mult: endSt.mult * kBar, fromNode: cur };
-      if (vgschRatio(src, next) * src.dPn_kPa < 0.5) continue;
+      const next = { ...endSt, mult: endSt.mult * kBar, fromNode: cur, fromBranch: e.branchId };
+      if (vgschRatio(src, next) * src.dPn_kPa < 0.5) return;
       push(e.to, next);
-    }
+    });
   }
 
   const pressureAt = (branchId: string, t: number) => {
@@ -256,7 +385,9 @@ export function propagateVgsch(opts: {
     const own = sources.get(branchId);
     if (own) {
       const tSrc = b.explosionT ?? 0.5;
-      consider({ d: 0, vs: 0, det: 1, mult: 1, srcId: branchId }, Math.abs(t - tSrc) * len, tSrc);
+      const sh = startShare.get(branchId);
+      const part = sh ? (t < tSrc ? sh.from : sh.to) : { wg: 0.5, w: 0.5 };
+      consider({ d: 0, V: 0, ...part, det: 1, mult: 1, srcId: branchId }, Math.abs(t - tSrc) * len, tSrc);
     }
     return best;
   };

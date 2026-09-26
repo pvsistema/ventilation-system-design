@@ -3965,8 +3965,14 @@ export default function CadPage() {
       : DEFAULT_VENT_NORMS);
     // Пороги зон взрыва: в проектах, сохранённых до появления справочника,
     // поля нет — берётся прежний ряд, расчёт не меняется.
+    // Прежнее значение по умолчанию 5,99 кПа («Аэросеть») заменяется на
+    // 9 кПа — безопасное давление по Методике ВГСЧ. Заданные вручную не трогаем.
     setBlastThresholds(data.blastThresholds
-      ? { ...DEFAULT_EXPLOSION_THRESHOLDS, ...(data.blastThresholds as Partial<ExplosionThresholds>) }
+      ? (() => {
+          const t = { ...DEFAULT_EXPLOSION_THRESHOLDS, ...(data.blastThresholds as Partial<ExplosionThresholds>) };
+          if (t.safeLimit === 5.99) t.safeLimit = DEFAULT_EXPLOSION_THRESHOLDS.safeLimit;
+          return t;
+        })()
       : DEFAULT_EXPLOSION_THRESHOLDS);
     // Смесь для взрывоустойчивых перемычек. В проектах, сохранённых до появления
     // расчёта толщины, полей нет — берутся значения по умолчанию.

@@ -87,7 +87,7 @@ def tnt_equivalent(expl):
 # задаётся в справочнике и приходит в запросе полем "thresholds".
 # "safe" — НЕ порог классификации точки, а граница безопасной зоны:
 # расстояние, дальше которого воздействие пренебрежимо мало (как в «Аэросети»).
-HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "safe": 5.99}
+HAZARD_THRESHOLDS = {"lethal": 100, "heavy": 50, "medium": 30, "light": 10, "safe": 9.0}
 
 
 def normalize_thresholds(raw):
@@ -110,6 +110,8 @@ def normalize_thresholds(raw):
     medium = take("medium", d["medium"], heavy)
     light  = take("light",  d["light"],  medium)
     safe   = take("safeLimit", d["safe"], light)
+    if abs(safe - 5.99) < 1e-9:  # прежнее значение по умолчанию -> 9 кПа (Методика ВГСЧ)
+        safe = min(d["safe"], light)
     return {"lethal": lethal, "heavy": heavy, "medium": medium, "light": light, "safe": safe}
 
 

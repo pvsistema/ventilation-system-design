@@ -877,19 +877,20 @@ export interface ExplosionThresholds {
   /**
    * Граница безопасной зоны — НЕ порог классификации, а расстояние,
    * дальше которого воздействие пренебрежимо мало. По нему строится
-   * внешний контур зон и предел шкалы волны. 5.99 кПа — как в «Аэросети».
+   * внешний контур зон и предел шкалы волны. 9 кПа — безопасное для человека
+   * давление по Методике ВГСЧ (0,009 МПа).
    */
   safeLimit: number;
 }
 
 /** Ряд по умолчанию — исторический для этой программы */
 export const DEFAULT_EXPLOSION_THRESHOLDS: ExplosionThresholds = {
-  lethal: 100, heavy: 50, medium: 30, light: 10, safeLimit: 5.99,
+  lethal: 100, heavy: 50, medium: 30, light: 10, safeLimit: VGSCH_SAFE_KPA,
 };
 
 /** Типовой ряд отечественных таблиц поражения человека */
 export const TYPICAL_EXPLOSION_THRESHOLDS: ExplosionThresholds = {
-  lethal: 100, heavy: 60, medium: 40, light: 20, safeLimit: 5.99,
+  lethal: 100, heavy: 60, medium: 40, light: 20, safeLimit: VGSCH_SAFE_KPA,
 };
 
 /**
@@ -1295,7 +1296,8 @@ function calcVgsch(
   log.push(`Начальное давление УВВ в месте отрыва от ПВ, ф. (2): ΔPн = ${Math.round(src.dPn_kPa)} кПа (${Math.round(src.dPn_kPa) / 1000} МПа)`);
   log.push(`Давление в зоне загазования: ${Math.round(src.dPz_kPa)} кПа${mode.id === "detonation" ? ` (${VGSCH_ZONE1_KPA / 1000} МПа)` : " (пересчитано на вид взрыва)"}`);
   log.push(`Зона продуктов взрыва: ${VGSCH_PV_FACTOR}V₀ = ${Math.round(VGSCH_PV_FACTOR * src.V0_m3)} м³, по ${Math.round(pvLen)} м в каждую сторону за пределами загазования`);
-  log.push(`Периметр П = ${Math.round(P * 100) / 100} м${params.excavationPerimeter_m ? "" : " (оценка 4√S)"}, Кз = ${src.kz} (табл. 3 по α = ${params.excavationAlpha ?? "—"}·10⁻⁴)`);
+  log.push(`Периметр П = ${Math.round(P * 100) / 100} м${params.excavationPerimeter_m ? "" : " (оценка 4√S)"}, Кз = ${src.kz} (табл. 3 по A = α = ${params.excavationAlpha ?? "—"}·10⁻⁴ Н·с²/м⁴)`);
+  log.push("По схеме: зоны загазования и продуктов взрыва считаются по объёму (V₀ и общий V₂), тупиковая сторона отдаёт продукты в открытую; в сопряжениях Кзат — проход прямо п. 6–8, ответвление п. 3–5 табл. 5");
   log.push(`Затухание УВВ, ф. (3): ΔPх = ΔPн·exp(−П·x·Кз/F), П·Кз/F = ${(src.kz * P / S).toExponential(3)} 1/м`);
 
   const pressureAtDistance = (r: number) => vgschPressureAt(r, src);
