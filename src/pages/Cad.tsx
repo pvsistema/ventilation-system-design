@@ -58,6 +58,7 @@ import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSche
 import GeneralPropsPanel from "@/components/cad/GeneralPropsPanel";
 import BranchVentPanel from "@/components/cad/BranchVentPanel";
 import BranchIndicatorsPanel from "@/components/cad/BranchIndicatorsPanel";
+import FanIndicatorsPanel from "@/components/cad/FanIndicatorsPanel";
 import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
@@ -11560,59 +11561,19 @@ export default function CadPage() {
 
             {/* ═══ ВКЛАДКА: ИНДИКАТОРЫ ВЕНТИЛЯТОРА ══════════════════════ */}
             {activeSide === "fan-indicators" && (() => {
-              if (!selectedBranch?.hasFan) return (
-                <div className="p-4 text-center text-gray-400 text-xs">Нет вентилятора на ветви</div>
-              );
-              const ind = selectedBranch.indicators ?? {};
-              const setInd = (key: string, val: boolean) =>
-                updateBranch(selectedBranch.id, { indicators: { ...ind, [key]: val } });
-              // См. комментарий во вкладке «Индикаторы»: функции, а не компоненты,
-              // иначе в canvas-режиме клики по чекбоксам теряются.
-              const indRow = (k: string, label: string) => (
-                <label key={k} className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
-                  <input type="checkbox" checked={ind[k] ?? false}
-                    onChange={e => setInd(k, e.target.checked)}
-                    style={{ width: 13, height: 13, accentColor: "#1e5a7a", cursor: "pointer" }} />
-                  <span className="text-[11px] text-gray-700">{label}</span>
-                </label>
-              );
-              const indSection = (title: string, rows: React.ReactNode) => (
-                <div className="mb-2" key={title}>
-                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
-                    style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>{title}</div>
-                  <div className="pt-0.5">{rows}</div>
-                </div>
-              );
+              const fanSym = selectedBranch
+                ? schemaSymbols.find(s => FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id)
+                : undefined;
               return (
-                <div className="p-2 overflow-y-auto flex-1">
-                  <div className="flex items-center justify-between mb-2 px-1">
-                    <span className="text-[11px] font-semibold text-gray-700">Отображаемые индикаторы</span>
-                    <button onClick={() => updateBranch(selectedBranch.id, { indicators: {} })}
-                      className="text-[10px] text-gray-400 hover:text-red-500 px-1"
-                      title="Сбросить все индикаторы">
-                      Сбросить
-                    </button>
-                  </div>
-                  {/* Отдельный ключ fanFlow — подпись рисуется У ЗНАЧКА
-                      вентилятора. Раньше здесь стоял branchFlowCalc, общий с
-                      подписью ветви, поэтому расход появлялся на ветви. */}
-                  {indSection("Расход воздуха", [
-                    indRow("fanFlow", "Расход воздуха на вентиляторе"),
-                    indRow("branchFlow", "Фактический расход воздуха"),
-                  ])}
-                  {indSection("Напор и мощность", [
-                    indRow("fanPressure", "Напор вентилятора"),
-                    indRow("fanShaftPower", "Мощность вентилятора"),
-                    indRow("fanEfficiency", "КПД вентилятора"),
-                  ])}
-                  {/* Отдельный ключ fanNameInd — подпись берётся из НАЗВАНИЯ
-                      ВЕНТИЛЯТОРА (поле «Название» в его параметрах). Раньше
-                      здесь стоял branchName, общий с подписью ветви, поэтому
-                      показывался тип выработки, а не название вентилятора. */}
-                  {indSection("Описание", [
-                    indRow("fanNameInd", "Название вентилятора"),
-                  ])}
-                </div>
+                <FanIndicatorsPanel
+                  branch={selectedBranch}
+                  onChange={(indicators) => { if (selectedBranch) updateBranch(selectedBranch.id, { indicators }); }}
+                  fontSize={fanSym?.fanIndFontSize ?? 9}
+                  onFontSize={fanSym ? (size) => setSchemaSymbols(prev => prev.map(s =>
+                    s.id === fanSym.id ? { ...s, fanIndFontSize: size } : s)) : undefined}
+                  onResetOffset={fanSym ? () => setSchemaSymbols(prev => prev.map(s =>
+                    s.id === fanSym.id ? { ...s, fanIndOffsetX: 0, fanIndOffsetY: 0 } : s)) : undefined}
+                />
               );
             })()}
 

@@ -1,17 +1,31 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// BranchFanTab.tsx — вкладка «Вентилятор» панели свойств выработки: выбор
-// модели из каталога и справочника рудника, режим работы, обороты, угол
-// лопаток, реверс и проверка нормы ПБ, масштаб условного обозначения.
+// BranchFanTab.tsx — вкладка «Вентилятор» панели свойств выработки.
 //
-// Вынесено из BranchPropsPanel.tsx БЕЗ изменений разметки, расчётов и текстов.
+// Карточки сверху вниз — в порядке работы инженера:
+//   1. Паспорт: название, назначение (ГВУ/ВВУ/ВМП), работает/остановлен,
+//      направление (прямой/реверс).
+//   2. Режим работы: постоянный напор / характеристика / фиксированный расход
+//      и поля выбранного режима (модель, лопатки, обороты, график Q–H).
+//   3. Установка: число в параллели, внутри перемычки или нет, окно ΔS.
+//   4. Результат расчёта: Q, H, N, КПД, R окна + предупреждения.
+//   5. Значок на схеме: масштаб, развернуть ветвь, удалить значок/вентилятор.
+//
+// Формулы и поля данных — прежние. Что убрано:
+//   • строка «+ : A → B» внизу — служебный вывод без подписи;
+//   • «Диаметр, м» в расчётных — дублировал модель (Ø в списке моделей);
+//   • размер подписи и «вернуть подпись» — переехали во вкладку «Индикаторы»
+//     вентилятора, где выбирается и сама подпись;
+//   • КПД при «постоянном напоре» стоял дважды (поле ввода и расчётное) —
+//     теперь одно поле ввода, расчётное значение в результатах.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
 import { FAN_CATALOG, getFanById, fanQMax, fanHAngle } from "@/lib/fanCurves";
 import { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
 import { fanWindowRkMurg } from "@/lib/bulkheads";
+import Icon from "@/components/ui/icon";
 import {
-  SectionHeader, EditInput, ComputedInput, InlineLabel,
-} from "@/components/cad/BranchPropsPrimitives";
+  Card, Field, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
+} from "@/components/cad/propUi";
 
 interface BranchFanTabProps {
   branch: TopoBranch;
@@ -20,10 +34,9 @@ interface BranchFanTabProps {
   onRemoveFan?: () => void;
   fanSymbolScale?: number;
   onFanSymbolScale?: (scale: number) => void;
-  /** Размер подписи вентилятора (показатели у значка), по умолчанию 9 */
+  /** Размер подписи и её сброс — теперь во вкладке «Индикаторы» вентилятора. */
   fanIndFontSize?: number;
   onFanIndFontSize?: (size: number) => void;
-  /** Вернуть подпись на место (сбросить смещение перетаскивания) */
   onFanIndResetOffset?: () => void;
   onFanSymbolDelete?: () => void;
   onReverse?: () => void;
@@ -32,604 +45,446 @@ interface BranchFanTabProps {
   onOpenFanLibrary?: () => void;
 }
 
+const selectStyle: React.CSSProperties = { ...inputStyle, cursor: "pointer" };
+
+function Note({ tone, children }: { tone: "warn" | "info" | "danger"; children: React.ReactNode }) {
+  const st = tone === "danger"
+    ? { bg: "var(--c-tint-red, #fef2f2)", fg: "var(--c-red-ink, #991b1b)", icon: "OctagonAlert" }
+    : tone === "warn"
+      ? { bg: "var(--c-tint-amber, #fffbeb)", fg: "var(--c-amber-ink, #865412)", icon: "TriangleAlert" }
+      : { bg: "var(--c-s2, #f8f7f4)", fg: "var(--c-t2, #3a3f45)", icon: "Info" };
+  return (
+    <div className="flex items-start gap-1.5 px-2 py-1.5 rounded text-[11px] leading-snug"
+      style={{ background: st.bg, color: st.fg }}>
+      <Icon name={st.icon} size={12} className="flex-shrink-0 mt-px" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+/** Большая кнопка-состояние (работает/остановлен, прямой/реверс). */
+function StateBtn({ on, onClick, disabled, icon, label, tone }: {
+  on: boolean; onClick: () => void; disabled?: boolean; icon: string; label: string;
+  tone: "green" | "amber" | "red";
+}) {
+  const c = tone === "green" ? "var(--c-green, #15803d)" : tone === "amber" ? "var(--c-amber, #a66b0d)" : "var(--c-red, #dc2626)";
+  const bg = tone === "green" ? "var(--c-tint-green, #f0fdf4)" : tone === "amber" ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-tint-red, #fef2f2)";
+  return (
+    <button type="button" onClick={onClick} disabled={disabled}
+      className="flex-1 h-8 rounded-md flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors disabled:opacity-40"
+      style={{
+        background: on ? bg : "var(--c-s1, #fff)",
+        color: on ? c : "var(--c-t3, #6b7280)",
+        border: `1px solid ${on ? `color-mix(in srgb, ${c} 45%, transparent)` : "var(--c-b2, #d5d1c8)"}`,
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}>
+      <Icon name={icon} size={13} /> {label}
+    </button>
+  );
+}
+
 export default function BranchFanTab({
   branch, onUpdate, numFmt, onRemoveFan, fanSymbolScale, onFanSymbolScale,
-  fanIndFontSize, onFanIndFontSize, onFanIndResetOffset,
   onFanSymbolDelete, onReverse, normalFlows, mineFans, onOpenFanLibrary,
 }: BranchFanTabProps) {
+  const b = branch;
+  const isVmp = b.fanType === "ВМП";
+  const curve = getFanById(b.fanCurveId);
+  const inBulkhead = (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки";
+  const autoDS = curve && curve.diameter > 0 ? Math.PI * curve.diameter * curve.diameter / 4 : 0;
+  const dS = (b.fanWindowArea ?? 0) > 0.001 ? b.fanWindowArea : autoDS;
+  const solved = Math.abs(b.flow ?? 0) > 0.01;
+  const qShown = b.fanReverse && !isVmp ? -Math.abs(b.flow) : Math.abs(b.flow);
+
   return (
-  <div>
-    {onRemoveFan && (
-      <div className="px-1 py-1 flex justify-end" style={{ borderBottom: "1px solid #f0d0d0", background: "var(--c-tint-red, #fff5f5)" }}>
-        <button
-          onClick={onRemoveFan}
-          className="text-[11px] px-3 py-0.5 rounded flex items-center gap-1"
-          style={{ background: "var(--c-red-bg, #dc2626)", color: "white", border: "none", cursor: "pointer" }}>
-          ✕ Удалить вентилятор
-        </button>
-      </div>
-    )}
-    <SectionHeader title="Вентилятор" />
+    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
 
-    <InlineLabel label="Название">
-      <input
-        type="text"
-        value={branch.fanName ?? ""}
-        onChange={(e) => onUpdate({ fanName: e.target.value })}
-        className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}
-        placeholder="Название вентилятора"
-      />
-    </InlineLabel>
-
-    {onFanSymbolScale && (
-      <InlineLabel label="Масштаб УО">
-        <div className="flex items-center gap-1 w-full">
-          <input type="range" min={5} max={400} step={5}
-            value={Math.round((fanSymbolScale ?? 1) * 100)}
-            onChange={(e) => onFanSymbolScale(Number(e.target.value) / 100)}
-            className="flex-1" style={{ accentColor: "#1e5a7a" }} />
-          <input type="number" min={5} max={400} step={5}
-            value={Math.round((fanSymbolScale ?? 1) * 100)}
-            onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); onFanSymbolScale(v / 100); }}
-            className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
-            style={{ fontSize: 11 }} />
-          <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
+      {/* ═══ 1. Паспорт ════════════════════════════════════════════════ */}
+      <Card icon="Fan" title="Вентилятор">
+        <Field label="Название (для подписи на схеме)">
+          <input type="text" className={inputCls} style={inputStyle}
+            value={b.fanName ?? ""} placeholder="Например, ВО-22/14АР"
+            onChange={(e) => onUpdate({ fanName: e.target.value })} />
+        </Field>
+        <Field label="Назначение">
+          <Segmented value={b.fanType ?? "ГВУ"}
+            onChange={(v) => onUpdate({ fanType: v as "ГВУ" | "ВВУ" | "ВМП" })}
+            options={[
+              { value: "ГВУ", label: "ГВУ", title: "Главная вентиляторная установка" },
+              { value: "ВВУ", label: "ВВУ", title: "Вспомогательная вентиляторная установка" },
+              { value: "ВМП", label: "ВМП", title: "Вентилятор местного проветривания" },
+            ]} />
+        </Field>
+        <div className="flex gap-1.5">
+          <StateBtn on={!b.fanStopped} tone="green" icon="Play" label="Работает"
+            onClick={() => onUpdate({ fanStopped: false })} />
+          <StateBtn on={!!b.fanStopped} tone="amber" icon="Square" label="Остановлен"
+            onClick={() => onUpdate({ fanStopped: true })} />
         </div>
-      </InlineLabel>
-    )}
-
-    {/* Размер ПОДПИСИ вентилятора (показатели у значка: расход, напор,
-        мощность, КПД, название). Какие именно строки выводить — задаётся на
-        вкладке «Индикаторы вентилятора». Положение подписи меняется
-        перетаскиванием её мышью прямо на схеме. */}
-    {onFanIndFontSize && (
-      <InlineLabel label="Размер подписи">
-        <div className="flex items-center gap-1 w-full">
-          <input type="range" min={1} max={50} step={0.5}
-            value={fanIndFontSize ?? 9}
-            onChange={(e) => onFanIndFontSize(Number(e.target.value))}
-            className="flex-1" style={{ accentColor: "#1e5a7a" }} />
-          <input type="number" min={1} max={50} step={0.5}
-            value={fanIndFontSize ?? 9}
-            onChange={(e) => { const v = Math.min(50, Math.max(1, Number(e.target.value) || 9)); onFanIndFontSize(v); }}
-            className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
-            style={{ fontSize: 11 }} />
-        </div>
-      </InlineLabel>
-    )}
-
-    {onFanIndResetOffset && (
-      <div className="px-1 pb-1">
-        <button
-          onClick={onFanIndResetOffset}
-          className="text-[11px] px-2 py-0.5 rounded"
-          style={{ background: "var(--c-s3, #f1f5f9)", color: "var(--c-t3, #475569)", border: "1px solid var(--c-b2, #cbd5e1)", cursor: "pointer" }}
-          title="Подпись двигается мышью прямо на схеме — эта кнопка вернёт её на место">
-          Вернуть подпись на место
-        </button>
-      </div>
-    )}
-
-    {(onFanSymbolDelete || onReverse) && (
-      <div className="px-1 py-1 flex gap-1">
-        {onFanSymbolDelete && (
-          <button
-            onClick={onFanSymbolDelete}
-            className="text-[11px] px-2 py-0.5 rounded"
-            style={{ background: "var(--c-s3, #f1f5f9)", color: "var(--c-t3, #475569)", border: "1px solid var(--c-b2, #cbd5e1)", cursor: "pointer" }}>
-            Удалить УО
-          </button>
-        )}
-        {onReverse && (
-          <button
-            onClick={onReverse}
-            className="text-[11px] px-2 py-0.5 rounded flex items-center gap-1"
-            style={{ background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)", border: "1px solid #b0cfdc", cursor: "pointer" }}>
-            ⇄ Развернуть
-          </button>
-        )}
-      </div>
-    )}
-
-    <SectionHeader title="Режим проветривания" />
-
-    <InlineLabel label="Назначение">
-      <select
-        value={branch.fanType ?? "ГВУ"}
-        onChange={(e) => onUpdate({ fanType: e.target.value as "ГВУ" | "ВВУ" | "ВМП" })}
-        className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
-        <option value="ГВУ">ГВУ — главная вентиляторная установка</option>
-        <option value="ВВУ">ВВУ — вспомогательная вентиляторная установка</option>
-        <option value="ВМП">ВМП — вентилятор местного проветривания</option>
-      </select>
-    </InlineLabel>
-
-    <InlineLabel label="Тип">
-      <select
-        value={branch.fanMode}
-        onChange={(e) => {
-          const mode = e.target.value as "constant" | "curve" | "fixed";
-          // При первом переключении подставляем текущий расход ветви —
-          // чтобы режим начинал с привычной рабочей точки, а не с нуля.
-          const patch: Partial<TopoBranch> = { fanMode: mode };
-          if (mode === "fixed" && !(branch.fanFixedQ && branch.fanFixedQ > 0)) {
-            patch.fanFixedQ = Math.round(Math.abs(branch.flow ?? 0) * 100) / 100;
-          }
-          onUpdate(patch);
-        }}
-        className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
-        <option value="constant">Постоянный напор</option>
-        <option value="curve">Напорная характеристика</option>
-        <option value="fixed">Фиксированный расход</option>
-      </select>
-    </InlineLabel>
-
-    {branch.fanMode === "fixed" && (
-      <>
-        <InlineLabel label="Расход, м³/с">
-          <EditInput type="number" step="0.1" value={branch.fanFixedQ ?? 0}
-            onChange={(v) => onUpdate({ fanFixedQ: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        {!(branch.fanFixedQ && branch.fanFixedQ > 0) ? (
-          <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-            style={{ background: "var(--c-tint-amber, #fff7ed)", border: "1px solid #fed7aa", color: "var(--c-amber, #c2410c)" }}>
-            ⚠ Расход = 0. Задайте расход, который должен выдавать вентилятор.
-          </div>
+        {!isVmp ? (
+          <>
+            <div className="flex gap-1.5">
+              <StateBtn on={!b.fanReverse} tone="green" icon="ArrowRight" label="Прямой"
+                disabled={b.fanStopped} onClick={() => onUpdate({ fanReverse: false })} />
+              <StateBtn on={!!b.fanReverse} tone="red" icon="ArrowLeft" label="Реверс"
+                disabled={b.fanStopped} onClick={() => onUpdate({ fanReverse: true })} />
+            </div>
+            {b.fanReverse && normalFlows && Object.keys(normalFlows).length === 0 && (
+              <Note tone="warn">Сначала выполните расчёт в прямом режиме — для проверки нормы ПБ (Q реверса ≥ 60 %).</Note>
+            )}
+          </>
         ) : (
-          <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
-            style={{ background: "var(--c-tint-blue, #f0f9ff)", border: "1px solid #bae6fd", color: "var(--c-blue, #0369a1)" }}>
-            Вентилятор выдаёт ровно {branch.fanFixedQ} м³/с. Напор подбирается расчётом
-            под сопротивление сети и показан после расчёта.
+          <Note tone="info">У ВМП направление нагнетания меняется разворотом ветви (Ctrl+R).</Note>
+        )}
+      </Card>
+
+      {/* ═══ 2. Режим работы ═══════════════════════════════════════════ */}
+      <Card icon="SlidersHorizontal" title="Режим работы">
+        <Segmented value={b.fanMode}
+          onChange={(mode) => {
+            // При первом переключении на «фиксированный расход» подставляем
+            // текущий расход ветви — чтобы начинать с привычной рабочей точки.
+            const patch: Partial<TopoBranch> = { fanMode: mode as TopoBranch["fanMode"] };
+            if (mode === "fixed" && !(b.fanFixedQ && b.fanFixedQ > 0)) {
+              patch.fanFixedQ = Math.round(Math.abs(b.flow ?? 0) * 100) / 100;
+            }
+            onUpdate(patch);
+          }}
+          options={[
+            { value: "curve", label: "Характеристика", title: "Напорная характеристика модели из каталога" },
+            { value: "constant", label: "Напор", title: "Постоянный напор, заданный вручную" },
+            { value: "fixed", label: "Расход", title: "Фиксированный расход" },
+          ]} />
+
+        {b.fanMode === "constant" && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Напор">
+                <NumInput value={b.fanPressure} step={10} min={0} unit="Па" onChange={(v) => onUpdate({ fanPressure: v })} />
+              </Field>
+              <Field label="КПД">
+                <NumInput value={Math.round(b.fanEfficiency * 100) || 65} step={1} min={1} max={100} unit="%"
+                  onChange={(v) => onUpdate({ fanEfficiency: (v || 65) / 100 })} />
+              </Field>
+            </div>
+            {b.fanPressure <= 0 && <Note tone="warn">Напор 0 Па — расчёт даст Q = 0. Задайте напор вентилятора.</Note>}
+          </>
+        )}
+
+        {b.fanMode === "fixed" && (
+          <>
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Расход">
+                <NumInput value={b.fanFixedQ ?? 0} step={0.1} min={0} unit="м³/с" onChange={(v) => onUpdate({ fanFixedQ: v })} />
+              </Field>
+              <Field label="КПД">
+                <NumInput value={Math.round(b.fanEfficiency * 100) || 65} step={1} min={1} max={100} unit="%"
+                  onChange={(v) => onUpdate({ fanEfficiency: (v || 65) / 100 })} />
+              </Field>
+            </div>
+            {!(b.fanFixedQ && b.fanFixedQ > 0)
+              ? <Note tone="warn">Расход 0 — задайте расход, который должен выдавать вентилятор.</Note>
+              : <Note tone="info">Вентилятор выдаёт ровно {b.fanFixedQ} м³/с, напор подбирается расчётом под сопротивление сети.</Note>}
+          </>
+        )}
+
+        {b.fanMode === "curve" && (
+          <CurveMode branch={b} onUpdate={onUpdate} mineFans={mineFans} onOpenFanLibrary={onOpenFanLibrary} />
+        )}
+      </Card>
+
+      {/* ═══ 3. Установка ══════════════════════════════════════════════ */}
+      <Card icon="Blocks" title="Установка">
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Вентиляторов в параллели">
+            <NumInput value={b.fanParallel ?? 1} step={1} min={1} unit="шт" onChange={(v) => onUpdate({ fanParallel: Math.max(1, Math.round(v)) })} />
+          </Field>
+          <Field label="Окно ΔS" hint={inBulkhead ? (b.fanWindowArea > 0.001 ? undefined : "по колесу π·D²/4") : "нет перемычки"}>
+            <ReadValue value={inBulkhead ? numFmt(dS, 2) : "—"} unit="м²" />
+          </Field>
+        </div>
+        <Field label="Где установлен">
+          <Segmented value={inBulkhead ? "in" : "out"}
+            onChange={(v) => onUpdate({ fanInstall: v === "in" ? "Внутри перемычки" : "Без перемычки" })}
+            options={[
+              { value: "in", label: "В перемычке", title: "Вентилятор в окне перемычки — окно добавляет сопротивление" },
+              { value: "out", label: "Без перемычки" },
+            ]} />
+        </Field>
+      </Card>
+
+      {/* ═══ 4. Результат расчёта ══════════════════════════════════════ */}
+      <Card icon="Activity" title="Результат расчёта" tone="signal">
+        {b.fanStopped && <Note tone="warn">Вентилятор остановлен — напор 0, воздух идёт по естественной тяге.</Note>}
+        {!b.fanStopped && b.fanReverse && !isVmp && (() => {
+          const eff = curve?.reverseEfficiencyFactor ?? 0.82;
+          return <Note tone="danger">Реверс: напор ≈ {Math.round(eff * 100)} % от прямого, КПД ниже на {Math.round((1 - eff) * 100)} %.</Note>;
+        })()}
+        {(() => {
+          if (b.fanMode !== "curve" || !solved || !curve) return null;
+          const Q = Math.abs(b.flow);
+          // Паспортный предел — общей функцией, как у решателя сети
+          const qMaxScaled = fanQMax(curve, b.fanBladeAngle, b.fanRpm);
+          if (Q <= qMaxScaled * 1.02) return null;
+          return <Note tone="warn">Q = {Q.toFixed(2)} м³/с больше паспортного максимума {qMaxScaled.toFixed(1)} м³/с (угол {b.fanBladeAngle ?? "—"}°) — вентилятор вне рабочей зоны.</Note>;
+        })()}
+
+        {!solved && !b.fanStopped ? (
+          <Note tone="info">Выполните «Расчёт сети» (F9), чтобы увидеть рабочую точку.</Note>
+        ) : (
+          <div className="grid grid-cols-2 gap-1.5">
+            <Stat label="Расход Q" value={numFmt(qShown, 2)} unit="м³/с" />
+            <Stat label="Напор H" value={numFmt(Math.abs(b.fanPressure), 0)} unit="Па" />
+            <Stat label="Мощность" value={numFmt(b.fanShaftPower / 1000, 1)} unit="кВт" />
+            <Stat label="КПД" value={numFmt(b.fanEfficiency * 100, 1)} unit="%" />
           </div>
         )}
-        <InlineLabel label="КПД, %">
-          <EditInput type="number" step="1" value={Math.round(branch.fanEfficiency * 100) || 65}
-            onChange={(v) => onUpdate({ fanEfficiency: (parseFloat(v) || 65) / 100 })} />
-        </InlineLabel>
-      </>
-    )}
 
-    {branch.fanType !== "ВМП" && (
-      <>
-        <InlineLabel label="Направление">
-          <button
-            onClick={() => onUpdate({ fanReverse: !(branch.fanReverse ?? false) })}
-            disabled={branch.fanStopped}
-            className="w-full text-[11px] px-2 rounded"
-            style={{
-              height: 18,
-              background: branch.fanStopped ? "var(--c-s3, #f3f4f6)" : branch.fanReverse ? "var(--c-tint-red2, #fee2e2)" : "var(--c-tint-green, #f0fdf4)",
-              color: branch.fanStopped ? "var(--c-t4, #9ca3af)" : branch.fanReverse ? "var(--c-red, #b91c1c)" : "var(--c-green, #15803d)",
-              border: `1px solid ${branch.fanStopped ? "var(--c-b2, #d1d5db)" : branch.fanReverse ? "#fca5a5" : "#86efac"}`,
-              cursor: branch.fanStopped ? "not-allowed" : "pointer",
-              fontWeight: 600,
-            }}>
-            {branch.fanReverse ? "⟵ Реверс (обратный)" : "⟶ Прямой (нормальный)"}
-          </button>
-        </InlineLabel>
-        {branch.fanReverse && normalFlows && Object.keys(normalFlows).length === 0 && (
-          <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
-            style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#854d0e" }}>
-            ⚠ Сначала выполните расчёт в прямом режиме — для проверки норматива ПБ (Q_рев ≥ 60%)
-          </div>
-        )}
-      </>
-    )}
-    {branch.fanType === "ВМП" && (
-      <div className="mx-1 my-0.5 px-2 py-1 text-[10px] rounded"
-        style={{ background: "var(--c-tint-blue, #f0f9ff)", border: "1px solid #bae6fd", color: "var(--c-blue, #0369a1)" }}>
-        Для смены направления нагнетания — разверните ветвь (Ctrl+R)
-      </div>
-    )}
-
-    <InlineLabel label="Состояние">
-      <button
-        onClick={() => onUpdate({ fanStopped: !(branch.fanStopped ?? false) })}
-        className="w-full text-[11px] px-2 rounded"
-        style={{
-          height: 18,
-          background: branch.fanStopped ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-tint-green, #f0fdf4)",
-          color: branch.fanStopped ? "var(--c-amber-ink, #92400e)" : "var(--c-green, #15803d)",
-          border: `1px solid ${branch.fanStopped ? "#fcd34d" : "#86efac"}`,
-          cursor: "pointer",
-          fontWeight: 600,
-        }}>
-        {branch.fanStopped ? "⏹ Остановлен (H=0)" : "▶ Работает"}
-      </button>
-    </InlineLabel>
-
-    {branch.fanMode === "constant" && (
-      <>
-        {branch.fanPressure <= 0 && (
-          <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-            style={{ background: "var(--c-tint-amber, #fff7ed)", border: "1px solid #fed7aa", color: "var(--c-amber, #c2410c)" }}>
-            ⚠ Напор = 0 Па. Расчёт даст Q=0. Задайте напор вентилятора.
-          </div>
-        )}
-        <InlineLabel label="Напор, Па">
-          <EditInput type="number" step="10" value={branch.fanPressure}
-            onChange={(v) => onUpdate({ fanPressure: parseFloat(v) || 0 })} />
-        </InlineLabel>
-        <InlineLabel label="КПД, %">
-          <EditInput type="number" step="1" value={Math.round(branch.fanEfficiency * 100) || 65}
-            onChange={(v) => onUpdate({ fanEfficiency: (parseFloat(v) || 65) / 100 })} />
-        </InlineLabel>
-      </>
-    )}
-
-    {branch.fanMode === "curve" && (() => {
-      const curve = getFanById(branch.fanCurveId);
-      const rpm = branch.fanRpm || (curve?.rpmNominal ?? 0);
-      const bladeAngle = branch.fanBladeAngle ?? (curve?.bladeAngles?.length ? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)] : 45);
-
-      // Строим Q-H график (SVG 240×110)
-      const W = 240, H_svg = 110, padL = 36, padR = 8, padT = 8, padB = 24;
-      const gW = W - padL - padR;
-      const gH = H_svg - padT - padB;
-
-      const renderChart = () => {
-        if (!curve) return null;
-        // Закон подобия: Q ~ n/n0, H ~ (n/n0)²
-        const k = rpm > 0 && curve.rpmNominal > 0 ? rpm / curve.rpmNominal : 1;
-        // Масштабированные пределы оси X
-        const qMin = curve.qMin * k;
-        const qMax = curve.qMax * k;
-
-        const anglesToDraw = curve.bladeAngles.length > 0
-          ? curve.bladeAngles
-          : [bladeAngle];
-
-        // Напор берём общей функцией fanHAngle — той же, что использует расчёт
-        // сети. Раньше здесь была третья по счёту формула угла лопаток
-        // (0.55 + 0.9·t), из-за чего нарисованная кривая не совпадала ни с
-        // расчётом, ни с графиком в справочнике оборудования.
-
-        // Шкала H: максимум по всем углам при номинальных оборотах * k²
-        let hMax = 0;
-        anglesToDraw.forEach(a => {
-          for (let i = 0; i <= 20; i++) {
-            const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 20;
-            const h = fanHAngle(curve, qn, a) * k * k;
-            if (h > hMax) hMax = h;
-          }
-        });
-        hMax = Math.ceil(hMax / 500) * 500 || 2000;
-
-        // Маппинг координат: Q в диапазоне [qMin..qMax] (уже масштабированных)
-        const tx = (q: number) => padL + (q - qMin) / (qMax - qMin) * gW;
-        const ty = (h: number) => padT + gH - Math.max(0, Math.min(1, h / hMax)) * gH;
-
-        const paths = anglesToDraw.map((a, ai) => {
-          const pts: string[] = [];
-          // Кривая рисуется до паспортного предела ДЛЯ ЭТОГО угла: при малом
-          // угле вентилятор не выдаёт полный номинальный расход, и рисовать
-          // кривую до общего qMax было бы обманом.
-          const qMaxA = fanQMax(curve, a);
-          for (let i = 0; i <= 30; i++) {
-            // qn — номинальный расход, q — масштабированный (= qn * k)
-            const qn = curve.qMin + (qMaxA - curve.qMin) * i / 30;
-            const q = qn * k;
-            const h = fanHAngle(curve, qn, a) * k * k;
-            pts.push(`${tx(q).toFixed(1)},${ty(h).toFixed(1)}`);
-          }
-          const isSelected = a === bladeAngle;
+        {inBulkhead && dS > 0.001 && (() => {
+          const sBr = b.area ?? 0;
+          // Окно — сужение потока: R = ρ/(2·μ²)·(1/ΔS² − 1/S²). При ΔS ≥ S
+          // сужения нет и R = 0 — показываем причину, а не голый ноль.
+          const noSection = sBr <= 0.001;
+          const windowTooBig = !noSection && dS >= sBr;
           return (
-            <polyline key={a}
-              points={pts.join(" ")}
-              fill="none"
-              stroke={isSelected ? "#1e5a7a" : "#81b0c4"}
-              strokeWidth={isSelected ? 1.8 : 1}
-              strokeDasharray={isSelected ? undefined : "3,2"}
-              opacity={isSelected ? 1 : 0.7}
-              style={{ cursor: "pointer" }}
-              onClick={() => onUpdate({ fanBladeAngle: a })}
-            >
+            <>
+              <KV label="Сопротивление окна" value={numFmt(fanWindowRkMurg(dS, sBr), 4)} unit="кМюрг" />
+              {windowTooBig && (
+                <Note tone="warn">Окно ΔS = {numFmt(dS, 2)} м² не меньше сечения выработки S = {numFmt(sBr, 2)} м² — поток не сужается, R окна = 0.</Note>
+              )}
+              {noSection && (
+                <Note tone="warn">У выработки не задано сечение — R окна посчитан как для очень большой выработки.</Note>
+              )}
+            </>
+          );
+        })()}
+      </Card>
+
+      {/* ═══ 5. Значок на схеме ════════════════════════════════════════ */}
+      <Card icon="Shapes" title="Значок на схеме" tone="muted" collapsible defaultOpen={false}>
+        {onFanSymbolScale && (
+          <div>
+            <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
+              <span>Размер значка</span>
+              <span style={{ fontFamily: "var(--font-num)" }}>{Math.round((fanSymbolScale ?? 1) * 100)} %</span>
+            </div>
+            <input type="range" min={5} max={400} step={5}
+              value={Math.round((fanSymbolScale ?? 1) * 100)}
+              onChange={(e) => onFanSymbolScale(Number(e.target.value) / 100)}
+              className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+          </div>
+        )}
+        <div className="grid grid-cols-2 gap-1.5">
+          {onReverse && (
+            <button type="button" onClick={onReverse}
+              className="h-7 rounded text-[11px] flex items-center justify-center gap-1"
+              title="Поменять начало и конец ветви местами"
+              style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
+              <Icon name="ArrowLeftRight" size={12} /> Развернуть ветвь
+            </button>
+          )}
+          {onFanSymbolDelete && (
+            <button type="button" onClick={onFanSymbolDelete}
+              className="h-7 rounded text-[11px] flex items-center justify-center gap-1"
+              title="Убрать только значок — вентилятор в расчёте остаётся"
+              style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
+              <Icon name="EyeOff" size={12} /> Убрать значок
+            </button>
+          )}
+        </div>
+        {onRemoveFan && (
+          <button type="button" onClick={onRemoveFan}
+            className="w-full h-7 rounded text-[11px] flex items-center justify-center gap-1"
+            title="Удалить вентилятор с выработки (из расчёта тоже)"
+            style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid color-mix(in srgb, var(--c-red, #dc2626) 35%, transparent)", color: "var(--c-red, #dc2626)", cursor: "pointer" }}>
+            <Icon name="Trash2" size={12} /> Удалить вентилятор
+          </button>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+/** Режим «Напорная характеристика»: модель, лопатки, обороты, график Q–H. */
+function CurveMode({ branch: b, onUpdate, mineFans, onOpenFanLibrary }: {
+  branch: TopoBranch; onUpdate: (p: Partial<TopoBranch>) => void;
+  mineFans?: MineFanExport[]; onOpenFanLibrary?: () => void;
+}) {
+  const curve = getFanById(b.fanCurveId);
+  const rpm = b.fanRpm || (curve?.rpmNominal ?? 0);
+  const bladeAngle = b.fanBladeAngle ?? (curve?.bladeAngles?.length ? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)] : 45);
+
+  if (!mineFans || mineFans.length === 0) {
+    return (
+      <button type="button" onClick={onOpenFanLibrary}
+        className="w-full flex items-start gap-2 px-2 py-2 rounded text-left text-[11px] leading-snug"
+        style={{ background: "var(--c-tint-amber, #fffbeb)", color: "var(--c-amber-ink, #865412)", border: "none", cursor: "pointer" }}>
+        <Icon name="BookPlus" size={14} className="flex-shrink-0 mt-px" />
+        <span>Вентиляторы рудника не добавлены. <span className="underline">Открыть «Справочники → Вентиляторы»</span></span>
+      </button>
+    );
+  }
+
+  return (
+    <>
+      <Field label="Модель">
+        <div className="flex gap-1">
+          <select className={`${inputCls} flex-1`} style={selectStyle} value={b.fanCurveId}
+            onChange={(e) => {
+              const f = getFanById(e.target.value);
+              // Окно ΔS по умолчанию = площадь рабочего колеса π·D²/4
+              const dS = f && f.diameter > 0 ? Math.round((Math.PI * f.diameter * f.diameter / 4) * 100) / 100 : 0;
+              onUpdate({
+                fanCurveId: e.target.value,
+                fanName: f?.name ?? "",
+                fanRpm: f ? (f.rpmNominal ?? 0) : 0,
+                fanBladeAngle: f?.bladeAngles?.length ? f.bladeAngles[Math.floor(f.bladeAngles.length / 2)] : 45,
+                fanWindowArea: dS,
+              });
+            }}>
+            <option value="">— выберите модель —</option>
+            {FAN_CATALOG.filter(f => mineFans.some(mf => mf.catalogId === f.id)).map((f) => (
+              <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
+            ))}
+          </select>
+          {onOpenFanLibrary && (
+            <button type="button" onClick={onOpenFanLibrary} title="Справочник вентиляторов рудника"
+              className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded"
+              style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
+              <Icon name="BookOpen" size={13} />
+            </button>
+          )}
+        </div>
+      </Field>
+
+      {curve && (
+        <>
+          {curve.bladeAngles.length > 0 && (
+            <Field label="Угол лопаток">
+              <select className={inputCls} style={selectStyle} value={bladeAngle}
+                onChange={(e) => onUpdate({ fanBladeAngle: Number(e.target.value) })}>
+                {curve.bladeAngles.map(a => <option key={a} value={a}>{a}°</option>)}
+              </select>
+            </Field>
+          )}
+          <div>
+            <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
+              <span>Частота вращения</span>
+              <span style={{ fontFamily: "var(--font-num)", color: "var(--c-t1, #1f2328)" }}>{rpm} об/мин</span>
+            </div>
+            <input type="range" min={curve.rpmMin} max={curve.rpmMax} step={10} value={rpm}
+              onChange={(e) => onUpdate({ fanRpm: Number(e.target.value) })}
+              className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+            <div className="flex justify-between text-[9px]" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-num)" }}>
+              <span>{curve.rpmMin}</span><span>{curve.rpmMax}</span>
+            </div>
+          </div>
+          <div className="rounded-md overflow-hidden" style={{ border: "1px solid var(--c-b1, #e7e4dd)", background: "var(--c-s2, #f8f7f4)" }}>
+            <FanQHChart branch={b} rpm={rpm} bladeAngle={bladeAngle} onPickAngle={(a) => onUpdate({ fanBladeAngle: a })} />
+            <div className="px-2 pb-1.5 flex gap-3 text-[9px] justify-center flex-wrap" style={{ color: "var(--c-t3, #6b7280)" }}>
+              <span style={{ color: "var(--c-accent, #1e5a7a)" }}>━ выбранный угол</span>
+              <span>┅ другие (клик — выбрать)</span>
+              {Math.abs(b.flow) > 0.01 && <span style={{ color: "var(--c-red, #dc2626)" }}>● рабочая точка</span>}
+            </div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/** График Q–H: кривые по углам лопаток (закон подобия по оборотам), реверс, рабочая точка. */
+function FanQHChart({ branch: b, rpm, bladeAngle, onPickAngle }: {
+  branch: TopoBranch; rpm: number; bladeAngle: number; onPickAngle: (a: number) => void;
+}) {
+  const curve = getFanById(b.fanCurveId);
+  if (!curve) return null;
+  const W = 260, H = 130, padL = 36, padR = 8, padT = 8, padB = 24;
+  const gW = W - padL - padR, gH = H - padT - padB;
+  // Закон подобия: Q ~ n/n0, H ~ (n/n0)²
+  const k = rpm > 0 && curve.rpmNominal > 0 ? rpm / curve.rpmNominal : 1;
+  const qMin = curve.qMin * k, qMax = curve.qMax * k;
+  const angles = curve.bladeAngles.length > 0 ? curve.bladeAngles : [bladeAngle];
+
+  // Напор — общей функцией fanHAngle, как у расчёта сети
+  let hMax = 0;
+  angles.forEach(a => {
+    for (let i = 0; i <= 20; i++) {
+      const h = fanHAngle(curve, curve.qMin + (curve.qMax - curve.qMin) * i / 20, a) * k * k;
+      if (h > hMax) hMax = h;
+    }
+  });
+  hMax = Math.ceil(hMax / 500) * 500 || 2000;
+  const tx = (q: number) => padL + (q - qMin) / (qMax - qMin) * gW;
+  const ty = (h: number) => padT + gH - Math.max(0, Math.min(1, h / hMax)) * gH;
+  const qWork = Math.abs(b.flow);
+  const R = qWork > 0.01 ? b.fanPressure / (qWork * qWork) : 0;
+  const axis = { fill: "var(--c-t3, #6b7280)" };
+  const grid = { stroke: "var(--c-b1, #e7e4dd)" };
+
+  return (
+    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", fontFamily: "var(--font-num)" }}>
+      <rect x={padL} y={padT} width={gW} height={gH} style={{ fill: "var(--c-s1, #fff)", stroke: "var(--c-b2, #d5d1c8)" }} strokeWidth={0.5} />
+      {Array.from({ length: 5 }, (_, i) => Math.round(hMax * i / 4)).map(h => (
+        <g key={h}>
+          <line x1={padL} y1={ty(h)} x2={padL + gW} y2={ty(h)} style={grid} strokeWidth={0.5} />
+          <text x={padL - 3} y={ty(h) + 3} textAnchor="end" fontSize={8} style={axis}>{h}</text>
+        </g>
+      ))}
+      {Array.from({ length: 5 }, (_, i) => Math.round(qMin + (qMax - qMin) * i / 4)).map(q => (
+        <g key={q}>
+          <line x1={tx(q)} y1={padT} x2={tx(q)} y2={padT + gH} style={grid} strokeWidth={0.5} />
+          <text x={tx(q)} y={padT + gH + 10} textAnchor="middle" fontSize={8} style={axis}>{q}</text>
+        </g>
+      ))}
+      <g opacity={b.fanReverse ? 0.35 : 1}>
+        {angles.map(a => {
+          // Кривая — до паспортного предела ДЛЯ ЭТОГО угла
+          const qMaxA = fanQMax(curve, a);
+          const pts = Array.from({ length: 31 }, (_, i) => {
+            const qn = curve.qMin + (qMaxA - curve.qMin) * i / 30;
+            return `${tx(qn * k).toFixed(1)},${ty(fanHAngle(curve, qn, a) * k * k).toFixed(1)}`;
+          });
+          const sel = a === bladeAngle;
+          return (
+            <polyline key={a} points={pts.join(" ")} fill="none"
+              style={{ stroke: sel ? "var(--c-accent, #1e5a7a)" : "var(--c-blue-lt, #81b0c4)", cursor: "pointer" }}
+              strokeWidth={sel ? 2 : 1} strokeDasharray={sel ? undefined : "3,2"} opacity={sel ? 1 : 0.7}
+              onClick={() => onPickAngle(a)}>
               <title>Угол {a}°</title>
             </polyline>
           );
-          void ai;
-        });
-
-        // Рабочая точка
-        const qWork = Math.abs(branch.flow);
-        const R = qWork > 0.01 ? branch.fanPressure / (qWork * qWork) : 0;
-        const workDot = qWork > 0.01 ? (
-          <>
-            <polyline
-              points={Array.from({ length: 20 }, (_, i) => {
-                const q = qMin + (qMax - qMin) * i / 19;
-                return `${tx(q).toFixed(1)},${ty(R * q * q).toFixed(1)}`;
-              }).join(" ")}
-              fill="none" stroke="#f59e0b" strokeWidth={1} strokeDasharray="4,2" />
-            <circle cx={tx(qWork)} cy={ty(branch.fanPressure)} r={4} fill="#ef4444" stroke="white" strokeWidth={1} />
-          </>
-        ) : null;
-
-        // Оси
-        const nTicks = 4;
-        const hTicks = Array.from({ length: nTicks + 1 }, (_, i) => Math.round(hMax * i / nTicks));
-        const qTicks = Array.from({ length: 5 }, (_, i) => Math.round(qMin + (qMax - qMin) * i / 4));
-
+        })}
+      </g>
+      {curve.reverseH0 !== undefined && curve.reverseH1 !== undefined && curve.reverseH2 !== undefined && (() => {
+        const revQMax = (curve.reverseQMax ?? curve.qMax) * k;
+        const pts: string[] = [];
+        for (let i = 0; i <= 30; i++) {
+          const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
+          if (qn * k > revQMax) break;
+          const hr = Math.max(0, curve.reverseH0! + curve.reverseH1! * qn + curve.reverseH2! * qn * qn) * k * k;
+          pts.push(`${tx(qn * k).toFixed(1)},${ty(hr).toFixed(1)}`);
+        }
         return (
-          <svg width={W} height={H_svg} style={{ display: "block" }}>
-            <rect x={padL} y={padT} width={gW} height={gH} fill="#f8faff" stroke="#d1d5db" strokeWidth={0.5} />
-            {hTicks.map(h => (
-              <g key={h}>
-                <line x1={padL} y1={ty(h)} x2={padL + gW} y2={ty(h)} stroke="#e5e7eb" strokeWidth={0.5} />
-                <text x={padL - 3} y={ty(h) + 3} textAnchor="end" fontSize={8} fill="#6b7280">{h}</text>
-              </g>
-            ))}
-            {qTicks.map(q => (
-              <g key={q}>
-                <line x1={tx(q)} y1={padT} x2={tx(q)} y2={padT + gH} stroke="#e5e7eb" strokeWidth={0.5} />
-                <text x={tx(q)} y={padT + gH + 10} textAnchor="middle" fontSize={8} fill="#6b7280">{q}</text>
-              </g>
-            ))}
-            {/* Прямые кривые (прозрачнее при реверсе) */}
-            <g opacity={branch.fanReverse ? 0.35 : 1}>{paths}</g>
-
-            {/* Реверсная P–Q кривая */}
-            {curve.reverseH0 !== undefined && curve.reverseH1 !== undefined && curve.reverseH2 !== undefined && (() => {
-              const revQMax = (curve.reverseQMax ?? curve.qMax) * k;
-              const revPts: string[] = [];
-              for (let i = 0; i <= 30; i++) {
-                const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
-                const q  = qn * k;
-                const hr = Math.max(0, curve.reverseH0! + curve.reverseH1! * qn + curve.reverseH2! * qn * qn) * k * k;
-                if (q > revQMax) break;
-                revPts.push(`${tx(q).toFixed(1)},${ty(hr).toFixed(1)}`);
-              }
-              return (
-                <g opacity={branch.fanReverse ? 1 : 0.4}>
-                  <polyline points={revPts.join(" ")} fill="none"
-                    stroke="#dc2626" strokeWidth={branch.fanReverse ? 2 : 1.2}
-                    strokeDasharray={branch.fanReverse ? undefined : "5,3"} />
-                  <text x={padL + gW * 0.6} y={ty(curve.reverseH0! * k * k) - 3}
-                    fontSize={7.5} fill="#dc2626">
-                    {branch.fanReverse ? "⟵ Реверс" : "Реверс (инфо)"}
-                  </text>
-                </g>
-              );
-            })()}
-
-            {workDot}
-            <text x={padL + gW / 2} y={H_svg - 2} textAnchor="middle" fontSize={8} fill="#6b7280">Q, м³/с</text>
-            <text x={6} y={padT + gH / 2} textAnchor="middle" fontSize={8} fill="#6b7280"
-              transform={`rotate(-90,6,${padT + gH / 2})`}>H, Па</text>
-            {curve.bladeAngles.length > 0 && (
-              <text x={padL + gW - 2} y={padT + 10} textAnchor="end" fontSize={7.5} fill="#1e5a7a">
-                — Угол {bladeAngle}°
-              </text>
-            )}
-            {qWork > 0.01 && (
-              <text x={tx(qWork) + 6} y={ty(Math.abs(branch.fanPressure)) - 4} fontSize={7.5} fill="#ef4444">
-                Q={qWork.toFixed(1)}
-              </text>
-            )}
-          </svg>
+          <polyline points={pts.join(" ")} fill="none" style={{ stroke: "var(--c-red, #dc2626)" }}
+            strokeWidth={b.fanReverse ? 2 : 1} strokeDasharray={b.fanReverse ? undefined : "5,3"} opacity={b.fanReverse ? 1 : 0.4}>
+            <title>Реверс</title>
+          </polyline>
         );
-      };
-
-      return (
+      })()}
+      {qWork > 0.01 && (
         <>
-          {(!mineFans || mineFans.length === 0) ? (
-            <div className="px-2 py-2 mx-1 my-1 rounded text-[10px] text-amber-700 leading-tight"
-              style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d" }}>
-              Вентиляторы не добавлены в библиотеку рудника.
-              {onOpenFanLibrary && (
-                <button onClick={onOpenFanLibrary}
-                  className="block mt-1 underline text-blue-600 cursor-pointer"
-                  style={{ background: "none", border: "none", padding: 0, fontSize: 10 }}>
-                  Открыть справочник оборудования →
-                </button>
-              )}
-            </div>
-          ) : (
-            <InlineLabel label="Модель">
-              <select
-                value={branch.fanCurveId}
-                onChange={(e) => {
-                  const f = getFanById(e.target.value);
-                  // Площадь окна ΔS автоматически = площадь рабочего колеса π·D²/4
-                  const dS = f && f.diameter > 0
-                    ? Math.round((Math.PI * f.diameter * f.diameter / 4) * 100) / 100
-                    : 0;
-                  onUpdate({
-                    fanCurveId: e.target.value,
-                    fanName: f?.name ?? "",
-                    fanRpm: f ? (f.rpmNominal ?? 0) : 0,
-                    fanBladeAngle: f?.bladeAngles?.length ? f.bladeAngles[Math.floor(f.bladeAngles.length / 2)] : 45,
-                    fanWindowArea: dS,
-                  });
-                }}
-                className="w-full text-[11px] px-1"
-                style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
-                <option value="">— выберите модель —</option>
-                {FAN_CATALOG.filter(f => mineFans.some(mf => mf.catalogId === f.id)).map((f) => (
-                  <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
-                ))}
-              </select>
-            </InlineLabel>
-          )}
-
-          {curve && curve.bladeAngles.length > 0 && (
-            <InlineLabel label="Лопатки">
-              <select
-                value={bladeAngle}
-                onChange={(e) => onUpdate({ fanBladeAngle: Number(e.target.value) })}
-                className="w-full text-[11px] px-1"
-                style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
-                {curve.bladeAngles.map(a => (
-                  <option key={a} value={a}>Угол {a}°</option>
-                ))}
-              </select>
-            </InlineLabel>
-          )}
-
-          {curve && (
-            <>
-              <InlineLabel label="Скорость">
-                <div className="flex items-center gap-1 w-full">
-                  <input
-                    type="range"
-                    min={curve.rpmMin} max={curve.rpmMax} step={10}
-                    value={rpm}
-                    onChange={(e) => onUpdate({ fanRpm: Number(e.target.value) })}
-                    className="flex-1"
-                    style={{ accentColor: "#1e5a7a" }} />
-                  <span className="text-[10px] text-gray-700 w-16 text-right flex-shrink-0">
-                    {rpm} об/мин
-                  </span>
-                </div>
-              </InlineLabel>
-              <div style={{ marginLeft: 88 }} className="pb-0.5">
-                <span className="text-[9px] text-gray-400">от {curve.rpmMin} до {curve.rpmMax} об/мин</span>
-              </div>
-
-              <SectionHeader title="Характеристики" />
-              <div className="flex justify-center py-1 overflow-x-auto" style={{ background: "#f8faff" }}>
-                {renderChart()}
-              </div>
-              <div className="px-2 pb-1 flex gap-3 text-[9px] text-gray-400 justify-center flex-wrap">
-                <span style={{ color: "var(--c-blue, #2563eb)" }}>— выбранный угол</span>
-                <span style={{ color: "#81b0c4" }}>-- другие углы</span>
-                {Math.abs(branch.flow) > 0.01 && <span style={{ color: "var(--c-red-lt, #ef4444)" }}>● рабочая точка</span>}
-              </div>
-            </>
-          )}
+          <polyline fill="none" style={{ stroke: "var(--c-signal, #e8a317)" }} strokeWidth={1} strokeDasharray="4,2"
+            points={Array.from({ length: 20 }, (_, i) => {
+              const q = qMin + (qMax - qMin) * i / 19;
+              return `${tx(q).toFixed(1)},${ty(R * q * q).toFixed(1)}`;
+            }).join(" ")} />
+          <circle cx={tx(qWork)} cy={ty(Math.abs(b.fanPressure))} r={4} style={{ fill: "var(--c-red, #dc2626)", stroke: "var(--c-s1, #fff)" }} strokeWidth={1} />
         </>
-      );
-    })()}
-
-    <InlineLabel label="В параллели">
-      <EditInput type="number" step="1" value={branch.fanParallel ?? 1}
-        onChange={(v) => onUpdate({ fanParallel: Math.max(1, parseInt(v) || 1) })} />
-    </InlineLabel>
-
-    <InlineLabel label="Установка">
-      <select
-        value={branch.fanInstall ?? "Внутри перемычки"}
-        onChange={(e) => onUpdate({ fanInstall: e.target.value })}
-        className="w-full text-[11px] px-1"
-        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
-        <option>Внутри перемычки</option>
-        <option>Без перемычки</option>
-      </select>
-    </InlineLabel>
-
-    {(branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (() => {
-      const cv = getFanById(branch.fanCurveId);
-      const autoDS = cv && cv.diameter > 0 ? Math.PI * cv.diameter * cv.diameter / 4 : 0;
-      const dS = (branch.fanWindowArea ?? 0) > 0.001 ? branch.fanWindowArea! : autoDS;
-      return (
-        <InlineLabel label="Пл. окна ΔS, м²">
-          <ComputedInput value={numFmt(dS, 2)} />
-        </InlineLabel>
-      );
-    })()}
-
-    <SectionHeader title="Вычисленные параметры" />
-
-    {branch.fanStopped && (
-      <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
-        style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid #fcd34d", color: "var(--c-amber-ink, #92400e)" }}>
-        ⏹ Вентилятор остановлен — напор H=0, воздух движется по естественной тяге
-      </div>
-    )}
-    {!branch.fanStopped && branch.fanReverse && branch.fanType !== "ВМП" && (
-      <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded flex items-center gap-1"
-        style={{ background: "var(--c-tint-red2, #fee2e2)", border: "1px solid #fca5a5", color: "var(--c-red, #b91c1c)" }}>
-        {(() => {
-          const curve = getFanById(branch.fanCurveId);
-          const eff = curve?.reverseEfficiencyFactor ?? 0.82;
-          const pct = Math.round((1 - eff) * 100);
-          return `⟵ Реверс (обратный): напор ~${Math.round(eff * 100)}% от прямого, КПД −${pct}%`;
-        })()}
-      </div>
-    )}
-
-    {(() => {
-      if (!branch.hasFan || branch.fanMode !== "curve" || Math.abs(branch.flow) < 0.01) return null;
-      const curve = getFanById(branch.fanCurveId);
-      if (!curve) return null;
-      const Q = Math.abs(branch.flow);
-      // Паспортный предел считаем общей функцией — той же, что использует
-      // решатель сети, чтобы предупреждение и расчёт не расходились.
-      const qMaxScaled = fanQMax(curve, branch.fanBladeAngle, branch.fanRpm);
-      if (Q <= qMaxScaled * 1.02) return null;
-      return (
-        <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-          style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid var(--c-amber-lt, #f59e0b)", color: "var(--c-amber-ink, #92400e)" }}>
-          ⚠ Q={Q.toFixed(2)} м³/с превышает max {qMaxScaled.toFixed(1)} м³/с для {curve.name} (угол {branch.fanBladeAngle ?? "-"}°). Вентилятор вне паспортной зоны.
-        </div>
-      );
-    })()}
-
-    <InlineLabel label="Q выраб., м³/с">
-      <ComputedInput value={branch.fanReverse && branch.fanType !== "ВМП"
-        ? numFmt(-Math.abs(branch.flow), 2)
-        : numFmt(Math.abs(branch.flow), 2)} />
-    </InlineLabel>
-    <InlineLabel label="Напор, Па">
-      <ComputedInput value={numFmt(Math.abs(branch.fanPressure), 0)} />
-    </InlineLabel>
-    <InlineLabel label="Мощность, кВт">
-      <ComputedInput value={numFmt(branch.fanShaftPower / 1000, 1)} />
-    </InlineLabel>
-    <InlineLabel label="КПД, %">
-      <ComputedInput value={numFmt(branch.fanEfficiency * 100, 1)} />
-    </InlineLabel>
-    {(branch.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && (() => {
-      const cv = getFanById(branch.fanCurveId);
-      const autoDS = cv && cv.diameter > 0 ? Math.PI * cv.diameter * cv.diameter / 4 : 0;
-      const dS = (branch.fanWindowArea ?? 0) > 0.001 ? branch.fanWindowArea! : autoDS;
-      if (dS <= 0.001) return null;
-      const sBr = branch.area ?? 0;
-      const rWin = fanWindowRkMurg(dS, sBr);
-      // ПОЧЕМУ R МОЖЕТ БЫТЬ НУЛЁМ. Окно в перемычке — это сужение потока:
-      // сопротивление возникает только если окно УЖЕ выработки. Формула
-      // R = ρ/(2·μ²)·(1/ΔS² − 1/S²) при ΔS ≥ S даёт ноль или отрицательное
-      // значение, и раньше пользователь видел просто «0.0000» без пояснений.
-      // Теперь показываем причину: сечение выработки не задано или меньше окна.
-      const noSection = sBr <= 0.001;
-      const windowTooBig = !noSection && dS >= sBr;
-      return (
-        <>
-          <InlineLabel label="R окна, кМюрг">
-            <ComputedInput value={numFmt(rWin, 4)} />
-          </InlineLabel>
-          {windowTooBig && (
-            <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid var(--c-amber-lt, #f59e0b)", color: "var(--c-amber-ink, #92400e)" }}>
-              ⚠ Площадь окна ΔS={numFmt(dS, 2)} м² не меньше сечения выработки
-              S={numFmt(sBr, 2)} м² — окно не сужает поток, поэтому R окна = 0.
-              Проверьте сечение выработки или уменьшите площадь окна.
-            </div>
-          )}
-          {noSection && (
-            <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded"
-              style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid var(--c-amber-lt, #f59e0b)", color: "var(--c-amber-ink, #92400e)" }}>
-              ⚠ У выработки не задано сечение S — R окна посчитан без учёта
-              скорости подхода (как для очень большой выработки).
-            </div>
-          )}
-        </>
-      );
-    })()}
-    {(() => {
-      const curve = getFanById(branch.fanCurveId);
-      return curve ? (
-        <InlineLabel label="Диаметр, м">
-          <ComputedInput value={numFmt(curve.diameter, 1)} />
-        </InlineLabel>
-      ) : null;
-    })()}
-    <div className="px-1 py-0.5 text-[10px] text-gray-400">
-      + : {branch.fromId} → {branch.toId}
-    </div>
-  </div>
+      )}
+      <text x={padL + gW / 2} y={H - 2} textAnchor="middle" fontSize={8} style={axis}>Q, м³/с</text>
+      <text x={6} y={padT + gH / 2} textAnchor="middle" fontSize={8} style={axis}
+        transform={`rotate(-90,6,${padT + gH / 2})`}>H, Па</text>
+    </svg>
   );
 }
