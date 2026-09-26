@@ -162,117 +162,6 @@ export function RibbonBigBtn({ icon, iconImg, label, sublabel, disabled, onClick
   );
 }
 
-export function RibbonSmallBtn({ children, active, title, onClick }: {
-  children: React.ReactNode; active?: boolean; title?: string; onClick?: () => void;
-}) {
-  return (
-    <button title={title} onClick={onClick}
-      className="flex items-center justify-center rounded transition-colors"
-      style={{
-        width: 40, height: 40,
-        border: active ? "1.5px solid var(--c-blue-lt, #3b82f6)" : "1px solid transparent",
-        background: active ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
-        flexShrink: 0,
-      }}
-      onMouseEnter={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "#eef5f8"; (e.currentTarget as HTMLButtonElement).style.borderColor = "#81b0c4"; } }}
-      onMouseLeave={e => { if (!active) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.borderColor = "transparent"; } }}>
-      {children}
-    </button>
-  );
-}
-
-export function PentagonIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16">
-      <path d="M8 1 L15 6 L12 14 L4 14 L1 6 Z" fill="none" stroke="#444" strokeWidth="1.2" />
-    </svg>
-  );
-}
-
-export function RectIcon() {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16">
-      <rect x="2" y="3" width="12" height="10" fill="none" stroke="#444" strokeWidth="1.2" />
-    </svg>
-  );
-}
-
-export function MiniSquareIcon({ variant }: { variant: number }) {
-  const colors = ["#2f7290", "#22c55e", "#f59e0b", "#a855f7"];
-  return (
-    <svg width="14" height="14" viewBox="0 0 14 14">
-      <rect x="2" y="2" width="10" height="10" fill={colors[variant - 1]} opacity="0.6" stroke={colors[variant - 1]} />
-    </svg>
-  );
-}
-
-// ─── Свойства ───────────────────────────────────────────────────────────────
-
-export function PropGroup({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div className="px-2 py-1 text-xs font-semibold text-gray-800"
-        style={{ background: "var(--c-s2, #f5f5f5)", borderTop: "1px solid var(--c-b1, #e0e0e0)", borderBottom: "1px solid var(--c-b1, #e0e0e0)" }}>
-        {title}
-      </div>
-      <div className="px-2 py-1 space-y-0.5">{children}</div>
-    </div>
-  );
-}
-
-export function SelectRow({ value, options, onChange }: {
-  value: string; options: string[]; onChange: (v: string) => void;
-}) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value)}
-      className="w-full text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none">
-      {options.map((o) => <option key={o}>{o}</option>)}
-    </select>
-  );
-}
-
-export function SelectRowLabeled({ label, value, options, onChange }: {
-  label: string; value: string; options: string[]; onChange: (v: string) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2 py-0.5">
-      <span className="text-xs text-gray-600 w-[90px] flex-shrink-0">{label}</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)}
-        className="flex-1 text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none min-w-0">
-        {options.map((o) => <option key={o}>{o}</option>)}
-      </select>
-    </div>
-  );
-}
-
-export function FieldRow({ label, value, computed }: { label: string; value: string; computed?: boolean }) {
-  return (
-    <div className="flex items-center gap-2 py-0.5">
-      <span className="text-xs text-gray-600 w-[90px] flex-shrink-0">{label}</span>
-      <input type="text" value={value} readOnly
-        className="flex-1 text-xs px-1 py-0.5 border bg-white text-right font-mono"
-        style={{
-          borderColor: computed ? "var(--c-b2, #d0d0d0)" : "var(--c-b3, #a0a0a0)",
-          background: computed ? "var(--c-s2, #fafafa)" : "white",
-          color: computed ? "var(--c-t1, #1f1f1f)" : "var(--c-t1, #1f1f1f)",
-          fontWeight: computed ? 600 : 400,
-        }} />
-    </div>
-  );
-}
-
-export function CheckRow({ label, caption }: { label: string; caption: string }) {
-  return (
-    <div className="flex items-center gap-2 py-0.5">
-      <span className="text-xs text-gray-600 w-[90px] flex-shrink-0">{label}</span>
-      <label className="flex items-center gap-1 cursor-pointer">
-        <input type="checkbox" className="w-3 h-3" />
-        <span className="text-xs text-gray-700">{caption}</span>
-      </label>
-    </div>
-  );
-}
-
 export function FrameGroup({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <fieldset className="relative pt-2 pb-2 px-2"
@@ -309,18 +198,6 @@ export function CadCheckbox({ checked, onChange, label }: {
         className="w-[13px] h-[13px] cursor-pointer" />
       <span className="text-xs text-gray-800">{label}</span>
     </label>
-  );
-}
-
-export function ComputedRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-start gap-1.5 py-0.5">
-      <span className="text-xs text-gray-700 w-[140px] flex-shrink-0 text-right whitespace-normal break-words leading-tight pt-1">{label}</span>
-      <div className="flex-1 min-w-0 px-2 py-1 text-right text-xs font-bold break-words"
-        style={{ background: "#cfcfcf", color: "var(--c-t1, #1f1f1f)", border: "1px solid var(--c-b3, #b8b8b8)" }}>
-        {value}
-      </div>
-    </div>
   );
 }
 
@@ -382,17 +259,3 @@ export function ViewBtn({ label, preset, current, onClick, hint }: {
   );
 }
 
-export function FlowBtn({ label, active, onClick, hint }: {
-  label: string; active: boolean; onClick: () => void; hint?: string;
-}) {
-  return (
-    <button onClick={onClick} title={hint ?? label}
-      className="h-6 px-2 text-[11px] border-r last:border-r-0 border-gray-300"
-      style={{
-        background: active ? "var(--c-blue, #0369a1)" : "white",
-        color: active ? "white" : "var(--c-t1, #1f1f1f)",
-      }}>
-      {label}
-    </button>
-  );
-}

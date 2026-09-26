@@ -56,6 +56,7 @@ import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData }
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
 import GeneralPropsPanel from "@/components/cad/GeneralPropsPanel";
+import BranchVentPanel from "@/components/cad/BranchVentPanel";
 import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
@@ -108,7 +109,7 @@ import { exportExplosionReport } from "@/lib/explosionReport";
 import BlastBulkheadCalcDialog from "@/components/cad/BlastBulkheadCalcDialog";
 import BlastBarrierChartDialog from "@/components/cad/BlastBarrierChartDialog";
 import {
-  RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
+  RibbonTabBtn, RibbonGroup, RibbonBigBtn,     FrameGroup, LabeledRow, CadCheckbox,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
 import {
   EXPLOSION_URL, WATER_URL, safeFixed,
@@ -7723,7 +7724,7 @@ export default function CadPage() {
               {activeSide === "general" && "Свойства объекта"}
               {activeSide === "search" && "Поиск"}
               {activeSide === "horizons" && "Горизонты"}
-              {activeSide === "vent" && "Аэродинамика"}
+              {activeSide === "vent" && "Вентиляция"}
               {activeSide === "thermo" && "Теплофизические параметры"}
               {/* У узла на этой вкладке задают людей и средства защиты,
                   у ветви — параметры очага пожара. Заголовок должен
@@ -11535,67 +11536,16 @@ export default function CadPage() {
 
             {/* ═══ ВКЛАДКА: ВЕНТИЛЯЦИЯ ═════════════════════════════════ */}
             {activeSide === "vent" && (
-              <>
-                {selectedBranch ? (
-                  <>
-                    <PropGroup title="Тип выработки">
-                      {mineTypes.length > 0 ? (
-                        <select
-                          value={mineTypes.some(t => t.name === selectedBranch.mineTypeName) ? selectedBranch.mineTypeName : ""}
-                          onChange={(e) => applyBranchType(e.target.value)}
-                          className="w-full text-xs px-1 py-0.5 border border-gray-400 bg-white focus:border-blue-500 focus:outline-none">
-                          {!mineTypes.some(t => t.name === selectedBranch.mineTypeName) && (
-                            <option value="" disabled>— выберите тип —</option>
-                          )}
-                          {mineTypes.map(t => (
-                            <option key={t.id} value={t.name}>{t.name}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <div className="text-[10px] text-amber-700 px-1 py-1 rounded"
-                          style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fcd34d" }}>
-                          Добавьте типы выработок в{" "}
-                          <button onClick={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
-                            className="underline text-blue-600"
-                            style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: "inherit" }}>
-                            Справочники → Типы выработок
-                          </button>
-                        </div>
-                      )}
-                    </PropGroup>
-
-                    <PropGroup title="Поперечное сечение">
-                      <FieldRow label="Площадь:" value={`${selectedBranch.area.toFixed(2)} м²`} />
-                      <FieldRow label="Периметр:" value={`${selectedBranch.perimeter.toFixed(2)} м`} />
-                    </PropGroup>
-
-                    <PropGroup title="Длина выработки">
-                      <FieldRow label="Длина:" value={`${selectedBranch.length.toFixed(1)} м`} />
-                    </PropGroup>
-
-                    <PropGroup title="Аэродинамика">
-                      <FieldRow label="Коэф-т α:" value={`${selectedBranch.alphaCoef.toFixed(3)} ×10⁻⁴`} />
-                      <FieldRow label="V max:" value={`${selectedBranch.vMax} м/с`} />
-                    </PropGroup>
-
-                    <PropGroup title="Вычисленные параметры">
-                      {(() => {
-                        const uR = getUnit(unitsConfig, "resistance");
-                        const rDisp = uR.fromBase(selectedBranch.resistance / 9.81e-3);
-                        return <FieldRow label={`Сопротив-ие, ${uR.symbol}:`} value={rDisp.toFixed(uR.decimals)} computed />;
-                      })()}
-                      <FieldRow label="Расход:" value={`${selectedBranch.flow.toFixed(1)} м³/с`} computed />
-                      <FieldRow label="V воздуха:" value={`${selectedBranch.velocity.toFixed(2)} м/с`} computed />
-                      <FieldRow label="ΔP:" value={`${selectedBranch.dP.toFixed(0)} Па`} computed />
-                      <FieldRow label="Энергозат-ы:" value={`${selectedBranch.power?.toFixed(0) ?? "—"} Вт`} computed />
-                    </PropGroup>
-                  </>
-                ) : (
-                  <div className="p-4 text-xs text-gray-400 text-center">
-                    Выберите ветвь на схеме
-                  </div>
-                )}
-              </>
+              <BranchVentPanel
+                branch={selectedBranch}
+                mineTypes={mineTypes}
+                editCount={branchEditCount}
+                unitsConfig={unitsConfig}
+                bulkheadRKmu={selectedBranch ? (bulkheadRByBranch.get(selectedBranch.id) ?? 0) : 0}
+                onApplyType={applyBranchType}
+                onOpenTypesLibrary={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
+                onOpenTopology={() => setActiveSide("topology")}
+              />
             )}
 
             {/* ═══ ВКЛАДКА: ИНДИКАТОРЫ ══════════════════════════════════ */}
