@@ -252,13 +252,36 @@ export function renderSymbolNode(
           window.addEventListener("mouseup", onUp);
         } else if (!sym.branchId) {
           const origX = sym.x, origY = sym.y;
+          // Перевод «сдвиг мыши на экране → сдвиг в мире» для ТЕКУЩЕГО вида.
+          //
+          // Раньше стояло x + dx/scale, y − dy/scale — это верно только для
+          // «Плана» при масштабе XY = 1. В изометрии (наклон 30°) и при
+          // увеличенном масштабе XY значок отставал от курсора в разы и
+          // уезжал вбок — казалось, что он «тормозит со шлейфом».
+          //
+          // Точно так же, как рисуется значок: мировая точка (x·k, y·k, 0)
+          // проецируется на экран. Берём, насколько смещается экранная точка
+          // при сдвиге на 1 м по X и по Y, и решаем обратную систему 2×2.
+          const p0 = projectWithZ({ x: origX, y: origY, z: 0 });
+          const pX = projectWithZ({ x: origX + 1, y: origY, z: 0 });
+          const pY = projectWithZ({ x: origX, y: origY + 1, z: 0 });
+          const a = pX.sx - p0.sx, c = pX.sy - p0.sy;   // экранный сдвиг от +1 м по X
+          const b = pY.sx - p0.sx, d = pY.sy - p0.sy;   // экранный сдвиг от +1 м по Y
+          const det = a * d - b * c;
           const onMove = (me: MouseEvent) => {
             if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
             // Начало перетаскивания: гасим тяжёлый оверлей УО, пока тащим.
             if (!didDrag) { onSymbolDragStart?.(sym.id); setDraggingSymbolId?.(sym.id); }
             didDrag = true;
             me.preventDefault();
-            onSymbolMove?.(sym.id, origX + (me.clientX - startX) / view.scale, origY - (me.clientY - startY) / view.scale);
+            const dx = me.clientX - startX, dy = me.clientY - startY;
+            // Вид «сбоку» (плоскость XY видна ребром) — обратить нельзя,
+            // двигаем только по горизонтали экрана, как раньше.
+            if (Math.abs(det) < 1e-9) {
+              onSymbolMove?.(sym.id, origX + dx / (Math.hypot(a, c) || view.scale), origY);
+              return;
+            }
+            onSymbolMove?.(sym.id, origX + (d * dx - b * dy) / det, origY + (a * dy - c * dx) / det);
           };
           const onUp = (ue: MouseEvent) => {
             window.removeEventListener("mousemove", onMove);
