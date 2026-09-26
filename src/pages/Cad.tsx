@@ -55,6 +55,7 @@ import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
+import GeneralPropsPanel from "@/components/cad/GeneralPropsPanel";
 import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
@@ -75,8 +76,8 @@ import { } from "@/lib/api-urls";
 import { refreshComputeConfig, isOnBackup } from "@/lib/computeServer";
 import {
   type RibbonTab, type SideTab, type CompareStatus, type CompareResult,
-    type TextBlock, type Excavation, type HeatingSeason,
-  makeTextBlock, DEFAULT_EXC, LAYERS,
+    type TextBlock, type HeatingSeason,
+  makeTextBlock,
 } from "./cad/cadTypes";
 import { isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 import { DEFAULT_MINE_HUMIDITY, DEFAULT_SURFACE_HUMIDITY, P_STD_KPA } from "@/lib/airHumidity";
@@ -107,7 +108,7 @@ import { exportExplosionReport } from "@/lib/explosionReport";
 import BlastBulkheadCalcDialog from "@/components/cad/BlastBulkheadCalcDialog";
 import BlastBarrierChartDialog from "@/components/cad/BlastBarrierChartDialog";
 import {
-  RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox, NumWithUnit,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
+  RibbonTabBtn, RibbonGroup, RibbonBigBtn,     PropGroup, FieldRow,   FrameGroup, LabeledRow, CadCheckbox,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
 import {
   EXPLOSION_URL, WATER_URL, safeFixed,
@@ -281,7 +282,6 @@ export default function CadPage() {
     });
   };
   const [activeSide, setActiveSide] = useState<SideTab>("params");
-  const [excavation, setExcavation] = useState<Excavation>(DEFAULT_EXC);
   const [mineFans, setMineFans] = useState<MineFanExport[]>([
     { catalogId: "VOD-18", name: "ВО-18/12АВР", diameter: 1.8, rpmMin: 600, rpmMax: 1500 },
   ]);
@@ -11088,315 +11088,36 @@ export default function CadPage() {
             )}
 
             {/* ═══ ВКЛАДКА: ОБЩИЕ ════════════════════════════════════════ */}
-            {activeSide === "general" && (selectedBranchId || selectedNodeId) && (
-              <div className="p-2 space-y-2">
-                <FrameGroup title="Общие свойства">
-                  <LabeledRow label="Название:" labelWidth={88}>
-                    <input type="text"
-                      value={selectedBranch ? selectedBranch.type : selectedNode ? selectedNode.name : excavation.name}
-                      onChange={(e) => {
-                        if (selectedBranch) updateBranch(selectedBranch.id, { type: e.target.value });
-                        else if (selectedNode) updateNode(selectedNode.id, { name: e.target.value });
-                        else setExcavation({ ...excavation, name: e.target.value });
-                      }}
-                      className="cad-input flex-1" />
-                  </LabeledRow>
-                  <LabeledRow label="Номер:" labelWidth={88}>
-                    <input type="text"
-                      value={selectedBranch ? selectedBranch.id : (selectedNode ? (selectedNode.number || selectedNode.id) : excavation.number)}
-                      onChange={(e) => {
-                        if (selectedBranch) {
-                          // Переименование ветви: пересвязываем все ссылки
-                          const newId = e.target.value;
-                          if (!newId || newId === selectedBranch.id) return;
-                          setBranches((prev) => prev.map((b) =>
-                            b.id === selectedBranch.id ? { ...b, id: newId } : b
-                          ));
-                          setSchemaSymbols((prev) => prev.map((s) =>
-                            s.branchId === selectedBranch.id ? { ...s, branchId: newId } : s
-                          ));
-                          setSelectedBranchId(newId);
-                          setIsDirty(true);
-                        } else if (selectedNode) {
-                          updateNode(selectedNode.id, { number: e.target.value });
-                        } else {
-                          setExcavation({ ...excavation, number: e.target.value });
-                        }
-                      }}
-                      className="cad-input flex-1" />
-                  </LabeledRow>
-                  <LabeledRow label="Горизонт:" labelWidth={88}>
-                    {selectedBranch ? (
-                      <select
-                        // Выбрано несколько ветвей с РАЗНЫМИ горизонтами —
-                        // показываем «разные», а не горизонт последней нажатой:
-                        // иначе список врал бы про остальные выбранные ветви.
-                        value={multiHorizonMixed ? "__mixed__" : selectedBranch.horizonId}
-                        // Привязка применяется ко ВСЕМ выбранным ветвям: при
-                        // Ctrl-выделении человек ждёт, что горизонт сменится у
-                        // всех, а не только у последней нажатой.
-                        onChange={(e) => updateSelectedBranches({ horizonId: e.target.value })}
-                        className="cad-input flex-1">
-                        {multiHorizonMixed && (
-                          <option value="__mixed__" disabled>— разные горизонты —</option>
-                        )}
-                        <option value="">— без привязки —</option>
-                        {horizons.map((h) => (
-                          <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>
-                        ))}
-                      </select>
-                    ) : selectedNode ? (
-                      <select className="cad-input flex-1" disabled>
-                        <option>— узел —</option>
-                      </select>
-                    ) : (
-                      <select value={excavation.layer}
-                        onChange={(e) => setExcavation({ ...excavation, layer: e.target.value })}
-                        className="cad-input flex-1">
-                        {LAYERS.map((l) => <option key={l}>{l}</option>)}
-                      </select>
-                    )}
-                  </LabeledRow>
-                  {/* Сколько выработок затронет смена горизонта. Без этой
-                      подписи при Ctrl-выделении не видно, что правка уйдёт
-                      сразу на все выбранные ветви. */}
-                  {selectedBranch && branchEditCount > 1 && (
-                    <div className="flex items-center gap-1 pl-[88px] -mt-0.5 mb-1 text-[10px]"
-                      style={{ color: "var(--c-blue, #1d4ed8)" }}>
-                      <Icon name="Layers" size={10} />
-                      Применится сразу к {branchEditCount} выбранным выработкам
-                    </div>
-                  )}
-
-                  <div className="pt-1 space-y-0.5">
-                    <CadCheckbox
-                      checked={excavation.isVertical}
-                      onChange={(v) => setExcavation({ ...excavation, isVertical: v })}
-                      label="Вертикальная выработка (ходок)" />
-                    <CadCheckbox
-                      checked={excavation.dashedBorder}
-                      onChange={(v) => setExcavation({ ...excavation, dashedBorder: v })}
-                      label="Пунктирная граница" />
-                    <CadCheckbox
-                      checked={excavation.ignoreLayerColor}
-                      onChange={(v) => setExcavation({ ...excavation, ignoreLayerColor: v })}
-                      label="Игнорировать цвет слоя" />
-                  </div>
-                </FrameGroup>
-
-                <FrameGroup title="Электроснабжение">
-                  <CadCheckbox
-                    checked={excavation.cable04}
-                    onChange={(v) => setExcavation({ ...excavation, cable04: v })}
-                    label="Силовой кабель 0,4/0,66 кВ" />
-                  <CadCheckbox
-                    checked={excavation.cable6}
-                    onChange={(v) => setExcavation({ ...excavation, cable6: v })}
-                    label="Силовой кабель 6 кВ" />
-                </FrameGroup>
-
-                {/* ── Стиль линий ветвей ── */}
-                <FrameGroup title="Ширина и граница ветвей">
-                  {selectedBranch || selectedBranchIds.size > 0 ? (
-                    <>
-                      {selectedBranchIds.size > 0 && (
-                        <div className="text-[10px] text-blue-600 px-1 pb-1">
-                          Выбрано ветвей: {selectedBranchIds.size}
-                        </div>
-                      )}
-                      <LabeledRow label="Ширина:" labelWidth={108}>
-                        <NumWithUnit
-                          value={selectedBranch?.lineWidth ?? branchWidth}
-                          unit="px"
-                          onChange={(v) => {
-                            const val = Math.max(0.5, Math.min(20, v));
-                            const targets = selectedBranchIds.size > 0
-                              ? [...selectedBranchIds]
-                              : selectedBranch ? [selectedBranch.id] : [];
-                            targets.forEach((id) => updateBranch(id, { lineWidth: val }));
-                          }} />
-                      </LabeledRow>
-                      <LabeledRow label="Граница:" labelWidth={108}>
-                        <NumWithUnit
-                          value={selectedBranch?.lineBorder ?? branchBorder}
-                          unit="px"
-                          onChange={(v) => {
-                            const val = Math.max(0, Math.min(8, v));
-                            const targets = selectedBranchIds.size > 0
-                              ? [...selectedBranchIds]
-                              : selectedBranch ? [selectedBranch.id] : [];
-                            targets.forEach((id) => updateBranch(id, { lineBorder: val }));
-                          }} />
-                      </LabeledRow>
-                    </>
-                  ) : (
-                    <div className="text-[10px] text-gray-400 px-1 py-1">
-                      Выберите ветвь на схеме для изменения ширины и границы
-                    </div>
-                  )}
-                  <div className="text-[10px] text-gray-500 px-1 pt-1">
-                    Контур = тёмная окантовка вокруг линии (0 — без обводки).
-                  </div>
-                  <div className="pt-1">
-                    <CadCheckbox checked={thinLines} onChange={setThinLines}
-                      label="Тонкие линии 1px (вкл/откл — F6)" />
-                    <CadCheckbox checked={colorByHorizon} onChange={setColorByHorizon}
-                      label="Окрашивать ветви по цвету горизонта" />
-                  </div>
-                </FrameGroup>
-
-                {/* Маркшейдерские координаты: сдвиг узлов по схеме нужен для
-                    читаемости, но расчёт должен опираться на реальные отметки.
-                    Здесь видно расхождение и можно им управлять. */}
-                <FrameGroup title="Маркшейдерские координаты">
-                  <div className="text-[10px] text-gray-500 px-1 pb-1 leading-snug">
-                    Длины выработок и весь расчёт идут по маркшейдерским
-                    координатам. Перетаскивание узлов мышью двигает только
-                    изображение и на расчёт не влияет.
-                  </div>
-                  <div className="px-1 py-1">
-                    <CadCheckbox checked={surveyEditMode} onChange={setSurveyEditMode}
-                      label="Править настоящие координаты (F2)" />
-                  </div>
-                  {surveyEditMode && (
-                    <div className="mx-1 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
-                      style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid #fca5a5", color: "var(--c-red-ink, #991b1b)" }}>
-                      Режим правки включён. Перетаскивание узла меняет его
-                      настоящие координаты, а значит длины выработок,
-                      сопротивление и результат расчёта.
-                    </div>
-                  )}
-                  <div className="px-1 py-1 text-[11px] text-gray-700">
-                    Сдвинуто узлов: <b>{movedNodeCount}</b> из {nodes.length}
-                  </div>
-                  <div className="flex flex-col gap-1 px-1 pb-1">
-                    <button onClick={resetAllNodesToSurvey}
-                      disabled={movedNodeCount === 0}
-                      className="px-2 py-1 rounded text-[11px]"
-                      style={{
-                        background: movedNodeCount ? "var(--c-s1, #fff)" : "var(--c-s3, #f3f4f6)",
-                        border: "1px solid var(--c-b2, #d1d5db)",
-                        color: movedNodeCount ? "var(--c-t2, #374151)" : "var(--c-t4, #9ca3af)",
-                        cursor: movedNodeCount ? "pointer" : "default",
-                      }}>
-                      Вернуть всю схему к маркшейдерским
-                    </button>
-                    <button onClick={fixCurrentAsSurvey}
-                      className="px-2 py-1 rounded text-[11px]"
-                      style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d1d5db)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
-                      title="Считать нынешнее положение узлов выверенным и записать его как маркшейдерское">
-                      Зафиксировать текущее как эталон
-                    </button>
-                  </div>
-                </FrameGroup>
-
-                {selectedBranch && (
-                  <FrameGroup title="Поворот индикаторов">
-                    <div className="text-[10px] text-gray-500 px-1 pb-1">
-                      Угол поворота блока меток на схеме (°)
-                    </div>
-                    <div className="flex items-center gap-2 px-1">
-                      <input
-                        type="range" min={-180} max={180} step={5}
-                        value={selectedBranch.labelAngle ?? 0}
-                        onChange={(e) => updateBranch(selectedBranch.id, { labelAngle: Number(e.target.value) })}
-                        className="flex-1"
-                        style={{ accentColor: "#1e5a7a" }}
-                      />
-                      <input
-                        type="number" min={-180} max={180} step={1}
-                        value={selectedBranch.labelAngle ?? 0}
-                        onChange={(e) => updateBranch(selectedBranch.id, { labelAngle: Number(e.target.value) || 0 })}
-                        className="text-[11px] text-right px-1"
-                        style={{ width: 46, border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", background: "white" }}
-                      />
-                      <span className="text-[11px] text-gray-500">°</span>
-                      <button
-                        onClick={() => updateBranch(selectedBranch.id, { labelAngle: 0 })}
-                        className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 text-gray-500"
-                        title="Сбросить поворот">↺</button>
-                    </div>
-                    <div className="flex gap-1 px-1 pt-1">
-                      {[-90, -45, 0, 45, 90].map(a => (
-                        <button key={a}
-                          onClick={() => updateBranch(selectedBranch.id, { labelAngle: a })}
-                          className="flex-1 text-[10px] py-0.5 border rounded hover:bg-blue-50 hover:border-blue-400"
-                          style={{
-                            borderColor: (selectedBranch.labelAngle ?? 0) === a ? "var(--c-blue, #2563eb)" : "var(--c-b2, #d1d5db)",
-                            color: (selectedBranch.labelAngle ?? 0) === a ? "var(--c-blue, #2563eb)" : "var(--c-t2, #374151)",
-                            background: (selectedBranch.labelAngle ?? 0) === a ? "var(--c-tint-blue, #eff6ff)" : "white",
-                          }}>
-                          {a}°
-                        </button>
-                      ))}
-                    </div>
-                  </FrameGroup>
-                )}
-
-                {selectedBranch && (
-                  <FrameGroup title="Размер индикаторов">
-                    <div className="text-[10px] text-gray-500 px-1 pb-1">
-                      Множитель размера текста на схеме (1.0 = авто)
-                    </div>
-                    <div className="flex items-center gap-2 px-1">
-                      <input
-                        type="range" min={0.3} max={4} step={0.1}
-                        value={selectedBranch.labelSize ?? 1}
-                        onChange={(e) => updateBranch(selectedBranch.id, { labelSize: Number(e.target.value) })}
-                        className="flex-1"
-                        style={{ accentColor: "#1e5a7a" }}
-                      />
-                      <input
-                        type="number" min={0.3} max={4} step={0.1}
-                        value={selectedBranch.labelSize ?? 1}
-                        onChange={(e) => updateBranch(selectedBranch.id, { labelSize: Math.max(0.3, Math.min(4, Number(e.target.value) || 1)) })}
-                        className="text-[11px] text-right px-1"
-                        style={{ width: 46, border: "1px solid var(--c-b2, #c8c8c8)", height: 20, outline: "none", background: "white" }}
-                      />
-                      <button
-                        onClick={() => updateBranch(selectedBranch.id, { labelSize: undefined })}
-                        className="text-[10px] px-1.5 py-0.5 border border-gray-300 rounded hover:bg-gray-100 text-gray-500"
-                        title="Сбросить к авто">↺</button>
-                    </div>
-                    <div className="flex gap-1 px-1 pt-1">
-                      {[0.5, 0.75, 1, 1.5, 2].map(s => (
-                        <button key={s}
-                          onClick={() => updateBranch(selectedBranch.id, { labelSize: s === 1 ? undefined : s })}
-                          className="flex-1 text-[10px] py-0.5 border rounded hover:bg-blue-50 hover:border-blue-400"
-                          style={{
-                            borderColor: (selectedBranch.labelSize ?? 1) === s ? "var(--c-blue, #2563eb)" : "var(--c-b2, #d1d5db)",
-                            color: (selectedBranch.labelSize ?? 1) === s ? "var(--c-blue, #2563eb)" : "var(--c-t2, #374151)",
-                            background: (selectedBranch.labelSize ?? 1) === s ? "var(--c-tint-blue, #eff6ff)" : "white",
-                          }}>
-                          ×{s}
-                        </button>
-                      ))}
-                    </div>
-                  </FrameGroup>
-                )}
-
-                {selectedBranch && (
-                  <FrameGroup title="Примечание">
-                    <textarea
-                      value={selectedBranch.comment ?? ""}
-                      // Примечание — общая пометка (например «ремонт до 15.10»),
-                      // её обычно ставят сразу группе выработок.
-                      onChange={(e) => updateSelectedBranches({ comment: e.target.value })}
-                      rows={4}
-                      placeholder="Произвольный текст..."
-                      className="w-full text-[11px] px-1"
-                      style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", resize: "vertical", background: "white", fontFamily: "inherit", width: "100%", boxSizing: "border-box" }}
-                    />
-                    {branchEditCount > 1 && (
-                      <div className="flex items-center gap-1 mt-1 text-[10px]"
-                        style={{ color: "var(--c-blue, #1d4ed8)" }}>
-                        <Icon name="Layers" size={10} />
-                        Запишется сразу в {branchEditCount} выбранных выработок
-                      </div>
-                    )}
-                  </FrameGroup>
-                )}
-              </div>
+            {activeSide === "general" && (
+              <GeneralPropsPanel
+                branch={selectedBranch}
+                node={selectedBranch ? null : selectedNode}
+                editCount={branchEditCount}
+                horizons={horizons}
+                multiHorizonMixed={multiHorizonMixed}
+                defaultWidth={branchWidth}
+                defaultBorder={branchBorder}
+                onBranchPatch={updateSelectedBranches}
+                onNodePatch={(patch) => { if (selectedNode) updateNode(selectedNode.id, patch); }}
+                onRenameBranch={(newId) => {
+                  if (!selectedBranch) return null;
+                  // Номер ветви — её id: дубль сломал бы связи УО и выделение.
+                  if (branchesRaw.some((b) => b.id === newId)) return `Номер ${newId} уже занят другой ветвью`;
+                  pushHistory();
+                  const oldId = selectedBranch.id;
+                  setBranches((prev) => prev.map((b) => b.id === oldId ? { ...b, id: newId } : b));
+                  setSchemaSymbols((prev) => prev.map((s) => s.branchId === oldId ? { ...s, branchId: newId } : s));
+                  setSelectedBranchId(newId);
+                  setIsDirty(true);
+                  return null;
+                }}
+                thinLines={thinLines} setThinLines={setThinLines}
+                colorByHorizon={colorByHorizon} setColorByHorizon={setColorByHorizon}
+                surveyEditMode={surveyEditMode} setSurveyEditMode={setSurveyEditMode}
+                movedNodeCount={movedNodeCount} totalNodes={nodes.length}
+                onResetSurvey={requestResetToSurvey}
+                onFixSurvey={fixCurrentAsSurvey}
+              />
             )}
 
             {/* ═══ ВКЛАДКА: ГОРИЗОНТЫ ═══════════════════════════════════ */}

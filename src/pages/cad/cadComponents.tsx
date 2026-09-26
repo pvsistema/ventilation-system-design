@@ -312,20 +312,6 @@ export function CadCheckbox({ checked, onChange, label }: {
   );
 }
 
-export function NumWithUnit({ value, unit, onChange }: {
-  value: number; unit: string; onChange: (v: number) => void;
-}) {
-  return (
-    <div className="flex-1 flex items-center gap-1">
-      <input type="number"
-        value={value}
-        onChange={(e) => onChange(Number(e.target.value))}
-        className="cad-input flex-1 text-right" />
-      <span className="text-[11px] text-gray-500 flex-shrink-0 w-5">{unit}</span>
-    </div>
-  );
-}
-
 export function ComputedRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start gap-1.5 py-0.5">
