@@ -298,47 +298,59 @@ export const LEGEND_TYPES: LegendType[] = [
     svgContent: `<line x1="2" y1="20" x2="46" y2="20" stroke="#2196f3" stroke-width="1.5"/><polygon points="2,10 22,20 2,30" fill="none" stroke="#2196f3" stroke-width="1.5"/><polygon points="46,10 26,20 46,30" fill="none" stroke="#2196f3" stroke-width="1.5"/><line x1="24" y1="10" x2="24" y2="30" stroke="#2196f3" stroke-width="1.5"/>` },
 
   // ─── АВАРИИ ──────────────────────────────────────────────────────────
-  { id: "acc_fire_place",   name: "Место пожара",                  group: "Аварии",
+  // Первыми — расчётные значки: очаг пожара (красный круг с 8 лучами по ГОСТ)
+  // и место взрыва (кольцо с 4 стрелками наружу). По ним идут расчёты.
+  { id: "fire_source", name: "Очаг пожара",           group: "Аварийный режим",
+    svgContent: `<circle cx="24" cy="24" r="10" fill="none" stroke="#FF0100" stroke-width="2.4"/><g stroke="#FF0100" stroke-width="2.4" stroke-linecap="round"><line x1="24" y1="2" x2="24" y2="9"/><line x1="24" y1="39" x2="24" y2="46"/><line x1="2" y1="24" x2="9" y2="24"/><line x1="39" y1="24" x2="46" y2="24"/><line x1="8.3" y1="8.3" x2="13.3" y2="13.3"/><line x1="34.7" y1="34.7" x2="39.7" y2="39.7"/><line x1="39.7" y1="8.3" x2="34.7" y2="13.3"/><line x1="13.3" y1="34.7" x2="8.3" y2="39.7"/></g>` },
+  { id: "explosion_source", name: "Место взрыва",  group: "Аварийный режим",
+    svgContent: `<g fill="none" stroke="#000000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+<circle cx="24" cy="24" r="9"/>
+<line x1="24" y1="13" x2="24" y2="3"/><polyline points="20,7 24,3 28,7"/>
+<line x1="24" y1="35" x2="24" y2="45"/><polyline points="20,41 24,45 28,41"/>
+<line x1="13" y1="24" x2="3" y2="24"/><polyline points="7,20 3,24 7,28"/>
+<line x1="35" y1="24" x2="45" y2="24"/><polyline points="41,20 45,24 41,28"/>
+</g>` },
+  { id: "acc_fire_place",   name: "Место пожара",                  group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="26" r="10" fill="none" stroke="#888" stroke-width="1.5"/><path d="M18,30 Q20,20 24,18 Q28,20 30,30" fill="none" stroke="#888" stroke-width="1.5"/>` },
-  { id: "acc_fire_source",  name: "Очаг пожара",                   group: "Аварии",
+  { id: "acc_fire_source",  name: "Очаг пожара",                   group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="14" fill="none" stroke="#dc2626" stroke-width="2"/>` },
-  { id: "acc_fire_spread",  name: "Распространение пожара",        group: "Аварии",
+  { id: "acc_fire_spread",  name: "Распространение пожара",        group: "Аварийный режим",
     svgContent: `<line x1="24" y1="20" x2="24" y2="5" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="20" x2="39" y2="10" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="20" x2="39" y2="20" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="20" x2="39" y2="30" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="20" x2="24" y2="35" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="20" x2="9" y2="30" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="20" x2="9" y2="20" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="20" x2="9" y2="10" stroke="#dc2626" stroke-width="2"/><circle cx="24" cy="20" r="4" fill="none" stroke="#dc2626" stroke-width="1.5"/>` },
-  { id: "acc_gas_explosion",name: "Место взрыва газа и пыли",      group: "Аварии",
+  { id: "acc_gas_explosion",name: "Место взрыва газа и пыли",      group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="14" fill="#222" stroke="#333" stroke-width="1"/><polygon points="24,6 30,18 24,14 18,18" fill="#dc2626"/><polygon points="38,20 26,18 30,24" fill="#dc2626"/>` },
-  { id: "acc_gas_release",  name: "Место внезапного выброса газа и породы", group: "Аварии",
+  { id: "acc_gas_release",  name: "Место внезапного выброса газа и породы", group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="12" fill="none" stroke="#dc2626" stroke-width="2"/><line x1="24" y1="8" x2="24" y2="32" stroke="#dc2626" stroke-width="2"/><line x1="12" y1="20" x2="36" y2="20" stroke="#dc2626" stroke-width="2"/>` },
-  { id: "acc_gas_suflar",   name: "Место суфлярного выделения газа",group: "Аварии",
+  { id: "acc_gas_suflar",   name: "Место суфлярного выделения газа",group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="12" fill="none" stroke="#dc2626" stroke-width="2"/><line x1="12" y1="20" x2="36" y2="20" stroke="#dc2626" stroke-width="2"/>` },
-  { id: "acc_explosion",    name: "Взрыв",                         group: "Аварии",
+  { id: "acc_explosion",    name: "Взрыв",                         group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="22" r="14" fill="none" stroke="#888" stroke-width="1.5"/><polygon points="24,4 28,12 36,8 30,16 38,18 30,20 34,28 24,22 14,28 18,20 10,18 18,16 12,8 20,12" fill="#888"/>` },
-  { id: "acc_explosion_wave",name: "Распространение взрывной волны",group: "Аварии",
+  { id: "acc_explosion_wave",name: "Распространение взрывной волны",group: "Аварийный режим",
     svgContent: `<path d="M4,12 L20,20 L4,28" fill="none" stroke="#222" stroke-width="2"/><polygon points="20,14 44,20 20,26" fill="#222"/>` },
-  { id: "acc_explosion_place",name: "Место взрыва",                group: "Аварии",
+  { id: "acc_explosion_place",name: "Место взрыва",                group: "Аварийный режим",
     svgContent: `<circle cx="16" cy="20" r="12" fill="#dc2626" stroke="#333" stroke-width="1"/>` },
-  { id: "acc_commander",    name: "Командир взвода",               group: "Аварии",
+  { id: "acc_commander",    name: "Командир взвода",               group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="14" fill="none" stroke="#333" stroke-width="1.5"/>` },
-  { id: "acc_squad_leader", name: "Командир отделения",            group: "Аварии",
+  { id: "acc_squad_leader", name: "Командир отделения",            group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="14" fill="none" stroke="#333" stroke-width="1.5"/><line x1="10" y1="20" x2="38" y2="20" stroke="#333" stroke-width="1.5"/>` },
-  { id: "acc_pb_base",      name: "Подземная база",                group: "Аварии",
+  { id: "acc_pb_base",      name: "Подземная база",                group: "Аварийный режим",
     svgContent: `<rect x="4" y="10" width="40" height="20" fill="none" stroke="#333" stroke-width="2"/><text x="24" y="25" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">П.Б</text>` },
-  { id: "acc_nb_base",      name: "Подземная база",                group: "Аварии",
+  { id: "acc_nb_base",      name: "Подземная база",                group: "Аварийный режим",
     svgContent: `<rect x="4" y="10" width="40" height="20" fill="none" stroke="#333" stroke-width="2"/><text x="24" y="25" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">ПБ</text>` },
-  { id: "acc_squad_moving", name: "Отделение в движении",          group: "Аварии",
+  { id: "acc_squad_moving", name: "Отделение в движении",          group: "Аварийный режим",
     svgContent: `<rect x="2" y="12" width="34" height="16" fill="none" stroke="#333" stroke-width="2"/><text x="16" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#333">5 чел</text><polygon points="36,14 46,20 36,26" fill="#333"/>` },
-  { id: "acc_squad_work",   name: "Отделение на месте работ",      group: "Аварии",
+  { id: "acc_squad_work",   name: "Отделение на месте работ",      group: "Аварийный режим",
     svgContent: `<rect x="2" y="12" width="44" height="16" fill="none" stroke="#333" stroke-width="2"/><text x="24" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#333">5 чел</text>` },
-  { id: "acc_injury_fatal", name: "Местонахождение пострадавшего-смертельно травмированного", group: "Аварии",
+  { id: "acc_injury_fatal", name: "Местонахождение пострадавшего-смертельно травмированного", group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="14" fill="none" stroke="#dc2626" stroke-width="2"/><line x1="12" y1="8" x2="36" y2="32" stroke="#dc2626" stroke-width="2"/><line x1="36" y1="8" x2="12" y2="32" stroke="#dc2626" stroke-width="2"/>` },
-  { id: "acc_injury",       name: "Местонахождение пострадавшего-травмированного", group: "Аварии",
+  { id: "acc_injury",       name: "Местонахождение пострадавшего-травмированного", group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="20" r="14" fill="none" stroke="#2196f3" stroke-width="2"/><line x1="12" y1="8" x2="36" y2="32" stroke="#2196f3" stroke-width="2"/><line x1="36" y1="8" x2="12" y2="32" stroke="#2196f3" stroke-width="2"/>` },
-  { id: "acc_rock_burst",   name: "Место проявления горного удара",group: "Аварии",
+  { id: "acc_rock_burst",   name: "Место проявления горного удара",group: "Аварийный режим",
     svgContent: `<polygon points="24,4 44,36 4,36" fill="#dc2626" stroke="#8b0000" stroke-width="1"/>` },
-  { id: "acc_gas_release2", name: "Газовыделение",                 group: "Аварии",
+  { id: "acc_gas_release2", name: "Газовыделение",                 group: "Аварийный режим",
     svgContent: `<circle cx="24" cy="24" r="12" fill="none" stroke="#888" stroke-width="1.5"/><circle cx="24" cy="10" r="5" fill="#c8a882" stroke="#888" stroke-width="1"/>` },
-  { id: "acc_respirator_moving", name: "Респираторщик в движении", group: "Аварии",
+  { id: "acc_respirator_moving", name: "Респираторщик в движении", group: "Аварийный режим",
     svgContent: `<circle cx="20" cy="20" r="12" fill="none" stroke="#333" stroke-width="1.5"/><polygon points="32,14 44,20 32,26" fill="#333"/>` },
-  { id: "acc_water_intrusion",name: "Место проникновения воды в выработку", group: "Аварии",
+  { id: "acc_water_intrusion",name: "Место проникновения воды в выработку", group: "Аварийный режим",
     svgContent: `<circle cx="20" cy="14" r="8" fill="#2196f3" stroke="#1565c0" stroke-width="1"/><circle cx="28" cy="26" r="8" fill="#2196f3" stroke="#1565c0" stroke-width="1"/><polygon points="20,22 28,26 20,30" fill="#1565c0"/>` },
 
   // ─── ДАТЧИКИ ──────────────────────────────────────────────────────────
@@ -411,22 +423,7 @@ export const LEGEND_TYPES: LegendType[] = [
   { id: "elec_substation",name: "Участковая подстанция",                       group: "Электроснабжение",
     svgContent: `<rect x="6" y="6" width="36" height="28" fill="none" stroke="#333" stroke-width="1.5"/>` },
 
-  // ─── ПОЖАР (расчётный очаг) ──────────────────────────────────────────
-  // Символ по ГОСТ: контурный красный круг с 8 расходящимися прямыми лучами.
-  { id: "fire_source", name: "Очаг пожара",           group: "Аварийный режим",
-    svgContent: `<circle cx="24" cy="24" r="10" fill="none" stroke="#FF0100" stroke-width="2.4"/><g stroke="#FF0100" stroke-width="2.4" stroke-linecap="round"><line x1="24" y1="2" x2="24" y2="9"/><line x1="24" y1="39" x2="24" y2="46"/><line x1="2" y1="24" x2="9" y2="24"/><line x1="39" y1="24" x2="46" y2="24"/><line x1="8.3" y1="8.3" x2="13.3" y2="13.3"/><line x1="34.7" y1="34.7" x2="39.7" y2="39.7"/><line x1="39.7" y1="8.3" x2="34.7" y2="13.3"/><line x1="13.3" y1="34.7" x2="8.3" y2="39.7"/></g>` },
 
-  // ─── ВЗРЫВ (расчётный источник) — УО «Место взрыва» по ГОСТ ───────────
-  // Кольцо с четырьмя стрелками, расходящимися наружу (вверх/вниз/влево/вправо) —
-  // символ распространения взрывной волны.
-  { id: "explosion_source", name: "Место взрыва",  group: "Аварийный режим",
-    svgContent: `<g fill="none" stroke="#000000" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-<circle cx="24" cy="24" r="9"/>
-<line x1="24" y1="13" x2="24" y2="3"/><polyline points="20,7 24,3 28,7"/>
-<line x1="24" y1="35" x2="24" y2="45"/><polyline points="20,41 24,45 28,41"/>
-<line x1="13" y1="24" x2="3" y2="24"/><polyline points="7,20 3,24 7,28"/>
-<line x1="35" y1="24" x2="45" y2="24"/><polyline points="41,20 45,24 41,28"/>
-</g>` },
 
   // ─── УЗЛЫ ─────────────────────────────────────────────────────────────
   { id: "node_normal", name: "Узел (сопряжение)",    group: "Узлы",
