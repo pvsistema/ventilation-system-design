@@ -1,6 +1,7 @@
 // Условные обозначения — полный справочник по АэроСети
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
+import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 
 interface Props { onClose: () => void; }
 interface LegendItem { id: string; name: string; svg: React.ReactNode; group: string; }
@@ -865,13 +866,9 @@ const ITEMS: LegendItem[] = [
   },
   {
     id: "heat_selfprop", group: "Тепло и газовыделение", name: "Самоходное двигательное оборудование",
-    svg: <svg width={48} height={40} viewBox="0 0 48 40">
-      <circle cx={16} cy={24} r={8} fill="none" stroke={S} strokeWidth={1.5} />
-      <circle cx={16} cy={24} r={3} fill={S} />
-      <circle cx={34} cy={24} r={8} fill="none" stroke={S} strokeWidth={1.5} />
-      <circle cx={34} cy={24} r={3} fill={S} />
-      <rect x={10} y={12} width={28} height={12} fill="none" stroke={S} strokeWidth={1.5} />
-    </svg>,
+    // Тот же рисунок, что на схеме и в меню (schemaSymbols.ts)
+    svg: <svg width={48} height={40} viewBox="0 0 48 40"
+      dangerouslySetInnerHTML={{ __html: LEGEND_TYPES.find(l => l.id === "heat_selfprop")?.svgContent ?? "" }} />,
   },
 
   // ══════════════════════════════════════════════════════════════════════════

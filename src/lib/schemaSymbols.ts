@@ -408,8 +408,9 @@ export const LEGEND_TYPES: LegendType[] = [
     svgContent: `<rect x="4" y="15" width="40" height="5" fill="none" stroke="#333" stroke-width="1.5"/><rect x="4" y="22" width="40" height="5" fill="none" stroke="#333" stroke-width="1.5"/>` },
   { id: "heat_conveyor_drive",name: "Привод конвейера",              group: "Тепло и газовыделение",
     svgContent: `<polygon points="4,14 44,20 4,26" fill="#333"/>` },
+  // Самоходная горнорудная техника (ПДМ): ковш, кабина, моторный отсек
   { id: "heat_selfprop",      name: "Самоходное двигательное оборудование", group: "Тепло и газовыделение",
-    svgContent: `<circle cx="16" cy="24" r="8" fill="none" stroke="#333" stroke-width="1.5"/><circle cx="16" cy="24" r="3" fill="#333"/><circle cx="34" cy="24" r="8" fill="none" stroke="#333" stroke-width="1.5"/><circle cx="34" cy="24" r="3" fill="#333"/><rect x="10" y="12" width="28" height="12" fill="none" stroke="#333" stroke-width="1.5"/>` },
+    svgContent: `<g stroke="#333" stroke-width="1.2" stroke-linejoin="round" stroke-linecap="round"><path d="M2,29 L2,20 Q2,17 5,17 L11,17 L10,29 Z" fill="#e8a317"/><path d="M11,20 L16,17 L19,20 L15,23" fill="none" stroke-width="1.6"/><path d="M14,27 L14,19 L22,19 L22,15 L29,15 L29,19 L45,19 L46,21 L46,27 Z" fill="#e8a317"/><path d="M22,15 L23,9 L30,9 L29,15" fill="#cfe3ea"/><line x1="21" y1="9" x2="32" y2="9" stroke-width="1.5"/><line x1="34" y1="22" x2="44" y2="22"/><line x1="34" y1="24" x2="44" y2="24"/></g><g stroke="#333" stroke-width="1.3" fill="#3a3f45"><circle cx="10" cy="31" r="5.5"/><circle cx="38" cy="31" r="5.5"/></g><circle cx="10" cy="31" r="2" fill="#e6e3dc"/><circle cx="38" cy="31" r="2" fill="#e6e3dc"/>` },
 
   // ─── ЭЛЕКТРОСНАБЖЕНИЕ ─────────────────────────────────────────────────
   { id: "elec_cable_lv",  name: "Кабельная муфта-силовой кабель 0,4-0,66 кВ", group: "Электроснабжение",
