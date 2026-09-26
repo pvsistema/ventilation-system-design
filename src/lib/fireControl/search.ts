@@ -218,6 +218,10 @@ export async function searchFireControl(
         report(action.label);
         const result = await evaluateVariant(ctx, combo);
         evaluations++;
+        // Отдаём управление браузеру между вариантами: оценка вывода людей
+        // считается без пауз, и без этого на большой схеме окно не
+        // перерисовывалось, а кнопка «Отменить» не срабатывала.
+        await new Promise(r => setTimeout(r, 0));
 
         layerResults.push(result);
         all.push(result);

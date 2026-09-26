@@ -15,7 +15,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { TopoNode, TopoBranch } from "./topology";
-import { calcWorkerPath, type TopoNodeLite, type TopoBranchLite } from "./rescueCalculator";
+import { createWorkerRouter, type WorkerSpeedMethod, type TopoNodeLite, type TopoBranchLite } from "./rescueCalculator";
 import { getSelfRescuerById } from "./selfRescuers";
 import { densityFromVisibility } from "./smokeVisibility";
 import { computeFireZones, FIRE_ZONE_LABEL, type FireZone } from "./fireZones";
@@ -227,6 +227,15 @@ export function calcEvacuationRisk(
   // кратчайшим путём в выработки со свежей струёй, и лишь затем на поверхность.
   const freshNodes = nodes.filter(n => (zones.nodeZone.get(n.id) ?? "aside") !== "after");
 
+  // Один граф на способ движения на весь расчёт: маршрутов здесь сотни и
+  // тысячи (к каждому узлу со свежей струёй), строить граф под каждый нельзя.
+  const routers = new Map<WorkerSpeedMethod, ReturnType<typeof createWorkerRouter>>();
+  const routerFor = (m: WorkerSpeedMethod) => {
+    let r = routers.get(m);
+    if (!r) { r = createWorkerRouter(liteNodes, liteBranches, m); routers.set(m, r); }
+    return r;
+  };
+
   const rows: EvacRiskRow[] = [];
 
   workplaces.forEach((wp, i) => {
@@ -245,7 +254,9 @@ export function calcEvacuationRisk(
 
     for (const ex of exits) {
       if (ex.id === wp.id) continue;
-      const wr = calcWorkerPath(liteNodes, liteBranches, wp.id, ex.id, walkMethod);
+      const router = routerFor(walkMethod);
+      if (!router.reachable(wp.id, ex.id)) continue;
+      const wr = router.route(wp.id, ex.id);
       if (!wr.ok || wr.segments.length === 0) continue;
       const len = wr.segments.reduce((s, sg) => s + (sg.length ?? 0), 0);
       // Задымление на пути: берём из ветвей маршрута
@@ -269,13 +280,12 @@ export function calcEvacuationRisk(
     // уже по свежему воздуху и защита ему не нужна.
     let bestFresh: { node: TopoNode; time: number } | null = null;
     if (zone === "after") {
-      for (const fn of freshNodes) {
-        if (fn.id === wp.id) continue;
-        const fr = calcWorkerPath(liteNodes, liteBranches, wp.id, fn.id, "rescuer");
-        if (!fr.ok || fr.segments.length === 0) continue;
-        if (!bestFresh || fr.totalTimeForward < bestFresh.time) {
-          bestFresh = { node: fn, time: fr.totalTimeForward };
-        }
+      // Узлов со свежей струёй — почти вся схема. Маршрут к каждому строить
+      // нельзя (это и роняло подбор режима): берём ближайший по одному поиску.
+      const near = routerFor("rescuer").nearest(wp.id, freshNodes.map(n => n.id));
+      if (near) {
+        const fn = freshNodes.find(n => n.id === near.id);
+        if (fn) bestFresh = { node: fn, time: near.path.totalTimeForward };
       }
     }
 
@@ -293,7 +303,9 @@ export function calcEvacuationRisk(
     if (opts.useSwitchPoints) {
       for (const sp of switchPoints) {
         if (sp.id === wp.id) continue;
-        const sr = calcWorkerPath(liteNodes, liteBranches, wp.id, sp.id, walkMethod);
+        const router = routerFor(walkMethod);
+        if (!router.reachable(wp.id, sp.id)) continue;
+        const sr = router.route(wp.id, sp.id);
         if (!sr.ok || sr.segments.length === 0) continue;
         if (!bestSwitch || sr.totalTimeForward < bestSwitch.time) {
           bestSwitch = {

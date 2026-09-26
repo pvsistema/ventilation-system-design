@@ -20,6 +20,7 @@ import { type MoveSchemaOptions } from "@/components/cad/MoveSchemaDialog";
 import type { FireStabilityFact } from "@/lib/fireStability";
 import type { EvaluateContext, VariantResult } from "@/lib/fireControl/evaluate";
 import type { FireAction } from "@/lib/fireControl/actions";
+import DialogErrorBoundary from "@/components/cad/DialogErrorBoundary";
 
 const LegendDialog           = lazy(() => import("@/components/cad/LegendDialog"));
 const PrintDialog            = lazy(() => import("@/components/cad/PrintDialog"));
@@ -378,6 +379,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
 
       {/* ── Подбор режима проветривания при пожаре ──────────────────────── */}
       {p.showFireControl && (
+        <DialogErrorBoundary title="Подбор режима" onClose={() => p.setShowFireControl(false)}>
         <FireControlDialog
           branches={p.branches}
           nodes={p.nodes}
@@ -395,6 +397,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           hidden={p.fireControlPreviewActive}
           onClose={() => p.setShowFireControl(false)}
         />
+        </DialogErrorBoundary>
       )}
 
       {/* ── ВДС (воздушно-депрессионная съёмка) ─────────────────────────── */}

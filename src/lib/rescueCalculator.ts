@@ -1021,16 +1021,25 @@ export interface WorkerPathResult {
   branchDirs: Map<string, boolean>;
 }
 
-export function calcWorkerPath(
+/**
+ * Маршрутизатор горнорабочего: граф строится ОДИН раз, а поиск пути от узла
+ * запоминается. Нужен там, где маршрутов много — оценка вывода людей при
+ * подборе режима ищет путь от каждого рабочего места до каждого выхода,
+ * ПВП и узла со свежей струёй.
+ *
+ * Раньше на каждую пару «откуда → куда» заново строился граф и заново шёл
+ * полный поиск по всей сети. Людям «за очагом» ищется ближайший узел со
+ * свежей струёй — а это почти все узлы схемы. На руднике в 1500 узлов это
+ * тысячи полных поисков на одно рабочее место и на каждый из десятков
+ * вариантов подбора: вкладка зависала на минуты, и браузер её сбрасывал —
+ * пользователь видел белое окно. Один поиск от узла даёт расстояния сразу
+ * до всех узлов, поэтому результат тот же, а работы в сотни раз меньше.
+ */
+export function createWorkerRouter(
   nodes: TopoNodeLite[],
   branches: TopoBranchLite[],
-  startNodeId: string,
-  targetNodeId: string,
   method: WorkerSpeedMethod,
-  waypointNodeIds: string[] = [],
-): WorkerPathResult {
-  const warnings: string[] = [];
-
+) {
   // Строим граф (все ветви проходимы для горнорабочего, включая перемычки с дверями)
   // Индекс ветвей по id — быстрый доступ внутри Дейкстры (без branches.find на каждом ребре)
   const branchById = new Map(branches.map(b => [b.id, b]));
@@ -1097,116 +1106,189 @@ export function calcWorkerPath(
     return { dist, prev };
   }
 
-  const checkpoints = [startNodeId, ...waypointNodeIds, targetNodeId];
-  const allPathEdges: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
-  let routeOk = true;
-
-  for (let i = 0; i < checkpoints.length - 1; i++) {
-    const from = checkpoints[i];
-    const to = checkpoints[i + 1];
-    const { dist, prev } = dijkstraWorker(from);
-    if ((dist.get(to) ?? Infinity) === Infinity) {
-      warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети`);
-      routeOk = false;
-      continue;
-    }
-    const segEdges = buildPath(prev, to);
-    allPathEdges.push(...segEdges);
-  }
-  {
-    const fw = fireWarning(allPathEdges, branchById);
-    if (fw) warnings.push(fw);
-  }
-
-  const nodeMap = new Map(nodes.map(n => [n.id, n]));
-  const branchMap = new Map(branches.map(b => [b.id, b]));
-
-  // Строим сегменты вперёд
-  const segments: WorkerSegment[] = [];
-  let cumTime = 0;
-  for (let i = 0; i < allPathEdges.length; i++) {
-    const edge = allPathEdges[i];
-    const b = branchMap.get(edge.branchId);
-    if (!b) continue;
-    const isForward = edge.forward;
-    const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
-    const signedAngle = isForward ? rawAngle : -rawAngle;
-    const segLen = effLength(b);
-    // Учёт задымления: в задымлённых зонах горнорабочий движется медленнее
-    const smokeDensity = b.fireComputedSmokeDens ?? 0;
-    const zone = getZone(smokeDensity);
-    // Скорость горнорабочего корректируется аналогично горноспасателю (без кислорода)
-    // В чистой зоне — нормативная скорость по методике; в задымлении — снижается
-    const workerBaseSpeed = getWorkerSpeed(method, signedAngle);
-    const smokeKoeff = zone === "clean" ? 1.0 : zone === "smoky_low" ? 0.75 : 0.55;
-    const speed = Math.max(1, Math.round(workerBaseSpeed * smokeKoeff));
-    const speedBackBase = getWorkerSpeed(method, -signedAngle);
-    const speedBack = Math.max(1, Math.round(speedBackBase * smokeKoeff));
-    const time_min = segLen > 0 ? segLen / speed : 0;
-    const time_back_min = segLen > 0 ? segLen / speedBack : 0;
-    cumTime += time_min;
-
-    const fromNodeId = isForward ? b.fromId : b.toId;
-    const toNodeId   = isForward ? b.toId   : b.fromId;
-    const fromNode   = nodeMap.get(fromNodeId);
-    const toNode     = nodeMap.get(toNodeId);
-    // Как у горноспасателей: наименование выработки — из типа (TopoBranch.type),
-    // затем из name. Раньше бралось только name, а у выработок оно обычно
-    // пустое, поэтому в таблице стояли номера узлов вместо названия.
-    const branchLabel = b.type?.trim() || b.name?.trim() || "";
-    const nodeFrom = fromNode?.name || (fromNode?.number ? `Узел ${fromNode.number}` : fromNodeId);
-    const nodeTo   = toNode?.name   || (toNode?.number   ? `Узел ${toNode.number}`   : toNodeId);
-    const branchName = branchLabel ? `${branchLabel} (${nodeFrom} → ${nodeTo})` : `${nodeFrom} → ${nodeTo}`;
-
-    segments.push({
-      branchId: b.id, branchName, branchLabel,
-      segmentNumber: i + 1,
-      length: segLen, angle: signedAngle,
-      fromNodeId, toNodeId,
-      zone, smokeDensity,
-      speed_mpm: speed, speed_back_mpm: speedBack, time_min, time_back_min,
-      cumulTime: cumTime, cumulTimeBack: 0,
-    });
-  }
-
-  // Считаем обратное накопленное время
-  const backEdges = [...allPathEdges].reverse().map(e => ({ ...e, forward: !e.forward }));
-  let cumBack = 0;
-  const backTimes: number[] = [];
-  for (const edge of backEdges) {
-    const b = branchMap.get(edge.branchId);
-    if (!b) continue;
-    const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
-    const signedAngle = edge.forward ? rawAngle : -rawAngle;
-    const speed = Math.max(1, getWorkerSpeed(method, signedAngle));
-    const len = Number.isFinite(b.length) && b.length > 0 ? b.length : 0;
-    const t = len > 0 ? len / speed : 0;
-    cumBack += t;
-    backTimes.push(cumBack);
-  }
-  for (let i = 0; i < segments.length; i++) {
-    segments[segments.length - 1 - i].cumulTimeBack = backTimes[i] ?? 0;
-  }
-
-  const totalTimeForward = segments.reduce((s, seg) => s + seg.time_min, 0);
-  const totalTimeBack    = segments.reduce((s, seg) => s + seg.time_back_min, 0);
-  // Итоговое время хода горнорабочего — только в ОДНУ сторону (от начального
-  // узла А до целевого Б, при необходимости через промежуточный В).
-  // Обратный путь и добавка «на помощь» здесь не учитываются.
-  const totalTime = totalTimeForward;
-
-  const branchDirs = new Map<string, boolean>();
-  for (const edge of allPathEdges) branchDirs.set(edge.branchId, edge.forward);
-
-  if (!routeOk && segments.length === 0) {
-    warnings.push("Маршрут не построен — проверьте начальный, промежуточные и целевой узлы");
-  }
-
-  return {
-    startNodeId, targetNodeId, waypointNodeIds,
-    method, segments,
-    totalTimeForward, totalTimeBack, totalTime,
-    ok: routeOk && segments.length > 0,
-    warnings, branchDirs,
+  // Поиск от одного узла — запоминаем: от рабочего места маршруты строятся
+  // сразу к выходам, ПВП и узлам со свежей струёй.
+  const searchCache = new Map<string, ReturnType<typeof dijkstraWorker>>();
+  const searchFrom = (startId: string) => {
+    let r = searchCache.get(startId);
+    if (!r) { r = dijkstraWorker(startId); searchCache.set(startId, r); }
+    return r;
   };
+
+
+  /** Маршрут от startNodeId до targetNodeId (через промежуточные узлы). */
+  function route(startNodeId: string, targetNodeId: string, waypointNodeIds: string[] = []): WorkerPathResult {
+    const warnings: string[] = [];
+
+    const checkpoints = [startNodeId, ...waypointNodeIds, targetNodeId];
+    const allPathEdges: Array<{ nodeId: string; branchId: string; forward: boolean }> = [];
+    let routeOk = true;
+
+    for (let i = 0; i < checkpoints.length - 1; i++) {
+      const from = checkpoints[i];
+      const to = checkpoints[i + 1];
+      const { dist, prev } = searchFrom(from);
+      if ((dist.get(to) ?? Infinity) === Infinity) {
+        warnings.push(`Маршрут от узла ${from} до узла ${to} не найден — проверьте связность сети`);
+        routeOk = false;
+        continue;
+      }
+      const segEdges = buildPath(prev, to);
+      allPathEdges.push(...segEdges);
+    }
+    {
+      const fw = fireWarning(allPathEdges, branchById);
+      if (fw) warnings.push(fw);
+    }
+
+    const nodeMap = nodePos;
+    const branchMap = branchById;
+
+    // Строим сегменты вперёд
+    const segments: WorkerSegment[] = [];
+    let cumTime = 0;
+    for (let i = 0; i < allPathEdges.length; i++) {
+      const edge = allPathEdges[i];
+      const b = branchMap.get(edge.branchId);
+      if (!b) continue;
+      const isForward = edge.forward;
+      const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
+      const signedAngle = isForward ? rawAngle : -rawAngle;
+      const segLen = effLength(b);
+      // Учёт задымления: в задымлённых зонах горнорабочий движется медленнее
+      const smokeDensity = b.fireComputedSmokeDens ?? 0;
+      const zone = getZone(smokeDensity);
+      // Скорость горнорабочего корректируется аналогично горноспасателю (без кислорода)
+      // В чистой зоне — нормативная скорость по методике; в задымлении — снижается
+      const workerBaseSpeed = getWorkerSpeed(method, signedAngle);
+      const smokeKoeff = zone === "clean" ? 1.0 : zone === "smoky_low" ? 0.75 : 0.55;
+      const speed = Math.max(1, Math.round(workerBaseSpeed * smokeKoeff));
+      const speedBackBase = getWorkerSpeed(method, -signedAngle);
+      const speedBack = Math.max(1, Math.round(speedBackBase * smokeKoeff));
+      const time_min = segLen > 0 ? segLen / speed : 0;
+      const time_back_min = segLen > 0 ? segLen / speedBack : 0;
+      cumTime += time_min;
+
+      const fromNodeId = isForward ? b.fromId : b.toId;
+      const toNodeId   = isForward ? b.toId   : b.fromId;
+      const fromNode   = nodeMap.get(fromNodeId);
+      const toNode     = nodeMap.get(toNodeId);
+      // Как у горноспасателей: наименование выработки — из типа (TopoBranch.type),
+      // затем из name. Раньше бралось только name, а у выработок оно обычно
+      // пустое, поэтому в таблице стояли номера узлов вместо названия.
+      const branchLabel = b.type?.trim() || b.name?.trim() || "";
+      const nodeFrom = fromNode?.name || (fromNode?.number ? `Узел ${fromNode.number}` : fromNodeId);
+      const nodeTo   = toNode?.name   || (toNode?.number   ? `Узел ${toNode.number}`   : toNodeId);
+      const branchName = branchLabel ? `${branchLabel} (${nodeFrom} → ${nodeTo})` : `${nodeFrom} → ${nodeTo}`;
+
+      segments.push({
+        branchId: b.id, branchName, branchLabel,
+        segmentNumber: i + 1,
+        length: segLen, angle: signedAngle,
+        fromNodeId, toNodeId,
+        zone, smokeDensity,
+        speed_mpm: speed, speed_back_mpm: speedBack, time_min, time_back_min,
+        cumulTime: cumTime, cumulTimeBack: 0,
+      });
+    }
+
+    // Считаем обратное накопленное время
+    const backEdges = [...allPathEdges].reverse().map(e => ({ ...e, forward: !e.forward }));
+    let cumBack = 0;
+    const backTimes: number[] = [];
+    for (const edge of backEdges) {
+      const b = branchMap.get(edge.branchId);
+      if (!b) continue;
+      const rawAngle = Number.isFinite(b.angle) ? (b.angle as number) : 0;
+      const signedAngle = edge.forward ? rawAngle : -rawAngle;
+      const speed = Math.max(1, getWorkerSpeed(method, signedAngle));
+      const len = Number.isFinite(b.length) && b.length > 0 ? b.length : 0;
+      const t = len > 0 ? len / speed : 0;
+      cumBack += t;
+      backTimes.push(cumBack);
+    }
+    for (let i = 0; i < segments.length; i++) {
+      segments[segments.length - 1 - i].cumulTimeBack = backTimes[i] ?? 0;
+    }
+
+    const totalTimeForward = segments.reduce((s, seg) => s + seg.time_min, 0);
+    const totalTimeBack    = segments.reduce((s, seg) => s + seg.time_back_min, 0);
+    // Итоговое время хода горнорабочего — только в ОДНУ сторону (от начального
+    // узла А до целевого Б, при необходимости через промежуточный В).
+    // Обратный путь и добавка «на помощь» здесь не учитываются.
+    const totalTime = totalTimeForward;
+
+    const branchDirs = new Map<string, boolean>();
+    for (const edge of allPathEdges) branchDirs.set(edge.branchId, edge.forward);
+
+    if (!routeOk && segments.length === 0) {
+      warnings.push("Маршрут не построен — проверьте начальный, промежуточные и целевой узлы");
+    }
+
+    return {
+      startNodeId, targetNodeId, waypointNodeIds,
+      method, segments,
+      totalTimeForward, totalTimeBack, totalTime,
+      ok: routeOk && segments.length > 0,
+      warnings, branchDirs,
+    };
+  }
+
+  /**
+   * Ближайший ПО ВРЕМЕНИ маршрута узел из списка — по одному поиску от
+   * startId, без построения маршрута к каждому кандидату. Время — то же,
+   * что даёт route(): сумма времени по сегментам.
+   *
+   * Кандидатов может быть почти вся схема (узлы со свежей струёй), а
+   * строить маршрут к каждому — значит повесить программу. Вес поиска и
+   * время маршрута считаются одинаково везде, кроме ветви с очагом (там у
+   * поиска штраф), поэтому маршрут строится к одному ближайшему узлу и
+   * отдельно — к узлам, путь к которым лежит только через очаг.
+   */
+  function nearest(startId: string, targetIds: string[]): { id: string; path: WorkerPathResult } | null {
+    const { dist } = searchFrom(startId);
+    let best: { id: string; path: WorkerPathResult } | null = null;
+    // Вне очага вес поиска РАВЕН времени маршрута (те же длины и скорости),
+    // поэтому ближайший из них — просто узел с наименьшим весом.
+    let nearId: string | null = null;
+    let nearD = Infinity;
+    const viaFire: string[] = [];
+    for (const id of targetIds) {
+      if (id === startId) continue;
+      const d = dist.get(id) ?? Infinity;
+      if (d === Infinity) continue;
+      if (d >= FIRE_BRANCH_PENALTY) { viaFire.push(id); continue; }
+      if (d < nearD) { nearD = d; nearId = id; }
+    }
+    if (nearId) {
+      const p = route(startId, nearId);
+      if (p.ok && p.segments.length > 0) best = { id: nearId, path: p };
+    }
+    // Узлы, куда путь лежит только через очаг: у поиска там штраф, а время
+    // маршрута — без него. Сравниваем честно по времени, как раньше.
+    // Маршрут строится по уже готовому поиску, поэтому это дёшево.
+    for (const id of viaFire) {
+      const p = route(startId, id);
+      if (!p.ok || p.segments.length === 0) continue;
+      if (!best || p.totalTimeForward < best.path.totalTimeForward) best = { id, path: p };
+    }
+    return best;
+  }
+
+  /** Достижим ли узел из startId — без построения маршрута. */
+  const reachable = (startId: string, targetId: string): boolean =>
+    (searchFrom(startId).dist.get(targetId) ?? Infinity) < Infinity;
+
+  return { route, reachable, nearest };
+}
+
+export function calcWorkerPath(
+  nodes: TopoNodeLite[],
+  branches: TopoBranchLite[],
+  startNodeId: string,
+  targetNodeId: string,
+  method: WorkerSpeedMethod,
+  waypointNodeIds: string[] = [],
+): WorkerPathResult {
+  return createWorkerRouter(nodes, branches, method).route(startNodeId, targetNodeId, waypointNodeIds);
 }
