@@ -59,20 +59,50 @@ interface Props {
   onBlastThresholdsChange?: (t: ExplosionThresholds) => void;
 }
 
-const TABS: { id: TabId; label: string; icon: string; group: string }[] = [
-  { id: "fans",      label: "Вентиляторы",        icon: "Wind",      group: "Вентиляция" },
-  { id: "types",     label: "Типы выработок",      icon: "Layers",    group: "Вентиляция" },
-  { id: "bulkheads", label: "Перемычки",           icon: "Square",    group: "Вентиляция" },
-  { id: "airnorms",  label: "Нормы расхода воздуха", icon: "Calculator", group: "Вентиляция" },
-  { id: "blastzones",label: "Зоны поражения взрывом", icon: "Bomb",   group: "Аварии" },
-  { id: "sensors",   label: "Датчики",             icon: "Radio",     group: "Аварии" },
-  { id: "typical",   label: "Типовые меры",        icon: "FileText",  group: "Аварии" },
-  { id: "pumps",     label: "Насосы",              icon: "Gauge",     group: "Трубопровод" },
-  { id: "consumers", label: "Потребители",         icon: "Flame",     group: "Трубопровод" },
-  { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод" },
-  { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее" },
-  { id: "units",     label: "Единицы измерения",   icon: "Ruler",     group: "Общее" },
+// ─── Оформление в палитре темы (--c-accent / --c-s* / --c-b* / --c-t*) ────
+// Одни и те же классы для всех разделов: раньше каждый раздел красил кнопки
+// и поля по-своему (bg-blue-600, border-gray-300…) и выпадал из темы.
+const INPUT =
+  "w-full h-8 px-2 text-[12px] rounded-md outline-none border border-[var(--c-b2)] bg-[var(--c-s1)] text-[var(--c-t1)] focus:border-[var(--c-accent)] focus:ring-2 focus:ring-[color-mix(in_srgb,var(--c-accent)_20%,transparent)]";
+const LABEL = "block text-[10px] font-medium mb-1 text-[var(--c-t3)]";
+const BTN =
+  "h-7 px-2.5 inline-flex items-center justify-center gap-1 text-[11px] rounded-md border border-[var(--c-b2)] bg-[var(--c-s1)] text-[var(--c-t2)] hover:bg-[var(--c-s3)] transition-colors";
+const BTN_PRIMARY =
+  "h-7 px-3 inline-flex items-center justify-center gap-1 text-[11px] font-medium rounded-md text-white bg-[var(--c-accent)] hover:bg-[var(--c-accent-ink)] disabled:opacity-40 transition-colors";
+const BTN_DANGER =
+  "h-7 px-2.5 inline-flex items-center justify-center gap-1 text-[11px] rounded-md border border-[var(--c-tint-red2)] text-[var(--c-red)] hover:bg-[var(--c-tint-red)] transition-colors";
+const ICON_BTN =
+  "w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--c-t3)] hover:bg-[var(--c-s3)] hover:text-[var(--c-t1)] transition-colors";
+const MODAL = "rounded-xl shadow-2xl flex flex-col overflow-hidden bg-[var(--c-s1)] border border-[var(--c-b2)]";
+const MODAL_HEAD = "flex items-center gap-2 px-4 h-11 border-b border-[var(--c-b1)] flex-shrink-0";
+
+const TABS: { id: TabId; label: string; icon: string; group: string; hint: string; demo?: boolean }[] = [
+  { id: "fans",      label: "Вентиляторы",        icon: "Wind",      group: "Вентиляция",
+    hint: "Вентиляторы, установленные на руднике. Добавляются из библиотеки, затем назначаются ветвям в свойствах." },
+  { id: "types",     label: "Типы выработок",      icon: "Layers",    group: "Вентиляция",
+    hint: "Типовые сечения и крепь. Тип выбирается в свойствах ветви — сечение и сопротивление подставятся сами." },
+  { id: "bulkheads", label: "Перемычки",           icon: "Square",    group: "Вентиляция",
+    hint: "Перемычки рудника с воздухопроницаемостью. Сопротивление R считается автоматически." },
+  { id: "airnorms",  label: "Нормы расхода воздуха", icon: "Calculator", group: "Вентиляция",
+    hint: "Нормы для расчёта количества воздуха по ФНиП № 505." },
+  { id: "blastzones",label: "Зоны поражения взрывом", icon: "Bomb",   group: "Аварии",
+    hint: "Пороги избыточного давления для зон поражения и окраски выработок." },
+  { id: "sensors",   label: "Датчики",             icon: "Radio",     group: "Аварии", demo: true,
+    hint: "Образец справочника датчиков. В расчётах пока не используется." },
+  { id: "typical",   label: "Типовые мероприятия", icon: "FileText",  group: "Аварии", demo: true,
+    hint: "Образец справочника типовых мероприятий. В расчётах пока не используется." },
+  { id: "pumps",     label: "Насосы",              icon: "Gauge",     group: "Трубопровод",
+    hint: "Библиотека насосов. Нажмите строку — откроется напорная характеристика." },
+  { id: "consumers", label: "Потребители",         icon: "Flame",     group: "Трубопровод",
+    hint: "Пожарные стволы, распылители, пеногенераторы. Модель выбирается в свойствах узла-потребителя." },
+  { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод", demo: true,
+    hint: "Образец справочника труб. В расчётах пока не используется." },
+  { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее",
+    hint: "Самоходная техника: пожарная нагрузка (резина, дизель, масло), кг." },
+  { id: "units",     label: "Единицы измерения",   icon: "Ruler",     group: "Общее",
+    hint: "Единицы, в которых программа показывает и принимает значения." },
 ];
+const TAB_GROUPS = ["Вентиляция", "Аварии", "Трубопровод", "Общее"];
 
 // ─── Типы для справочника вентиляторов рудника ────────────────────────────
 const CURVE_COLORS = ["#e91e63", "#ff5722", "#ff9800", "#4caf50", "#2196f3", "#9c27b0", "#00bcd4"];
@@ -148,7 +178,7 @@ function FanChart({ curves, type, operatingPoints }: {
   const cw = W - PL - PR, ch = H - PT - PB;
 
   const allPts = curves.flatMap(c => c.pts);
-  if (allPts.length === 0) return <svg width={W} height={H}><text x={W/2} y={H/2} textAnchor="middle" fontSize="11" fill="#999">Нет данных</text></svg>;
+  if (allPts.length === 0) return <svg width={W} height={H}><text x={W/2} y={H/2} textAnchor="middle" fontSize="11" style={{ fill: "var(--c-t4, #999)" }}>Нет данных</text></svg>;
 
   const maxQ = Math.max(...allPts.map(p => p.q)) * 1.05 || 100;
   const maxV = type === "qh"
@@ -160,13 +190,13 @@ function FanChart({ curves, type, operatingPoints }: {
 
   const yTicks = 4, xTicks = 5;
   return (
-    <svg width={W} height={H} style={{ fontFamily: "Arial, sans-serif", display: "block" }}>
+    <svg width={W} height={H} style={{ fontFamily: "var(--font-num)", display: "block" }}>
       {Array.from({ length: yTicks + 1 }).map((_, i) => {
         const y = PT + (i / yTicks) * ch;
         const val = maxV * (1 - i / yTicks);
         return <g key={i}>
-          <line x1={PL} y1={y} x2={W - PR} y2={y} stroke="#e5e7eb" strokeWidth="0.7" />
-          <text x={PL - 4} y={y + 3} fontSize="8" textAnchor="end" fill="#888">
+          <line x1={PL} y1={y} x2={W - PR} y2={y} style={{ stroke: "var(--c-b1, #e5e7eb)" }} strokeWidth="0.7" />
+          <text x={PL - 4} y={y + 3} fontSize="8" textAnchor="end" style={{ fill: "var(--c-t3, #888)" }}>
             {val >= 1000 ? `${(val / 1000).toFixed(1)}k` : Math.round(val)}
           </text>
         </g>;
@@ -175,11 +205,11 @@ function FanChart({ curves, type, operatingPoints }: {
         const x = PL + (i / xTicks) * cw;
         const val = maxQ * (i / xTicks);
         return <g key={i}>
-          <line x1={x} y1={PT} x2={x} y2={PT + ch} stroke="#e5e7eb" strokeWidth="0.7" />
-          <text x={x} y={H - 8} fontSize="8" textAnchor="middle" fill="#888">{val.toFixed(0)}</text>
+          <line x1={x} y1={PT} x2={x} y2={PT + ch} style={{ stroke: "var(--c-b1, #e5e7eb)" }} strokeWidth="0.7" />
+          <text x={x} y={H - 8} fontSize="8" textAnchor="middle" style={{ fill: "var(--c-t3, #888)" }}>{val.toFixed(0)}</text>
         </g>;
       })}
-      <rect x={PL} y={PT} width={cw} height={ch} fill="none" stroke="#ccc" strokeWidth="0.8" />
+      <rect x={PL} y={PT} width={cw} height={ch} fill="none" style={{ stroke: "var(--c-b2, #ccc)" }} strokeWidth="0.8" />
       {curves.map((c, ci) => {
         if (c.pts.length === 0) return null;
         const d = c.pts.map((p, i) => `${i === 0 ? "M" : "L"}${toX(p.q).toFixed(1)},${toY(type === "qh" ? p.h : p.p).toFixed(1)}`).join(" ");
@@ -191,8 +221,8 @@ function FanChart({ curves, type, operatingPoints }: {
           <circle cx={toX(op.q)} cy={toY(op.h)} r={4} fill={op.color} stroke="white" strokeWidth={1.5} />
         </g>
       ))}
-      <text x={PL + cw / 2} y={H - 1} fontSize="8" textAnchor="middle" fill="#666">Расход, м³/с</text>
-      <text transform={`translate(9,${PT + ch / 2}) rotate(-90)`} fontSize="8" textAnchor="middle" fill="#666">
+      <text x={PL + cw / 2} y={H - 1} fontSize="8" textAnchor="middle" style={{ fill: "var(--c-t3, #666)" }}>Расход, м³/с</text>
+      <text transform={`translate(9,${PT + ch / 2}) rotate(-90)`} fontSize="8" textAnchor="middle" style={{ fill: "var(--c-t3, #666)" }}>
         {type === "qh" ? "Напор, Па" : "Мощность, кВт"}
       </text>
     </svg>
@@ -212,29 +242,29 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
   const preview = previewId ? FAN_CATALOG.find(c => c.id === previewId) : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
-      <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 760, height: 520 }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,20,25,0.45)" }}>
+      <div className={MODAL} style={{ width: 760, height: 520 }}>
         {/* Шапка */}
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f4f8)" }}>
-          <Icon name="BookOpen" size={14} className="text-blue-600" />
-          <span className="text-[13px] font-semibold text-gray-800">Библиотека вентиляторов</span>
-          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700"><Icon name="X" size={16} /></button>
+        <div className={MODAL_HEAD} style={{ background: "var(--c-s2, #f8f7f4)" }}>
+          <Icon name="BookOpen" size={14} className="text-[var(--c-blue)]" />
+          <span className="text-[13px] font-semibold text-[var(--c-t1)]">Библиотека вентиляторов</span>
+          <button onClick={onClose} className={ICON_BTN + " ml-auto"}><Icon name="X" size={16} /></button>
         </div>
         <div className="flex flex-1 overflow-hidden">
           {/* Левая панель — список */}
-          <div className="flex flex-col border-r border-gray-200" style={{ width: 280 }}>
+          <div className="flex flex-col border-r border-[var(--c-b1)]" style={{ width: 280 }}>
             {/* Поиск + фильтр */}
-            <div className="p-2 border-b border-gray-100 space-y-1.5 flex-shrink-0">
-              <div className="flex items-center gap-1 border border-gray-300 rounded px-2 bg-white">
-                <Icon name="Search" size={12} className="text-gray-400" />
+            <div className="p-2 border-b border-[var(--c-b1)] space-y-1.5 flex-shrink-0">
+              <div className="flex items-center gap-1 border border-[var(--c-b2)] rounded-md px-2 bg-[var(--c-s1)]">
+                <Icon name="Search" size={12} className="text-[var(--c-t4)]" />
                 <input value={search} onChange={e => setSearch(e.target.value)}
-                  placeholder="Поиск..." className="flex-1 text-[12px] py-1 outline-none bg-transparent text-gray-900" />
+                  placeholder="Поиск..." className="flex-1 text-[12px] py-1 outline-none bg-transparent text-[var(--c-t1)]" />
               </div>
               <div className="flex gap-1">
                 {([["all", "Все"], ["axial", "Осевые"], ["centrifugal", "Центробежные"], ["vmp", "ВМП"]] as const).map(([v, l]) => (
                   <button key={v} onClick={() => setFilter(v)}
-                    className="flex-1 py-0.5 text-[10px] rounded border"
-                    style={{ background: filter === v ? "var(--c-blue, #2563eb)" : "white", color: filter === v ? "white" : "var(--c-t3, #555)", borderColor: filter === v ? "var(--c-blue, #2563eb)" : "var(--c-b2, #d1d5db)" }}>
+                    className="flex-1 py-0.5 text-[10px] rounded-md border"
+                    style={{ background: filter === v ? "var(--c-blue-bg, #1e5a7a)" : "var(--c-s1, #fff)", color: filter === v ? "white" : "var(--c-t3, #555)", borderColor: filter === v ? "var(--c-blue-bg, #1e5a7a)" : "var(--c-b2, #d1d5db)" }}>
                     {l}
                   </button>
                 ))}
@@ -245,17 +275,17 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
               {list.map(c => (
                 <div key={c.id}
                   onClick={() => setPreviewId(c.id)}
-                  className="flex items-center justify-between px-3 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
+                  className="flex items-center justify-between px-3 py-2 cursor-pointer border-b border-[var(--c-b1)] select-none hover:bg-[var(--c-tint-blue)]"
                   style={{ background: previewId === c.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
                   <div>
-                    <div className="text-[12px] font-semibold text-blue-800">{c.name}</div>
-                    <div className="text-[10px] text-gray-500">{c.type === "axial" ? "Осевой" : c.type === "vmp" ? "ВМП" : "Центробежный"}</div>
+                    <div className="text-[12px] font-semibold text-[var(--c-blue-ink)]">{c.name}</div>
+                    <div className="text-[10px] text-[var(--c-t3)]">{c.type === "axial" ? "Осевой" : c.type === "vmp" ? "ВМП" : "Центробежный"}</div>
                   </div>
-                  <span className="text-[10px] text-gray-400">Ø{c.diameter} м</span>
+                  <span className="text-[10px] text-[var(--c-t4)]">Ø{c.diameter} м</span>
                 </div>
               ))}
               {list.length === 0 && (
-                <div className="flex items-center justify-center h-24 text-[12px] text-gray-400">Не найдено</div>
+                <div className="flex items-center justify-center h-24 text-[12px] text-[var(--c-t4)]">Не найдено</div>
               )}
             </div>
           </div>
@@ -264,12 +294,12 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
           <div className="flex-1 flex flex-col overflow-hidden">
             {preview ? (
               <>
-                <div className="px-4 py-3 border-b border-gray-100 flex-shrink-0">
-                  <div className="text-[14px] font-bold text-gray-900">{preview.name}</div>
-                  <div className="text-[11px] text-gray-500 mt-0.5">
+                <div className="px-4 py-3 border-b border-[var(--c-b1)] flex-shrink-0">
+                  <div className="text-[14px] font-bold text-[var(--c-t1)]">{preview.name}</div>
+                  <div className="text-[11px] text-[var(--c-t3)] mt-0.5">
                     {preview.type === "axial" ? "Осевой" : preview.type === "vmp" ? "ВМП" : "Центробежный"} · Ø{preview.diameter} м · {preview.rpmMin}–{preview.rpmMax} об/мин
                   </div>
-                  <div className="flex gap-3 mt-1.5 text-[11px] text-gray-600">
+                  <div className="flex gap-3 mt-1.5 text-[11px] text-[var(--c-t2)]">
                     {/* Паспортный диапазон: с учётом крайних углов лопаток —
                         минимум по самому закрытому, максимум по самому открытому */}
                     <span>Q: {(() => {
@@ -285,7 +315,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                         : preview.h0
                     )} Па (max)</span>
                     {preview.bladeAngles.length > 0 && <span>Углы: {preview.bladeAngles.join(", ")}°</span>}
-                    {preview.reverseH0 !== undefined && <span className="text-green-700 font-medium">✓ Реверс</span>}
+                    {preview.reverseH0 !== undefined && <span className="text-[var(--c-green)] font-medium">✓ Реверс</span>}
                   </div>
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
@@ -304,7 +334,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                     return (
                       <div className="space-y-2">
                         <div>
-                          <div className="text-[10px] text-gray-500 font-medium mb-1">Напор — Расход</div>
+                          <div className="text-[10px] text-[var(--c-t3)] font-medium mb-1">Напор — Расход</div>
                           <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: "var(--radius-ui)", overflow: "hidden" }}>
                             <FanChart curves={[...curves, ...reverseCurves]} type="qh" />
                           </div>
@@ -312,14 +342,14 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                         <div className="flex flex-wrap gap-2">
                           {angles.map((a, i) => (
                             <div key={i} className="flex items-center gap-1">
-                              <div className="w-5 h-1.5 rounded" style={{ background: CURVE_COLORS[i % CURVE_COLORS.length] }} />
-                              <span className="text-[10px] text-gray-600">{a > 0 ? "+" : ""}{a}°</span>
+                              <div className="w-5 h-1.5 rounded-md" style={{ background: CURVE_COLORS[i % CURVE_COLORS.length] }} />
+                              <span className="text-[10px] text-[var(--c-t2)]">{a > 0 ? "+" : ""}{a}°</span>
                             </div>
                           ))}
                           {preview.reverseH0 !== undefined && (
                             <div className="flex items-center gap-1">
-                              <div className="w-5 h-0.5 rounded" style={{ borderTop: "2px dashed #9c27b0" }} />
-                              <span className="text-[10px] text-purple-700">Реверс</span>
+                              <div className="w-5 h-0.5 rounded-md" style={{ borderTop: "2px dashed #9c27b0" }} />
+                              <span className="text-[10px] text-[var(--c-purple)]">Реверс</span>
                             </div>
                           )}
                         </div>
@@ -329,23 +359,23 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                 </div>
               </>
             ) : (
-              <div className="flex-1 flex items-center justify-center text-[12px] text-gray-400 flex-col gap-2">
-                <Icon name="MousePointer2" size={24} className="text-gray-300" />
+              <div className="flex-1 flex items-center justify-center text-[12px] text-[var(--c-t4)] flex-col gap-2">
+                <Icon name="MousePointer2" size={24} className="text-[var(--c-b3)]" />
                 Выберите вентилятор из списка
               </div>
             )}
           </div>
         </div>
         {/* Кнопки */}
-        <div className="flex items-center gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-          <span className="text-[11px] text-gray-500 flex-1">
+        <div className="flex items-center gap-2 px-4 py-2 border-t border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+          <span className="text-[11px] text-[var(--c-t3)] flex-1">
             {preview ? `Выбран: ${preview.name}` : "Выберите вентилятор из списка для импорта"}
           </span>
-          <button onClick={onClose} className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+          <button onClick={onClose} className={BTN}>
             Отмена
           </button>
           <button onClick={() => preview && onSelect(preview)} disabled={!preview}
-            className="h-7 px-4 text-[12px] bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-40">
+            className={BTN_PRIMARY}>
             Импортировать
           </button>
         </div>
@@ -372,59 +402,59 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
   const revPts = (reverse && catalog?.reverseH0 !== undefined) ? reverseCurvePoints(catalog) : [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
-      <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 520, maxHeight: 520 }}>
-        <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f4f8)" }}>
-          <Icon name="Plus" size={14} className="text-blue-600" />
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,20,25,0.45)" }}>
+      <div className={MODAL} style={{ width: 520, maxHeight: 520 }}>
+        <div className={MODAL_HEAD} style={{ background: "var(--c-s2, #f8f7f4)" }}>
+          <Icon name="Plus" size={14} className="text-[var(--c-blue)]" />
           <span className="text-[13px] font-semibold">Новая рабочая характеристика — {fan.name}</span>
-          <button onClick={onClose} className="ml-auto text-gray-400 hover:text-gray-700"><Icon name="X" size={16} /></button>
+          <button onClick={onClose} className={ICON_BTN + " ml-auto"}><Icon name="X" size={16} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Угол лопаток, °</label>
+              <label className={LABEL}>Угол лопаток, °</label>
               {availAngles.length > 0 ? (
                 <select value={angle} onChange={e => setAngle(+e.target.value)}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white">
+                  className={INPUT}>
                   {availAngles.map(a => <option key={a} value={a}>{a > 0 ? "+" : ""}{a}°</option>)}
                 </select>
               ) : (
                 <input type="number" value={angle} onChange={e => setAngle(+e.target.value)}
-                  className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+                  className={INPUT} />
               )}
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Скорость, об/мин</label>
+              <label className={LABEL}>Скорость, об/мин</label>
               <input type="number" min={fan.rpmMin} max={fan.rpmMax} value={rpm}
                 onChange={e => setRpm(+e.target.value)}
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+                className={INPUT} />
             </div>
           </div>
           <div className="flex items-center gap-2">
             <input type="checkbox" id="rev-check" checked={reverse}
               onChange={e => setReverse(e.target.checked)}
               className="w-4 h-4" style={{ accentColor: "#9333ea" }} />
-            <label htmlFor="rev-check" className="text-[12px] text-gray-700">
+            <label htmlFor="rev-check" className="text-[12px] text-[var(--c-t2)]">
               Реверсивная характеристика
               {!catalog?.reverseH0 && " (данные по реверсу отсутствуют в каталоге)"}
             </label>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Рабочая точка Q, м³/с</label>
+              <label className={LABEL}>Рабочая точка Q, м³/с</label>
               <input type="number" min={0} step={1} value={opQ} onChange={e => setOpQ(+e.target.value)}
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+                className={INPUT} />
             </div>
             <div className="space-y-1">
-              <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Рабочая точка H, Па</label>
+              <label className={LABEL}>Рабочая точка H, Па</label>
               <input type="number" min={0} step={10} value={opH} onChange={e => setOpH(+e.target.value)}
-                className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900" />
+                className={INPUT} />
             </div>
           </div>
           {/* Предпросмотр */}
           {catalog && (
             <div>
-              <div className="text-[10px] text-gray-500 font-medium mb-1">Предпросмотр Q–H</div>
+              <div className="text-[10px] text-[var(--c-t3)] font-medium mb-1">Предпросмотр Q–H</div>
               <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: "var(--radius-ui)", overflow: "hidden" }}>
                 <FanChart
                   curves={[
@@ -438,8 +468,8 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
             </div>
           )}
         </div>
-        <div className="flex gap-2 px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-          <button onClick={onClose} className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">Отмена</button>
+        <div className="flex gap-2 px-4 py-2 border-t border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+          <button onClick={onClose} className={BTN}>Отмена</button>
           <button onClick={() => {
             onAdd({
               id: `a${Date.now()}`,
@@ -449,7 +479,7 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
               operatingH: opH || undefined,
             });
             onClose();
-          }} className="ml-auto h-7 px-4 text-[12px] bg-blue-600 text-white rounded hover:bg-blue-700">
+          }} className={BTN_PRIMARY + " ml-auto"}>
             Добавить
           </button>
         </div>
@@ -576,12 +606,12 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
   return (
     <div className="flex h-full overflow-hidden">
       {/* Левая панель — список вентиляторов рудника */}
-      <div className="flex flex-col border-r border-gray-200" style={{ width: 220, flexShrink: 0 }}>
+      <div className="flex flex-col border-r border-[var(--c-b1)]" style={{ width: 220, flexShrink: 0 }}>
         {/* Шапка */}
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-tint-blue, #e8eef8)" }}>
-          <span className="text-[11px] font-semibold text-gray-700">Вентиляторы рудника</span>
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s3, #f1efea)" }}>
+          <span className="text-[11px] font-semibold text-[var(--c-t2)]">Вентиляторы рудника</span>
           <button onClick={() => setShowLibrary(true)}
-            className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
+            className="flex items-center gap-1 text-[10px] text-[var(--c-blue)] hover:text-[var(--c-blue-ink)]">
             <Icon name="Library" size={11} /> Из библиотеки
           </button>
         </div>
@@ -590,26 +620,26 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
         <div className="flex-1 overflow-y-auto">
           {fans.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-3 gap-2 py-8">
-              <Icon name="Wind" size={28} className="text-gray-300" />
-              <span className="text-[12px] text-gray-500 text-center">Справочник пуст</span>
-              <span className="text-[10px] text-gray-400 text-center">Импортируйте вентиляторы из библиотеки</span>
+              <Icon name="Wind" size={28} className="text-[var(--c-b3)]" />
+              <span className="text-[12px] text-[var(--c-t3)] text-center">Справочник пуст</span>
+              <span className="text-[10px] text-[var(--c-t4)] text-center">Импортируйте вентиляторы из библиотеки</span>
               <button onClick={() => setShowLibrary(true)}
-                className="mt-1 px-3 py-1 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+                className={BTN_PRIMARY + " mt-1"}>
                 <Icon name="Library" size={11} /> Открыть библиотеку
               </button>
             </div>
           ) : fans.map(f => (
             <div key={f.id}
               onClick={() => setSelectedId(f.id)}
-              className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
+              className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-[var(--c-b1)] select-none hover:bg-[var(--c-tint-blue)]"
               style={{ background: selectedId === f.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
               <div className="flex-1 min-w-0">
-                <div className="text-[12px] font-semibold text-blue-800 truncate">{f.name}</div>
-                <div className="text-[10px] text-gray-500">{f.type} · Ø{f.diameter} м</div>
-                <div className="text-[10px] text-gray-400">{f.bladeAngles.length} хар-ик</div>
+                <div className="text-[12px] font-semibold text-[var(--c-blue-ink)] truncate">{f.name}</div>
+                <div className="text-[10px] text-[var(--c-t3)]">{f.type} · Ø{f.diameter} м</div>
+                <div className="text-[10px] text-[var(--c-t4)]">{f.bladeAngles.length} хар-ик</div>
               </div>
               <button onClick={e => { e.stopPropagation(); removeFan(f.id); }}
-                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 ml-1 mt-0.5">
+                className="opacity-0 group-hover:opacity-100 text-[var(--c-b3)] hover:text-[var(--c-red)] ml-1 mt-0.5">
                 <Icon name="Trash2" size={12} />
               </button>
             </div>
@@ -619,7 +649,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
         {/* Кнопка добавить */}
         {fans.length > 0 && (
           <button onClick={() => setShowLibrary(true)}
-            className="flex-shrink-0 flex items-center justify-center gap-1 py-2 text-[11px] text-blue-600 hover:bg-blue-50 border-t border-gray-200">
+            className="flex-shrink-0 flex items-center justify-center gap-1 py-2 text-[11px] text-[var(--c-blue)] hover:bg-[var(--c-tint-blue)] border-t border-[var(--c-b1)]">
             <Icon name="Plus" size={11} /> Добавить из библиотеки
           </button>
         )}
@@ -629,26 +659,26 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
       {selected && catalog ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Шапка */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-            <span className="text-[13px] font-bold text-gray-900">{selected.name}</span>
-            <span className="text-[11px] text-gray-500">Ø{selected.diameter} м</span>
-            <span className="text-[10px] text-gray-400">·</span>
-            <span className="text-[11px] text-gray-500">{selected.type}</span>
-            <span className="text-[10px] text-gray-400 ml-1">{selected.rpmMin}–{selected.rpmMax} об/мин</span>
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+            <span className="text-[13px] font-bold text-[var(--c-t1)]">{selected.name}</span>
+            <span className="text-[11px] text-[var(--c-t3)]">Ø{selected.diameter} м</span>
+            <span className="text-[10px] text-[var(--c-t4)]">·</span>
+            <span className="text-[11px] text-[var(--c-t3)]">{selected.type}</span>
+            <span className="text-[10px] text-[var(--c-t4)] ml-1">{selected.rpmMin}–{selected.rpmMax} об/мин</span>
             {catalog.reverseH0 !== undefined && (
-              <span className="ml-1 px-1.5 py-0.5 bg-purple-100 text-purple-700 text-[10px] rounded font-medium">✓ Реверс</span>
+              <span className="ml-1 px-1.5 py-0.5 bg-[var(--c-tint-purple)] text-[var(--c-purple)] text-[10px] rounded-md font-medium">✓ Реверс</span>
             )}
             <button onClick={() => selected && setAddAngleFor(selected)}
-              className="ml-auto flex items-center gap-1 h-6 px-2 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700">
+              className={BTN_PRIMARY + " ml-auto"}>
               <Icon name="Plus" size={11} /> Характеристика
             </button>
           </div>
 
           <div className="flex flex-1 overflow-hidden">
             {/* Таблица характеристик */}
-            <div className="flex flex-col border-r border-gray-200 flex-shrink-0" style={{ width: 240 }}>
-              <div className="grid text-[10px] font-semibold text-gray-600 border-b border-gray-200 px-1 py-1.5 select-none"
-                style={{ background: "var(--c-s3, #f0f4f8)", gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
+            <div className="flex flex-col border-r border-[var(--c-b1)] flex-shrink-0" style={{ width: 240 }}>
+              <div className="grid text-[10px] font-semibold text-[var(--c-t2)] border-b border-[var(--c-b1)] px-1 py-1.5 select-none"
+                style={{ background: "var(--c-s2, #f8f7f4)", gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
                 <div />
                 <div>Угол</div>
                 <div className="text-center">Реверс</div>
@@ -657,25 +687,25 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
               </div>
               <div className="flex-1 overflow-y-auto">
                 {selected.bladeAngles.length === 0 ? (
-                  <div className="flex items-center justify-center h-20 text-[11px] text-gray-400">
+                  <div className="flex items-center justify-center h-20 text-[11px] text-[var(--c-t4)]">
                     Нет характеристик
                   </div>
                 ) : selected.bladeAngles.map(a => (
                   <div key={a.id}
-                    className="grid items-center gap-0.5 px-1 py-1.5 border-b border-gray-100 hover:bg-gray-50"
+                    className="grid items-center gap-0.5 px-1 py-1.5 border-b border-[var(--c-b1)] hover:bg-[var(--c-s2)]"
                     style={{ gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: a.color }} />
                     {/* Угол */}
                     {catalog.bladeAngles.length > 0 ? (
                       <select value={a.angle}
                         onChange={e => updateAngle(selected.id, a.id, { angle: +e.target.value })}
-                        className="text-[10px] border border-gray-300 rounded px-0.5 py-0.5 w-full text-gray-900 bg-white">
+                        className="text-[10px] border border-[var(--c-b2)] rounded-md px-0.5 py-0.5 w-full text-[var(--c-t1)] bg-[var(--c-s1)]">
                         {catalog.bladeAngles.map(ba => <option key={ba} value={ba}>{ba > 0 ? "+" : ""}{ba}°</option>)}
                       </select>
                     ) : (
                       <input type="number" value={a.angle}
                         onChange={e => updateAngle(selected.id, a.id, { angle: +e.target.value })}
-                        className="text-[10px] border border-gray-300 rounded px-1 py-0.5 w-full text-gray-900 text-right" />
+                        className="text-[10px] border border-[var(--c-b2)] rounded-md px-1 py-0.5 w-full text-[var(--c-t1)] text-right" />
                     )}
                     {/* Реверс */}
                     <div className="flex justify-center">
@@ -686,10 +716,10 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
                     {/* Об/мин */}
                     <input type="number" value={a.rpm} min={selected.rpmMin} max={selected.rpmMax} step={10}
                       onChange={e => updateAngle(selected.id, a.id, { rpm: +e.target.value })}
-                      className="text-[10px] border border-gray-300 rounded px-1 py-0.5 w-full text-gray-900 text-right" />
+                      className="text-[10px] border border-[var(--c-b2)] rounded-md px-1 py-0.5 w-full text-[var(--c-t1)] text-right" />
                     {/* Удалить */}
                     <button onClick={() => removeAngle(selected.id, a.id)}
-                      className="text-gray-300 hover:text-red-500 flex justify-center">
+                      className="text-[var(--c-b3)] hover:text-[var(--c-red)] flex justify-center">
                       <Icon name="X" size={11} />
                     </button>
                   </div>
@@ -697,12 +727,12 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
               </div>
               {/* Рабочие точки */}
               {selected.bladeAngles.some(a => a.operatingQ) && (
-                <div className="border-t border-gray-200 px-2 py-1.5 flex-shrink-0" style={{ background: "var(--c-tint-amber, #fefce8)" }}>
-                  <div className="text-[10px] font-semibold text-yellow-800 mb-1">Рабочие точки</div>
+                <div className="border-t border-[var(--c-b1)] px-2 py-1.5 flex-shrink-0" style={{ background: "var(--c-tint-amber, #fefce8)" }}>
+                  <div className="text-[10px] font-semibold text-[var(--c-amber-ink)] mb-1">Рабочие точки</div>
                   {selected.bladeAngles.filter(a => a.operatingQ).map(a => (
                     <div key={a.id} className="flex items-center gap-1.5 mb-0.5">
                       <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: a.color }} />
-                      <span className="text-[10px] text-gray-700">
+                      <span className="text-[10px] text-[var(--c-t2)]">
                         {a.angle > 0 ? "+" : ""}{a.angle}°: Q={a.operatingQ} м³/с, H={a.operatingH} Па
                       </span>
                     </div>
@@ -710,18 +740,18 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
                 </div>
               )}
               {/* Заметка */}
-              <div className="border-t border-gray-200 px-2 py-1.5 flex-shrink-0">
+              <div className="border-t border-[var(--c-b1)] px-2 py-1.5 flex-shrink-0">
                 {editNote ? (
                   <textarea
                     autoFocus
                     value={selected.note ?? ""}
                     onChange={e => updateFans(fans.map(f => f.id === selected.id ? { ...f, note: e.target.value } : f))}
                     onBlur={() => setEditNote(false)}
-                    className="w-full text-[10px] border border-blue-300 rounded px-1 py-0.5 text-gray-800 resize-none"
+                    className="w-full text-[10px] border border-[var(--c-b2)] rounded-md px-1 py-0.5 text-[var(--c-t1)] resize-none"
                     rows={2} placeholder="Заметка..." />
                 ) : (
                   <div onClick={() => setEditNote(true)}
-                    className="text-[10px] text-gray-400 cursor-text hover:text-gray-600 min-h-[24px]">
+                    className="text-[10px] text-[var(--c-t4)] cursor-text hover:text-[var(--c-t2)] min-h-[24px]">
                     {selected.note || "Добавить заметку..."}
                   </div>
                 )}
@@ -738,13 +768,13 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
                 return (
                   <>
                     <div>
-                      <div className="text-[11px] font-semibold text-gray-700 mb-1">Напор — Расход</div>
+                      <div className="text-[11px] font-semibold text-[var(--c-t2)] mb-1">Напор — Расход</div>
                       <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden" }}>
                         <FanChart curves={curves} type="qh" operatingPoints={opPoints} />
                       </div>
                     </div>
                     <div>
-                      <div className="text-[11px] font-semibold text-gray-700 mb-1">Мощность — Расход</div>
+                      <div className="text-[11px] font-semibold text-[var(--c-t2)] mb-1">Мощность — Расход</div>
                       <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden" }}>
                         <FanChart curves={curves} type="qp" />
                       </div>
@@ -753,24 +783,24 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
                     <div className="flex flex-wrap gap-2">
                       {selected.bladeAngles.map(a => (
                         <div key={a.id} className="flex items-center gap-1">
-                          <div className="w-5 rounded" style={{
+                          <div className="w-5 rounded-md" style={{
                             height: 2,
                             background: a.reverse ? undefined : a.color,
                             borderTop: a.reverse ? `2px dashed ${a.color}` : undefined,
                           }} />
-                          <span className="text-[10px] text-gray-600">
+                          <span className="text-[10px] text-[var(--c-t2)]">
                             {a.angle > 0 ? "+" : ""}{a.angle}°{a.reverse ? " (рев.)" : ""}
                           </span>
                         </div>
                       ))}
                     </div>
                     {/* Инфо из каталога */}
-                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-gray-100 text-[11px]">
-                      <div className="text-gray-500">Q раб.: <span className="text-gray-800">{catalog.qMin}–{catalog.qMax} м³/с</span></div>
-                      <div className="text-gray-500">H max: <span className="text-gray-800">{Math.round(catalog.h0)} Па</span></div>
-                      <div className="text-gray-500">Об/мин: <span className="text-gray-800">{catalog.rpmMin}–{catalog.rpmMax}</span></div>
+                    <div className="grid grid-cols-2 gap-2 pt-1 border-t border-[var(--c-b1)] text-[11px]">
+                      <div className="text-[var(--c-t3)]">Q раб.: <span className="text-[var(--c-t1)]">{catalog.qMin}–{catalog.qMax} м³/с</span></div>
+                      <div className="text-[var(--c-t3)]">H max: <span className="text-[var(--c-t1)]">{Math.round(catalog.h0)} Па</span></div>
+                      <div className="text-[var(--c-t3)]">Об/мин: <span className="text-[var(--c-t1)]">{catalog.rpmMin}–{catalog.rpmMax}</span></div>
                       {catalog.reverseH0 !== undefined && (
-                        <div className="text-purple-700">Реверс: ~{Math.round((catalog.reverseEfficiencyFactor ?? 0.82) * 100)}% напора</div>
+                        <div className="text-[var(--c-purple)]">Реверс: ~{Math.round((catalog.reverseEfficiencyFactor ?? 0.82) * 100)}% напора</div>
                       )}
                     </div>
                   </>
@@ -780,8 +810,8 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
-          <Icon name="Wind" size={32} className="text-gray-300" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center text-[var(--c-t4)]">
+          <Icon name="Wind" size={32} className="text-[var(--c-b3)]" />
           <span className="text-[13px]">Выберите вентилятор из списка</span>
           <span className="text-[11px]">или импортируйте из библиотеки</span>
         </div>
@@ -836,9 +866,6 @@ const SURFACE_OPTIONS = [
   "Ствол с тюбинговой крепью",
   "Ствол со скиповым подъёмом",
 ];
-
-// Справочник пустой — пользователь заполняет сам для своего рудника
-const DEFAULT_BRANCH_TYPES: BranchType[] = [];
 
 const EMPTY_TYPE: Omit<BranchType, "id"> = {
   name: "", color: "var(--c-blue-lt, #3b82f6)", shape: "arch", surface: SURFACE_OPTIONS[0], area: 10, vMax: 8, alphaCoef: 30,
@@ -898,10 +925,10 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
   return (
     <div className="flex h-full overflow-hidden">
       {/* Список типов */}
-      <div className="flex flex-col border-r border-gray-200" style={{ width: 380 }}>
+      <div className="flex flex-col border-r border-[var(--c-b1)]" style={{ width: 380 }}>
         {/* Шапка */}
-        <div className="grid text-[11px] font-semibold text-gray-700 border-b border-gray-300 flex-shrink-0 select-none"
-          style={{ background: "var(--c-tint-blue, #e8eef8)", gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px" }}>
+        <div className="grid text-[11px] font-semibold text-[var(--c-t2)] border-b border-[var(--c-b2)] flex-shrink-0 select-none"
+          style={{ background: "var(--c-s3, #f1efea)", gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px" }}>
           <div className="px-1 py-1.5" />
           <div className="px-2 py-1.5">Название</div>
           <div className="px-1 py-1.5 text-center">Цвет</div>
@@ -915,9 +942,9 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
         <div className="flex-1 overflow-y-auto">
           {types.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full gap-2 py-12">
-              <Icon name="Layers" size={32} className="text-gray-300" />
-              <span className="text-[13px] font-medium text-gray-500">Справочник пуст</span>
-              <span className="text-[11px] text-gray-400 text-center px-6">
+              <Icon name="Layers" size={32} className="text-[var(--c-b3)]" />
+              <span className="text-[13px] font-medium text-[var(--c-t3)]">Справочник пуст</span>
+              <span className="text-[11px] text-[var(--c-t4)] text-center px-6">
                 Добавьте типы выработок вашего рудника — введите название ниже и нажмите «Добавить»
               </span>
             </div>
@@ -926,7 +953,7 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
             const isSel = t.id === selectedId;
             return (
               <div key={t.id}
-                className="grid items-center border-b border-gray-100 cursor-pointer select-none"
+                className="grid items-center border-b border-[var(--c-b1)] cursor-pointer select-none"
                 style={{
                   gridTemplateColumns: "28px 1fr 52px 80px 44px 44px 48px",
                   minHeight: 28,
@@ -934,31 +961,31 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
                   outline: isSel ? "1px solid var(--c-blue-lt, #3b82f6)" : "none",
                 }}
                 onClick={() => selectRow(t)}>
-                <button className="flex items-center justify-center w-full h-full hover:text-red-500 text-gray-300"
+                <button className="flex items-center justify-center w-full h-full hover:text-[var(--c-red)] text-[var(--c-b3)]"
                   onClick={e => { e.stopPropagation(); const next = types.filter(x => x.id !== t.id); updateTypes(next); if (selectedId === t.id) { setSelectedId(null); setIsEditing(false); } }}>
                   <Icon name="Trash2" size={11} />
                 </button>
-                <span className="px-2 text-[12px] text-gray-900 font-medium truncate">{t.name}</span>
+                <span className="px-2 text-[12px] text-[var(--c-t1)] font-medium truncate">{t.name}</span>
                 <div className="flex items-center justify-center px-1">
-                  <div className="w-7 h-4 rounded border border-gray-300" style={{ background: t.color }} />
+                  <div className="w-7 h-4 rounded-md border border-[var(--c-b2)]" style={{ background: t.color }} />
                 </div>
-                <span className="px-1 text-[11px] text-gray-800">{SHAPE_LABELS[t.shape]}</span>
-                <span className="px-1 text-[11px] text-gray-800 text-right">{t.area}</span>
-                <span className="px-1 text-[11px] text-gray-800 text-right">{t.vMax}</span>
-                <span className="px-1 text-[11px] text-gray-800 text-right">{t.alphaCoef}</span>
+                <span className="px-1 text-[11px] text-[var(--c-t1)]">{SHAPE_LABELS[t.shape]}</span>
+                <span className="px-1 text-[11px] text-[var(--c-t1)] text-right">{t.area}</span>
+                <span className="px-1 text-[11px] text-[var(--c-t1)] text-right">{t.vMax}</span>
+                <span className="px-1 text-[11px] text-[var(--c-t1)] text-right">{t.alphaCoef}</span>
               </div>
             );
           })}
         </div>
 
         {/* Добавление */}
-        <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-gray-300 flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
-          <input className="flex-1 text-[12px] border border-gray-300 rounded px-2 py-1 bg-white text-gray-900"
+        <div className="flex items-center gap-1.5 px-2 py-1.5 border-t border-[var(--c-b2)] flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
+          <input className="flex-1 text-[12px] border border-[var(--c-b2)] rounded-md px-2 py-1 bg-[var(--c-s1)] text-[var(--c-t1)]"
             placeholder="Укажите название нового типа"
             value={newName} onChange={e => setNewName(e.target.value)}
             onKeyDown={e => e.key === "Enter" && addType()} />
           <button onClick={addType}
-            className="h-7 px-3 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+            className={BTN_PRIMARY}>
             <Icon name="Plus" size={11} /> Добавить
           </button>
         </div>
@@ -969,30 +996,30 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
         {selected ? (
           <>
             {/* Заголовок панели */}
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-              <div className="w-6 h-6 rounded border border-gray-300 flex-shrink-0" style={{ background: isEditing ? editForm.color : selected.color }} />
-              <span className="text-[13px] font-semibold text-gray-900 truncate">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+              <div className="w-6 h-6 rounded-md border border-[var(--c-b2)] flex-shrink-0" style={{ background: isEditing ? editForm.color : selected.color }} />
+              <span className="text-[13px] font-semibold text-[var(--c-t1)] truncate">
                 {isEditing ? (editForm.name || "Новый тип") : selected.name}
               </span>
               {!isEditing ? (
                 <>
                   <button onClick={() => startEdit(selected)}
-                    className="ml-auto h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-blue-50 text-gray-700 flex items-center gap-1">
+                    className={BTN + " ml-auto"}>
                     <Icon name="Edit2" size={11} /> Изменить
                   </button>
                   <button onClick={deleteSelected}
-                    className="h-6 px-2 text-[11px] border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center gap-1">
+                    className={BTN_DANGER}>
                     <Icon name="Trash2" size={11} /> Удалить
                   </button>
                 </>
               ) : (
                 <>
                   <button onClick={saveEdit}
-                    className="ml-auto h-6 px-3 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700">
+                    className={BTN_PRIMARY + " ml-auto"}>
                     Сохранить
                   </button>
                   <button onClick={cancelEdit}
-                    className="h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+                    className={BTN}>
                     Отмена
                   </button>
                 </>
@@ -1004,7 +1031,7 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
               {isEditing ? (
                 <>
                   <EditField label="Название">
-                    <input autoFocus className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                    <input autoFocus className={INPUT}
                       value={editForm.name} onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
                       onKeyDown={e => e.key === "Enter" && saveEdit()} />
                   </EditField>
@@ -1012,18 +1039,18 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
                     <div className="flex items-center gap-2">
                       <input type="color" value={editForm.color}
                         onChange={e => setEditForm(f => ({ ...f, color: e.target.value }))}
-                        className="w-10 h-8 border border-gray-300 rounded cursor-pointer" />
-                      <span className="text-[12px] text-gray-600">{editForm.color}</span>
+                        className="w-10 h-8 border border-[var(--c-b2)] rounded-md cursor-pointer" />
+                      <span className="text-[12px] text-[var(--c-t2)]">{editForm.color}</span>
                     </div>
                   </EditField>
                   <EditField label="Форма сечения">
-                    <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                    <select className={INPUT}
                       value={editForm.shape} onChange={e => setEditForm(f => ({ ...f, shape: e.target.value as BranchType["shape"] }))}>
                       {Object.entries(SHAPE_LABELS).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
                     </select>
                   </EditField>
                   <EditField label="Поверхность / крепь">
-                    <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                    <select className={INPUT}
                       value={editForm.surface} onChange={e => setEditForm(f => ({ ...f, surface: e.target.value }))}>
                       {SURFACE_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
                     </select>
@@ -1031,17 +1058,17 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
                   <div className="grid grid-cols-3 gap-3">
                     <EditField label="S, м²">
                       <input type="number" min={0} step={0.1}
-                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                        className={INPUT}
                         value={editForm.area} onChange={e => setEditForm(f => ({ ...f, area: parseFloat(e.target.value) || 0 }))} />
                     </EditField>
                     <EditField label="Vmax, м/с">
                       <input type="number" min={0} step={1}
-                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                        className={INPUT}
                         value={editForm.vMax} onChange={e => setEditForm(f => ({ ...f, vMax: parseFloat(e.target.value) || 0 }))} />
                     </EditField>
                     <EditField label="α ×10⁻⁴">
                       <input type="number" min={0} step={1}
-                        className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white"
+                        className={INPUT}
                         value={editForm.alphaCoef} onChange={e => setEditForm(f => ({ ...f, alphaCoef: parseFloat(e.target.value) || 0 }))} />
                     </EditField>
                   </div>
@@ -1055,8 +1082,8 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
                   <ViewRow label="Коэф. α">{selected.alphaCoef} ×10⁻⁴</ViewRow>
                   <ViewRow label="Цвет">
                     <span className="inline-flex items-center gap-2">
-                      <span className="w-6 h-4 rounded border border-gray-300 inline-block" style={{ background: selected.color }} />
-                      <span className="text-gray-600 text-[12px]">{selected.color}</span>
+                      <span className="w-6 h-4 rounded-md border border-[var(--c-b2)] inline-block" style={{ background: selected.color }} />
+                      <span className="text-[var(--c-t2)] text-[12px]">{selected.color}</span>
                     </span>
                   </ViewRow>
                 </>
@@ -1064,8 +1091,8 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
             </div>
           </>
         ) : (
-          <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
-            <Icon name="MousePointer2" size={28} className="text-gray-300" />
+          <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center text-[var(--c-t4)]">
+            <Icon name="MousePointer2" size={28} className="text-[var(--c-b3)]" />
             <span className="text-[13px]">Выберите тип выработки</span>
             <span className="text-[11px]">Нажмите строку, затем «Изменить» для редактирования</span>
           </div>
@@ -1078,7 +1105,7 @@ function TypesSection({ initialTypes = [], onBranchTypesChange }: {
 function EditField({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
-      <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">{label}</label>
+      <label className={LABEL}>{label}</label>
       {children}
     </div>
   );
@@ -1086,9 +1113,9 @@ function EditField({ label, children }: { label: string; children: React.ReactNo
 
 function ViewRow({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-3 py-1.5 border-b border-gray-100">
-      <span className="text-[12px] text-gray-500 w-40 flex-shrink-0">{label}</span>
-      <span className="text-[13px] text-gray-900 font-medium">{children}</span>
+    <div className="flex items-start gap-3 py-1.5 border-b border-[var(--c-b1)]">
+      <span className="text-[12px] text-[var(--c-t3)] w-40 flex-shrink-0">{label}</span>
+      <span className="text-[13px] text-[var(--c-t1)] font-medium">{children}</span>
     </div>
   );
 }
@@ -1199,12 +1226,12 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
   return (
     <div className="flex h-full overflow-hidden">
       {/* Левая панель — список рудника */}
-      <div className="flex flex-col border-r border-gray-200" style={{ width: 260, flexShrink: 0 }}>
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-tint-blue, #e8eef8)" }}>
-          <span className="text-[11px] font-semibold text-gray-700">Перемычки рудника</span>
+      <div className="flex flex-col border-r border-[var(--c-b1)]" style={{ width: 260, flexShrink: 0 }}>
+        <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s3, #f1efea)" }}>
+          <span className="text-[11px] font-semibold text-[var(--c-t2)]">Перемычки рудника</span>
           <div className="flex gap-1">
             <button onClick={() => setShowCatalog(true)}
-              className="flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800">
+              className="flex items-center gap-1 text-[10px] text-[var(--c-blue)] hover:text-[var(--c-blue-ink)]">
               <Icon name="Library" size={11} /> Каталог
             </button>
           </div>
@@ -1213,42 +1240,42 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
         <div className="flex-1 overflow-y-auto">
           {mineBulkheads.length === 0 ? (
             <div className="flex flex-col items-center justify-center h-full px-3 gap-2 py-8">
-              <Icon name="Square" size={28} className="text-gray-300" />
-              <span className="text-[12px] text-gray-500 text-center">Справочник пуст</span>
-              <span className="text-[10px] text-gray-400 text-center">Добавьте перемычки из каталога</span>
+              <Icon name="Square" size={28} className="text-[var(--c-b3)]" />
+              <span className="text-[12px] text-[var(--c-t3)] text-center">Справочник пуст</span>
+              <span className="text-[10px] text-[var(--c-t4)] text-center">Добавьте перемычки из каталога</span>
               <button onClick={() => setShowCatalog(true)}
-                className="mt-1 px-3 py-1 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1">
+                className={BTN_PRIMARY + " mt-1"}>
                 <Icon name="Library" size={11} /> Открыть каталог
               </button>
             </div>
           ) : mineBulkheads.map(b => (
             <div key={b.id}
               onClick={() => { setSelectedId(b.id); setIsEditing(false); }}
-              className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-gray-50 select-none hover:bg-blue-50"
+              className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-[var(--c-b1)] select-none hover:bg-[var(--c-tint-blue)]"
               style={{ background: selectedId === b.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
               <div className="flex items-start gap-1.5 flex-1 min-w-0">
                 <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-0.5" style={{ background: b.color }} />
                 <div className="flex-1 min-w-0">
-                  <div className="text-[12px] font-medium text-gray-900 truncate">{b.name}</div>
-                  <div className="text-[10px] text-gray-500">{BULKHEAD_TYPE_LABELS[b.type]}</div>
-                  <div className="text-[10px] text-gray-400">R = {rFmt(b.rMkyurg)}</div>
+                  <div className="text-[12px] font-medium text-[var(--c-t1)] truncate">{b.name}</div>
+                  <div className="text-[10px] text-[var(--c-t3)]">{BULKHEAD_TYPE_LABELS[b.type]}</div>
+                  <div className="text-[10px] text-[var(--c-t4)]">R = {rFmt(b.rMkyurg)}</div>
                 </div>
               </div>
               <button onClick={e => { e.stopPropagation(); deleteBulkhead(b.id); }}
-                className="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 ml-1 mt-0.5 flex-shrink-0">
+                className="opacity-0 group-hover:opacity-100 text-[var(--c-b3)] hover:text-[var(--c-red)] ml-1 mt-0.5 flex-shrink-0">
                 <Icon name="Trash2" size={12} />
               </button>
             </div>
           ))}
         </div>
 
-        <div className="flex gap-1 px-2 py-1.5 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
+        <div className="flex gap-1 px-2 py-1.5 border-t border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
           <button onClick={() => setShowCatalog(true)}
-            className="flex-1 flex items-center justify-center gap-1 py-1 text-[11px] text-blue-600 hover:bg-blue-50 rounded border border-blue-300">
+            className="flex-1 flex items-center justify-center gap-1 py-1 text-[11px] text-[var(--c-blue)] hover:bg-[var(--c-tint-blue)] rounded-md border border-[var(--c-b2)]">
             <Icon name="Plus" size={11} /> Из каталога
           </button>
           <button onClick={addCustom}
-            className="flex items-center justify-center gap-1 py-1 px-2 text-[11px] text-gray-600 hover:bg-gray-100 rounded border border-gray-300">
+            className="flex items-center justify-center gap-1 py-1 px-2 text-[11px] text-[var(--c-t2)] hover:bg-[var(--c-s3)] rounded-md border border-[var(--c-b2)]">
             <Icon name="Edit3" size={11} /> Своя
           </button>
         </div>
@@ -1258,30 +1285,30 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
       {selected ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Шапка */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-            <div className="w-5 h-5 rounded-sm border border-gray-300 flex-shrink-0" style={{ background: selected.color }} />
-            <span className="text-[13px] font-bold text-gray-900 truncate flex-1">
+          <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+            <div className="w-5 h-5 rounded-sm border border-[var(--c-b2)] flex-shrink-0" style={{ background: selected.color }} />
+            <span className="text-[13px] font-bold text-[var(--c-t1)] truncate flex-1">
               {isEditing ? (editForm.name || "Перемычка") : selected.name}
             </span>
             {!isEditing ? (
               <>
                 <button onClick={() => startEdit(selected)}
-                  className="ml-auto h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-blue-50 text-gray-700 flex items-center gap-1">
+                  className={BTN + " ml-auto"}>
                   <Icon name="Edit2" size={11} /> Изменить
                 </button>
                 <button onClick={() => deleteBulkhead(selected.id)}
-                  className="h-6 px-2 text-[11px] border border-red-300 text-red-600 rounded hover:bg-red-50 flex items-center gap-1">
+                  className={BTN_DANGER}>
                   <Icon name="Trash2" size={11} /> Удалить
                 </button>
               </>
             ) : (
               <>
                 <button onClick={saveEdit}
-                  className="ml-auto h-6 px-3 text-[11px] bg-blue-600 text-white rounded hover:bg-blue-700">
+                  className={BTN_PRIMARY + " ml-auto"}>
                   Сохранить
                 </button>
                 <button onClick={() => setIsEditing(false)}
-                  className="h-6 px-2 text-[11px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+                  className={BTN}>
                   Отмена
                 </button>
               </>
@@ -1292,16 +1319,16 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
             {isEditing ? (
               <>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Название</label>
+                  <label className={LABEL}>Название</label>
                   <input value={editForm.name ?? ""}
                     onChange={e => setEditForm(f => ({ ...f, name: e.target.value }))}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                    className={INPUT} />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Тип</label>
+                  <label className={LABEL}>Тип</label>
                   <select value={editForm.type ?? "solid"}
                     onChange={e => setEditForm(f => ({ ...f, type: e.target.value as BulkheadType }))}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white">
+                    className={INPUT}>
                     {(Object.entries(BULKHEAD_TYPE_LABELS) as [BulkheadType, string][]).map(([v, l]) => (
                       <option key={v} value={v}>{l}</option>
                     ))}
@@ -1309,54 +1336,54 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Воздухопроницаемость A, м²/(с·√Па)</label>
+                    <label className={LABEL}>Воздухопроницаемость A, м²/(с·√Па)</label>
                     <input type="number" min={0} step={0.0001} value={editForm.airPermeability ?? 0}
                       onChange={e => {
                         const A = parseFloat(e.target.value) || 0;
                         setEditForm(f => ({ ...f, airPermeability: A, rMkyurg: airPermToR(A) }));
                       }}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                      className={INPUT} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">R, Мюрг (авто)</label>
-                    <div className="px-2 py-1.5 bg-gray-50 rounded border border-gray-200 text-[13px] text-gray-700 font-medium">
+                    <label className={LABEL}>R, Мюрг (авто)</label>
+                    <div className="px-2 py-1.5 bg-[var(--c-s2)] rounded-md border border-[var(--c-b1)] text-[13px] text-[var(--c-t2)] font-medium">
                       {rFmt(editForm.rMkyurg ?? 0)}
                     </div>
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Давление разрушения, МПа</label>
+                    <label className={LABEL}>Давление разрушения, МПа</label>
                     <input type="number" min={0} step={0.01} value={editForm.failurePressure ?? 0}
                       onChange={e => setEditForm(f => ({ ...f, failurePressure: parseFloat(e.target.value) || 0 }))}
-                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                      className={INPUT} />
                   </div>
                   <div className="space-y-1">
-                    <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Цвет</label>
+                    <label className={LABEL}>Цвет</label>
                     <div className="flex items-center gap-2">
                       <input type="color" value={editForm.color ?? "#546e7a"}
                         onChange={e => setEditForm(f => ({ ...f, color: e.target.value }))}
-                        className="w-10 h-8 border border-gray-300 rounded cursor-pointer" />
-                      <span className="text-[12px] text-gray-500">{editForm.color}</span>
+                        className="w-10 h-8 border border-[var(--c-b2)] rounded-md cursor-pointer" />
+                      <span className="text-[12px] text-[var(--c-t3)]">{editForm.color}</span>
                     </div>
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[11px] font-medium text-gray-600 uppercase tracking-wide">Примечание</label>
+                  <label className={LABEL}>Примечание</label>
                   <input value={editForm.note ?? ""}
                     onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
-                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-[13px] text-gray-900 bg-white" />
+                    className={INPUT} />
                 </div>
               </>
             ) : (
               <>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="px-2 py-0.5 rounded text-[11px] font-medium text-white"
+                  <span className="px-2 py-0.5 rounded-md text-[11px] font-medium text-white"
                     style={{ background: BULKHEAD_TYPE_COLORS[selected.type] }}>
                     {BULKHEAD_TYPE_LABELS[selected.type]}
                   </span>
                   {selected.isCustom && (
-                    <span className="px-2 py-0.5 rounded text-[10px] bg-gray-100 text-gray-600">Пользовательская</span>
+                    <span className="px-2 py-0.5 rounded-md text-[10px] bg-[var(--c-s3)] text-[var(--c-t2)]">Пользовательская</span>
                   )}
                 </div>
                 {[
@@ -1365,12 +1392,12 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                   ["Давление разрушения", selected.failurePressure > 0 ? `${selected.failurePressure} МПа` : "Не нормируется"],
                   ["Примечание", selected.note || "—"],
                 ].map(([label, value]) => (
-                  <div key={label} className="flex items-start gap-3 py-1.5 border-b border-gray-100">
-                    <span className="text-[12px] text-gray-500 w-44 flex-shrink-0">{label}</span>
-                    <span className="text-[13px] text-gray-900 font-medium">{value}</span>
+                  <div key={label} className="flex items-start gap-3 py-1.5 border-b border-[var(--c-b1)]">
+                    <span className="text-[12px] text-[var(--c-t3)] w-44 flex-shrink-0">{label}</span>
+                    <span className="text-[13px] text-[var(--c-t1)] font-medium">{value}</span>
                   </div>
                 ))}
-                <div className="mt-3 p-3 rounded-lg text-[11px] text-blue-800" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc" }}>
+                <div className="mt-3 p-3 rounded-lg text-[11px] text-[var(--c-blue-ink)]" style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid var(--c-tint-blue2, #d7e7ee)" }}>
                   Чтобы применить перемычку к выработке — выберите ветвь на схеме и укажите перемычку в панели свойств ветви.
                 </div>
               </>
@@ -1378,8 +1405,8 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
           </div>
         </div>
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-2 text-gray-400">
-          <Icon name="Square" size={32} className="text-gray-300" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center text-[var(--c-t4)]">
+          <Icon name="Square" size={32} className="text-[var(--c-b3)]" />
           <span className="text-[13px]">Выберите перемычку из списка</span>
           <span className="text-[11px]">или добавьте из каталога</span>
         </div>
@@ -1387,26 +1414,26 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
 
       {/* Диалог каталога */}
       {showCatalog && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}>
-          <div className="bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden" style={{ width: 720, height: 540 }}>
-            <div className="flex items-center gap-2 px-4 py-2.5 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s3, #f0f4f8)" }}>
-              <Icon name="Library" size={14} className="text-blue-600" />
-              <span className="text-[13px] font-semibold text-gray-800">Каталог перемычек</span>
-              <button onClick={() => setShowCatalog(false)} className="ml-auto text-gray-400 hover:text-gray-700">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,20,25,0.45)" }}>
+          <div className={MODAL} style={{ width: 720, height: 540 }}>
+            <div className={MODAL_HEAD} style={{ background: "var(--c-s2, #f8f7f4)" }}>
+              <Icon name="Library" size={14} className="text-[var(--c-blue)]" />
+              <span className="text-[13px] font-semibold text-[var(--c-t1)]">Каталог перемычек</span>
+              <button onClick={() => setShowCatalog(false)} className={ICON_BTN + " ml-auto"}>
                 <Icon name="X" size={16} />
               </button>
             </div>
             <div className="flex flex-1 overflow-hidden">
               {/* Фильтры */}
-              <div className="flex flex-col border-r border-gray-200 flex-shrink-0 p-2 gap-1.5" style={{ width: 170 }}>
-                <span className="text-[10px] font-semibold text-gray-500 uppercase">Тип</span>
+              <div className="flex flex-col border-r border-[var(--c-b1)] flex-shrink-0 p-2 gap-1.5" style={{ width: 170 }}>
+                <span className="text-[10px] font-semibold text-[var(--c-t3)] uppercase">Тип</span>
                 {([["all", "Все"], ...Object.entries(BULKHEAD_TYPE_LABELS)] as [string, string][]).map(([v, l]) => (
                   <button key={v} onClick={() => setCatalogFilter(v as BulkheadType | "all")}
-                    className="text-left px-2 py-1 text-[11px] rounded"
+                    className="text-left px-2 py-1 text-[11px] rounded-md"
                     style={{
-                      background: catalogFilter === v ? "var(--c-blue, #2563eb)" : "white",
+                      background: catalogFilter === v ? "var(--c-blue-bg, #1e5a7a)" : "var(--c-s1, #fff)",
                       color: catalogFilter === v ? "white" : "var(--c-t2, #374151)",
-                      border: `1px solid ${catalogFilter === v ? "var(--c-blue, #2563eb)" : "var(--c-b1, #e5e7eb)"}`,
+                      border: `1px solid ${catalogFilter === v ? "var(--c-blue-bg, #1e5a7a)" : "var(--c-b1, #e5e7eb)"}`,
                     }}>
                     {l}
                   </button>
@@ -1414,15 +1441,15 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
               </div>
               {/* Список */}
               <div className="flex flex-col flex-1 overflow-hidden">
-                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-gray-100 flex-shrink-0">
-                  <Icon name="Search" size={12} className="text-gray-400" />
+                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-[var(--c-b1)] flex-shrink-0">
+                  <Icon name="Search" size={12} className="text-[var(--c-t4)]" />
                   <input value={catalogSearch} onChange={e => setCatalogSearch(e.target.value)}
-                    placeholder="Поиск..." className="flex-1 text-[12px] py-0.5 outline-none text-gray-900 bg-transparent" />
+                    placeholder="Поиск..." className="flex-1 text-[12px] py-0.5 outline-none text-[var(--c-t1)] bg-transparent" />
                 </div>
                 <div className="flex-1 overflow-y-auto">
                   {/* Шапка */}
-                  <div className="grid text-[10px] font-semibold text-gray-600 px-2 py-1 border-b border-gray-200 sticky top-0"
-                    style={{ background: "var(--c-tint-blue, #e8eef8)", gridTemplateColumns: "14px 1fr 110px 90px 80px" }}>
+                  <div className="grid text-[10px] font-semibold text-[var(--c-t2)] px-2 py-1 border-b border-[var(--c-b1)] sticky top-0"
+                    style={{ background: "var(--c-s3, #f1efea)", gridTemplateColumns: "14px 1fr 110px 90px 80px" }}>
                     <div />
                     <div>Название</div>
                     <div className="text-right">A, м²/(с·√Па)</div>
@@ -1433,38 +1460,38 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                     const already = mineBulkheads.some(b => b.id.includes(item.id));
                     return (
                       <div key={item.id}
-                        className="grid items-center gap-1 px-2 py-1.5 border-b border-gray-50 hover:bg-blue-50 cursor-pointer select-none"
+                        className="grid items-center gap-1 px-2 py-1.5 border-b border-[var(--c-b1)] hover:bg-[var(--c-tint-blue)] cursor-pointer select-none"
                         style={{ gridTemplateColumns: "14px 1fr 110px 90px 80px" }}
                         onClick={() => !already && importFromCatalog(item)}>
                         <div className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: item.color }} />
                         <div>
-                          <div className="text-[11px] text-gray-900">{item.name}</div>
-                          <div className="text-[9px] text-gray-400">{BULKHEAD_TYPE_LABELS[item.type]}</div>
+                          <div className="text-[11px] text-[var(--c-t1)]">{item.name}</div>
+                          <div className="text-[9px] text-[var(--c-t4)]">{BULKHEAD_TYPE_LABELS[item.type]}</div>
                         </div>
-                        <div className="text-[10px] text-gray-600 text-right">{item.airPermeability.toFixed(6)}</div>
-                        <div className="text-[10px] text-gray-700 text-right font-medium">{rFmt(airPermToR(item.airPermeability))}</div>
+                        <div className="text-[10px] text-[var(--c-t2)] text-right">{item.airPermeability.toFixed(6)}</div>
+                        <div className="text-[10px] text-[var(--c-t2)] text-right font-medium">{rFmt(airPermToR(item.airPermeability))}</div>
                         <div className="text-right">
                           {already ? (
-                            <span className="text-[9px] text-green-600 font-medium">✓ добавлена</span>
+                            <span className="text-[9px] text-[var(--c-green)] font-medium">✓ добавлена</span>
                           ) : item.failurePressure > 0 ? (
-                            <span className="text-[10px] text-gray-500">{item.failurePressure} МПа</span>
+                            <span className="text-[10px] text-[var(--c-t3)]">{item.failurePressure} МПа</span>
                           ) : (
-                            <span className="text-[10px] text-gray-300">—</span>
+                            <span className="text-[10px] text-[var(--c-b3)]">—</span>
                           )}
                         </div>
                       </div>
                     );
                   })}
                   {catalogList.length === 0 && (
-                    <div className="flex items-center justify-center h-24 text-[12px] text-gray-400">Не найдено</div>
+                    <div className="flex items-center justify-center h-24 text-[12px] text-[var(--c-t4)]">Не найдено</div>
                   )}
                 </div>
               </div>
             </div>
-            <div className="flex items-center px-4 py-2 border-t border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-              <span className="text-[11px] text-gray-500 flex-1">Нажмите на строку для добавления в справочник рудника</span>
+            <div className="flex items-center px-4 py-2 border-t border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+              <span className="text-[11px] text-[var(--c-t3)] flex-1">Нажмите на строку для добавления в справочник рудника</span>
               <button onClick={() => setShowCatalog(false)}
-                className="h-7 px-3 text-[12px] border border-gray-300 rounded hover:bg-gray-100 text-gray-700">
+                className={BTN}>
                 Закрыть
               </button>
             </div>
@@ -1580,25 +1607,22 @@ function VehicleCatalogSection() {
   );
 }
 
-const DEMO_TRANSPORT = [
-  { name: "Вагонетка ВГ-3.3", type: "Рельсовый", cap: "3.3 м³", v: "3.5 м/с" },
-  { name: "Конвейер 1Л100У", type: "Ленточный", cap: "250 т/ч", v: "2.5 м/с" },
-];
-
 function Th({ children }: { children: React.ReactNode }) {
-  return <th className="px-2 py-1 text-left text-[11px] font-semibold text-gray-700 border-b border-gray-300 select-none whitespace-nowrap" style={{ background: "var(--c-tint-blue, #e8eef8)" }}>{children}</th>;
+  return <th className="sticky top-0 px-3 h-8 text-left text-[10px] font-semibold uppercase tracking-wider text-[var(--c-t3)] border-b border-[var(--c-b2)] select-none whitespace-nowrap" style={{ background: "var(--c-s3, #f1efea)" }}>{children}</th>;
 }
 function Td({ children }: { children: React.ReactNode }) {
-  return <td className="px-2 py-1 text-[11px] text-gray-800 border-b border-gray-100">{children}</td>;
+  return <td className="px-3 h-8 text-[12px] text-[var(--c-t1)] border-b border-[var(--c-b1)]">{children}</td>;
 }
 
+/** Таблица только для просмотра — строки не кликабельны (раньше был
+ *  cursor-pointer без обработчика, и казалось, что строку можно открыть). */
 function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | number)[][] }) {
   return (
     <table className="w-full border-collapse">
       <thead><tr>{headers.map(h => <Th key={h}>{h}</Th>)}</tr></thead>
       <tbody>
         {rows.map((r, i) => (
-          <tr key={i} style={{ background: i % 2 === 0 ? "var(--c-s2, #fafafa)" : "var(--c-s1, #fff)" }} className="hover:bg-blue-50 cursor-pointer">
+          <tr key={i} className="hover:bg-[var(--c-s2)]">
             {r.map((c, j) => <Td key={j}>{c}</Td>)}
           </tr>
         ))}
@@ -1618,12 +1642,11 @@ function PumpsSection() {
           {["Марка", "Тип", "Подача", "Напор", "Обороты", "Мощность", "КПД"].map(h => <Th key={h}>{h}</Th>)}
         </tr></thead>
         <tbody>
-          {PUMP_CATALOG.map((p, i) => (
+          {PUMP_CATALOG.map((p) => (
             <tr key={p.id}
-              style={{ background: i % 2 === 0 ? "var(--c-s2, #fafafa)" : "var(--c-s1, #fff)" }}
-              className="hover:bg-blue-50 cursor-pointer"
-              onDoubleClick={() => setSelected(p)}
-              title="Двойной клик — карта характеристик">
+              className="hover:bg-[var(--c-tint-blue)] cursor-pointer"
+              onClick={() => setSelected(p)}
+              title="Открыть напорную характеристику">
               <Td>{p.brand} {p.model}</Td>
               <Td>{PUMP_TYPE_NAMES[p.type]}</Td>
               <Td>{p.Qopt} м³/ч</Td>
@@ -1645,14 +1668,14 @@ function PumpsSection() {
 function ConsumersSection() {
   return (
     <>
-      <div className="text-[11px] text-gray-500 mb-2">
+      <div className="text-[11px] text-[var(--c-t3)] px-3 pt-3 pb-1 leading-snug">
         Библиотека потребителей противопожарного водопровода. Выбрать модель для узла можно
         в свойствах узла-потребителя (вкладка «Трубы» → «Модель из библиотеки») —
         требуемый расход и диаметр выходного отверстия подставятся автоматически.
       </div>
       {(Object.keys(CONSUMER_GROUP_NAMES) as ConsumerGroup[]).map((g) => (
         <div key={g} className="mb-3">
-          <div className="text-[12px] font-semibold mb-1" style={{ color: "var(--c-red, #b91c1c)" }}>
+          <div className="text-[11px] font-semibold uppercase tracking-wider px-3 py-2 text-[var(--c-t2)]">
             {CONSUMER_GROUP_NAMES[g]}
           </div>
           <table className="w-full border-collapse">
@@ -1660,8 +1683,8 @@ function ConsumersSection() {
               {["Наименование", "Ø отв., мм", "Расход, л/с", "Расход, м³/ч", "Расход, л/мин", "Площадь туш., м²", "Дальность струи", "Раб. давл., МПа", "кгс/см²"].map(h => <Th key={h}>{h}</Th>)}
             </tr></thead>
             <tbody>
-              {CONSUMER_CATALOG.filter(c => c.group === g).map((c, i) => (
-                <tr key={c.id} style={{ background: i % 2 === 0 ? "var(--c-s2, #fafafa)" : "var(--c-s1, #fff)" }} className="hover:bg-blue-50">
+              {CONSUMER_CATALOG.filter(c => c.group === g).map((c) => (
+                <tr key={c.id} className="hover:bg-[var(--c-s2)]">
                   <Td>{c.name}</Td>
                   <Td>{c.outletDiameter > 0 ? c.outletDiameter : "—"}</Td>
                   <Td>{c.flowLps.toLocaleString("ru")}</Td>
@@ -1687,22 +1710,20 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center"
       style={{ background: "rgba(0,0,0,0.4)" }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="bg-white rounded shadow-2xl overflow-hidden" style={{ width: 560 }}>
+      <div className={MODAL} style={{ width: 560 }}>
         {/* Заголовок */}
-        <div className="flex items-center justify-between px-4 py-2 border-b" style={{ background: "var(--c-red-bg, #dc2626)", color: "white" }}>
-          <div className="flex items-center gap-2">
-            <Icon name="Waves" size={16} />
-            <span className="text-[13px] font-semibold">Характеристика насоса — {pump.brand} {pump.model}</span>
-          </div>
-          <button onClick={onClose} className="text-white hover:text-gray-200 text-lg leading-none px-1">✕</button>
+        <div className={MODAL_HEAD}>
+          <IconBadge icon="Waves" />
+          <span className="text-[13px] font-semibold text-[var(--c-t1)]">Характеристика насоса — {pump.brand} {pump.model}</span>
+          <button onClick={onClose} className={ICON_BTN + " ml-auto"}><Icon name="X" size={14} /></button>
         </div>
 
         <div className="p-4 flex gap-4">
           {/* График */}
           <div className="flex-shrink-0">
-            <div className="text-[11px] text-gray-500 mb-1 font-medium">Напорная характеристика Q–H</div>
+            <div className="text-[11px] text-[var(--c-t3)] mb-1 font-medium">Напорная характеристика Q–H</div>
             <PumpChart pump={pump} width={300} height={200} />
-            <div className="text-[10px] text-gray-400 mt-1">
+            <div className="text-[10px] text-[var(--c-t4)] mt-1">
               <span className="inline-block w-3 h-0.5 align-middle" style={{ background: "var(--c-red-bg, #dc2626)" }} /> напор ·
               <span className="inline-block w-3 h-0.5 align-middle ml-1" style={{ background: "#9ca3af" }} /> КПД
             </div>
@@ -1710,7 +1731,7 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
 
           {/* Параметры */}
           <div className="flex-1 text-[12px]">
-            <div className="text-[11px] text-gray-500 mb-1 font-medium uppercase tracking-wide">Параметры</div>
+            <div className="text-[11px] text-[var(--c-t3)] mb-1 font-medium uppercase tracking-wide">Параметры</div>
             <table className="w-full">
               <tbody>
                 {[
@@ -1724,14 +1745,14 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
                   ["КПД максимальный", `${Math.round(pump.etaMax * 100)} %`],
                   ["Масса", pump.weight ? `${pump.weight} кг` : "—"],
                 ].map(([k, v], idx) => (
-                  <tr key={idx} className="border-b border-gray-100">
-                    <td className="py-1 text-gray-500">{k}</td>
-                    <td className="py-1 text-right font-medium text-gray-800">{v}</td>
+                  <tr key={idx} className="border-b border-[var(--c-b1)]">
+                    <td className="py-1 text-[var(--c-t3)]">{k}</td>
+                    <td className="py-1 text-right font-medium text-[var(--c-t1)]">{v}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-            {pump.notes && <div className="text-[10px] text-gray-400 mt-2 italic">{pump.notes}</div>}
+            {pump.notes && <div className="text-[10px] text-[var(--c-t4)] mt-2 italic">{pump.notes}</div>}
           </div>
         </div>
       </div>
@@ -1755,23 +1776,23 @@ function BlastZonesSection({ thresholds, onChange }: {
   const Row = ({ label, value, onSet, color, range }: {
     label: string; value: number; onSet: (v: number) => void; color: string; range: string;
   }) => (
-    <div className="flex items-center gap-2 py-1" style={{ borderBottom: "1px solid #f0f2f7" }}>
+    <div className="flex items-center gap-2 py-1" style={{ borderBottom: "1px solid var(--c-b1, #e7e4dd)" }}>
       <div style={{ width: 6, height: 26, background: color, borderRadius: "var(--radius-ui)", flexShrink: 0 }} />
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] text-gray-700">{label}</div>
-        <div className="text-[10px] text-gray-400 leading-snug">{range}</div>
+        <div className="text-[11px] text-[var(--c-t2)]">{label}</div>
+        <div className="text-[10px] text-[var(--c-t4)] leading-snug">{range}</div>
       </div>
       <input type="number" step="1" min="0" value={value}
         onChange={e => onSet(parseFloat(e.target.value) || 0)}
         className="text-[11px] px-1 text-right flex-shrink-0"
-        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, width: 80, outline: "none" }} />
-      <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 40 }}>кПа</span>
+        style={{ background: "var(--c-s1, #fff)", color: "var(--c-t1, #1f2328)", border: "1px solid var(--c-b2, #d5d1c8)", borderRadius: 6, height: 26, width: 88, outline: "none", fontFamily: "var(--font-num)" }} />
+      <span className="text-[10px] text-[var(--c-t3)] flex-shrink-0" style={{ width: 40 }}>кПа</span>
     </div>
   );
 
   return (
     <div className="px-4 py-2">
-      <div className="text-[10px] text-gray-500 leading-snug pb-2">
+      <div className="text-[10px] text-[var(--c-t3)] leading-snug pb-2">
         Границы зон поражения по избыточному давлению во фронте ударной волны.
         Ряд порогов в разных документах различается, поэтому предприятие
         выставляет тот, под который аттестован расчёт. Значения применяются
@@ -1795,26 +1816,26 @@ function BlastZonesSection({ thresholds, onChange }: {
         value={t.safeLimit} onSet={v => set({ safeLimit: v })} />
 
       {broken && (
-        <div className="mt-2 px-2 py-1.5 rounded text-[10px]"
-          style={{ background: "var(--c-tint-amber, #fef9c3)", border: "1px solid #fde047", color: "#713f12" }}>
+        <div className="mt-2 px-2 py-1.5 rounded-md text-[10px]"
+          style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #865412)" }}>
           Ряд должен убывать: летальная &gt; тяжёлые &gt; средние &gt; лёгкие &gt; граница
           безопасной. Сейчас это не так — при расчёте значения будут приведены
           к убывающему ряду, и часть зон совпадёт.
         </div>
       )}
 
-      <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mt-4 mb-1">Готовые ряды</div>
+      <div className="text-[11px] font-semibold text-[var(--c-t3)] uppercase tracking-wide mt-4 mb-1">Готовые ряды</div>
       <div className="flex gap-2 flex-wrap">
         <button onClick={() => onChange(DEFAULT_EXPLOSION_THRESHOLDS)}
-          className="text-[11px] px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+          className={BTN}>
           100 / 50 / 30 / 10 — прежний в программе
         </button>
         <button onClick={() => onChange(TYPICAL_EXPLOSION_THRESHOLDS)}
-          className="text-[11px] px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+          className={BTN}>
           100 / 60 / 40 / 20 — типовые таблицы поражения человека
         </button>
       </div>
-      <div className="text-[10px] text-gray-400 leading-snug mt-2">
+      <div className="text-[10px] text-[var(--c-t4)] leading-snug mt-2">
         Оба ряда даны как заготовки. Какой из них применим — определяет
         документ, под который аттестуется расчёт на вашем предприятии.
       </div>
@@ -1833,26 +1854,26 @@ function AirNormsSection({ norms, onChange }: {
     label: string; value: number; onSet: (v: number) => void;
     step?: string; unit?: string; hint?: string;
   }) => (
-    <div className="flex items-start gap-2 py-1" style={{ borderBottom: "1px solid #f0f2f7" }}>
+    <div className="flex items-start gap-2 py-1" style={{ borderBottom: "1px solid var(--c-b1, #e7e4dd)" }}>
       <div className="flex-1 min-w-0">
-        <div className="text-[11px] text-gray-700">{label}</div>
-        {hint && <div className="text-[10px] text-gray-400 leading-snug">{hint}</div>}
+        <div className="text-[11px] text-[var(--c-t2)]">{label}</div>
+        {hint && <div className="text-[10px] text-[var(--c-t4)] leading-snug">{hint}</div>}
       </div>
       <input type="number" step={step} value={value}
         onChange={e => onSet(parseFloat(e.target.value) || 0)}
         className="text-[11px] px-1 text-right flex-shrink-0"
-        style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 20, width: 80, outline: "none" }} />
-      <span className="text-[10px] text-gray-500 flex-shrink-0" style={{ width: 74 }}>{unit ?? ""}</span>
+        style={{ background: "var(--c-s1, #fff)", color: "var(--c-t1, #1f2328)", border: "1px solid var(--c-b2, #d5d1c8)", borderRadius: 6, height: 26, width: 88, outline: "none", fontFamily: "var(--font-num)" }} />
+      <span className="text-[10px] text-[var(--c-t3)] flex-shrink-0" style={{ width: 74 }}>{unit ?? ""}</span>
     </div>
   );
 
   const Group = ({ title }: { title: string }) => (
-    <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide mt-3 mb-1">{title}</div>
+    <div className="text-[11px] font-semibold text-[var(--c-t3)] uppercase tracking-wide mt-3 mb-1">{title}</div>
   );
 
   return (
     <div className="px-4 py-2">
-      <div className="text-[10px] text-gray-500 leading-snug pb-1">
+      <div className="text-[10px] text-[var(--c-t3)] leading-snug pb-1">
         Нормы применяются при расчёте количества воздуха. Значения по умолчанию —
         по ФНиП № 505 и практике проектирования рудников. Предприятие может
         согласовать собственные значения (особенно по дизельной технике).
@@ -1910,7 +1931,7 @@ function AirNormsSection({ norms, onChange }: {
 
       <div className="flex justify-end py-3">
         <button onClick={() => onChange(DEFAULT_VENT_NORMS)}
-          className="text-[11px] px-3 py-1.5 rounded border border-gray-300 text-gray-600 hover:bg-gray-100">
+          className={BTN}>
           Сбросить к нормативным значениям
         </button>
       </div>
@@ -1958,62 +1979,94 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   return null;
 }
 
+/** Иконка-маркер в цветной подложке — как в карточках панели свойств. */
+function IconBadge({ icon, size = 24 }: { icon: string; size?: number }) {
+  return (
+    <span className="rounded-md flex items-center justify-center flex-shrink-0"
+      style={{ width: size, height: size, color: "var(--c-accent, #1e5a7a)",
+        background: "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)" }}>
+      <Icon name={icon} size={Math.round(size * 0.55)} fallback="Square" />
+    </span>
+  );
+}
+
 export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
+
+  // Esc закрывает окно (вложенные окна библиотеки/каталога перехватывают клик,
+  // а Esc — общий выход, как в остальных диалогах программы)
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.4)" }} onClick={onClose}>
-      <div className="flex flex-col shadow-2xl border border-gray-400"
-        style={{ width: 900, height: 580, background: "var(--c-s1, #fff)", fontFamily: "var(--font-ui)" }}
-        onClick={e => e.stopPropagation()}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+      style={{ background: "rgba(15,20,25,0.45)" }}
+      // mousedown, а не click: иначе выделение текста мышью с отпусканием
+      // за пределами окна закрывало справочник
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={MODAL}
+        style={{ width: 960, maxWidth: "100%", height: 620, maxHeight: "100%", fontFamily: "var(--font-ui)" }}>
 
         {/* Заголовок */}
-        <div className="flex items-center justify-between px-3 h-8 border-b border-gray-300 flex-shrink-0"
-          style={{ background: "linear-gradient(180deg,var(--c-grad-a, #e8e8e8),var(--c-grad-b, #d4d4d4))" }}>
-          <div className="flex items-center gap-2">
-            <Icon name="BookOpen" size={13} className="text-blue-700" />
-            <span className="text-[12px] font-semibold text-gray-800">Справочники — {currentTab.label}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="w-px h-5 bg-gray-300 mx-1" />
-            <button onClick={onClose} className="w-6 h-6 flex items-center justify-center hover:bg-red-500 hover:text-white rounded text-gray-600">
-              <Icon name="X" size={12} />
-            </button>
-          </div>
+        <div className={MODAL_HEAD} style={{ background: "var(--c-s1, #fff)" }}>
+          <IconBadge icon="BookOpen" />
+          <span className="text-[13px] font-semibold text-[var(--c-t1)]">Справочники</span>
+          <Icon name="ChevronRight" size={13} className="text-[var(--c-t4)]" />
+          <span className="text-[13px] text-[var(--c-t2)] truncate">{currentTab.label}</span>
+          <button onClick={onClose} title="Закрыть (Esc)" className={ICON_BTN + " ml-auto"}>
+            <Icon name="X" size={15} />
+          </button>
         </div>
 
         <div className="flex flex-1 overflow-hidden">
-          {/* Левая навигация */}
-          <div className="w-40 flex-shrink-0 border-r border-gray-300 overflow-y-auto" style={{ background: "var(--c-s3, #f0f0f0)" }}>
-            {["Вентиляция", "Аварии", "Трубопровод", "Общее"].map(group => (
-              <div key={group}>
-                <div className="px-2 py-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wide border-b border-gray-200" style={{ background: "#e4e4e4" }}>{group}</div>
-                {TABS.filter(t => t.group === group).map(tab => (
-                  <button key={tab.id} onClick={() => onTabChange(tab.id)}
-                    className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] hover:bg-blue-100"
-                    style={{ background: activeTab === tab.id ? "var(--c-blue, #2563eb)" : "transparent", color: activeTab === tab.id ? "white" : "var(--c-t2, #333)", fontWeight: activeTab === tab.id ? 600 : 400 }}>
-                    <Icon name={tab.icon} size={13} className={activeTab === tab.id ? "text-white" : "text-gray-500"} fallback="Square" />
-                    {tab.label}
-                  </button>
-                ))}
+          {/* Навигация по разделам */}
+          <nav className="w-52 flex-shrink-0 overflow-y-auto py-2 px-2 border-r border-[var(--c-b1)]"
+            style={{ background: "var(--c-s2, #f8f7f4)" }}>
+            {TAB_GROUPS.map(group => (
+              <div key={group} className="mb-2">
+                <div className="px-2 pt-1 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--c-t4)]">{group}</div>
+                {TABS.filter(t => t.group === group).map(tab => {
+                  const active = activeTab === tab.id;
+                  return (
+                    <button key={tab.id} onClick={() => onTabChange(tab.id)}
+                      className="w-full flex items-center gap-2 px-2 h-8 rounded-md text-left text-[12px] transition-colors"
+                      style={{
+                        background: active ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 12%, transparent)" : "transparent",
+                        color: active ? "var(--c-accent-ink, #173d52)" : "var(--c-t2, #3a3f45)",
+                        fontWeight: active ? 600 : 400,
+                        boxShadow: active ? "inset 3px 0 0 var(--c-accent, #1e5a7a)" : "none",
+                      }}
+                      onMouseEnter={e => { if (!active) e.currentTarget.style.background = "var(--c-s4, #e6e3dc)"; }}
+                      onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}>
+                      <Icon name={tab.icon} size={14} fallback="Square"
+                        style={{ color: active ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)", flexShrink: 0 }} />
+                      <span className="flex-1 truncate">{tab.label}</span>
+                      {tab.demo && (
+                        <span className="text-[9px] px-1 rounded" title="Образец данных, в расчётах не используется"
+                          style={{ color: "var(--c-t4, #767f8c)", border: "1px solid var(--c-b2, #d5d1c8)" }}>образец</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             ))}
-          </div>
+          </nav>
 
-          {/* Основная область */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            <div className="flex items-center gap-2 px-3 py-1 border-b border-gray-200 flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-              <span className="text-[11px] font-semibold text-gray-700">{currentTab.label}</span>
-              <div className="ml-auto flex gap-1">
-                <button className="h-5 px-1.5 text-[10px] border border-gray-300 rounded hover:bg-gray-100 flex items-center gap-1">
-                  <Icon name="Download" size={10} /> Экспорт
-                </button>
+          {/* Содержимое раздела */}
+          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+            <div className="flex items-start gap-2.5 px-4 py-2.5 border-b border-[var(--c-b1)] flex-shrink-0"
+              style={{ background: "var(--c-s1, #fff)" }}>
+              <IconBadge icon={currentTab.icon} size={28} />
+              <div className="min-w-0">
+                <div className="text-[13px] font-semibold text-[var(--c-t1)]">{currentTab.label}</div>
+                <div className="text-[11px] leading-snug text-[var(--c-t3)]">{currentTab.hint}</div>
               </div>
             </div>
             <div className="flex-1 overflow-auto">
               <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} />
-            </div>
-            <div className="px-2 py-0.5 border-t border-gray-200 text-[10px] text-gray-400 flex-shrink-0" style={{ background: "var(--c-s3, #f0f0f0)" }}>
-              Дважды кликните по строке для редактирования характеристик
             </div>
           </div>
         </div>
