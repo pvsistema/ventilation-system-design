@@ -2140,7 +2140,7 @@ export default function CadPage() {
   const [squadDialog, setSquadDialog] = useState<{ typeId: string; x: number; y: number; branchId: string | null; t?: number } | null>(null);
   const [squadCount, setSquadCount] = useState<string>("5");
 
-  const SQUAD_TYPES = ["squad_moving", "squad_working"];
+  const SQUAD_TYPES = ["squad_moving", "squad_moving_left", "squad_working"];
 
   const addSymbol = (typeId: string, x: number, y: number, branchId?: string | null, label?: string, scale?: number, t?: number) => {
     const id = `SYM_${Date.now()}`;

@@ -114,6 +114,11 @@ export const LEGEND_TYPES: LegendType[] = [
     svgContent: `<rect x="2" y="10" width="36" height="22" rx="2" fill="none" stroke="#222" stroke-width="2"/><text x="20" y="21.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#222">5 чел.</text><polygon points="38,14 48,21 38,28" fill="#222"/>`,
   },
   {
+    // То же отделение, движется влево — стрелка с левой стороны
+    id: "squad_moving_left", name: "Отделение в движении (влево)", group: "Горноспасатели",
+    svgContent: `<rect x="10" y="10" width="36" height="22" rx="2" fill="none" stroke="#222" stroke-width="2"/><text x="28" y="21.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#222">5 чел.</text><polygon points="10,14 0,21 10,28" fill="#222"/>`,
+  },
+  {
     id: "squad_working", name: "Отделение на месте работ", group: "Горноспасатели",
     svgContent: `<rect x="4" y="10" width="40" height="22" rx="2" fill="none" stroke="#222" stroke-width="2"/><text x="24" y="21.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#222">5 чел.</text>`,
   },
@@ -477,6 +482,9 @@ export const HIDDEN_LEGEND_IDS = new Set([
   // картинка без расчёта; техника с ДВС задаётся в карточке забоя
   // (вкладка «Расход воздуха» выработки).
   "calc_engine",
+  // «Место пожара» в «Аварийном режиме» — картинка без расчёта; расчётный
+  // очаг — «Очаг пожара» той же группы.
+  "acc_fire_place",
 ]);
 
 export const WINDOW_BULKHEAD_IDS = new Set([
@@ -534,7 +542,7 @@ export const FAN_SYMBOL_IDS = new Set([
 ]);
 
 /** Отделения горноспасателей: численность пишется ВНУТРИ значка. */
-export const SQUAD_SYMBOL_IDS = new Set(["squad_moving", "squad_working"]);
+export const SQUAD_SYMBOL_IDS = new Set(["squad_moving", "squad_moving_left", "squad_working"]);
 
 /**
  * Рисунок значка на схеме с учётом данных самого значка.
@@ -550,7 +558,7 @@ export function symbolSvgContent(typeId: string, label?: string): string {
     const safe = label.replace(/[<>&"]/g, "");
     // Текст должен уместиться в рамку: «5 чел.» (6 знаков) — шрифт 11,
     // «12 чел.» и длиннее — шрифт меньше, пропорционально числу знаков.
-    const boxW = typeId === "squad_moving" ? 34 : 38;
+    const boxW = typeId === "squad_working" ? 38 : 34;
     const fs = Math.min(11, Math.floor((boxW / (safe.length * 0.62)) * 10) / 10);
     return lt.svgContent
       .replace(/font-size="11"/, `font-size="${fs}"`)
