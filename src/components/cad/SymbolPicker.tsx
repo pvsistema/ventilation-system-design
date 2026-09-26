@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { LEGEND_TYPES, HIDDEN_LEGEND_IDS, type LegendType } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, HIDDEN_LEGEND_IDS, legendViewBox, type LegendType } from "@/lib/schemaSymbols";
 
 const RECENT_KEY = "pv_recent_symbols";
 const RECENT_MAX = 8;
@@ -38,7 +38,7 @@ interface Props {
 
 function SymbolIcon({ lt, w, h }: { lt: LegendType; w: number; h: number }) {
   return (
-    <svg width={w} height={h} viewBox="0 0 48 40" style={{ display: "block" }}>
+    <svg width={w} height={h} viewBox={legendViewBox(lt.id)} preserveAspectRatio="xMidYMid meet" style={{ display: "block" }}>
       <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
     </svg>
   );

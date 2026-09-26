@@ -522,6 +522,15 @@ export const FAN_SYMBOL_IDS = new Set([
   "fan", "fan_local", "fan_axial", "fan_recirculate", "fan_stationary",
 ]);
 
+/**
+ * Рамка значка для превью в меню. Большинство УО нарисованы в поле 48×40,
+ * но очаг пожара и место взрыва — в квадрате 48×48: в рамке 48×40 у них
+ * обрезались нижние лучи/стрелки.
+ */
+export function legendViewBox(id: string): string {
+  return id === "fire_source" || id === "explosion_source" ? "0 0 48 48" : "0 0 48 40";
+}
+
 // ID символов очага пожара (аварийный режим)
 export const FIRE_SYMBOL_IDS = new Set([
   "fire_source",

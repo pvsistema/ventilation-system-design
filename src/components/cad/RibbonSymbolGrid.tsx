@@ -13,7 +13,7 @@
 // браузер переиспользует уже готовую разметку.
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useMemo } from "react";
-import { LEGEND_TYPES, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, HIDDEN_LEGEND_IDS, legendViewBox } from "@/lib/schemaSymbols";
 import ScrollArrows from "@/components/cad/ScrollArrows";
 
 interface Props {
@@ -65,7 +65,7 @@ function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick }:
               transition: "border-color .1s, background .1s",
               outline: "none",
             }}>
-            <svg width={15} height={13} viewBox="0 0 48 40">
+            <svg width={15} height={13} viewBox={legendViewBox(lt.id)} preserveAspectRatio="xMidYMid meet">
               <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
             </svg>
           </button>
