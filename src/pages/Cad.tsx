@@ -9537,6 +9537,65 @@ export default function CadPage() {
                     )}
                   </div>
 
+                  {/* ── Положение места взрыва и масштаб УО ── */}
+                  <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Параметры места взрыва</div>
+                  {(() => {
+                    const et = b.explosionT ?? 0.5;
+                    const L = b.length ?? 0;
+                    const pct = Math.round(et * 100);
+                    // Двигаем и символ на схеме, и расчётное поле ветви разом.
+                    const moveExp = (v: number) => {
+                      const t = Math.min(1, Math.max(0, v / 100));
+                      updateBranch(b.id, { explosionT: t });
+                      if (expSymId) {
+                        setSchemaSymbols(prev => prev.map(s =>
+                          s.id === expSymId.id ? { ...s, t } : s));
+                      }
+                    };
+                    return (
+                      <>
+                        <div className="flex items-center gap-1 px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}
+                          title="Положение места взрыва вдоль выработки: 0 % — у начального узла, 100 % — у конечного.">
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Взрыв в ветви:</span>
+                          <input type="range" min={0} max={100} step={1}
+                            value={pct}
+                            onChange={e => moveExp(Number(e.target.value))}
+                            className="flex-1" style={{ accentColor: "#d97706" }} />
+                          <input type="number" min={0} max={100} step={1}
+                            value={pct}
+                            onChange={e => moveExp(Number(e.target.value) || 0)}
+                            className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                            style={{ fontSize: 11, height: 18 }} />
+                          <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
+                        </div>
+                        <div className="px-1 py-0.5 text-[10px]" style={{ color: "var(--c-t3, #6b7280)", borderBottom: "1px solid #ebebeb" }}>
+                          От начала ветви: {(L * et).toFixed(1)} м · до конца ветви: {(L * (1 - et)).toFixed(1)} м
+                        </div>
+                      </>
+                    );
+                  })()}
+                  {expSymId && (() => {
+                    const expSym = schemaSymbols.find(s => s.id === expSymId.id);
+                    const updExpSym = (patch: Record<string, unknown>) =>
+                      setSchemaSymbols(prev => prev.map(s => s.id === expSymId.id ? { ...s, ...patch } : s));
+                    const scaleVal = Math.round((expSym?.scale ?? 1) * 100);
+                    return (
+                      <div className="flex items-center gap-1 px-1 py-0.5" style={{ borderBottom: "1px solid #ebebeb" }}>
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 140 }}>Масштаб УО:</span>
+                        <input type="range" min={5} max={400} step={5}
+                          value={scaleVal}
+                          onChange={e => updExpSym({ scale: Number(e.target.value) / 100 })}
+                          className="flex-1" style={{ accentColor: "#d97706" }} />
+                        <input type="number" min={5} max={400} step={5}
+                          value={scaleVal}
+                          onChange={e => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); updExpSym({ scale: v / 100 }); }}
+                          className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
+                          style={{ fontSize: 11, height: 18 }} />
+                        <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
+                      </div>
+                    );
+                  })()}
+
                   {/* Методика */}
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Алгоритм расчёта</div>
                   <div className="flex flex-col gap-1 px-2 py-1.5" style={{ borderBottom: SB }}>
