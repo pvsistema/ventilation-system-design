@@ -105,8 +105,9 @@ export const LEGEND_TYPES: LegendType[] = [
 
   // ─── ГОРНОСПАСАТЕЛИ ────────────────────────────────────────────────────
   {
-    id: "ground_base", name: "Наземная база", group: "Горноспасатели",
-    svgContent: `<rect x="4" y="10" width="40" height="22" fill="none" stroke="#222" stroke-width="2"/><text x="24" y="26" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">Н.Б</text>`,
+    // id прежний, чтобы значки в сохранённых проектах не пропали
+    id: "ground_base", name: "Подземная база", group: "Горноспасатели",
+    svgContent: `<rect x="4" y="10" width="40" height="22" fill="none" stroke="#222" stroke-width="2"/><text x="24" y="26" text-anchor="middle" font-size="13" font-weight="bold" fill="#222">ПБ</text>`,
   },
   {
     id: "squad_moving", name: "Отделение в движении", group: "Горноспасатели",
@@ -321,8 +322,8 @@ export const LEGEND_TYPES: LegendType[] = [
     svgContent: `<circle cx="24" cy="20" r="14" fill="none" stroke="#333" stroke-width="1.5"/><line x1="10" y1="20" x2="38" y2="20" stroke="#333" stroke-width="1.5"/>` },
   { id: "acc_pb_base",      name: "Подземная база",                group: "Аварии",
     svgContent: `<rect x="4" y="10" width="40" height="20" fill="none" stroke="#333" stroke-width="2"/><text x="24" y="25" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">П.Б</text>` },
-  { id: "acc_nb_base",      name: "Наземная база",                 group: "Аварии",
-    svgContent: `<rect x="4" y="10" width="40" height="20" fill="none" stroke="#333" stroke-width="2"/><text x="24" y="25" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">Н.Б</text>` },
+  { id: "acc_nb_base",      name: "Подземная база",                group: "Аварии",
+    svgContent: `<rect x="4" y="10" width="40" height="20" fill="none" stroke="#333" stroke-width="2"/><text x="24" y="25" text-anchor="middle" font-size="11" font-weight="bold" fill="#333">ПБ</text>` },
   { id: "acc_squad_moving", name: "Отделение в движении",          group: "Аварии",
     svgContent: `<rect x="2" y="12" width="34" height="16" fill="none" stroke="#333" stroke-width="2"/><text x="16" y="24" text-anchor="middle" font-size="9" font-weight="bold" fill="#333">5 чел</text><polygon points="36,14 46,20 36,26" fill="#333"/>` },
   { id: "acc_squad_work",   name: "Отделение на месте работ",      group: "Аварии",
