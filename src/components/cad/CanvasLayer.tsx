@@ -396,18 +396,33 @@ export default function CanvasLayer(props: CanvasLayerProps) {
     return () => setHorizonImageLoadCallback(null);
   }, [draw]);
 
+  // Колбэки регистрации родитель передаёт стрелочными функциями — новыми на
+  // каждый рендер. Если держать их в зависимостях эффекта, он срабатывает при
+  // каждом рендере: родитель в ответ меняет своё состояние (размер холста),
+  // перерисовывается, присылает новую функцию — и так по кругу («Maximum
+  // update depth exceeded»). Поэтому берём актуальную функцию из ref, а
+  // регистрируемся один раз при монтировании.
+  const onRegisterGetCanvasRef = useRef(onRegisterGetCanvas);
+  const onRegisterCanvasElRef = useRef(onRegisterCanvasEl);
+  onRegisterGetCanvasRef.current = onRegisterGetCanvas;
+  onRegisterCanvasElRef.current = onRegisterCanvasEl;
+
   // Регистрируем функцию экспорта для печати
   useEffect(() => {
-    if (!onRegisterGetCanvas) return;
-    onRegisterGetCanvas(() => canvasRef.current?.toDataURL("image/png") ?? "");
-  }, [onRegisterGetCanvas]);
+    onRegisterGetCanvasRef.current?.(() => canvasRef.current?.toDataURL("image/png") ?? "");
+  }, []);
 
   // Регистрируем прямой доступ к DOM canvas
   useEffect(() => {
-    if (!onRegisterCanvasEl) return;
-    onRegisterCanvasEl(canvasRef.current);
-    return () => onRegisterCanvasEl(null);
-  }, [onRegisterCanvasEl]);
+    onRegisterCanvasElRef.current?.(canvasRef.current);
+    return () => onRegisterCanvasElRef.current?.(null);
+  }, []);
+  // При смене размера сообщаем родителю снова — он хранит размер холста
+  // для печати. Родитель не меняет состояние, если размер тот же, поэтому
+  // цикла здесь нет.
+  useEffect(() => {
+    onRegisterCanvasElRef.current?.(canvasRef.current);
+  }, [width, height]);
 
   // Изменяем размер canvas императивно — без сброса содержимого при каждом рендере React
   useEffect(() => {

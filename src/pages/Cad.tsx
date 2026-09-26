@@ -12758,7 +12758,11 @@ export default function CadPage() {
               onRegisterGetSvg={(fn) => { getSvgRef.current = fn; }}
               onRegisterCanvasEl={(el) => {
                 liveCanvasRef.current = el;
-                if (el) setCanvasSize({ w: el.clientWidth || el.width, h: el.clientHeight || el.height });
+                if (el) {
+                  const w = el.clientWidth || el.width, h = el.clientHeight || el.height;
+                  // Тот же размер — не создаём новый объект, иначе лишний перерендер страницы
+                  setCanvasSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
+                }
               }}
               onRegisterSvgEl={(el) => { liveSvgRef.current = el; }}
               restoreView={savedViewToRestore}
