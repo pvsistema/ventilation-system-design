@@ -2168,6 +2168,48 @@ export default function CadPage() {
     return newSymbols;
   };
 
+  // ── Значок техники под очагом пожара ─────────────────────────────────────
+  // Если в выработке очаг пожара и горит «Техника», под очагом ставится УО
+  // «Самоходное двигательное оборудование» (heat_selfprop): на схеме видно,
+  // ЧТО горит. Значок обычный — его можно двигать вдоль ветви и удалить.
+  // Удалённый значок больше не возвращается (fireVehicleSymbolOff), пока
+  // очаг не убран; сменили горючее на другое — значок техники убирается.
+  //
+  // Эффект, а не код в местах установки: горючее меняется в свойствах очага,
+  // очаг ставится с ленты, из панели, открывается из файла — одно место вместо
+  // пяти.
+  useEffect(() => {
+    const vehBranches = new Map<string, TopoBranch>();
+    for (const b of branchesRaw) {
+      if (b.hasFire && (b.fireCombustible ?? "coal") === "vehicle" && !b.fireVehicleSymbolOff) vehBranches.set(b.id, b);
+    }
+    const autoIds = new Set(schemaSymbols
+      .filter(s => s.typeId === "heat_selfprop" && s.id.startsWith("SYM_FIREVEH_"))
+      .map(s => s.id));
+    const want = new Set([...vehBranches.keys()].map(id => `SYM_FIREVEH_${id}`));
+    const toAdd = [...vehBranches.values()].filter(b => !autoIds.has(`SYM_FIREVEH_${b.id}`));
+    const toRemove = [...autoIds].filter(id => !want.has(id));
+    if (toAdd.length === 0 && toRemove.length === 0) return;
+    setSchemaSymbols(prev => {
+      const drop = new Set(toRemove);
+      const next = prev.filter(s => !drop.has(s.id));
+      for (const b of toAdd) {
+        if (next.some(s => s.id === `SYM_FIREVEH_${b.id}`)) continue;
+        const fireIdx = next.findIndex(s => FIRE_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id);
+        const fireSym = fireIdx >= 0 ? next[fireIdx] : undefined;
+        const veh: SchemaSymbol = {
+          id: `SYM_FIREVEH_${b.id}`, typeId: "heat_selfprop",
+          x: fireSym?.x ?? 0, y: fireSym?.y ?? 0,
+          branchId: b.id, t: fireSym?.t ?? b.fireT ?? 0.5,
+        };
+        // Вставляем ПЕРЕД очагом: значки рисуются по порядку, и очаг пожара
+        // должен лежать поверх техники, а не под ней.
+        if (fireIdx >= 0) next.splice(fireIdx, 0, veh); else next.push(veh);
+      }
+      return next;
+    });
+  }, [branchesRaw, schemaSymbols]);
+
   // ── Фиксация маркшейдерского эталона ──────────────────────────────────────
   // У узлов, пришедших из старых проектов и из импорта, эталона ещё нет. При
   // первом появлении такого узла его нынешние координаты записываются как
@@ -2220,7 +2262,7 @@ export default function CadPage() {
         );
         if (!ok) return;
         existing.forEach(s => {
-          if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
+          if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireVehicleSymbolOff: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
           removeSymbol(s.id);
         });
         setFireResult(null);
@@ -5459,6 +5501,21 @@ export default function CadPage() {
         if (sym.typeId === "valve_water" && sym.branchId) {
           updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
         }
+        // Значок техники под очагом удалён — больше не подставлять
+        if (sym.id.startsWith("SYM_FIREVEH_") && sym.branchId) {
+          updateBranch(sym.branchId, { fireVehicleSymbolOff: true }, false);
+        }
+        // Удалён очаг пожара клавишей Del — снимаем пожар с ветви, как при
+        // удалении из контекстного меню; иначе ветвь считалась горящей, а
+        // значок техники под очагом оставался.
+        if (FIRE_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+          updateBranch(sym.branchId, {
+            hasFire: false, fireVehicleSymbolOff: false,
+            fireComputedTemp: 0, fireComputedNatDep: 0,
+            fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0,
+          }, false);
+          setFireResult(null); setFireCalcDone(false);
+        }
       }
       setSchemaSymbols(prev => prev.filter(s => !selectedSymbolIds.has(s.id)));
       setSelectedSymbolId(null);
@@ -5499,6 +5556,19 @@ export default function CadPage() {
       // При удалении запорного вентиля — сбрасываем флаг и открываем ветвь
       if (sym?.typeId === "valve_water" && sym.branchId) {
         updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
+      }
+      // Значок техники под очагом удалён — больше не подставлять
+      if (sym?.id.startsWith("SYM_FIREVEH_") && sym.branchId) {
+        updateBranch(sym.branchId, { fireVehicleSymbolOff: true }, false);
+      }
+      // Удалён очаг пожара клавишей Del — снимаем пожар с ветви
+      if (sym && FIRE_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
+        updateBranch(sym.branchId, {
+          hasFire: false, fireVehicleSymbolOff: false,
+          fireComputedTemp: 0, fireComputedNatDep: 0,
+          fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0,
+        }, false);
+        setFireResult(null); setFireCalcDone(false);
       }
       removeSymbol(selectedSymbolId);
       setSelectedSymbolId(null);
@@ -6485,7 +6555,7 @@ export default function CadPage() {
               disabled={!schemaSymbols.some(s => FIRE_SYMBOL_IDS.has(s.typeId))}
               onClick={() => {
                 schemaSymbols.filter(s => FIRE_SYMBOL_IDS.has(s.typeId)).forEach(s => {
-                  if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
+                  if (s.branchId) updateBranch(s.branchId, { hasFire: false, fireVehicleSymbolOff: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
                   removeSymbol(s.id);
                 });
                 setFireResult(null);
@@ -8778,7 +8848,7 @@ export default function CadPage() {
                     {fireSymId && (
                       <button onClick={() => {
                         removeSymbol(fireSymId.id);
-                        updateBranch(b.id, { hasFire: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
+                        updateBranch(b.id, { hasFire: false, fireVehicleSymbolOff: false, fireComputedTemp: 0, fireComputedNatDep: 0, fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0, originalFlow: undefined });
                         setFireResult(null); setFireCalcDone(false); resetNodeFireState();
                       }} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)" }}>
                         Убрать
@@ -12661,10 +12731,14 @@ export default function CadPage() {
                     }, false);
                   }
                 }
+                // Удалили значок техники под очагом — больше не подставлять
+                if (sym?.id.startsWith("SYM_FIREVEH_") && sym.branchId) {
+                  updateBranch(sym.branchId, { fireVehicleSymbolOff: true }, false);
+                }
                 // Сброс очага пожара при удалении символа
                 if (sym && FIRE_SYMBOL_IDS.has(sym.typeId) && sym.branchId) {
                   updateBranch(sym.branchId, {
-                    hasFire: false,
+                    hasFire: false, fireVehicleSymbolOff: false,
                     fireComputedTemp: 0, fireComputedNatDep: 0,
                     fireComputedSmokeDens: 0, fireComputedCO: 0, fireComputedCO2: 0,
                   }, false);
@@ -13349,6 +13423,7 @@ export default function CadPage() {
                         fireMode: "heat",
                         fireTemperature: 300,
                         fireCombustible: "vehicle",
+                        fireVehicleSymbolOff: false,
                       });
                       setSelectedSymbolId(newSym.id);
                       lastBranchTab.current = "accidents"; // чтобы useEffect не перебил вкладку
