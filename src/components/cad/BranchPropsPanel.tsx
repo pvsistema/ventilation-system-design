@@ -1,4 +1,3 @@
-import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { type TopoBranch, type TopoNode, type Horizon } from "@/lib/topology";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
@@ -126,21 +125,6 @@ export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, 
   };
   const innerTab: InnerTab = (activeTab && tabMap[activeTab]) ? tabMap[activeTab] : (defaultInnerTab ?? "Топология");
 
-  const [visible, setVisible] = useState<Set<string>>(
-    () => new Set([
-      "v_name", "v_length", "v_angle", "v_area", "v_resistance", "v_total_r", "v_geom_r", "v_unit_r", "v_unit_r_100",
-      "v_velocity", "v_adddep", "v_flow", "v_dep", "v_dep_total",
-      "v_r_friction", "v_r_local", "v_reynolds", "v_power",
-    ])
-  );
-
-  const toggle = (id: string) =>
-    setVisible((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id); else next.add(id);
-      return next;
-    });
-
   const angle = branch.angle ?? 0;
 
   const unitR = branch.length > 0 && branch.area > 0
@@ -179,11 +163,10 @@ export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, 
 
         {innerTab === "Топология" && (
           <BranchTopologyTab
+            key={branch.id}
             branch={branch}
             onUpdate={onUpdate}
             shortNode={shortNode}
-            visible={visible}
-            toggle={toggle}
             angle={angle}
             unitR={unitR}
             uRes={uRes}

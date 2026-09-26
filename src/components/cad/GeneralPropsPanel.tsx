@@ -4,96 +4,12 @@
 // рамок-fieldset и «виндовых» галочек: панель строится на палитре темы
 // (--c-accent / --c-signal, --c-s*, --c-b*, --c-t*) и одинаково читается
 // в светлой и тёмной теме.
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
+import { Card, Field, Switch, inputCls, inputStyle } from "@/components/cad/propUi";
 import type { TopoBranch, TopoNode, Horizon } from "@/lib/topology";
 
 // ─── Примитивы ──────────────────────────────────────────────────────────────
-
-const inputCls =
-  "w-full h-7 px-2 text-xs rounded outline-none transition-colors focus:ring-2";
-const inputStyle: React.CSSProperties = {
-  background: "var(--c-s1, #fff)",
-  border: "1px solid var(--c-b2, #d5d1c8)",
-  color: "var(--c-t1, #1f2328)",
-  fontFamily: "var(--font-ui)",
-  // цвет кольца фокуса для focus:ring
-  ["--tw-ring-color" as string]: "color-mix(in srgb, var(--c-accent, #1e5a7a) 25%, transparent)",
-};
-
-function Card({ icon, title, tone = "accent", aside, collapsible, defaultOpen = true, children }: {
-  icon: string; title: string; tone?: "accent" | "signal" | "muted";
-  aside?: ReactNode; collapsible?: boolean; defaultOpen?: boolean; children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  const color = tone === "signal" ? "var(--c-signal, #e8a317)"
-    : tone === "muted" ? "var(--c-t3, #6b7280)" : "var(--c-accent, #1e5a7a)";
-  const Head = collapsible ? "button" : "div";
-  return (
-    <section className="rounded-lg overflow-hidden"
-      style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b1, #e7e4dd)" }}>
-      <Head
-        {...(collapsible ? { onClick: () => setOpen((v) => !v), type: "button" as const } : {})}
-        className="w-full flex items-center gap-2 px-2.5 py-2 text-left select-none"
-        style={{ background: "transparent", border: "none", cursor: collapsible ? "pointer" : "default" }}>
-        <span className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
-          style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}>
-          <Icon name={icon} size={13} />
-        </span>
-        <span className="flex-1 text-[11px] font-semibold uppercase tracking-wider"
-          style={{ color: "var(--c-t2, #3a3f45)" }}>{title}</span>
-        {aside}
-        {collapsible && (
-          <Icon name="ChevronDown" size={14}
-            style={{ color: "var(--c-t4, #767f8c)", transform: open ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
-        )}
-      </Head>
-      {open && <div className="px-2.5 pb-2.5 pt-0.5 space-y-2">{children}</div>}
-    </section>
-  );
-}
-
-function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
-  return (
-    <label className="block">
-      <span className="block text-[10px] font-medium mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>{label}</span>
-      {children}
-      {hint && <span className="block text-[10px] mt-0.5" style={{ color: "var(--c-t4, #767f8c)" }}>{hint}</span>}
-    </label>
-  );
-}
-
-function Switch({ checked, onChange, label, hint, kbd }: {
-  checked: boolean; onChange: (v: boolean) => void; label: string; hint?: string; kbd?: string;
-}) {
-  return (
-    <button type="button" onClick={() => onChange(!checked)}
-      className="w-full flex items-start gap-2 px-1.5 py-1 rounded text-left transition-colors"
-      style={{ background: "transparent", border: "none", cursor: "pointer" }}
-      role="switch" aria-checked={checked}>
-      <span className="relative flex-shrink-0 mt-0.5 rounded-full transition-colors"
-        style={{
-          width: 26, height: 14,
-          background: checked ? "var(--c-accent, #1e5a7a)" : "var(--c-b2, #d5d1c8)",
-        }}>
-        <span className="absolute top-[2px] rounded-full transition-all"
-          style={{ width: 10, height: 10, left: checked ? 14 : 2, background: "var(--c-s1, #fff)" }} />
-      </span>
-      <span className="flex-1 min-w-0">
-        <span className="flex items-center gap-1.5 text-xs" style={{ color: "var(--c-t2, #3a3f45)" }}>
-          {label}
-          {kbd && (
-            <kbd className="px-1 rounded text-[9px]"
-              style={{ border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t3, #6b7280)", fontFamily: "var(--font-num)" }}>
-              {kbd}
-            </kbd>
-          )}
-        </span>
-        {hint && <span className="block text-[10px] leading-snug" style={{ color: "var(--c-t4, #767f8c)" }}>{hint}</span>}
-      </span>
-    </button>
-  );
-}
 
 /** Число со степпером −/+ (шаг и границы задаются). */
 function Stepper({ value, onChange, min, max, step, unit }: {

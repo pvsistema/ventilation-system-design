@@ -72,38 +72,6 @@ export function SectionHeader({ title }: { title: string }) {
   );
 }
 
-export function ParamRow({
-  id,
-  label,
-  visible,
-  onToggle,
-  children,
-}: {
-  id: string;
-  label: string;
-  visible: boolean;
-  onToggle: (id: string) => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center" style={{ minHeight: 20, borderBottom: "1px solid #ebebeb" }}>
-      <div className="flex items-center justify-center flex-shrink-0" style={{ width: 18 }}>
-        <input
-          type="checkbox"
-          checked={visible}
-          onChange={() => onToggle(id)}
-          style={{ width: 11, height: 11, cursor: "pointer" }}
-        />
-      </div>
-      <div className="flex-shrink-0 text-[11px] text-gray-700 px-1 leading-tight"
-        style={{ width: 148, whiteSpace: "normal", lineHeight: "1.2" }}>
-        {label}
-      </div>
-      <div className="flex-1 min-w-0">{children}</div>
-    </div>
-  );
-}
-
 export function EditInput({
   value,
   onChange,
