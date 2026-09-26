@@ -614,7 +614,8 @@ def calc_one(body: dict) -> dict:
         log.append(f"{'Пыль' if gas.get('unit') == 'g/m3' else 'Газ'}: {gas_id}, объём: {round(volume)} м³, концентрация: {conc} {u}")
         if eff_conc < conc:
             log.append(f"Смесь обогащённая: в расчёт принята стехиометрическая концентрация {eff_conc} {u}")
-        log.append(f"Коэффициент участия Z (Методика №415): {z}")
+        if body.get("gasMethod", "vgsch") != "vgsch":
+            log.append(f"Коэффициент участия Z (Методика №415): {z}")
     else:
         expl_id = body.get("explosiveId", "ammonit")
         expl    = EXPLOSIVE_TYPES.get(expl_id, EXPLOSIVE_TYPES["ammonit"])
@@ -640,7 +641,9 @@ def calc_one(body: dict) -> dict:
         return empty_result(th, no_explosion_reason, log, warnings)
 
     q_tnt_rounded = round(q_tnt * 100) / 100
-    log.append(f"Тротиловый эквивалент: Q_tnt = {q_tnt_rounded} кг ТНТ")
+    # В методике ВГСЧ тротиловый эквивалент не применяется — в протокол не пишем
+    if not (source_type == "gas" and body.get("gasMethod", "vgsch") == "vgsch"):
+        log.append(f"Тротиловый эквивалент: Q_tnt = {q_tnt_rounded} кг ТНТ")
 
     # ГАЗ И ПЫЛЬ ПО МЕТОДИКЕ ВГСЧ (по умолчанию). Прежняя модель «как в
     # Аэросети» доступна через gasMethod = "aeroset".

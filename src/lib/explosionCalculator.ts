@@ -1026,8 +1026,12 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     if (effectiveConc < conc) {
       log.push(`Смесь обогащённая: в расчёт принята стехиометрическая концентрация ${effectiveConc} ${u} (энергия ограничена кислородом)`);
     }
-    log.push(`Коэффициент участия Z (Методика №415): ${z}`);
-    log.push(`Тротиловый эквивалент: Q_tnt = ${Math.round(q_tnt * 100) / 100} кг ТНТ`);
+    // В методике ВГСЧ ни Z, ни тротиловый эквивалент не применяются —
+    // волна считается по энергии Ен и ΔPн, поэтому в протокол их не пишем.
+    if ((params.gasMethod ?? "vgsch") !== "vgsch") {
+      log.push(`Коэффициент участия Z (Методика №415): ${z}`);
+      log.push(`Тротиловый эквивалент: Q_tnt = ${Math.round(q_tnt * 100) / 100} кг ТНТ`);
+    }
   } else {
     const expl = EXPLOSIVE_TYPES.find(e => e.id === params.explosiveId) ?? EXPLOSIVE_TYPES[0];
     const mass = params.explosiveMass_kg;
