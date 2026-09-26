@@ -6682,7 +6682,7 @@ export default function CadPage() {
                   setBlastRadiusStep(maxR <= 200 ? 5 : maxR <= 500 ? 10 : 25);
                   setBlastWaveRadius(maxR);
                   const destroyed = finalBranches.filter(b => b.bulkheadDestroyedByExplosion);
-                  addLog("info", `💥 Расчёт взрыва завершён. Q_тнт = ${lastRes.q_tnt_kg} кг ТНТ, ΔP_max = ${lastRes.maxDeltaP_kPa} кПа`);
+                  addLog("info", `💥 Расчёт взрыва завершён. ${lastRes.vgsch ? `Eн = ${Math.round(lastRes.vgsch.En_MJ)} МДж, ΔPн = ${Math.round(lastRes.vgsch.dPn_kPa)} кПа` : `Q_тнт = ${lastRes.q_tnt_kg} кг ТНТ`}, ΔP_max = ${lastRes.maxDeltaP_kPa} кПа`);
                   if (destroyed.length > 0) {
                     addLog("warn", `⚠ Разрушено перемычек: ${destroyed.length} (${destroyed.map(b => b.id).join(", ")})`);
                   }
@@ -6856,7 +6856,11 @@ export default function CadPage() {
                 </>
               ) : (
                 <>
-                  <div className="font-semibold" style={{ color: "var(--c-amber-ink, #92400e)" }}>Q_тнт: {explosionResult.q_tnt_kg} кг</div>
+                  {explosionResult.vgsch ? (
+                    <div className="font-semibold" style={{ color: "var(--c-amber-ink, #92400e)" }}>Eн: {Math.round(explosionResult.vgsch.En_MJ)} МДж · ΔPн = {Math.round(explosionResult.vgsch.dPn_kPa)} кПа</div>
+                  ) : (
+                    <div className="font-semibold" style={{ color: "var(--c-amber-ink, #92400e)" }}>Q_тнт: {explosionResult.q_tnt_kg} кг</div>
+                  )}
                   <div style={{ color: "var(--c-amber, #c2410c)" }}>ΔP_max = {explosionResult.maxDeltaP_kPa} кПа</div>
                   <div style={{ color: "var(--c-t2, #374151)" }}>D = {explosionResult.waveFrontSpeed_ms} м/с</div>
                   <div style={{ color: "var(--c-red, #b91c1c)" }}>R_лет. = {explosionResult.zones[0]?.radius_m ?? 0} м</div>
@@ -9983,7 +9987,9 @@ export default function CadPage() {
                   {/* Результаты */}
                   {explosionCalcDone && b.explosionComputedQtnt > 0 && (<>
                     <div className="px-1 py-0.5 text-[10px] font-semibold mt-1" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Результаты расчёта</div>
-                    <Row label="Тротиловый эквивалент:" value={`${b.explosionComputedQtnt} кг ТНТ`} bold />
+                    {!explosionResultByBranch.get(b.id)?.vgsch && (
+                      <Row label="Тротиловый эквивалент:" value={`${b.explosionComputedQtnt} кг ТНТ`} bold />
+                    )}
                     <Row label="Максимальное давление:" value={`${b.explosionComputedMaxP} кПа`} bold color="#dc2626" />
                     <Row label="Скорость фронта волны:" value={`${b.explosionComputedWaveSpeed} м/с`} />
                     {(() => {
@@ -14162,7 +14168,9 @@ export default function CadPage() {
                       стоял explosionResult, который до полного расчёта равен
                       null: обращение к его полям роняло рендер — экран белел
                       сразу при включении зон по предварительной оценке. */}
-                  <span style={{ color: "#fde68a", fontSize: 10 }}>Q_тнт = <b>{activeExplosionRes.q_tnt_kg} кг</b></span>
+                  {activeExplosionRes.vgsch
+                    ? <span style={{ color: "#fde68a", fontSize: 10 }}>Eн = <b>{Math.round(activeExplosionRes.vgsch.En_MJ)} МДж</b></span>
+                    : <span style={{ color: "#fde68a", fontSize: 10 }}>Q_тнт = <b>{activeExplosionRes.q_tnt_kg} кг</b></span>}
                   <span style={{ color: "#fde68a", fontSize: 10 }}>D = <b>{activeExplosionRes.waveFrontSpeed_ms} м/с</b></span>
                   <span style={{ color: "#fde68a", fontSize: 10 }}>ΔP_max = <b>{activeExplosionRes.maxDeltaP_kPa} кПа</b></span>
                 </div>
