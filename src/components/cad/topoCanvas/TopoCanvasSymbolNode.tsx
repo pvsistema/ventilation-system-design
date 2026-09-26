@@ -1,6 +1,6 @@
 import React from "react";
 import { type TopoBranch } from "@/lib/topology";
-import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolContentBox } from "@/lib/schemaSymbols";
+import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolContentBox, symbolSvgContent } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -562,7 +562,7 @@ export function renderSymbolNode(
           transform={sym.flipped ? `rotate(180 ${HX + SZ / 2} ${HY + SZ / 2})` : undefined}
           opacity={isFanStoppedOv ? 0.35 : 1}
           style={isFanStoppedOv ? { filter: "grayscale(1)" } : undefined}
-          dangerouslySetInnerHTML={{ __html: sym.typeId === "fan" ? fanSvgContent(brForSymOv?.fanType) : lt.svgContent }} />
+          dangerouslySetInnerHTML={{ __html: sym.typeId === "fan" ? fanSvgContent(brForSymOv?.fanType) : symbolSvgContent(sym.typeId, sym.label) }} />
       ) : null}
       {/* Крестик на остановленном вентиляторе */}
       {isFanStoppedOv && (

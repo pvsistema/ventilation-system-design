@@ -5,7 +5,7 @@ import {
   PAPER_SIZES_MM,   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
   sectionKind, SECTION_KIND_COLORS,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolSvgContent, labelInsideSymbol } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -3376,7 +3376,7 @@ export default function TopoCanvas(props: Props) {
                 }
                 // Остальные символы — через SVG viewBox без поворота
                 if (!lt) return null;
-                const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : lt.svgContent;
+                const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : symbolSvgContent(sym.typeId, sym.label);
                 return (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
                     overflow="visible"
@@ -3488,7 +3488,7 @@ export default function TopoCanvas(props: Props) {
                 if (isBk && sym.branchId) return null;
                 // Для остальных — только явно заданный label
                 const text = sym.label ?? "";
-                if (!text) return null;
+                if (!text || labelInsideSymbol(sym.typeId)) return null;
                 return (
                   <text x={px} y={py + SZ / 2 + 12} textAnchor="middle"
                     fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="var(--font-ui)"

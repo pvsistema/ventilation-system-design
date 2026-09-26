@@ -3,7 +3,7 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent, symbolSvgContent, labelInsideSymbol } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -238,7 +238,7 @@ export async function drawSymbolsToCanvas(
     } else {
       // SVG-иконка через Image (с поворотом для трубопроводных символов)
       const imgSize = Math.ceil(SZ);
-      const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : lt.svgContent;
+      const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : symbolSvgContent(sym.typeId, sym.label);
       const img = await svgToImage(svgHtml, imgSize);
       ctx.save();
       if (isFanStopped) {
@@ -298,7 +298,7 @@ export async function drawSymbolsToCanvas(
     }
 
     // ── Подпись label (не перемычки) ──────────────────────────────────
-    if (!isBulkhead && sym.label) {
+    if (!isBulkhead && sym.label && !labelInsideSymbol(sym.typeId)) {
       ctx.save();
       ctx.font = canvasFont(Math.round(9 * sc));
       ctx.fillStyle = "#374151";

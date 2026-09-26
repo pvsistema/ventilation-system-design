@@ -111,11 +111,11 @@ export const LEGEND_TYPES: LegendType[] = [
   },
   {
     id: "squad_moving", name: "Отделение в движении", group: "Горноспасатели",
-    svgContent: `<rect x="2" y="10" width="36" height="22" rx="2" fill="none" stroke="#222" stroke-width="2"/><text x="16" y="26" text-anchor="middle" font-size="11" font-weight="bold" fill="#222">5 чел.</text><polygon points="38,14 48,21 38,28" fill="#222"/>`,
+    svgContent: `<rect x="2" y="10" width="36" height="22" rx="2" fill="none" stroke="#222" stroke-width="2"/><text x="20" y="21.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#222">5 чел.</text><polygon points="38,14 48,21 38,28" fill="#222"/>`,
   },
   {
     id: "squad_working", name: "Отделение на месте работ", group: "Горноспасатели",
-    svgContent: `<rect x="4" y="10" width="40" height="22" rx="2" fill="none" stroke="#222" stroke-width="2"/><text x="24" y="26" text-anchor="middle" font-size="11" font-weight="bold" fill="#222">5 чел.</text>`,
+    svgContent: `<rect x="4" y="10" width="40" height="22" rx="2" fill="none" stroke="#222" stroke-width="2"/><text x="24" y="21.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="bold" fill="#222">5 чел.</text>`,
   },
   {
     id: "positioning_reader", name: "Считыватель позиционирования", group: "Горноспасатели",
@@ -532,6 +532,37 @@ export const SHAFT_MOUTH_SYMBOL_IDS = new Set([
 export const FAN_SYMBOL_IDS = new Set([
   "fan", "fan_local", "fan_axial", "fan_recirculate", "fan_stationary",
 ]);
+
+/** Отделения горноспасателей: численность пишется ВНУТРИ значка. */
+export const SQUAD_SYMBOL_IDS = new Set(["squad_moving", "squad_working"]);
+
+/**
+ * Рисунок значка на схеме с учётом данных самого значка.
+ *
+ * Для отделений ГСС численность, заданная при установке («7 чел.»), подменяет
+ * текст в центре значка. Раньше в значке всегда стояло «5 чел.», а введённое
+ * число писалось отдельной подписью снизу — выходило два разных числа.
+ */
+export function symbolSvgContent(typeId: string, label?: string): string {
+  const lt = LEGEND_TYPES.find((l) => l.id === typeId);
+  if (!lt) return "";
+  if (SQUAD_SYMBOL_IDS.has(typeId) && label) {
+    const safe = label.replace(/[<>&"]/g, "");
+    // Текст должен уместиться в рамку: «5 чел.» (6 знаков) — шрифт 11,
+    // «12 чел.» и длиннее — шрифт меньше, пропорционально числу знаков.
+    const boxW = typeId === "squad_moving" ? 34 : 38;
+    const fs = Math.min(11, Math.floor((boxW / (safe.length * 0.62)) * 10) / 10);
+    return lt.svgContent
+      .replace(/font-size="11"/, `font-size="${fs}"`)
+      .replace(/>5 чел\.</, `>${safe}<`);
+  }
+  return lt.svgContent;
+}
+
+/** Подпись под значком не нужна — текст уже внутри (отделения ГСС). */
+export function labelInsideSymbol(typeId: string): boolean {
+  return SQUAD_SYMBOL_IDS.has(typeId);
+}
 
 /**
  * Рамка значка для превью в меню. Большинство УО нарисованы в поле 48×40,

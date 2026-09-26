@@ -9,7 +9,7 @@ import { type UnitsConfig, getUnit, DEFAULT_UNITS_CONFIG } from "./unitsConfig";
 import { velocityColor } from "./canvasRenderer";
 import { type Position } from "./positions";
 import { buildPrintLayerSvgString } from "./printLayerSvgString";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent } from "./schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent, symbolSvgContent, labelInsideSymbol } from "./schemaSymbols";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -943,7 +943,7 @@ export function generateSvg(opts: SvgExportOptions): string {
 
         const brForFan = sym.branchId ? brById.get(sym.branchId) : null;
         const isFanStopped = sym.typeId === "fan" ? (brForFan?.fanStopped ?? false) : false;
-        const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForFan?.fanType) : lt.svgContent;
+        const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForFan?.fanType) : symbolSvgContent(sym.typeId, sym.label);
 
         const opacityAttr = isFanStopped ? ` opacity="0.35"` : "";
 
@@ -1031,7 +1031,7 @@ export function generateSvg(opts: SvgExportOptions): string {
         }
 
         // Подпись
-        if (sym.label) {
+        if (sym.label && !labelInsideSymbol(sym.typeId)) {
           parts.push(`<text x="${n(px)}" y="${n(py + SZ/2 + 12)}" text-anchor="middle" font-family="Segoe UI,Arial,sans-serif" font-size="${n(Math.round(9 * sc * ss), 1)}" fill="#374151">${esc(sym.label)}</text>`);
         }
       }

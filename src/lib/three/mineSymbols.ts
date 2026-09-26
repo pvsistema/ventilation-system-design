@@ -33,8 +33,7 @@
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import {
-  LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, fanSvgContent,
-} from "@/lib/schemaSymbols";
+  LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, fanSvgContent, symbolSvgContent } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { toThree } from "./mineScene";
 
@@ -319,7 +318,7 @@ export function buildMineSymbols(input: SymbolsInput): MineSymbols | null {
     if (!lt) continue;
     // Вентилятор рисуется по своему назначению: ГВУ и ВВУ — двойная окружность,
     // ВМП — пропеллер. Ровно та же развилка, что на чертеже.
-    const svg = sym.typeId === "fan" ? fanSvgContent(b.fanType) : lt.svgContent;
+    const svg = sym.typeId === "fan" ? fanSvgContent(b.fanType) : symbolSvgContent(sym.typeId, sym.label);
 
     const a = toThree(fn.x * kx, fn.y * kx, fn.z * kz);
     const c = toThree(tn.x * kx, tn.y * kx, tn.z * kz);

@@ -2,7 +2,7 @@
 // Содержит ту же логику что в TopoCanvas, но без интерактивности.
 import { type ProjNode } from "@/lib/canvasRenderer";
 import { type TopoBranch } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, fanSvgContent, symbolSvgContent, labelInsideSymbol } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { msIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -455,7 +455,7 @@ export default function SchemaSymbolsOverlay({
                 overflow="visible"
                 opacity={isFanStopped ? 0.35 : 1}
                 style={isFanStopped ? { filter: "grayscale(1)" } : undefined}
-                dangerouslySetInnerHTML={{ __html: sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : lt.svgContent }} /> : null
+                dangerouslySetInnerHTML={{ __html: sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : symbolSvgContent(sym.typeId, sym.label) }} /> : null
             )}
 
             {/* Крестик на остановленном вентиляторе */}
@@ -537,7 +537,7 @@ export default function SchemaSymbolsOverlay({
             })()}
 
             {/* Подпись label (для не-перемычек) */}
-            {!isBulkhead && sym.label && (
+            {!isBulkhead && sym.label && !labelInsideSymbol(sym.typeId) && (
               <text x={px} y={py + SZ / 2 + 12} textAnchor="middle"
                 fontSize={Math.round(9 * sc)} fill="#374151" fontFamily="var(--font-ui)">
                 {sym.label}
