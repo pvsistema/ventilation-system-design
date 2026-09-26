@@ -195,6 +195,23 @@ function buildProtocolSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, l
           `Кз = ${v.kz}; i = ${r1(r.maxImpulse_Pas, 0)}`];
       }),
       { numFmt: [undefined, undefined, "0.0", "#,##0", "#,##0", "#,##0", "#,##0"] });
+
+    // Зона продуктов взрыва и параметры волны на выходе из неё
+    const vg = gasSrc.filter(b => { const r = inp.resultByBranch.get(b.id); return r && !r.noExplosion && r.vgsch; });
+    if (vg.length) {
+      row = table(ws, row,
+        ["Выработка-очаг", "μ (табл. 2)", "Объём ПВ всего (5V₀), м³", "ПВ на направление (2V₀), м³",
+          "Длина зоны ПВ в каждую сторону, м", "Скорость фронта D, м/с", "Время действия θ, мс", "Сечение / периметр / Кз"],
+        vg.map(b => {
+          const r = inp.resultByBranch.get(b.id)!;
+          const v = r.vgsch!;
+          const pvLen = v.area_m2 > 0 ? v.pvVolumePerSide_m3 / v.area_m2 : undefined;
+          return [label(b), v.mu, r1(v.V0_m3 * 5, 0), r1(v.pvVolumePerSide_m3, 0), r1(pvLen, 0),
+            r1(r.waveFrontSpeed_ms, 0), r1(r.phaseDuration_ms, 1),
+            `S = ${r1(v.area_m2, 1)} м², П = ${r1(v.perimeter_m, 2)} м, Кз = ${v.kz}`];
+        }),
+        { numFmt: [undefined, "0.00", "#,##0", "#,##0", "#,##0", "#,##0", "0.0"] });
+    }
   }
 
   // 2б. ВВ — тротиловый эквивалент и параметры волны
