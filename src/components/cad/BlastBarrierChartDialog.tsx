@@ -38,8 +38,9 @@ interface Props {
   barriers: Map<string, BlastBarrier[]>;
   hits: Map<string, BarrierHit>;
   resultByBranch: Map<string, ExplosionResult>;
-  /** Выделить перемычку на схеме. */
-  onFocusBranch?: (branchId: string) => void;
+  /** Выделить перемычку на схеме и поставить её в центр видимой части
+   *  (dialogRect — где сейчас окно диаграммы, чтобы не прятать перемычку под ним). */
+  onFocusBarrier?: (bar: BlastBarrier, dialogRect: DOMRect | null) => void;
   onClose: () => void;
 }
 
@@ -181,7 +182,7 @@ export default function BlastBarrierChartDialog(p: Props) {
 
   const selectRow = (r: Row) => {
     setKey(r.bar.key);
-    p.onFocusBranch?.(r.bar.branchId);
+    p.onFocusBarrier?.(r.bar, boxRef.current?.getBoundingClientRect() ?? null);
     setPlaying(false);
     setT(Math.max(0, r.t0_ms - r.theta_ms * 0.3));
   };
@@ -245,6 +246,14 @@ export default function BlastBarrierChartDialog(p: Props) {
   const loadingCount = rows.filter(r => statusAt(t, r).kind === "loading").length;
 
   const { pos, onMouseDown, boxRef } = useDraggable();
+
+  // При открытии — сразу показать на схеме перемычку, выбранную по умолчанию
+  useEffect(() => {
+    if (!row) return;
+    const id = requestAnimationFrame(() => p.onFocusBarrier?.(row.bar, boxRef.current?.getBoundingClientRect() ?? null));
+    return () => cancelAnimationFrame(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const muted = "var(--c-t3, #6b7280)";
   const ink = "var(--c-t1, #111827)";
 

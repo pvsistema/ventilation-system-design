@@ -1606,6 +1606,10 @@ export default function CadPage() {
   const [focusNodeId, setFocusNodeId] = useState<string | null>(null);
   const [focusBranchId, setFocusBranchId] = useState<string | null>(null);
   const [focusPos, setFocusPos] = useState<{ x: number; y: number; z: number } | null>(null);
+  // Экранная точка фокуса — действует только для своего nonce (иначе центр холста)
+  const [focusScreenReq, setFocusScreenReq] = useState<{ nonce: number; x: number; y: number } | null>(null);
+  // Подсветка перемычки, выбранной в диаграмме волны
+  const [blastHighlightPos, setBlastHighlightPos] = useState<{ x: number; y: number; z: number } | null>(null);
   // Флаг: файл был загружен — не сбрасываем вид начальным пресетом
   const initialFileLoadedRef = useRef(false);
   // При первом рендере — дефолтный вид только если файл не открывался
@@ -13022,6 +13026,8 @@ export default function CadPage() {
               focusNodeId={focusNodeId}
               focusBranchId={focusBranchId}
               focusPos={focusPos}
+              focusScreen={focusScreenReq && focusScreenReq.nonce === focusNonce ? focusScreenReq : null}
+              highlightPos={showBlastBarrierChart ? blastHighlightPos : null}
               onRegisterGetSvg={(fn) => { getSvgRef.current = fn; }}
               onRegisterCanvasEl={(el) => {
                 liveCanvasRef.current = el;
@@ -15203,8 +15209,42 @@ export default function CadPage() {
         barriers={explosionBarriers.byBranch}
         hits={explosionBarriers.hits}
         resultByBranch={explosionResultByBranch}
-        onFocusBranch={(id) => { setSelectedNodeId(null); setSelectedBranchId(id); }}
-        onClose={() => setShowBlastBarrierChart(false)}
+        onFocusBarrier={(bar, dialogRect) => {
+          // Точка перемычки: доля t вдоль выработки (как у значка на схеме)
+          const br = branches.find(b => b.id === bar.branchId);
+          const fN = br ? nodes.find(n => n.id === br.fromId) : undefined;
+          const tN = br ? nodes.find(n => n.id === br.toId) : undefined;
+          if (!fN || !tN) return;
+          const t = bar.t;
+          const pos = { x: fN.x + (tN.x - fN.x) * t, y: fN.y + (tN.y - fN.y) * t, z: fN.z + (tN.z - fN.z) * t };
+          const isSym = schemaSymbols.some(s => s.id === bar.key);
+          setSelectedNodeId(null);
+          setSelectedBranchId(bar.branchId);
+          setSelectedBranchIds(new Set([bar.branchId]));
+          setSelectedSymbolId(isSym ? bar.key : null);
+          setSelectedSymbolIds(new Set());
+          setBlastHighlightPos(pos);
+          // Ставим перемычку в центр ВИДИМОЙ части схемы — той, что не закрыта окном диаграммы
+          const nonce = Date.now();
+          const cv = liveCanvasRef.current?.getBoundingClientRect();
+          if (cv && cv.width > 0 && dialogRect) {
+            const leftFree = Math.max(0, Math.min(dialogRect.left, cv.right) - cv.left);
+            const rightFree = Math.max(0, cv.right - Math.max(dialogRect.right, cv.left));
+            const overlapsX = dialogRect.left < cv.right && dialogRect.right > cv.left;
+            let x = cv.width / 2;
+            if (overlapsX && Math.max(leftFree, rightFree) >= 150) {
+              x = leftFree >= rightFree ? leftFree / 2 : cv.width - rightFree / 2;
+            }
+            setFocusScreenReq({ nonce, x, y: cv.height / 2 });
+          } else {
+            setFocusScreenReq(null);
+          }
+          setFocusNodeId(null);
+          setFocusBranchId(null);
+          setFocusPos(pos);
+          setFocusNonce(nonce);
+        }}
+        onClose={() => { setShowBlastBarrierChart(false); setBlastHighlightPos(null); }}
       />
     )}
 

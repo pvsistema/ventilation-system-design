@@ -121,6 +121,10 @@ export interface Props {
   focusBranchId?: string | null;
   /** Центрировать камеру на произвольной мировой точке (позиция ПЛА и т.п.) */
   focusPos?: { x: number; y: number; z: number } | null;
+  /** Экранная точка холста (px), куда поставить объект при фокусе. По умолчанию — центр. */
+  focusScreen?: { x: number; y: number } | null;
+  /** Подсветить точку схемы пульсирующим кольцом (перемычка из диаграммы и т.п.). */
+  highlightPos?: { x: number; y: number; z: number } | null;
   /** Восстановить конкретный вид (при открытии файла с сохранённым view) */
   restoreView?: { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number } | null;
   /** Колбэк: view успешно восстановлен из файла — родитель должен обнулить restoreView */

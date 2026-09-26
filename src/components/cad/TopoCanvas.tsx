@@ -64,7 +64,7 @@ export default function TopoCanvas(props: Props) {
     fanScale = 450,
     colorByHorizon = false, showFlowArrows = false, pollutionThreshold,
     scaleOverride, onScaleChange, fitToScreenNonce,
-    focusNonce, focusNodeId, focusBranchId, focusPos,
+    focusNonce, focusNodeId, focusBranchId, focusPos, focusScreen, highlightPos,
     editingHorizonImageId, onHorizonImageBoundsChange,
     editingPrintLayerId, onPrintLayerBoundsChange, onPrintLayerChange,
     onNodeContextMenu, onBranchContextMenu, onCanvasContextMenu,
@@ -413,7 +413,7 @@ export default function TopoCanvas(props: Props) {
   // «вписать в экран» и переход к выбранному объекту.
   const { nodesRef, prevScaleOverride } = useViewEffects({
     nodes, branches, xyScale, zScale, size, view, setView,
-    scaleOverride, fitToScreenNonce, focusNonce, focusNodeId, focusBranchId, focusPos,
+    scaleOverride, fitToScreenNonce, focusNonce, focusNodeId, focusBranchId, focusPos, focusScreen,
     restoredViewNonce,
   });
 
@@ -4156,6 +4156,23 @@ export default function TopoCanvas(props: Props) {
           <ScaleBar scale={view.scale} height={size.h} />
         </svg>
       )}
+
+      {/* Подсветка точки схемы (перемычка, выбранная в диаграмме волны) */}
+      {highlightPos && !panStart && !rotStart && (() => {
+        const hp = projectWithZ(highlightPos);
+        if (hp.sx < -50 || hp.sx > size.w + 50 || hp.sy < -50 || hp.sy > size.h + 50) return null;
+        const r = Math.max(16, Math.min(40, branchWidth * _branchObjSF * 3));
+        return (
+          <svg style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: 4 }}
+            width={size.w} height={size.h}>
+            <circle cx={hp.sx} cy={hp.sy} r={r} fill="rgba(37,99,235,0.12)" stroke="#2563eb" strokeWidth={3} />
+            <circle cx={hp.sx} cy={hp.sy} r={r} fill="none" stroke="#2563eb" strokeWidth={2.5}>
+              <animate attributeName="r" values={`${r};${r * 2.4}`} dur="1.2s" repeatCount="indefinite" />
+              <animate attributeName="opacity" values="0.9;0" dur="1.2s" repeatCount="indefinite" />
+            </circle>
+          </svg>
+        );
+      })()}
 
       {/* Индикаторы внизу холста (координаты, плоскость, масштаб) */}
       <TopoCanvasIndicators

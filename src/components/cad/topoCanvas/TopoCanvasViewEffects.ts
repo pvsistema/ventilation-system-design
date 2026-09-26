@@ -25,6 +25,7 @@ export interface ViewEffectsDeps {
   focusNodeId?: Props["focusNodeId"];
   focusBranchId?: Props["focusBranchId"];
   focusPos?: Props["focusPos"];
+  focusScreen?: Props["focusScreen"];
   /** Счётчик восстановления сохранённого вида: пока идёт восстановление, внешние команды масштаба игнорируются */
   restoredViewNonce: React.MutableRefObject<number>;
 }
@@ -33,7 +34,7 @@ export interface ViewEffectsDeps {
 export function useViewEffects(deps: ViewEffectsDeps) {
   const {
     nodes, branches, xyScale, zScale, size, view, setView,
-    scaleOverride, fitToScreenNonce, focusNonce, focusNodeId, focusBranchId, focusPos,
+    scaleOverride, fitToScreenNonce, focusNonce, focusNodeId, focusBranchId, focusPos, focusScreen,
     restoredViewNonce,
   } = deps;
 
@@ -206,11 +207,15 @@ export function useViewEffects(deps: ViewEffectsDeps) {
     const minScaleForFocus = 0.6;
     const newScale = Math.max(view.scale, minScaleForFocus);
 
+    // Точка экрана, куда ставим объект: по умолчанию — центр холста,
+    // либо заданная снаружи (например, центр части схемы, не закрытой окном).
+    const cx = focusScreen ? Math.min(Math.max(focusScreen.x, 0), size.w) : size.w / 2;
+    const cy = focusScreen ? Math.min(Math.max(focusScreen.y, 0), size.h) : size.h / 2;
     setView((v) => ({
       ...v,
       scale: newScale,
-      offsetX: size.w / 2 - targetX * newScale,
-      offsetY: size.h / 2 - targetY * newScale,
+      offsetX: cx - targetX * newScale,
+      offsetY: cy - targetY * newScale,
     }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focusNonce]);
