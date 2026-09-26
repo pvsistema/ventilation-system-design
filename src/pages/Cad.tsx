@@ -57,6 +57,7 @@ import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
 import GeneralPropsPanel from "@/components/cad/GeneralPropsPanel";
 import BranchVentPanel from "@/components/cad/BranchVentPanel";
+import BranchIndicatorsPanel from "@/components/cad/BranchIndicatorsPanel";
 import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
@@ -7628,12 +7629,12 @@ export default function CadPage() {
             : ([
                 { id: "general", label: "Общие" },
                 { id: "vent", label: "Вентиляция" },
-                { id: "indicators", label: "Индикаторы" },
                 { id: "topology", label: "Топология" },
                 { id: "waterpipes", label: "Трубы:" },
                 { id: "conveyor", label: "Конвейер" },
                 { id: "fireload", label: "Пож.нагрузка" },
                 { id: "airdemand", label: "Расход воздуха" },
+                { id: "indicators", label: "Индикаторы" },
                 // Пункт появляется только когда на выработке построен став —
                 // иначе он был бы пустым и путал бы пользователя.
                 ...(selectedBranch?.hasVentPipe ? [{ id: "ventpipe" as SideTab, label: "Вентстав" }] : []),
@@ -11549,75 +11550,13 @@ export default function CadPage() {
             )}
 
             {/* ═══ ВКЛАДКА: ИНДИКАТОРЫ ══════════════════════════════════ */}
-            {activeSide === "indicators" && (() => {
-              if (!selectedBranch) return (
-                <div className="p-4 text-center text-gray-400 text-xs">Выберите ветвь на схеме</div>
-              );
-              const ind = selectedBranch.indicators ?? {};
-              const setInd = (key: string, val: boolean) =>
-                updateBranch(selectedBranch.id, { indicators: { ...ind, [key]: val } });
-              // ВАЖНО: IndRow/IndSection — обычные функции, а НЕ вложенные компоненты.
-              // Если объявить их как компоненты внутри render, React пересоздаёт их тип
-              // на каждом рендере и ремонтирует <input>, из-за чего в canvas-режиме
-              // (частые перерисовки схемы) клик по чекбоксу «теряется» и не срабатывает.
-              const indRow = (k: string, label: string) => (
-                <label key={k} className="flex items-center gap-2 py-0.5 cursor-pointer hover:bg-blue-50 px-1 rounded">
-                  <input type="checkbox" checked={ind[k] ?? false}
-                    onChange={e => setInd(k, e.target.checked)}
-                    style={{ width: 13, height: 13, accentColor: "#1e5a7a", cursor: "pointer" }} />
-                  <span className="text-[11px] text-gray-700">{label}</span>
-                </label>
-              );
-              const indSection = (title: string, rows: React.ReactNode) => (
-                <div className="mb-2" key={title}>
-                  <div className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide px-1 py-1 mt-1"
-                    style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>{title}</div>
-                  <div className="pt-0.5">{rows}</div>
-                </div>
-              );
-              return (
-                <div className="p-2 overflow-y-auto flex-1">
-                  <div className="flex items-center justify-between mb-2 px-1">
-                    <span className="text-[11px] font-semibold text-gray-700">Отображаемые индикаторы</span>
-                    <button onClick={() => updateBranch(selectedBranch.id, { indicators: {} })}
-                      className="text-[10px] text-gray-400 hover:text-red-500 px-1"
-                      title="Сбросить все индикаторы">
-                      Сбросить
-                    </button>
-                  </div>
-
-                  {indSection("Общее", [
-                    indRow("branchName", "Название"),
-                    indRow("branchNumber", "Номер"),
-                  ])}
-
-                  {indSection("Вентиляция", [
-                    // ВАЖНО: ключи должны совпадать с теми, что читают рендереры
-                    // (TopoCanvas / canvasRenderer / svgExporter). Раньше здесь были
-                    // выдуманные ключи branchVelocityModel / branchDepressionModel —
-                    // галочка ставилась, но подпись на схеме не появлялась.
-                    indRow("branchVMax", "Макс. допустимая скорость воздуха"),
-                    indRow("branchAlpha", "Коэффициент шероховатости (α)"),
-                    indRow("branchResistance", "Аэродинамическое сопротивление"),
-                    indRow("branchAngle", "Уклон"),
-                    indRow("branchLength", "Длина"),
-                    indRow("branchSection", "Поперечное сечение"),
-                    indRow("branchFlowCalc", "Расход воздуха"),
-                    indRow("branchVelocity", "Скорость воздуха"),
-                    indRow("branchDepression", "Перепад давления"),
-                  ])}
-
-                  {indSection("Авария", [
-                    indRow("branchMethane", "Концентрация метана"),
-                    indRow("branchCOEmission", "Концентрация угарного газа"),
-                    indRow("branchGasEmission", "Концентрация водорода"),
-                    indRow("branchGasSpreadTime", "Концентрация оксидов азота"),
-                    indRow("branchNatDragT", "Тепловая критическая депрессия"),
-                    indRow("branchNatDragW", "Тепловая депрессия пожара"),
-                  ])}
-                </div>
-              );
-            })()}
+            {activeSide === "indicators" && (
+              <BranchIndicatorsPanel
+                branch={selectedBranch}
+                infoConfig={infoConfig}
+                onChange={(indicators) => { if (selectedBranch) updateBranch(selectedBranch.id, { indicators }); }}
+              />
+            )}
 
             {/* ═══ ВКЛАДКА: ИНДИКАТОРЫ ВЕНТИЛЯТОРА ══════════════════════ */}
             {activeSide === "fan-indicators" && (() => {
