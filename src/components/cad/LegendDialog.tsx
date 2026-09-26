@@ -661,12 +661,6 @@ const ITEMS: LegendItem[] = [
       <line x1={10} y1={20} x2={38} y2={20} stroke={S} strokeWidth={1.5} />
     </svg>,
   },
-  { id: "acc_pb_base", group: "Аварии", name: "Подземная база",
-    svg: <svg width={48} height={40} viewBox="0 0 48 40">
-      <rect x={4} y={10} width={40} height={20} fill="none" stroke={S} strokeWidth={2} />
-      <text x={24} y={25} textAnchor="middle" fontSize={11} fontWeight="bold" fill={S}>П.Б</text>
-    </svg>,
-  },
   { id: "acc_nb_base", group: "Аварии", name: "Подземная база",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
       <rect x={4} y={10} width={40} height={20} fill="none" stroke={S} strokeWidth={2} />
