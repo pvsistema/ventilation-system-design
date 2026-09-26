@@ -5634,6 +5634,38 @@ export default function CadPage() {
     }
   };
 
+  /**
+   * Сменить направление вентилятора — куда он гонит воздух по выработке,
+   * НЕ меняя режим работы (прямой/реверс).
+   *
+   * Вентилятор в расчёте нагнетает от начального узла ветви к конечному,
+   * поэтому направление меняется перестановкой узлов ветви. В отличие от
+   * «Развернуть ветвь» (Ctrl+R), признак реверса НЕ переключается: у ГВУ/ВВУ
+   * разворот ветви инвертировал fanReverse, и вентилятор физически продолжал
+   * дуть туда же, только в «реверсе». Здесь он дует в другую сторону на
+   * прямой характеристике — как если бы его переставили.
+   *
+   * Значки на ветви остаются на своих местах (t → 1 − t), расход до
+   * пересчёта меняет знак, затем сеть пересчитывается.
+   */
+  const handleFlipFanDirection = (id: string) => {
+    pushHistory();
+    setBranches((p) => p.map((b) => b.id !== id ? b : {
+      ...b,
+      fromId: b.toId,
+      toId: b.fromId,
+      flow: -(b.flow ?? 0),
+      // Ручной угол задан от начального узла — при перестановке меняет знак
+      ...(b.manualAngle ? { angle: -(b.angle ?? 0) } : {}),
+    }));
+    setSchemaSymbols((prev) => prev.map((s) =>
+      s.branchId === id && typeof s.t === "number" ? { ...s, t: 1 - s.t } : s,
+    ));
+    setIsDirty(true);
+    addLog("info", `Вентилятор на ветви ${id}: направление изменено`);
+    setTimeout(() => handleSolveRef.current?.(), 100);
+  };
+
   // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
   // Логика вынесена в useCadHotkeys без изменений: тот же обработчик и тот же
   // порядок проверок клавиш.
@@ -10238,7 +10270,7 @@ export default function CadPage() {
                     FAN_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id ? { ...s, fanIndOffsetX: 0, fanIndOffsetY: 0 } : s
                   ));
                 } : undefined}
-                onReverse={selectedBranch.hasFan ? () => handleReverseBranch(selectedBranch.id) : undefined}
+                onReverse={selectedBranch.hasFan ? () => handleFlipFanDirection(selectedBranch.id) : undefined}
                 normalFlows={normalFlows}
                 mineFans={mineFans}
                 mineBulkheads={mineBulkheads}

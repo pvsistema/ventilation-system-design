@@ -8,7 +8,7 @@
 //      и поля выбранного режима (модель, лопатки, обороты, график Q–H).
 //   3. Установка: число в параллели, внутри перемычки или нет, окно ΔS.
 //   4. Результат расчёта: Q, H, N, КПД, R окна + предупреждения.
-//   5. Значок на схеме: масштаб, развернуть ветвь, удалить значок/вентилятор.
+//   5. Значок на схеме: масштаб, убрать значок, удалить вентилятор.
 //
 // Формулы и поля данных — прежние. Что убрано:
 //   • строка «+ : A → B» внизу — служебный вывод без подписи;
@@ -39,6 +39,7 @@ interface BranchFanTabProps {
   onFanIndFontSize?: (size: number) => void;
   onFanIndResetOffset?: () => void;
   onFanSymbolDelete?: () => void;
+  /** Сменить направление вентилятора (куда дует), не трогая прямой/реверс. */
   onReverse?: () => void;
   normalFlows?: Record<string, number>;
   mineFans?: MineFanExport[];
@@ -121,6 +122,15 @@ export default function BranchFanTab({
           <StateBtn on={!!b.fanStopped} tone="amber" icon="Square" label="Остановлен"
             onClick={() => onUpdate({ fanStopped: true })} />
         </div>
+        {onReverse && (
+          <Field label="Куда дует" hint={`Сейчас: от узла ${b.fromId} к узлу ${b.toId}. Режим (прямой/реверс) не меняется.`}>
+            <button type="button" onClick={onReverse}
+              className="w-full h-8 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5"
+              style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-accent, #1e5a7a)", color: "var(--c-accent, #1e5a7a)", cursor: "pointer" }}>
+              <Icon name="ArrowLeftRight" size={13} /> Сменить направление вентилятора
+            </button>
+          </Field>
+        )}
         {!isVmp ? (
           <>
             <div className="flex gap-1.5">
@@ -134,7 +144,7 @@ export default function BranchFanTab({
             )}
           </>
         ) : (
-          <Note tone="info">У ВМП направление нагнетания меняется разворотом ветви (Ctrl+R).</Note>
+          <Note tone="info">Реверса у ВМП нет — направление нагнетания меняется кнопкой «Сменить направление вентилятора».</Note>
         )}
       </Card>
 
@@ -274,15 +284,7 @@ export default function BranchFanTab({
               className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
           </div>
         )}
-        <div className="grid grid-cols-2 gap-1.5">
-          {onReverse && (
-            <button type="button" onClick={onReverse}
-              className="h-7 rounded text-[11px] flex items-center justify-center gap-1"
-              title="Поменять начало и конец ветви местами"
-              style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
-              <Icon name="ArrowLeftRight" size={12} /> Развернуть ветвь
-            </button>
-          )}
+        <div className="grid grid-cols-1 gap-1.5">
           {onFanSymbolDelete && (
             <button type="button" onClick={onFanSymbolDelete}
               className="h-7 rounded text-[11px] flex items-center justify-center gap-1"
