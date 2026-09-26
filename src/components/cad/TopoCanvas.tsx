@@ -133,22 +133,32 @@ export default function TopoCanvas(props: Props) {
     };
   }, []);
 
+  // Колбэки регистрации родитель передаёт стрелочными функциями — новыми на
+  // каждый рендер. Держим актуальные в ref и регистрируемся один раз: иначе
+  // эффект/callback ref срабатывал бы на каждый рендер, а если родитель
+  // однажды начнёт менять в них состояние — получится бесконечный цикл
+  // (как было в CanvasLayer).
+  const onRegisterGetSvgRef = useRef(onRegisterGetSvg);
+  const onRegisterSvgElRef = useRef(onRegisterSvgEl);
+  onRegisterGetSvgRef.current = onRegisterGetSvg;
+  onRegisterSvgElRef.current = onRegisterSvgEl;
+
   // Регистрируем функцию получения содержимого для печати (SVG или Canvas PNG)
   useEffect(() => {
-    if (!onRegisterGetSvg) return;
-    onRegisterGetSvg(() => {
+    onRegisterGetSvgRef.current?.(() => {
       if (canvasExportRef.current) return canvasExportRef.current();
       return svgRef.current?.outerHTML ?? "";
     });
-  }, [onRegisterGetSvg]);
+  }, []);
 
   // Регистрируем прямой доступ к SVG DOM элементу через callback ref
-  // (useEffect с svgRef.current — антипаттерн, ref меняется до useEffect)
+  // (useEffect с svgRef.current — антипаттерн, ref меняется до useEffect).
+  // Стабильный callback ref: React вызывает его только при монтировании
+  // и размонтировании элемента, а не на каждый рендер.
   const svgCallbackRef = useCallback((el: SVGSVGElement | null) => {
     (svgRef as React.MutableRefObject<SVGSVGElement | null>).current = el;
-    onRegisterSvgEl?.(el);
-   
-  }, [onRegisterSvgEl]);
+    onRegisterSvgElRef.current?.(el);
+  }, []);
 
   // Карта горизонтов по id (для быстрых lookups)
   const horizonMap = useMemo(() => {
