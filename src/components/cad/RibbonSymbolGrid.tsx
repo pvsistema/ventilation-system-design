@@ -22,10 +22,9 @@ interface Props {
   /** Инструмент «символ» активен — только тогда подсветка имеет смысл. */
   symbolToolActive: boolean;
   onPick: (id: string) => void;
-  onTooltip: (t: { name: string; x: number; y: number } | null) => void;
 }
 
-function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick, onTooltip }: Props) {
+function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick }: Props) {
   // Список УО неизменен на всё время работы программы — фильтруем один раз.
   const items = useMemo(() => LEGEND_TYPES.filter(lt => !HIDDEN_LEGEND_IDS.has(lt.id)), []);
   return (
@@ -42,28 +41,26 @@ function RibbonSymbolGridInner({ activeSymbolTypeId, symbolToolActive, onPick, o
         overflowX: "auto",
         overflowY: "hidden",
         maxWidth: 330,
-      }}
-      onMouseLeave={() => onTooltip(null)}>
+      }}>
       {items.map(lt => {
         const isActive = activeSymbolTypeId === lt.id && symbolToolActive;
         return (
           <button key={lt.id}
             onClick={() => onPick(lt.id)}
-            onMouseEnter={e => {
-              const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-              onTooltip({ name: lt.name, x: r.left, y: r.top });
-              if (!isActive) (e.currentTarget as HTMLElement).style.background = "#eef5f8";
-            }}
-            onMouseLeave={e => {
-              onTooltip(null);
-              if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent";
-            }}
+            // Название — обычной подсказкой браузера. Раньше подсказка жила в
+            // состоянии главной страницы и перерисовывала её на каждое
+            // движение мыши по значкам, а показывалась только при открытой
+            // выпадающей панели — у значков в ленте её фактически не было.
+            title={lt.name}
+            aria-label={lt.name}
+            onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = "var(--c-s3, #f1efea)"; }}
+            onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = "transparent"; }}
             style={{
               width: 18, height: 18,
               display: "flex", alignItems: "center", justifyContent: "center",
               borderRadius: "var(--radius-ui)",
-              border: isActive ? "1.5px solid var(--c-blue, #2563eb)" : "1px solid transparent",
-              background: isActive ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
+              border: isActive ? "1.5px solid var(--c-accent, #1e5a7a)" : "1px solid transparent",
+              background: isActive ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)" : "transparent",
               cursor: "pointer", padding: 0,
               transition: "border-color .1s, background .1s",
               outline: "none",

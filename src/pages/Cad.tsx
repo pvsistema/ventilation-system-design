@@ -100,6 +100,7 @@ import SchemeExportDialog, { type SchemeExportFormat, type SchemeExportOptions }
 import CadToolDialogs from "./cad/CadToolDialogs";
 import CadModals from "./cad/CadModals";
 import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
+import SymbolPicker from "@/components/cad/SymbolPicker";
 import ScrollArrows from "@/components/cad/ScrollArrows";
 import RibbonReferences, { type EquipRefTab } from "@/components/cad/RibbonReferences";
 import { runFireMode } from "@/lib/fireModeRun";
@@ -2039,10 +2040,6 @@ export default function CadPage() {
   const [pendingSymbol, setPendingSymbol] = useState<SchemaSymbol | null>(null);
 
   const [activeSymbolTypeId, setActiveSymbolTypeId] = useState<string | null>(null);
-  const [showUOPanel, setShowUOPanel] = useState(false);
-  const [uoPanelPos, setUOPanelPos] = useState({ left: 0, top: 0 });
-  const uoBtnRef = useRef<HTMLButtonElement>(null);
-  const [uoTooltip, setUoTooltip] = useState<{ name: string; x: number; y: number } | null>(null);
   // ID ветви, для которой открыли панель через клик на fan-символ
   const [fanSymbolBranchId, setFanSymbolBranchId] = useState<string | null>(null);
 
@@ -2255,8 +2252,7 @@ export default function CadPage() {
   const handlePickSymbolRef = useRef(handlePickSymbol);
   handlePickSymbolRef.current = handlePickSymbol;
   const pickSymbolStable = useCallback((id: string) => handlePickSymbolRef.current(id), []);
-  const setUoTooltipStable = useCallback(
-    (t: { name: string; x: number; y: number } | null) => setUoTooltip(t), []);
+  const cancelSymbolStable = useCallback(() => { setTool("select"); setActiveSymbolTypeId(null); }, []);
 
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
@@ -6988,187 +6984,23 @@ export default function CadPage() {
             onClick={() => setTool(tool === "textblock" ? "select" : "textblock")} />
         </RibbonGroup>
 
-        {/* ── УО: компактная кнопка + выпадающая панель ── */}
-        {(() => {
-          // Группируем символы по subgroup/group
-          const symGroups: { label: string; items: typeof LEGEND_TYPES }[] = [];
-          const seen = new Map<string, typeof LEGEND_TYPES[0][]>();
-          LEGEND_TYPES.forEach(lt => {
-            if (HIDDEN_LEGEND_IDS.has(lt.id)) return;
-            const key = lt.subgroup ?? lt.group;
-            if (!seen.has(key)) seen.set(key, []);
-            seen.get(key)!.push(lt);
-          });
-          seen.forEach((items, label) => symGroups.push({ label, items }));
-
-          const activeLt = LEGEND_TYPES.find(l => l.id === activeSymbolTypeId);
-          const hasActive = tool === "symbol" && !!activeLt;
-
-          return (
-            <div className="relative flex-shrink-0 h-full" style={{ borderRight: "1px solid var(--c-b2, #d0d0d0)" }}>
-              {/* ── Кнопка-триггер + встроенная превью-сетка (как «Объекты на выработках» в Аэросети) ── */}
-              <div className="flex flex-col h-full">
-                <div className="flex-1 flex items-stretch gap-1 px-1.5 pt-1 min-h-0">
-                  <button
-                    ref={uoBtnRef}
-                    onClick={() => {
-                      const rect = uoBtnRef.current?.getBoundingClientRect();
-                      if (rect) {
-                        const panelW = 340;
-                        const left = Math.min(rect.left, window.innerWidth - panelW - 8);
-                        setUOPanelPos({ left: Math.max(4, left), top: rect.bottom + 2 });
-                      }
-                      setShowUOPanel(v => !v);
-                    }}
-                    title="Условные обозначения — открыть полный список"
-                    style={{
-                      width: 44, height: 50, alignSelf: "center",
-                      display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
-                      borderRadius: "var(--radius-ui)",
-                      border: showUOPanel ? "1.5px solid var(--c-blue, #2563eb)" : hasActive ? "1.5px solid var(--c-blue-lt, #3b82f6)" : "1px solid var(--c-b2, #c8c8c8)",
-                      background: showUOPanel ? "var(--c-tint-blue2, #dbeafe)" : hasActive ? "var(--c-tint-blue, #eff6ff)" : "white",
-                      cursor: "pointer", padding: 0, flexShrink: 0,
-                    }}>
-                    {hasActive ? (
-                      <svg width={30} height={24} viewBox="0 0 48 40">
-                        <g dangerouslySetInnerHTML={{ __html: activeLt!.svgContent }} />
-                      </svg>
-                    ) : (
-                      <svg width={24} height={24} viewBox="0 0 24 24" fill="none" stroke="#666" strokeWidth="1.5" strokeLinecap="round">
-                        <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
-                        <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
-                      </svg>
-                    )}
-                    <svg width={8} height={5} viewBox="0 0 8 5">
-                      <path d={showUOPanel ? "M0,4 L4,0 L8,4" : "M0,0 L4,4 L8,0"} fill="none" stroke="#888" strokeWidth="1.3"/>
-                    </svg>
-                  </button>
-
-                  {/* ── Встроенная превью-сетка УО прямо в ленте ──
-                      Полторы сотни значков вынесены в отдельный компонент под
-                      memo: раньше они пересобирались при любом действии на
-                      схеме, хотя сама сетка при этом не менялась. */}
-                  <RibbonSymbolGrid
-                    activeSymbolTypeId={activeSymbolTypeId}
-                    symbolToolActive={tool === "symbol"}
-                    onPick={pickSymbolStable}
-                    onTooltip={setUoTooltipStable}
-                  />
-
-                  {/* Подсказка активного символа */}
-                  {hasActive && (
-                    <div className="flex flex-col justify-center flex-shrink-0" style={{ maxWidth: 80 }}>
-                      <div className="text-[8px] text-blue-700 font-semibold leading-tight" style={{ display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical", overflow: "hidden" }}>
-                        {activeLt!.name}
-                      </div>
-                      <div className="text-[7px] text-blue-400 mt-0.5">↓ кликни на ветвь</div>
-                      <button className="text-[8px] text-gray-400 hover:text-red-500 text-left mt-0.5 leading-none"
-                        onClick={(e) => { e.stopPropagation(); setTool("select"); setActiveSymbolTypeId(null); setShowUOPanel(false); }}>
-                        ✕ отмена
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* ── Выпадающая панель ── */}
-              {showUOPanel && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setShowUOPanel(false)} />
-                  <div style={{
-                      position: "fixed",
-                      left: uoPanelPos.left,
-                      top: uoPanelPos.top,
-                      zIndex: 9999,
-                      background: "white",
-                      border: "1px solid #b8c8d8",
-                      boxShadow: "0 8px 32px rgba(0,0,0,0.20)",
-                      borderRadius: 6,
-                      width: 340,
-                      maxHeight: "72vh",
-                      overflowY: "auto",
-                    }}
-                    onMouseLeave={() => setUoTooltip(null)}>
-
-                    {/* Tooltip */}
-                    {uoTooltip && (
-                      <div style={{
-                        position: "fixed",
-                        left: Math.min(uoTooltip.x + 8, window.innerWidth - 220),
-                        top: uoTooltip.y - 36,
-                        zIndex: 10000,
-                        background: "#1e293b",
-                        color: "white",
-                        fontSize: 10,
-                        padding: "4px 8px",
-                        borderRadius: "var(--radius-ui)",
-                        pointerEvents: "none",
-                        maxWidth: 210,
-                        lineHeight: 1.3,
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.25)",
-                        whiteSpace: "pre-wrap",
-                      }}>
-                        {uoTooltip.name}
-                      </div>
-                    )}
-
-                    {/* Шапка */}
-                    <div className="flex items-center justify-between px-3 py-1.5 sticky top-0 z-10"
-                      style={{ background: "linear-gradient(180deg,var(--c-tint-blue, #e8eef8),#dde7f4)", borderBottom: "1px solid #c8d4e8" }}>
-                      <span className="text-[11px] font-semibold text-gray-700">Условные обозначения</span>
-                      <button onClick={() => { setShowUOPanel(false); setUoTooltip(null); }}
-                        className="text-gray-400 hover:text-gray-700 w-5 h-5 flex items-center justify-center text-[14px] leading-none rounded hover:bg-gray-200">×</button>
-                    </div>
-
-                    {/* Контент — группы (плотная компактная сетка, как в Аэросети) */}
-                    <div className="flex flex-col">
-                      {symGroups.map(({ label, items }) => (
-                        <div key={label}>
-                          <div className="text-[8.5px] font-semibold uppercase tracking-wide px-2 py-[3px]"
-                            style={{ background: "#f0f3f8", borderTop: "1px solid #e2e8f2", borderBottom: "1px solid #e2e8f2", color: "var(--c-t3, #64748b)" }}>
-                            {label}
-                          </div>
-                          <div style={{ display: "flex", flexWrap: "wrap", gap: 1, padding: "3px 4px" }}>
-                            {items.map(lt => {
-                              const isActive = activeSymbolTypeId === lt.id && tool === "symbol";
-                              return (
-                                <button key={lt.id}
-                                  onClick={() => { handlePickSymbol(lt.id); setShowUOPanel(false); setUoTooltip(null); }}
-                                  onMouseEnter={e => {
-                                    const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                                    setUoTooltip({ name: lt.name, x: r.left, y: r.top });
-                                    if (!isActive) (e.currentTarget as HTMLElement).style.background = "#eef5f8";
-                                  }}
-                                  onMouseLeave={e => {
-                                    setUoTooltip(null);
-                                    if (!isActive) (e.currentTarget as HTMLElement).style.background = "transparent";
-                                  }}
-                                  style={{
-                                    width: 26, height: 26,
-                                    display: "flex", alignItems: "center", justifyContent: "center",
-                                    borderRadius: "var(--radius-ui)",
-                                    border: isActive ? "1.5px solid var(--c-blue, #2563eb)" : "1px solid transparent",
-                                    background: isActive ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
-                                    cursor: "pointer", padding: 0, flexShrink: 0,
-                                    transition: "border-color .1s, background .1s",
-                                    outline: "none",
-                                  }}>
-                                  <svg width={22} height={18} viewBox="0 0 48 40">
-                                    <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />
-                                  </svg>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })()}
+        {/* ── УО: кнопка с выпадающей панелью + сетка значков прямо в ленте ── */}
+        <div className="relative flex-shrink-0 h-full flex items-stretch gap-1 px-1.5 pt-1"
+          style={{ borderRight: "1px solid var(--c-b2, #d0d0d0)" }}>
+          <SymbolPicker
+            activeSymbolTypeId={activeSymbolTypeId}
+            symbolToolActive={tool === "symbol"}
+            onPick={pickSymbolStable}
+            onCancel={cancelSymbolStable}
+          />
+          {/* Сетка значков в ленте — под memo, перерисовывается только при
+              смене выбранного значка. */}
+          <RibbonSymbolGrid
+            activeSymbolTypeId={activeSymbolTypeId}
+            symbolToolActive={tool === "symbol"}
+            onPick={pickSymbolStable}
+          />
+        </div>
 
         {/* ── Группа: Действия с объектами ── */}
         <RibbonGroup label="Действия">
