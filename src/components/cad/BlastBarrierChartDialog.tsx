@@ -22,7 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, Area,
+  ResponsiveContainer, ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ReferenceArea, ReferenceDot, Area,
 } from "recharts";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch } from "@/lib/topology";
@@ -30,6 +30,7 @@ import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import { barrierDisplayName, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { reflectedPressure } from "@/lib/blastBulkhead";
 import { waveFrontSpeed, type ExplosionResult } from "@/lib/explosionCalculator";
+import { exportBlastBarriersExcel, logBounds } from "@/lib/blastBarrierExcel";
 
 interface Props {
   branches: TopoBranch[];
@@ -101,6 +102,27 @@ const STATUS_STYLE: Record<Status["kind"], { color: string; bg: string; border: 
   held:      { color: "#16a34a", bg: "var(--c-tint-green, #f0fdf4)", border: "#86efac",              icon: "ShieldCheck" },
 };
 
+/** «Круглое» значение сверху: 1, 2, 2.5, 5 × 10ⁿ. */
+function niceCeil(v: number): number {
+  if (!(v > 0)) return 1;
+  const p = 10 ** Math.floor(Math.log10(v));
+  for (const m of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) if (m * p >= v) return m * p;
+  return 10 * p;
+}
+
+/** Круглые деления оси в диапазоне [a, b]. */
+function niceTicks(a: number, b: number, count: number): number[] {
+  const span = b - a;
+  if (!(span > 0)) return [a];
+  const raw = span / count;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(m => m * p).find(s => s >= raw) ?? 10 * p;
+  const out: number[] = [];
+  for (let v = Math.ceil(a / step) * step; v <= b + 1e-9; v += step) out.push(+v.toFixed(6));
+  return out;
+}
+
+const fmtAxisPct = (v: number) => v >= 1e6 ? `${v / 1e6}M%` : v >= 1e4 ? `${v / 1e3}k%` : v < 1 ? `${+v.toPrecision(2)}%` : `${+v.toFixed(0)}%`;
 const fmtMs = (ms: number) => ms >= 1000 ? `${(ms / 1000).toFixed(2)} с` : `${ms.toFixed(0)} мс`;
 const fmtPct = (v: number) => v >= 1000 ? `${Math.round(v / 100) / 10}×10³ %` : v >= 10 ? `${v.toFixed(0)} %` : `${v.toFixed(1)} %`;
 
@@ -165,21 +187,56 @@ export default function BlastBarrierChartDialog(p: Props) {
   };
 
   const peakPct = row && row.fp_kPa > 0 ? (row.hit.incident_kPa / row.fp_kPa) * 100 : 0;
-  // Шкала ограничена 300 %: иначе при нагрузке в десятки раз выше прочности
-  // линия 100 % сливается с осью и главное — «выше/ниже прочности» — не видно.
-  const Y_CAP = 300;
-  const yMax = Math.min(Y_CAP, Math.max(130, Math.ceil(peakPct * 1.15 / 10) * 10));
-  const clipped = peakPct > yMax;
+  const reflPeakPct = row && row.fp_kPa > 0 ? (reflectedPressure(row.hit.incident_kPa) / row.fp_kPa) * 100 : 0;
+
+  // Шкала нагрузки. Когда пик в разы больше (или меньше) прочности, линейная
+  // шкала либо обрезает кривую (получается ложное «плато»), либо прижимает
+  // линию 100 % к оси. Логарифмическая показывает всё целиком и честно.
+  const autoLog = peakPct > 300 || (peakPct > 0 && peakPct < 20);
+  const [scaleMode, setScaleMode] = useState<"auto" | "lin" | "log">("auto");
+  const [showRefl, setShowRefl] = useState(false);
+  const isLog = scaleMode === "log" || (scaleMode === "auto" && autoLog);
+  const topPct = Math.max(peakPct, showRefl ? reflPeakPct : 0);
+  const { min: logMin, max: logMax } = logBounds([peakPct, showRefl ? reflPeakPct : peakPct]);
+  const yMin = isLog ? logMin : 0;
+  const yMax = isLog ? logMax : Math.max(130, niceCeil(topPct * 1.1));
+  const yTicks = isLog
+    ? Array.from({ length: Math.round(Math.log10(logMax / logMin)) + 1 }, (_, i) => logMin * 10 ** i)
+    : niceTicks(0, yMax, 6);
+  const xTicks = niceTicks(tMin, tMax, 7);
 
   const data = useMemo(() => {
     if (!row) return [];
     const N = 240;
-    return Array.from({ length: N + 1 }, (_, i) => {
-      const tt = tMin + ((tMax - tMin) * i) / N;
-      const pct = row.fp_kPa > 0 ? (pAt(tt, row) / row.fp_kPa) * 100 : 0;
-      return { t: +tt.toFixed(2), pct: +Math.min(pct, yMax).toFixed(3), real: +pct.toFixed(3) };
+    const ts = Array.from({ length: N + 1 }, (_, i) => tMin + ((tMax - tMin) * i) / N);
+    // Точный скачок фронта: две точки в момент t₀ (до и после) и конец действия
+    ts.push(row.t0_ms, row.t0_ms + row.theta_ms);
+    ts.sort((a, b) => a - b);
+    let jumped = false;
+    return ts.map(tt => {
+      let pk = pAt(tt, row);
+      if (Math.abs(tt - row.t0_ms) < 1e-9 && !jumped) { pk = 0; jumped = true; }
+      const pct = row.fp_kPa > 0 ? (pk / row.fp_kPa) * 100 : 0;
+      const refl = row.fp_kPa > 0 ? (reflectedPressure(pk) / row.fp_kPa) * 100 : 0;
+      // На лог. шкале нулей нет: ниже минимума — разрыв, кроме вертикали скачка
+      const onJump = Math.abs(tt - row.t0_ms) < 1e-9;
+      const fit = (v: number) => isLog ? (v >= yMin ? v : onJump ? yMin : null) : v;
+      return { t: +tt.toFixed(3), pct: fit(pct), refl: fit(refl), real: pct, kPa: pk };
     });
-  }, [row, tMin, tMax, yMax]);
+  }, [row, tMin, tMax, isLog, yMin]);
+
+  const exportExcel = async () => {
+    if (!rows.length) return;
+    try {
+      await exportBlastBarriersExcel(rows.map(r => ({
+        name: r.name, d_m: r.d, t0_ms: r.t0_ms, theta_ms: r.theta_ms,
+        incident_kPa: r.hit.incident_kPa, failure_kPa: r.fp_kPa,
+        destroyed: r.hit.destroyed, transmit: r.hit.transmit,
+      })), Math.max(0, rows.findIndex(r => r.bar.key === row?.bar.key)));
+    } catch (e) {
+      console.error("Экспорт диаграммы перемычек в Excel:", e);
+    }
+  };
 
   const st = row ? statusAt(t, row) : null;
   const pNow = row ? pAt(t, row) : 0;
@@ -225,6 +282,13 @@ export default function BlastBarrierChartDialog(p: Props) {
               Нагрузка = давление во фронте волны ÷ прочность перемычки. 100 % и больше — перемычка разрушается (табл. 8 методики ВГСЧ)
             </div>
           </div>
+          {rows.length > 0 && (
+            <button type="button" onClick={exportExcel} title="Таблица всех перемычек и диаграммы Excel (редактируемые)"
+              className="flex items-center gap-1.5 px-2.5 py-1 rounded text-[11.5px] font-semibold hover:brightness-95"
+              style={{ background: "#e8f5ec", color: "#15803d", border: "1px solid #86efac" }}>
+              <Icon name="FileSpreadsheet" size={14} />В Excel
+            </button>
+          )}
           <button onClick={p.onClose} className="rounded p-1 hover:bg-black/5" style={{ color: "var(--c-t4, #9ca3af)" }}>
             <Icon name="X" size={18} />
           </button>
@@ -349,40 +413,74 @@ export default function BlastBarrierChartDialog(p: Props) {
                 <div className="rounded-md px-3 pt-2 pb-1" style={{ border: "1px solid var(--c-b1, #e5e7eb)" }}>
                   <div className="flex items-center">
                     <div className="text-[10px] font-semibold uppercase tracking-wider flex-1" style={{ color: muted }}>2. Нагрузка на перемычку, % от прочности</div>
+                    <label className="flex items-center gap-1 text-[10.5px] mr-2 cursor-pointer" style={{ color: muted }}>
+                      <input type="checkbox" checked={showRefl} onChange={e => setShowRefl(e.target.checked)} style={{ accentColor: "#7c3aed" }} />
+                      отражение
+                    </label>
+                    <div className="flex rounded overflow-hidden mr-2" style={{ border: "1px solid var(--c-b2, #d1d5db)" }}>
+                      {([["auto", `Авто${scaleMode === "auto" ? (isLog ? " · лог" : " · лин") : ""}`], ["lin", "Лин"], ["log", "Лог"]] as const).map(([k, l]) => (
+                        <button key={k} type="button" onClick={() => setScaleMode(k)}
+                          className="text-[10px] px-1.5 py-0.5"
+                          style={{ background: scaleMode === k ? "#1e5a7a" : "transparent", color: scaleMode === k ? "#fff" : muted }}>{l}</button>
+                      ))}
+                    </div>
                     <button type="button" onClick={() => { setPlaying(false); setT(Math.max(0, row.t0_ms - row.theta_ms * 0.3)); }}
                       className="text-[10.5px] px-1.5 py-0.5 rounded hover:bg-black/5" style={{ color: "var(--c-accent, #1e5a7a)" }}>
                       К приходу волны
                     </button>
                   </div>
-                  <div style={{ height: 230 }}>
+                  <div style={{ height: 250 }}>
                     <ResponsiveContainer width="100%" height="100%">
-                      <ComposedChart data={data} margin={{ top: 8, right: 14, bottom: 16, left: 0 }}>
+                      <ComposedChart data={data} margin={{ top: 18, right: 16, bottom: 18, left: 4 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                         {/* Зона разрушения — выше 100 % */}
-                        <ReferenceArea y1={100} y2={yMax} fill="#fee2e2" fillOpacity={0.6} ifOverflow="hidden" />
-                        <XAxis dataKey="t" type="number" domain={[tMin, tMax]} tick={{ fontSize: 10 }}
-                          tickFormatter={(v: number) => v.toFixed(0)}
-                          label={{ value: "Время от взрыва, мс", position: "insideBottom", offset: -6, fontSize: 10 }} />
-                        <YAxis domain={[0, yMax]} ticks={yMax <= 150 ? [0, 25, 50, 75, 100, 125] : [0, 50, 100, 150, 200, 250, 300].filter(v => v <= yMax)}
-                          tick={{ fontSize: 10 }} width={46} tickFormatter={(v: number) => `${v}%`} allowDataOverflow />
-                        <Tooltip formatter={(_v: number, _n: string, it: { payload?: { real?: number } }) => {
-                            const real = it?.payload?.real ?? 0;
-                            return [`${fmtPct(real)} (${(row.fp_kPa * real / 100).toFixed(1)} кПа)`, "Нагрузка"];
-                          }}
-                          labelFormatter={(l: number) => `t = ${Number(l).toFixed(1)} мс`} contentStyle={{ fontSize: 11 }} />
-                        <Area type="linear" dataKey="pct" stroke="none" fill={row.hit.destroyed ? "#dc2626" : "#f59e0b"} fillOpacity={0.18} isAnimationActive={false} />
-                        <Line type="linear" dataKey="pct" stroke={row.hit.destroyed ? "#dc2626" : "#d97706"} strokeWidth={2.5} dot={false} isAnimationActive={false} />
-                        <ReferenceLine y={100} stroke="#dc2626" strokeWidth={1.5}
+                        <ReferenceArea y1={100} y2={yMax} fill="#fee2e2" fillOpacity={0.55} ifOverflow="hidden" />
+                        {/* Время действия волны на перемычку */}
+                        <ReferenceArea x1={row.t0_ms} x2={Math.min(row.t0_ms + row.theta_ms, tMax)} y1={yMin} y2={yMax}
+                          fill="#fde68a" fillOpacity={0.18} ifOverflow="hidden" />
+                        <XAxis dataKey="t" type="number" domain={[tMin, tMax]} ticks={xTicks} tick={{ fontSize: 10 }}
+                          tickFormatter={(v: number) => (xTicks.length > 1 && xTicks[1] - xTicks[0] < 1 ? v.toFixed(1) : v.toFixed(0))}
+                          allowDataOverflow
+                          label={{ value: "Время от взрыва, мс", position: "insideBottom", offset: -8, fontSize: 10 }} />
+                        <YAxis domain={[yMin, yMax]} scale={isLog ? "log" : "linear"} ticks={yTicks}
+                          tick={{ fontSize: 10 }} width={58} tickFormatter={(v: number) => fmtAxisPct(v)} allowDataOverflow />
+                        <Tooltip
+                          content={({ active, label }) => {
+                            if (!active || label === undefined) return null;
+                            const tt = Number(label);
+                            const pk = pAt(tt, row);
+                            const pct = row.fp_kPa > 0 ? (pk / row.fp_kPa) * 100 : 0;
+                            const rf = reflectedPressure(pk);
+                            return (
+                              <div className="rounded px-2 py-1.5 text-[11px] shadow" style={{ background: "#fff", border: "1px solid #d1d5db" }}>
+                                <div className="font-semibold mb-0.5">t = {tt.toFixed(1)} мс</div>
+                                <div style={{ color: row.hit.destroyed ? "#dc2626" : "#b45309" }}>Нагрузка: <b>{fmtPct(pct)}</b> ({pk.toFixed(1)} кПа)</div>
+                                {showRefl && <div style={{ color: "#7c3aed" }}>Отражение: {rf.toFixed(1)} кПа ({fmtPct(row.fp_kPa > 0 ? rf / row.fp_kPa * 100 : 0)})</div>}
+                                <div style={{ color: "#6b7280" }}>Прочность: {row.fp_kPa.toFixed(1)} кПа</div>
+                              </div>
+                            );
+                          }} />
+                        {!isLog && <Area type="linear" dataKey="pct" stroke="none" fill={row.hit.destroyed ? "#dc2626" : "#f59e0b"} fillOpacity={0.15} isAnimationActive={false} connectNulls={false} />}
+                        {showRefl && <Line type="linear" dataKey="refl" stroke="#7c3aed" strokeWidth={1.5} strokeDasharray="5 3" dot={false} isAnimationActive={false} connectNulls={false} />}
+                        <Line type="linear" dataKey="pct" stroke={row.hit.destroyed ? "#dc2626" : "#d97706"} strokeWidth={2.5} dot={false} isAnimationActive={false} connectNulls={false} />
+                        <ReferenceLine y={100} stroke="#dc2626" strokeWidth={1.5} strokeDasharray="6 3"
                           label={{ value: `прочность ${(row.fp_kPa / 1000).toFixed(3)} МПа = 100 %`, position: "insideBottomRight", fontSize: 10, fill: "#dc2626" }} />
-                        {clipped && (
-                          <ReferenceLine y={yMax} stroke="none"
-                            label={{ value: `пик ${fmtPct(peakPct)} — выше шкалы`, position: "insideTopRight", fontSize: 10, fill: "#991b1b", fontWeight: 700 }} />
-                        )}
-                        <ReferenceLine x={row.t0_ms} stroke="#9ca3af" strokeDasharray="4 3"
-                          label={{ value: row.hit.destroyed ? "приход волны → разрушение" : "приход волны", position: "insideTopLeft", fontSize: 10, fill: row.hit.destroyed ? "#dc2626" : "#6b7280" }} />
+                        <ReferenceLine x={row.t0_ms} stroke="#9ca3af" strokeDasharray="4 3" />
+                        {/* Пик — точка с подписью */}
+                        <ReferenceDot x={row.t0_ms} y={Math.max(peakPct, yMin)} r={4} ifOverflow="extendDomain"
+                          fill={row.hit.destroyed ? "#dc2626" : "#d97706"} stroke="#fff"
+                          label={{ value: `пик ${fmtPct(peakPct)} · ${fmtMs(row.t0_ms)}`, position: "right", fontSize: 10, fontWeight: 700, fill: row.hit.destroyed ? "#991b1b" : "#92400e" }} />
                         {t >= tMin && t <= tMax && <ReferenceLine x={t} stroke="#1e5a7a" strokeWidth={2} />}
                       </ComposedChart>
                     </ResponsiveContainer>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[10.5px] pt-0.5" style={{ color: muted }}>
+                    <span className="flex items-center gap-1"><span style={{ width: 14, height: 3, background: row.hit.destroyed ? "#dc2626" : "#d97706", display: "inline-block" }} />нагрузка от фронта</span>
+                    <span className="flex items-center gap-1"><span style={{ width: 14, borderTop: "2px dashed #dc2626", display: "inline-block" }} />прочность (100 %)</span>
+                    <span className="flex items-center gap-1"><span style={{ width: 12, height: 10, background: "#fee2e2", display: "inline-block" }} />зона разрушения</span>
+                    <span className="flex items-center gap-1"><span style={{ width: 12, height: 10, background: "#fde68a", opacity: 0.6, display: "inline-block" }} />действие волны θ = {row.theta_ms.toFixed(0)} мс</span>
+                    {showRefl && <span className="flex items-center gap-1"><span style={{ width: 14, borderTop: "2px dashed #7c3aed", display: "inline-block" }} />давление отражения (справочно)</span>}
+                    {isLog && <span style={{ color: "#1e5a7a" }}>ось — логарифмическая</span>}
                   </div>
                   <div className="text-[10.5px] pb-1" style={{ color: muted }}>
                     Фронт ударной волны — скачок: давление мгновенно поднимается до максимума и затем спадает за {row.theta_ms.toFixed(0)} мс.
