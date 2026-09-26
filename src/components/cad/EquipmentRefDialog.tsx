@@ -87,16 +87,16 @@ const TABS: { id: TabId; label: string; icon: string; group: string; hint: strin
     hint: "Нормы для расчёта количества воздуха по ФНиП № 505." },
   { id: "blastzones",label: "Зоны поражения взрывом", icon: "Bomb",   group: "Аварии",
     hint: "Пороги избыточного давления для зон поражения и окраски выработок." },
-  { id: "sensors",   label: "Датчики",             icon: "Radio",     group: "Аварии", demo: true,
-    hint: "Образец справочника датчиков. В расчётах пока не используется." },
-  { id: "typical",   label: "Типовые мероприятия", icon: "FileText",  group: "Аварии", demo: true,
-    hint: "Образец справочника типовых мероприятий. В расчётах пока не используется." },
+  { id: "sensors",   label: "Датчики",             icon: "Radio",     group: "Аварии",
+    hint: "Датчики рудника. Заполняется вручную. В расчётах пока не используется." },
+  { id: "typical",   label: "Типовые мероприятия", icon: "FileText",  group: "Аварии",
+    hint: "Типовые мероприятия. Заполняется вручную. В расчётах пока не используется." },
   { id: "pumps",     label: "Насосы",              icon: "Gauge",     group: "Трубопровод",
     hint: "Библиотека насосов. Нажмите строку — откроется напорная характеристика." },
   { id: "consumers", label: "Потребители",         icon: "Flame",     group: "Трубопровод",
     hint: "Пожарные стволы, распылители, пеногенераторы. Модель выбирается в свойствах узла-потребителя." },
-  { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод", demo: true,
-    hint: "Образец справочника труб. В расчётах пока не используется." },
+  { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод",
+    hint: "Трубы рудника. Заполняется вручную. В расчётах пока не используется." },
   { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее",
     hint: "Самоходная техника: пожарная нагрузка (резина, дизель, масло), кг." },
   { id: "units",     label: "Единицы измерения",   icon: "Ruler",     group: "Общее",
@@ -1501,22 +1501,6 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
     </div>
   );
 }
-const DEMO_SENSORS = [
-  { name: "МС-1М", measure: "CH₄", range: "0–4%", cls: "1A", note: "" },
-  { name: "МТ-5", measure: "CO", range: "0–100 ppm", cls: "1A", note: "" },
-  { name: "АТ-6", measure: "Температура", range: "-40..+80°C", cls: "1B", note: "" },
-  { name: "ВКМ-1", measure: "Скорость", range: "0–25 м/с", cls: "2A", note: "Анемометр" },
-];
-const DEMO_TYPICAL = [
-  { name: "Задымление (пожар)", steps: 7, resp: "Нач. смены", dur: "15 мин" },
-  { name: "Превышение CH₄ > 1%", steps: 5, resp: "Мастер ВТБ", dur: "10 мин" },
-  { name: "Отказ ГВУ", steps: 4, resp: "Гл. механик", dur: "20 мин" },
-];
-const DEMO_PIPES = [
-  { name: "Сталь Ст20", dn: "DN50", wall: "4 мм", p: "16 бар" },
-  { name: "Сталь Ст20", dn: "DN100", wall: "5 мм", p: "16 бар" },
-  { name: "ПВД (полиэтилен)", dn: "DN50", wall: "4.6 мм", p: "10 бар" },
-];
 interface MineVehicle {
   name: string;
   type: string;
@@ -1616,18 +1600,59 @@ function Td({ children }: { children: React.ReactNode }) {
 
 /** Таблица только для просмотра — строки не кликабельны (раньше был
  *  cursor-pointer без обработчика, и казалось, что строку можно открыть). */
-function SimpleTable({ headers, rows }: { headers: string[]; rows: (string | number)[][] }) {
+/** Редактируемая таблица справочника: пустая по умолчанию, данные вводит пользователь.
+ *  Сохраняется в localStorage браузера. */
+function EditableTable({ headers, storageKey }: { headers: string[]; storageKey: string }) {
+  const [rows, setRows] = useState<string[][]>(() => {
+    try {
+      const raw = localStorage.getItem(storageKey);
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(storageKey, JSON.stringify(rows)); } catch { /* ignore */ }
+  }, [rows, storageKey]);
+
+  const addRow = () => setRows(r => [...r, headers.map(() => "")]);
+  const delRow = (i: number) => setRows(r => r.filter((_, k) => k !== i));
+  const setCell = (i: number, j: number, v: string) =>
+    setRows(r => r.map((row, k) => k === i ? row.map((c, m) => m === j ? v : c) : row));
+
   return (
-    <table className="w-full border-collapse">
-      <thead><tr>{headers.map(h => <Th key={h}>{h}</Th>)}</tr></thead>
-      <tbody>
-        {rows.map((r, i) => (
-          <tr key={i} className="hover:bg-[var(--c-s2)]">
-            {r.map((c, j) => <Td key={j}>{c}</Td>)}
-          </tr>
-        ))}
-      </tbody>
-    </table>
+    <div className="flex flex-col">
+      <table className="w-full border-collapse">
+        <thead><tr>{headers.map(h => <Th key={h}>{h}</Th>)}<Th>{""}</Th></tr></thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i} className="hover:bg-[var(--c-s2)]">
+              {headers.map((h, j) => (
+                <td key={j} className="px-2 py-1 border-b border-[var(--c-b1)]">
+                  <input className={INPUT} value={r[j] ?? ""} placeholder={h}
+                    onChange={e => setCell(i, j, e.target.value)} />
+                </td>
+              ))}
+              <td className="px-1 py-1 border-b border-[var(--c-b1)] w-9">
+                <button className={ICON_BTN} title="Удалить строку" onClick={() => delRow(i)}>
+                  <Icon name="Trash2" size={13} />
+                </button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 && (
+            <tr><td colSpan={headers.length + 1}
+              className="px-4 py-8 text-center text-[12px] text-[var(--c-t3)]">
+              Справочник пуст. Нажмите «Добавить строку», чтобы внести данные.
+            </td></tr>
+          )}
+        </tbody>
+      </table>
+      <div className="p-3">
+        <button className={BTN_PRIMARY} onClick={addRow}>
+          <Icon name="Plus" size={13} /> Добавить строку
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -1964,17 +1989,14 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   if (tab === "types") return <TypesSection initialTypes={initialBranchTypes} onBranchTypesChange={onBranchTypesChange} />;
   if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} initialMineBulkheads={initialMineBulkheads} />;
   if (tab === "units") return <UnitsConfigPanel unitsConfig={unitsConfig ?? DEFAULT_UNITS_CONFIG} onChange={onUnitsConfigChange ?? (() => {})} />;
-  if (tab === "sensors") return <SimpleTable
-    headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]}
-    rows={DEMO_SENSORS.map(r => [r.name, r.measure, r.range, r.cls, r.note])} />;
-  if (tab === "typical") return <SimpleTable
-    headers={["Мероприятие", "Шагов", "Ответственный", "Время"]}
-    rows={DEMO_TYPICAL.map(r => [r.name, r.steps, r.resp, r.dur])} />;
+  if (tab === "sensors") return <EditableTable key="sensors" storageKey="pv_ref_sensors"
+    headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]} />;
+  if (tab === "typical") return <EditableTable key="typical" storageKey="pv_ref_typical"
+    headers={["Мероприятие", "Шагов", "Ответственный", "Время"]} />;
   if (tab === "pumps") return <PumpsSection />;
   if (tab === "consumers") return <ConsumersSection />;
-  if (tab === "pipes") return <SimpleTable
-    headers={["Материал", "DN", "Стенка", "Давление"]}
-    rows={DEMO_PIPES.map(r => [r.name, r.dn, r.wall, r.p])} />;
+  if (tab === "pipes") return <EditableTable key="pipes" storageKey="pv_ref_pipes"
+    headers={["Материал", "DN", "Стенка", "Давление"]} />;
   if (tab === "transport") return <VehicleCatalogSection />;
   return null;
 }
