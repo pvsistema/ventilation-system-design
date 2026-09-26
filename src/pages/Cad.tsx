@@ -11625,6 +11625,8 @@ export default function CadPage() {
                 branch={selectedBranch}
                 infoConfig={infoConfig}
                 onChange={(indicators) => { if (selectedBranch) updateBranch(selectedBranch.id, { indicators }); }}
+                onBranchPatch={updateSelectedBranches}
+                editCount={branchEditCount}
               />
             )}
 

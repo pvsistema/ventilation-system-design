@@ -38,47 +38,6 @@ function Stepper({ value, onChange, min, max, step, unit }: {
   );
 }
 
-/** Ползунок + сегментные пресеты + сброс. */
-function PresetSlider({ value, onChange, onReset, min, max, step, presets, fmt }: {
-  value: number; onChange: (v: number) => void; onReset: () => void;
-  min: number; max: number; step: number; presets: number[]; fmt: (v: number) => string;
-}) {
-  return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-2">
-        <input type="range" min={min} max={max} step={step} value={value}
-          onChange={(e) => onChange(Number(e.target.value))}
-          className="flex-1" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
-        <span className="w-12 text-right text-xs tabular-nums"
-          style={{ color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)" }}>{fmt(value)}</span>
-        <button type="button" onClick={onReset} title="Сбросить"
-          className="w-6 h-6 flex items-center justify-center rounded"
-          style={{ background: "var(--c-s3, #f1efea)", border: "none", color: "var(--c-t3, #6b7280)", cursor: "pointer" }}>
-          <Icon name="RotateCcw" size={11} />
-        </button>
-      </div>
-      <div className="flex p-0.5 rounded" style={{ background: "var(--c-s3, #f1efea)" }}>
-        {presets.map((p) => {
-          const on = Math.abs(value - p) < 1e-6;
-          return (
-            <button key={p} type="button" onClick={() => onChange(p)}
-              className="flex-1 h-5 text-[10px] rounded transition-colors"
-              style={{
-                border: "none", cursor: "pointer", fontFamily: "var(--font-num)",
-                background: on ? "var(--c-s1, #fff)" : "transparent",
-                color: on ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)",
-                fontWeight: on ? 600 : 400,
-                boxShadow: on ? "0 1px 2px rgba(0,0,0,.12)" : "none",
-              }}>
-              {fmt(p)}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 function MultiNote({ count, verb }: { count: number; verb: string }) {
   if (count <= 1) return null;
   return (
@@ -236,25 +195,6 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
           <div className="text-[10px]" style={{ color: "var(--c-t4, #767f8c)" }}>
             Контур — тёмная окантовка линии, 0 — без неё.
           </div>
-          <MultiNote count={p.editCount} verb="Применится" />
-        </Card>
-      )}
-
-      {/* ── Подписи (индикаторы) ── */}
-      {branch && (
-        <Card icon="Type" title="Подписи на схеме" collapsible>
-          <Field label="Поворот блока меток">
-            <PresetSlider value={branch.labelAngle ?? 0} min={-180} max={180} step={5}
-              presets={[-90, -45, 0, 45, 90]} fmt={(v) => `${v}°`}
-              onChange={(v) => p.onBranchPatch({ labelAngle: v })}
-              onReset={() => p.onBranchPatch({ labelAngle: 0 })} />
-          </Field>
-          <Field label="Размер текста">
-            <PresetSlider value={branch.labelSize ?? 1} min={0.3} max={4} step={0.1}
-              presets={[0.5, 0.75, 1, 1.5, 2]} fmt={(v) => `×${v}`}
-              onChange={(v) => p.onBranchPatch({ labelSize: v === 1 ? undefined : v })}
-              onReset={() => p.onBranchPatch({ labelSize: undefined })} />
-          </Field>
           <MultiNote count={p.editCount} verb="Применится" />
         </Card>
       )}

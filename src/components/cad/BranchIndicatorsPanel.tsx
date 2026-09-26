@@ -11,7 +11,7 @@
 import Icon from "@/components/ui/icon";
 import type { TopoBranch } from "@/lib/topology";
 import type { InfoDisplayConfig } from "@/lib/infoConfig";
-import { Card, Switch } from "@/components/cad/propUi";
+import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 
 type Key = keyof InfoDisplayConfig;
 
@@ -52,9 +52,13 @@ interface Props {
   /** Общие настройки «Панели информации» — действуют, пока нет своей отметки. */
   infoConfig: InfoDisplayConfig;
   onChange: (indicators: Record<string, boolean>) => void;
+  /** Правка вида подписи (поворот, размер) — у всех выбранных выработок. */
+  onBranchPatch: (patch: Partial<TopoBranch>) => void;
+  /** Сколько выработок затронет правка (Ctrl-выделение). */
+  editCount: number;
 }
 
-export default function BranchIndicatorsPanel({ branch: b, infoConfig, onChange }: Props) {
+export default function BranchIndicatorsPanel({ branch: b, infoConfig, onChange, onBranchPatch, editCount }: Props) {
   if (!b) {
     return (
       <div className="px-3 py-6 text-center text-xs" style={{ color: "var(--c-t4, #767f8c)" }}>
@@ -113,8 +117,38 @@ export default function BranchIndicatorsPanel({ branch: b, infoConfig, onChange 
         </div>
       </Card>
 
+      {/* ═══ Вид подписи: поворот и размер ═════════════════════════════ */}
+      <Card icon="Type" title="Вид подписи">
+        <Field label="Поворот блока меток">
+          <PresetSlider value={b.labelAngle ?? 0} min={-180} max={180} step={5}
+            presets={[-90, -45, 0, 45, 90]} fmt={(v) => `${v}°`}
+            onChange={(v) => onBranchPatch({ labelAngle: v })}
+            onReset={() => onBranchPatch({ labelAngle: 0 })} />
+        </Field>
+        <Field label="Размер текста">
+          <PresetSlider value={b.labelSize ?? 1} min={0.3} max={4} step={0.1}
+            presets={[0.5, 0.75, 1, 1.5, 2]} fmt={(v) => `×${v}`}
+            onChange={(v) => onBranchPatch({ labelSize: v === 1 ? undefined : v })}
+            onReset={() => onBranchPatch({ labelSize: undefined })} />
+        </Field>
+        {editCount > 1 && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px]"
+            style={{ background: "var(--c-tint-amber, #fffbeb)", color: "var(--c-amber-ink, #865412)" }}>
+            <Icon name="Layers" size={11} />
+            Применится сразу к {editCount} выбранным выработкам
+          </div>
+        )}
+      </Card>
+
       {GROUPS.map(g => (
-        <Card key={g.title} icon={g.icon} title={g.title} collapsible>
+        <Card key={g.title} icon={g.icon} title={g.title} collapsible defaultOpen={false}
+          aside={g.rows.some(r => isOn(r.key)) ? (
+            <span className="px-1.5 rounded-full text-[10px] font-semibold"
+              style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #865412)", fontFamily: "var(--font-num)" }}
+              title="Включено индикаторов">
+              {g.rows.filter(r => isOn(r.key)).length}
+            </span>
+          ) : undefined}>
           <div className="-mx-1">
             {g.rows.map(r => (
               <div key={r.key} className="flex items-center">

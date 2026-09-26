@@ -219,3 +219,44 @@ export function KV({ label, value, unit, danger, title }: {
     </div>
   );
 }
+
+/** Ползунок + сегментные пресеты + сброс. */
+export function PresetSlider({ value, onChange, onReset, min, max, step, presets, fmt }: {
+  value: number; onChange: (v: number) => void; onReset: () => void;
+  min: number; max: number; step: number; presets: number[]; fmt: (v: number) => string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center gap-2">
+        <input type="range" min={min} max={max} step={step} value={value}
+          onChange={(e) => onChange(Number(e.target.value))}
+          className="flex-1" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+        <span className="w-12 text-right text-xs tabular-nums"
+          style={{ color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)" }}>{fmt(value)}</span>
+        <button type="button" onClick={onReset} title="Сбросить"
+          className="w-6 h-6 flex items-center justify-center rounded"
+          style={{ background: "var(--c-s3, #f1efea)", border: "none", color: "var(--c-t3, #6b7280)", cursor: "pointer" }}>
+          <Icon name="RotateCcw" size={11} />
+        </button>
+      </div>
+      <div className="flex p-0.5 rounded" style={{ background: "var(--c-s3, #f1efea)" }}>
+        {presets.map((p) => {
+          const on = Math.abs(value - p) < 1e-6;
+          return (
+            <button key={p} type="button" onClick={() => onChange(p)}
+              className="flex-1 h-5 text-[10px] rounded transition-colors"
+              style={{
+                border: "none", cursor: "pointer", fontFamily: "var(--font-num)",
+                background: on ? "var(--c-s1, #fff)" : "transparent",
+                color: on ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)",
+                fontWeight: on ? 600 : 400,
+                boxShadow: on ? "0 1px 2px rgba(0,0,0,.12)" : "none",
+              }}>
+              {fmt(p)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
