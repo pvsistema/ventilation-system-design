@@ -203,7 +203,7 @@ export default function InfoPanel({
   onAllPositionsVisibility,
 }: InfoPanelProps) {
   const [open, setOpen] = useState<Record<SectionId, boolean>>({
-    branches: true, nodes: false, ms: false, water: false, positions: false, nodeVis: false,
+    branches: false, nodes: false, ms: false, water: false, positions: false, nodeVis: false,
   });
   const [query, setQuery] = useState("");
   const q = query.trim().toLowerCase();

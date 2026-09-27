@@ -8,8 +8,6 @@ export interface InfoDisplayConfig {
   nodePressure: boolean;
   nodeTemp: boolean;
   nodeMethane: boolean;
-  nodeHumidity: boolean;
-  nodeCO: boolean;
   // ─── Параметры ветвей ───────────────────────────────────────────
   branchNumber: boolean;
   branchName: boolean;
@@ -26,19 +24,7 @@ export interface InfoDisplayConfig {
   branchHeight: boolean;
   branchPeople: boolean;
   branchDepression: boolean;
-  branchNatDragC: boolean;
-  branchNatDragT: boolean;
-  branchNatDragW: boolean;
-  branchGasEmission: boolean;
-  branchGasSpreadTime: boolean;
-  branchMethane: boolean;
   branchAlpha: boolean;
-  branchLocalXi: boolean;
-  branchCOEmission: boolean;
-  branchCOStart: boolean;
-  branchCOEnd: boolean;
-  branchQCOStart: boolean;
-  branchQCOEnd: boolean;
   // ─── Индикаторы вентилятора ─────────────────────────────────────
   /** Расход воздуха в рабочей точке вентилятора — подпись у значка вентилятора */
   fanFlow: boolean;
@@ -87,8 +73,6 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   nodePressure: false,
   nodeTemp: false,
   nodeMethane: false,
-  nodeHumidity: false,
-  nodeCO: false,
   branchNumber: false,
   branchName: true,
   branchLength: false,
@@ -104,19 +88,7 @@ export const DEFAULT_INFO_CONFIG: InfoDisplayConfig = {
   branchHeight: false,
   branchPeople: false,
   branchDepression: false,
-  branchNatDragC: false,
-  branchNatDragT: false,
-  branchNatDragW: false,
-  branchGasEmission: false,
-  branchGasSpreadTime: false,
-  branchMethane: false,
   branchAlpha: false,
-  branchLocalXi: false,
-  branchCOEmission: false,
-  branchCOStart: false,
-  branchCOEnd: false,
-  branchQCOStart: false,
-  branchQCOEnd: false,
   fanFlow: false,
   fanNameInd: false,
   fanPressure: false,
