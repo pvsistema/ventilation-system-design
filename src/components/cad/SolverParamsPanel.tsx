@@ -173,8 +173,8 @@ export default function SolverParamsPanel({ values: v, onChange, onResetSolver, 
       <div className="overflow-y-auto flex-1">
         {/* 1. Метод */}
         <Section icon="GitFork" title="Метод расчёта">
-          <Segmented<CalcMode> value={v.calcMode} onChange={m => onChange("calcMode", m)}
-            options={[{ value: "cross", label: "Кросс" }, { value: "mkr", label: "МКР" }]} />
+          <Segmented value={v.calcMode} onChange={m => onChange("calcMode", m)}
+            options={[{ value: "cross" as CalcMode, label: "Кросс" }, { value: "mkr" as CalcMode, label: "МКР" }]} />
           <div className="text-[10px] mt-1.5" style={{ color: "var(--c-t3)" }}>
             {v.calcMode === "cross"
               ? "Андрияшева–Кросса: надёжен, подходит для большинства схем."
@@ -252,10 +252,10 @@ export default function SolverParamsPanel({ values: v, onChange, onResetSolver, 
 
         {/* 5. Сезон */}
         <Section icon="Heater" title="Калориферы">
-          <Segmented<Season> value={v.heatingSeason} onChange={s => onChange("heatingSeason", s)}
+          <Segmented value={v.heatingSeason} onChange={s => onChange("heatingSeason", s)}
             options={[
-              { value: "winter", label: "Зима — вкл.", icon: "Snowflake" },
-              { value: "summer", label: "Лето — выкл.", icon: "Sun" },
+              { value: "winter" as Season, label: "Зима — вкл.", icon: "Snowflake" },
+              { value: "summer" as Season, label: "Лето — выкл.", icon: "Sun" },
             ]} />
           <div className="text-[10px] mt-1.5" style={{ color: "var(--c-t3)" }}>
             Летом подогрев снимается, температуры узлов возвращаются к фоновым.
