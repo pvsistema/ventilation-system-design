@@ -73,6 +73,43 @@ export function checkSolve(
     else if (q < -zeroQ) inflow.set(b.fromId, (inflow.get(b.fromId) ?? 0) - q);
   }
 
+  // Узлы, к которым примыкает хотя бы одна обычная выработка.
+  const minedNodes = new Set<string>();
+  // Ветви нити вентрубопровода по узлам (для прохода вверх по ставу).
+  const pipeByNode = new Map<string, TopoBranch[]>();
+  for (const b of branches) {
+    if (b.isVentPipeBranch) {
+      for (const id of [b.fromId, b.toId]) {
+        const arr = pipeByNode.get(id);
+        if (arr) arr.push(b); else pipeByNode.set(id, [b]);
+      }
+    } else if (!b.isLeakage) {
+      minedNodes.add(b.fromId);
+      minedNodes.add(b.toId);
+    }
+  }
+
+  // ВМП на нити трубопровода всасывает из узла-дубликата, у которого нет
+  // выработок. Идём по ставу против потока до узла примыкания к выработке —
+  // там и оцениваем, сколько воздуха подходит к ВМП.
+  const findIntakeJunction = (startId: string): string => {
+    let cur = startId;
+    const seen = new Set<string>([cur]);
+    for (let i = 0; i < 10000 && !minedNodes.has(cur); i++) {
+      let next: string | null = null;
+      for (const pb of pipeByNode.get(cur) ?? []) {
+        const pq = pb.flow ?? 0;
+        const up = pb.toId === cur && pq > zeroQ ? pb.fromId
+          : pb.fromId === cur && pq < -zeroQ ? pb.toId : null;
+        if (up && !seen.has(up)) { next = up; break; }
+      }
+      if (!next) break;
+      seen.add(next);
+      cur = next;
+    }
+    return cur;
+  };
+
   let fanFlow = 0, leakFlow = 0;
   const leakList: BranchNote[] = [];
 
@@ -127,7 +164,7 @@ export function checkSolve(
       // Рециркуляция ВМП: вентилятор забирает больше допустимой доли воздуха,
       // приходящего к нему по выработке (ФНиП: не более 70 %).
       if (isVmp && aq > zeroQ) {
-        const intake = q >= 0 ? b.fromId : b.toId;
+        const intake = findIntakeJunction(q >= 0 ? b.fromId : b.toId);
         const avail = inflow.get(intake) ?? 0;
         if (avail <= zeroQ || aq > avail * recircShare) {
           push(r.recirculation, {
