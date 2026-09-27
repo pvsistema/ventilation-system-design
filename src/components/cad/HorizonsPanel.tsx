@@ -7,7 +7,7 @@
 // на схеме (сверху — поверх остальных), меняется перетаскиванием за ручку.
 // Все цвета — из палитры темы (--c-*).
 // ─────────────────────────────────────────────────────────────────────────────
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Icon from "@/components/ui/icon";
 import {
   type Horizon, type HorizonPrintLayer, type PaperFormat, OVERVIEW_HORIZON_ID,
@@ -148,6 +148,9 @@ const defaultPrintLayer = (h: Horizon): HorizonPrintLayer => ({
   paperFormat: "A3", orientation: "landscape",
 });
 
+/** Отметка без лишних нулей: 261.1 → «261,1», −290 → «−290». */
+const fmtZ = (z: number) => (Math.round(z * 10) / 10).toString().replace(".", ",").replace("-", "−");
+
 // ─── Панель ────────────────────────────────────────────────────────────
 export default function HorizonsPanel(p: Props) {
   const {
@@ -156,7 +159,10 @@ export default function HorizonsPanel(p: Props) {
     editingPrintLayerId, setEditingPrintLayerId, updateHorizon,
   } = p;
 
-  // Раскрытые блоки: ключ `${horizonId}:${block}`
+  // Раскрытый горизонт — один за раз: список остаётся коротким,
+  // а настройки открываются кликом по строке.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  // Раскрытые блоки внутри карточки: ключ `${horizonId}:${block}`
   const [open, setOpen] = useState<Set<string>>(new Set());
   const isOpen = (id: string, block: string) => open.has(`${id}:${block}`);
   const toggle = (id: string, block: string) => setOpen(prev => {
@@ -179,6 +185,15 @@ export default function HorizonsPanel(p: Props) {
     }
     setDragIdx(null); setOverIdx(null);
   };
+
+  // После «Добавить горизонт» сразу раскрываем новый — чтобы задать название и отметку.
+  const pendingOpenNew = useRef<number | null>(null);
+  useEffect(() => {
+    if (pendingOpenNew.current !== null && horizons.length > pendingOpenNew.current) {
+      setExpandedId(horizons[horizons.length - 1].id);
+      pendingOpenNew.current = null;
+    }
+  }, [horizons]);
 
   const active = horizons.find(h => h.id === activeHorizonId) ?? null;
   const allVisible = horizons.every(h => h.visible);
@@ -239,7 +254,7 @@ export default function HorizonsPanel(p: Props) {
           </div>
         </div>
         <div className="flex gap-1">
-          <Btn icon="Plus" onClick={p.addHorizon} grow>Добавить горизонт</Btn>
+          <Btn icon="Plus" grow onClick={() => { pendingOpenNew.current = horizons.length; p.addHorizon(); }}>Добавить горизонт</Btn>
           <Btn icon={allVisible ? "EyeOff" : "Eye"}
             title={allVisible ? "Скрыть все горизонты" : "Показать все горизонты"}
             onClick={() => setHorizons(prev => prev.map(h => ({ ...h, visible: !allVisible })))}>
@@ -249,10 +264,12 @@ export default function HorizonsPanel(p: Props) {
       </div>
 
       {/* ── Список ── */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-        <div className="px-1 text-[10px] flex items-center gap-1" style={{ color: "var(--c-t4)" }}>
+      <div className="flex-1 overflow-y-auto p-2 space-y-1">
+        <div className="px-1 pb-0.5 flex items-center gap-1 text-[10px]" style={{ color: "var(--c-t4)" }}
+          title="Верхний в списке рисуется поверх остальных. Порядок меняется перетаскиванием за ручку слева.">
           <Icon name="Layers" size={11} />
-          Верхний в списке рисуется поверх остальных — порядок меняется перетаскиванием
+          <span className="flex-1">Горизонты · {horizons.length}</span>
+          <span>отметка · выработок</span>
         </div>
 
         {horizons.map((h, idx) => {
@@ -260,6 +277,7 @@ export default function HorizonsPanel(p: Props) {
           const isOverview = h.id === OVERVIEW_HORIZON_ID;
           const isActive = activeHorizonId === h.id;
           const isHovered = hoveredHorizonId === h.id;
+          const expanded = expandedId === h.id;
           const pl = h.printLayer;
           const plOn = !!pl?.visible;
           const updatePl = (patch: Partial<HorizonPrintLayer>) =>
@@ -274,61 +292,97 @@ export default function HorizonsPanel(p: Props) {
               onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
               onMouseEnter={() => setHoveredHorizonId(() => h.id)}
               onMouseLeave={() => setHoveredHorizonId(prev => prev === h.id ? null : prev)}
-              className="rounded-lg overflow-hidden transition-colors"
+              className="rounded-md overflow-hidden transition-colors"
               style={{
                 background: "var(--c-s1)",
-                border: `1px solid ${overIdx === idx && dragIdx !== idx ? "var(--c-accent)" : isActive ? "var(--c-accent)" : isHovered ? "var(--c-b3)" : "var(--c-b1)"}`,
-                boxShadow: isActive ? "inset 3px 0 0 var(--c-accent)" : undefined,
-                opacity: dragIdx === idx ? 0.45 : h.visible ? 1 : 0.7,
+                border: `1px solid ${overIdx === idx && dragIdx !== idx ? "var(--c-accent)" : expanded ? "var(--c-b3)" : isHovered ? "var(--c-b2)" : "var(--c-b1)"}`,
+                boxShadow: expanded ? "0 2px 6px -2px rgba(0,0,0,.15)" : undefined,
+                opacity: dragIdx === idx ? 0.45 : 1,
               }}>
 
-              {/* Строка горизонта */}
-              <div className="flex items-center gap-1 pl-1 pr-1 py-1">
-                <span title="Перетащите, чтобы изменить порядок слоёв"
+              {/* ── Компактная строка: клик открывает настройки ── */}
+              <div role="button" tabIndex={0}
+                onClick={() => setExpandedId(expanded ? null : h.id)}
+                onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setExpandedId(expanded ? null : h.id); } }}
+                title={expanded ? "Свернуть настройки" : "Открыть настройки горизонта"}
+                className="flex items-center gap-1.5 pl-0.5 pr-1 h-8 cursor-pointer select-none transition-colors hover:bg-[var(--c-s3)]"
+                style={{ background: expanded ? "var(--c-s3)" : undefined }}>
+                <span title="Перетащите, чтобы изменить порядок слоёв" onClick={e => e.stopPropagation()}
                   className="cursor-grab flex-shrink-0 flex items-center" style={{ color: "var(--c-t4)" }}>
-                  <Icon name="GripVertical" size={13} />
+                  <Icon name="GripVertical" size={12} />
                 </span>
-                <IconBtn icon={h.visible ? "Eye" : "EyeOff"} active={h.visible}
-                  title={h.visible ? "Скрыть горизонт на схеме" : "Показать горизонт на схеме"}
-                  onClick={() => updateHorizon(h.id, { visible: !h.visible })} />
-                <label className="w-4 h-4 rounded-full flex-shrink-0 cursor-pointer relative overflow-hidden"
-                  title="Цвет горизонта" style={{ background: h.color, border: "1px solid rgba(0,0,0,.25)" }}>
-                  <input type="color" value={h.color} onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
-                    className="absolute inset-0 opacity-0 cursor-pointer" />
-                </label>
-                <input type="text" value={h.name} onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
-                  placeholder="Название" draggable={false} onDragStart={e => e.preventDefault()}
-                  className="flex-1 min-w-0 h-6 px-1.5 text-[11.5px] font-medium outline-none rounded bg-transparent hover:bg-[var(--c-s3)] focus:bg-[var(--c-s1)]"
-                  style={{ color: "var(--c-t1)", border: "1px solid transparent" }}
-                  onFocus={e => (e.currentTarget.style.borderColor = "var(--c-b2)")}
-                  onBlur={e => (e.currentTarget.style.borderColor = "transparent")} />
-                {isOverview ? (
-                  <span className="text-[10px] px-1 flex-shrink-0" style={{ color: "var(--c-t4)" }}
-                    title="Общий вид охватывает всю схему — отметки нет">вся схема</span>
-                ) : (
-                  <label className="flex items-stretch flex-shrink-0 overflow-hidden" title="Высотная отметка горизонта"
-                    style={{ border: "1px solid var(--c-b2)", borderRadius: 4, background: "var(--c-s1)" }}>
-                    <span className="px-1 flex items-center text-[10px]" style={{ color: "var(--c-t4)", background: "var(--c-s3)" }}>Z</span>
-                    <input type="number" value={h.z} draggable={false} onDragStart={e => e.preventDefault()}
-                      onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) updateHorizon(h.id, { z: v }); }}
-                      className="font-num w-14 h-6 px-1 text-[11px] text-right outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
-                      style={{ color: "var(--c-t1)" }} />
-                  </label>
+                <Icon name="ChevronRight" size={12} className="flex-shrink-0"
+                  style={{ color: "var(--c-t4)", transform: expanded ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+                <span className="w-3 h-3 rounded-full flex-shrink-0"
+                  style={{ background: h.color, border: "1px solid rgba(0,0,0,.25)", opacity: h.visible ? 1 : 0.4 }} />
+                <span className="flex-1 min-w-0 truncate text-[11.5px] font-medium"
+                  style={{ color: h.visible ? "var(--c-t1)" : "var(--c-t4)" }}>
+                  {h.name || "Без названия"}
+                </span>
+                {isActive && (
+                  <span title="Новые узлы строятся на этом горизонте" className="flex-shrink-0 flex items-center"
+                    style={{ color: "var(--c-accent)" }}><Icon name="PenLine" size={11} /></span>
                 )}
-                <span className="font-num text-[10px] px-1.5 rounded-full flex-shrink-0 min-w-[22px] text-center"
+                {h.image?.visible && h.visible && (
+                  <span title="Показан план-подложка" className="flex-shrink-0 flex items-center" style={{ color: "var(--c-t3)" }}>
+                    <Icon name="Image" size={11} /></span>
+                )}
+                {plOn && (
+                  <span title={`Слой печати ${pl?.paperFormat ?? ""}`} className="flex-shrink-0 flex items-center" style={{ color: "var(--c-purple)" }}>
+                    <Icon name="Printer" size={11} /></span>
+                )}
+                <span className="font-num text-[10.5px] w-12 text-right flex-shrink-0" style={{ color: "var(--c-t3)" }}
+                  title={isOverview ? "Общий вид охватывает всю схему" : "Высотная отметка"}>
+                  {isOverview ? "—" : `${fmtZ(h.z)} м`}
+                </span>
+                <span className="font-num text-[10px] px-1.5 rounded-full flex-shrink-0 min-w-[26px] text-center"
                   title={`Выработок на горизонте: ${count}`}
                   style={{
                     background: count > 0 ? "color-mix(in srgb, var(--c-accent) 14%, transparent)" : "var(--c-s3)",
                     color: count > 0 ? "var(--c-accent)" : "var(--c-t4)",
                   }}>{count}</span>
-                {!isOverview && (
-                  <IconBtn icon={isActive ? "PenLine" : "PenOff"} active={isActive}
-                    title={isActive ? "Новые узлы строятся на этом горизонте — нажмите, чтобы отключить" : "Строить новые узлы на этом горизонте"}
-                    onClick={() => setActiveHorizonId(isActive ? "" : h.id)} />
+                <IconBtn icon={h.visible ? "Eye" : "EyeOff"} active={h.visible}
+                  title={h.visible ? "Скрыть горизонт на схеме" : "Показать горизонт на схеме"}
+                  onClick={() => updateHorizon(h.id, { visible: !h.visible })} />
+              </div>
+
+              {expanded && (<>
+              {/* ── Основное: название, цвет, отметка, построение, удаление ── */}
+              <div className="px-2 py-2 space-y-1.5" style={{ borderTop: "1px solid var(--c-b1)" }}>
+                <div className="flex items-center gap-1.5">
+                  <label className="w-7 h-7 rounded flex-shrink-0 cursor-pointer relative overflow-hidden"
+                    title="Цвет горизонта" style={{ background: h.color, border: "1px solid rgba(0,0,0,.25)" }}>
+                    <input type="color" value={h.color} onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
+                      className="absolute inset-0 opacity-0 cursor-pointer" />
+                  </label>
+                  <input type="text" value={h.name} onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
+                    placeholder="Название горизонта" autoFocus={!h.name}
+                    className="flex-1 min-w-0 h-7 px-2 text-[11.5px] outline-none"
+                    style={{ color: "var(--c-t1)", border: "1px solid var(--c-b2)", borderRadius: 4, background: "var(--c-s1)" }} />
+                  {!isOverview && (
+                    <label className="flex items-stretch flex-shrink-0 overflow-hidden" title="Высотная отметка горизонта"
+                      style={{ border: "1px solid var(--c-b2)", borderRadius: 4, background: "var(--c-s1)" }}>
+                      <span className="px-1.5 flex items-center text-[10px]" style={{ color: "var(--c-t4)", background: "var(--c-s3)" }}>Z</span>
+                      <input type="number" value={h.z}
+                        onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v)) updateHorizon(h.id, { z: v }); }}
+                        className="font-num w-16 h-7 px-1.5 text-[11.5px] text-right outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none"
+                        style={{ color: "var(--c-t1)" }} />
+                      <span className="px-1.5 flex items-center text-[10px]" style={{ color: "var(--c-t4)", background: "var(--c-s3)" }}>м</span>
+                    </label>
+                  )}
+                </div>
+                {isOverview ? (
+                  <Hint>Общий вид охватывает всю схему. Здесь настраивается только его слой печати.</Hint>
+                ) : (
+                  <div className="flex gap-1">
+                    <Btn grow icon={isActive ? "PenLine" : "PenOff"} active={isActive}
+                      title="Новые узлы получают отметку и привязку этого горизонта"
+                      onClick={() => setActiveHorizonId(isActive ? "" : h.id)}>
+                      {isActive ? "Строим на этом горизонте" : "Строить на этом горизонте"}
+                    </Btn>
+                    <Btn icon="Trash2" danger title="Удалить горизонт" onClick={() => confirmRemove(h)}>Удалить</Btn>
+                  </div>
                 )}
-                {!isOverview ? (
-                  <IconBtn icon="Trash2" danger title="Удалить горизонт" onClick={() => confirmRemove(h)} />
-                ) : <span className="w-6 flex-shrink-0" />}
               </div>
 
               {/* Сдвиг горизонта — стыковка импортированного горизонта со схемой */}
@@ -445,6 +499,7 @@ export default function HorizonsPanel(p: Props) {
                   </>
                 )}
               </SubBlock>
+              </>)}
             </section>
           );
         })}
