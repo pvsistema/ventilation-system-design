@@ -161,7 +161,7 @@ function IconBtn({ icon, title, active = true, onClick }: {
   icon: string; title: string; active?: boolean; onClick: () => void;
 }) {
   return (
-    <button type="button" onClick={onClick} title={title}
+    <button type="button" onClick={(e) => { e.stopPropagation(); onClick(); }} title={title}
       className="w-5 h-5 flex items-center justify-center rounded flex-shrink-0 hover:bg-[var(--c-s4,#e6e3dc)]"
       style={{
         background: "transparent", border: "none", cursor: "pointer",
@@ -343,9 +343,12 @@ export default function InfoPanel({
               const selected = selectedNodeId === node.id;
               return (
                 <div key={node.id} className="flex items-center gap-1.5 h-6 px-2 rounded hover:bg-[var(--c-s3,#f1efea)]"
+                  onClick={() => onSelectNode?.(node.id)}
+                  title={onSelectNode ? "Показать узел на схеме" : undefined}
                   style={{
                     background: selected ? "var(--c-tint-blue2, #d7e7ee)" : undefined,
                     opacity: vis ? 1 : 0.55,
+                    cursor: onSelectNode ? "pointer" : undefined,
                   }}>
                   <span className="text-[11px] font-semibold flex-shrink-0"
                     style={{ color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)", minWidth: 28 }}>

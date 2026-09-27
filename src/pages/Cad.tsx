@@ -14597,7 +14597,13 @@ export default function CadPage() {
                   selectedNodeId={selectedNodeId}
                   onNodeVisibilityChange={(id, visible) => updateNode(id, { visible })}
                   onAllNodesVisibility={(visible) => setNodes((p) => p.map((n) => ({ ...n, visible })))}
-                  onSelectNode={(id) => { setSelectedNodeId(id); setSelectedBranchId(null); }}
+                  onSelectNode={(id) => {
+                    setSelectedNodeId(id);
+                    setSelectedBranchId(null);
+                    setFocusPos(null);
+                    setFocusNodeId(id);
+                    setFocusNonce(Date.now());
+                  }}
                   positions={positions}
                   onPositionVisibilityChange={(id, visible) =>
                     setPositions((p) => p.map((pos) => pos.id === id ? { ...pos, visible } : pos))
