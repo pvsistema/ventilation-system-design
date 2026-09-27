@@ -65,7 +65,8 @@ import GeneralPropsPanel from "@/components/cad/GeneralPropsPanel";
 import BranchVentPanel from "@/components/cad/BranchVentPanel";
 import BranchIndicatorsPanel from "@/components/cad/BranchIndicatorsPanel";
 import FanIndicatorsPanel from "@/components/cad/FanIndicatorsPanel";
-import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
+import { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
+import HorizonsPanel from "@/components/cad/HorizonsPanel";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
@@ -118,7 +119,7 @@ import { exportExplosionReport } from "@/lib/explosionReport";
 import BlastBulkheadCalcDialog from "@/components/cad/BlastBulkheadCalcDialog";
 import BlastBarrierChartDialog from "@/components/cad/BlastBarrierChartDialog";
 import {
-  RibbonTabBtn, RibbonGroup, RibbonBigBtn,     FrameGroup, LabeledRow, CadCheckbox,   ToolBtn, ViewBtn, } from "./cad/cadComponents";
+  RibbonTabBtn, RibbonGroup, RibbonBigBtn, ToolBtn, ViewBtn, } from "./cad/cadComponents";
 
 import {
   EXPLOSION_URL, WATER_URL, safeFixed,
@@ -610,46 +611,16 @@ export default function CadPage() {
     if (editingHorizonImageId === id) setEditingHorizonImageId(null);
   };
 
-  // Drag-and-drop для изменения порядка горизонтов
-  const [horizonDragIdx, setHorizonDragIdx] = useState<number | null>(null);
-  const [horizonDragOverIdx, setHorizonDragOverIdx] = useState<number | null>(null);
-  const handleHorizonDragStart = (idx: number) => setHorizonDragIdx(idx);
-  const handleHorizonDragOver = (e: React.DragEvent, idx: number) => { e.preventDefault(); setHorizonDragOverIdx(idx); };
-  const handleHorizonDrop = (idx: number) => {
-    if (horizonDragIdx === null || horizonDragIdx === idx) { setHorizonDragIdx(null); setHorizonDragOverIdx(null); return; }
-    setHorizons(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(horizonDragIdx, 1);
-      next.splice(idx, 0, moved);
-      return next;
-    });
-    setHorizonDragIdx(null); setHorizonDragOverIdx(null);
-  };
+  // Число выработок на каждом горизонте — для списка горизонтов.
+  // Один проход по ветвям вместо полного перебора на каждую строку списка.
+  const branchCountByHorizon = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const b of branchesRaw) if (b.horizonId) m.set(b.horizonId, (m.get(b.horizonId) ?? 0) + 1);
+    return m;
+  }, [branchesRaw]);
 
   // Наведение на горизонт в списке слева → подсветка его ветвей на схеме
   const [hoveredHorizonId, setHoveredHorizonId] = useState<string | null>(null);
-
-  // Быстрое перемещение горизонта на передний/задний план списка слоёв
-  const moveHorizonToFront = (id: string) => {
-    setHorizons(prev => {
-      const idx = prev.findIndex(h => h.id === id);
-      if (idx <= 0) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(idx, 1);
-      next.unshift(moved);
-      return next;
-    });
-  };
-  const moveHorizonToBack = (id: string) => {
-    setHorizons(prev => {
-      const idx = prev.findIndex(h => h.id === id);
-      if (idx < 0 || idx === prev.length - 1) return prev;
-      const next = [...prev];
-      const [moved] = next.splice(idx, 1);
-      next.push(moved);
-      return next;
-    });
-  };
 
   // Bounds "Общего вида" теперь вычисляются динамически в TopoCanvas
   // из проекций всех узлов — это корректно при любой проекции (план/фронт/профиль/ИЗО).
@@ -4234,14 +4205,6 @@ export default function CadPage() {
     setActiveRibbon("home");
   };
 
-  // ─── РАСКРЫТЫЕ НАСТРОЙКИ ГОРИЗОНТОВ (план + слой печати) ───────────
-  const [expandedHorizons, setExpandedHorizons] = useState<Set<string>>(new Set());
-  const toggleHorizonExpand = (id: string) =>
-    setExpandedHorizons(prev => {
-      const n = new Set(prev);
-      if (n.has(id)) { n.delete(id); } else { n.add(id); }
-      return n;
-    });
 
   // ─── КОНТЕКСТНОЕ МЕНЮ ───────────────────────────────────────────────
   const [ctxMenu, setCtxMenu] = useState<{
@@ -10205,415 +10168,33 @@ export default function CadPage() {
 
             {/* ═══ ВКЛАДКА: ГОРИЗОНТЫ ═══════════════════════════════════ */}
             {activeSide === "horizons" && (
-              <div className="p-2 space-y-2">
-                {/* ── Активный горизонт: задаёт Z для всех новых узлов ── */}
-                <FrameGroup title="Активный горизонт (для построения)">
-                  <div className="text-[10px] text-gray-600 leading-tight pb-1">
-                    Если выбран — все НОВЫЕ узлы создаются с Z = отметке горизонта
-                    и автоматически получают его привязку.
-                    Существующие объекты не меняются.
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <select value={activeHorizonId}
-                      onChange={(e) => setActiveHorizonId(e.target.value)}
-                      className="cad-input flex-1">
-                      <option value="">— не выбран (Z = текущая плоскость) —</option>
-                      {horizons.map((h) => (
-                        <option key={h.id} value={h.id}>{h.name} (Z = {h.z} м)</option>
-                      ))}
-                    </select>
-                    {activeHorizon && (
-                      <span className="w-4 h-4 rounded-sm border border-gray-400 flex-shrink-0"
-                        style={{ background: activeHorizon.color }}
-                        title="Цвет активного горизонта" />
-                    )}
-                  </div>
-                  {activeHorizon && (
-                    <div className="px-1 py-1 mt-1 text-[11px]"
-                      style={{ background: "var(--c-tint-green2, #dcfce7)", color: "var(--c-green-ink, #166534)", border: "1px solid #86efac", borderRadius: "var(--radius-ui)" }}>
-                      ● Новые узлы будут создаваться на отметке <b>{activeHorizon.z} м</b>
-                    </div>
-                  )}
-                </FrameGroup>
-
-                <FrameGroup title="Список горизонтов">
-                  <div className="flex gap-1 mb-2">
-                    <button onClick={addHorizon}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50 hover:border-blue-400 flex items-center justify-center gap-1">
-                      <Icon name="Plus" size={11} /> Добавить
-                    </button>
-                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: true })))}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
-                      Показать все
-                    </button>
-                    <button onClick={() => setHorizons((p) => p.map((h) => ({ ...h, visible: false })))}
-                      className="flex-1 px-2 py-1 text-xs border border-gray-300 rounded hover:bg-blue-50">
-                      Скрыть все
-                    </button>
-                  </div>
-                  <div className="space-y-1">
-                    {horizons.map((h, hIdx) => {
-                      const usedCount = branches.filter((b) => b.horizonId === h.id).length;
-                      const isActive = activeHorizonId === h.id;
-                      const isOverview = h.id === OVERVIEW_HORIZON_ID;
-                      const isDragOver = horizonDragOverIdx === hIdx;
-                      const isHovered = hoveredHorizonId === h.id;
-                      return (
-                        <div key={h.id}
-                          draggable
-                          onDragStart={() => handleHorizonDragStart(hIdx)}
-                          onDragOver={(e) => handleHorizonDragOver(e, hIdx)}
-                          onDrop={() => handleHorizonDrop(hIdx)}
-                          onDragEnd={() => { setHorizonDragIdx(null); setHorizonDragOverIdx(null); }}
-                          onMouseEnter={() => setHoveredHorizonId(h.id)}
-                          onMouseLeave={() => setHoveredHorizonId(prev => prev === h.id ? null : prev)}
-                          className="border rounded"
-                          style={{
-                            background: isHovered ? "var(--c-tint-amber, #fffbeb)" : isActive ? "var(--c-tint-blue, #eff6ff)" : "white",
-                            borderColor: isDragOver ? "var(--c-blue, #2563eb)" : isHovered ? "var(--c-amber-lt, #f59e0b)" : isActive ? "var(--c-blue-lt, #3b82f6)" : "var(--c-b2, #d1d5db)",
-                            opacity: horizonDragIdx === hIdx ? 0.5 : 1,
-                            outline: isDragOver ? "2px solid #81b0c4" : undefined,
-                          }}>
-                          {/* ── Строка горизонта ── */}
-                          <div className="flex items-center gap-1 px-1 py-1">
-                            {/* Drag-handle */}
-                            <span title="Перетащить для изменения порядка"
-                              className="cursor-grab text-gray-300 hover:text-gray-500 flex-shrink-0 select-none"
-                              style={{ fontSize: 12, lineHeight: 1 }}>⠿</span>
-                            {!isOverview && <input type="radio" name="active-horizon"
-                              checked={isActive}
-                              onChange={() => setActiveHorizonId(h.id)}
-                              title="Сделать активным для построения"
-                              className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />}
-                            {isOverview && <span className="w-[13px] flex-shrink-0" />}
-                            <input type="checkbox" checked={h.visible}
-                              onChange={(e) => updateHorizon(h.id, { visible: e.target.checked })}
-                              title="Видимость на схеме" className="w-[13px] h-[13px] cursor-pointer flex-shrink-0" />
-                            <input type="color" value={h.color}
-                              onChange={(e) => updateHorizon(h.id, { color: e.target.value })}
-                              className="w-5 h-5 p-0 border border-gray-300 cursor-pointer flex-shrink-0"
-                              title="Цвет горизонта" />
-                            <input type="text" value={h.name}
-                              onChange={(e) => updateHorizon(h.id, { name: e.target.value })}
-                              className="cad-input flex-1 min-w-0"
-                              placeholder="Название" />
-                            {!isOverview && <input type="number" value={h.z}
-                              onChange={(e) => updateHorizon(h.id, { z: Number(e.target.value) })}
-                              className="cad-input w-12 text-right flex-shrink-0"
-                              title="Высотная отметка, м" />}
-                            {!isOverview && <span className="text-[10px] text-gray-500 flex-shrink-0">м</span>}
-                            {isOverview && <span className="text-[10px] text-purple-500 flex-shrink-0 px-1" title="Общий вид — авто-bounds по всей схеме">авто</span>}
-                            <span className="text-[10px] text-gray-400 w-5 text-center flex-shrink-0" title="Ветвей на горизонте">
-                              {usedCount}
-                            </span>
-                            {!isOverview && (
-                              <button onClick={() => moveHorizonToFront(h.id)}
-                                disabled={hIdx === 0}
-                                className="w-5 h-5 flex items-center justify-center hover:bg-blue-100 rounded flex-shrink-0 disabled:opacity-30"
-                                title="На передний план (поверх всех)">
-                                <Icon name="ChevronsUp" size={12} className="text-gray-600" />
-                              </button>
-                            )}
-                            {!isOverview && (
-                              <button onClick={() => moveHorizonToBack(h.id)}
-                                disabled={hIdx === horizons.length - 1}
-                                className="w-5 h-5 flex items-center justify-center hover:bg-blue-100 rounded flex-shrink-0 disabled:opacity-30"
-                                title="На задний план (под всеми)">
-                                <Icon name="ChevronsDown" size={12} className="text-gray-600" />
-                              </button>
-                            )}
-                            {!isOverview && (
-                              <button onClick={() => removeHorizon(h.id)}
-                                className="w-5 h-5 flex items-center justify-center hover:bg-red-100 rounded flex-shrink-0"
-                                title="Удалить горизонт">
-                                <Icon name="Trash2" size={11} className="text-gray-600" />
-                              </button>
-                            )}
-                            {isOverview && <span className="w-5 flex-shrink-0" />}
-                          </div>
-                          {/* ── Кнопка раскрытия настроек ── */}
-                          <button
-                            onClick={() => toggleHorizonExpand(h.id)}
-                            className="w-full flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium hover:bg-blue-50"
-                            style={{
-                              borderTop: "1px solid var(--c-b1, #e5e7eb)",
-                              color: expandedHorizons.has(h.id) ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)",
-                              background: expandedHorizons.has(h.id) ? "var(--c-tint-blue, #eff6ff)" : "transparent",
-                            }}>
-                            <Icon name={expandedHorizons.has(h.id) ? "ChevronUp" : "Settings2"} size={12} className="flex-shrink-0" />
-                            <span>{expandedHorizons.has(h.id) ? "Скрыть настройки" : "Настройки (план, печать)"}</span>
-                            {!expandedHorizons.has(h.id) && (h.image || h.printLayer?.visible) && (
-                              <span className="ml-auto flex items-center gap-1">
-                                {h.image && (
-                                  <span className="px-1 rounded text-[9px] font-semibold"
-                                    style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue, #1d4ed8)" }}
-                                    title="Загружен план горизонта">ПЛАН</span>
-                                )}
-                                {h.printLayer?.visible && (
-                                  <span className="px-1 rounded text-[9px] font-semibold"
-                                    style={{ background: "var(--c-tint-purple, #ede9fe)", color: "var(--c-purple, #7c3aed)" }}
-                                    title="Слой печати активен">ПЕЧАТЬ</span>
-                                )}
-                              </span>
-                            )}
-                          </button>
-                          {/* ── Настройки горизонта (подложка + слой печати) ── */}
-                          {expandedHorizons.has(h.id) && (
-                          <div className="px-1 pb-1 pt-0">
-                            {/* Смещение горизонта — стыковка импортированного
-                                горизонта с уже построенной сетью */}
-                            {h.id !== OVERVIEW_HORIZON_ID && (
-                              <HorizonShiftBlock
-                                horizonId={h.id}
-                                branchCount={usedCount}
-                                onMove={moveHorizon}
-                                align={horizonAlignFor(h.id)}
-                              />
-                            )}
-                            {/* Подложка плана — только для обычных горизонтов */}
-                            {h.id !== OVERVIEW_HORIZON_ID && (h.image ? (
-                              <div className="space-y-1 pt-1">
-                                <div className="flex items-center gap-1">
-                                  <img src={h.image.dataUrl} alt=""
-                                    className="w-10 h-10 object-cover border border-gray-300 rounded flex-shrink-0" />
-                                  <div className="flex-1 text-[10px] text-gray-600 leading-tight">
-                                    <div className="font-medium text-gray-700 mb-0.5">План горизонта</div>
-                                    <code className="text-[9px]">
-                                      {Math.round(h.image.bounds.x1)}…{Math.round(h.image.bounds.x2)}
-                                      {" × "}
-                                      {Math.round(h.image.bounds.y1)}…{Math.round(h.image.bounds.y2)} м
-                                    </code>
-                                  </div>
-                                </div>
-                                <div className="flex items-center gap-1">
-                                  <CadCheckbox checked={h.image.visible}
-                                    onChange={(v) => updateHorizon(h.id, { image: h.image ? { ...h.image, visible: v } : undefined })}
-                                    label="Показать" />
-                                </div>
-                                <LabeledRow label="Прозрачность:" labelWidth={88}>
-                                  <input type="range" min={0} max={100} value={Math.round(h.image.opacity * 100)}
-                                    onChange={(e) => updateHorizon(h.id, { image: h.image ? { ...h.image, opacity: Number(e.target.value) / 100 } : undefined })}
-                                    className="flex-1" />
-                                  <span className="text-[10px] w-8 text-right">{Math.round(h.image.opacity * 100)}%</span>
-                                </LabeledRow>
-                                <LabeledRow label="Поворот:" labelWidth={88}>
-                                  <input type="range" min={-180} max={180} step={0.5}
-                                    value={h.image.rotation ?? 0}
-                                    onChange={(e) => updateHorizon(h.id, { image: h.image ? { ...h.image, rotation: Number(e.target.value) } : undefined })}
-                                    className="flex-1" />
-                                  <input type="number" min={-180} max={180} step={0.5}
-                                    value={h.image.rotation ?? 0}
-                                    onChange={(e) => {
-                                      const v = Math.max(-180, Math.min(180, Number(e.target.value) || 0));
-                                      updateHorizon(h.id, { image: h.image ? { ...h.image, rotation: v } : undefined });
-                                    }}
-                                    className="w-12 text-[10px] border rounded px-1 py-0.5 text-right" />
-                                  <span className="text-[10px]">°</span>
-                                </LabeledRow>
-                                <div className="flex gap-1 mb-1">
-                                  {[-90, -1, 1, 90].map((d) => (
-                                    <button key={d}
-                                      title={Math.abs(d) === 90 ? `Повернуть на ${d}°` : `Подстроить на ${d}°`}
-                                      onClick={() => {
-                                        if (!h.image) return;
-                                        let v = (h.image.rotation ?? 0) + d;
-                                        while (v > 180) v -= 360;
-                                        while (v < -180) v += 360;
-                                        updateHorizon(h.id, { image: { ...h.image, rotation: +v.toFixed(1) } });
-                                      }}
-                                      className="flex-1 px-1 py-1 text-[11px] border rounded bg-white hover:bg-gray-50">
-                                      {d > 0 ? `+${d}°` : `${d}°`}
-                                    </button>
-                                  ))}
-                                  <button title="Сбросить поворот"
-                                    onClick={() => updateHorizon(h.id, { image: h.image ? { ...h.image, rotation: 0 } : undefined })}
-                                    className="px-2 py-1 text-[11px] border rounded bg-white hover:bg-gray-50">
-                                    Сброс
-                                  </button>
-                                </div>
-                                <div className="flex gap-1">
-                                  <button onClick={() => setEditingHorizonImageId(editingHorizonImageId === h.id ? null : h.id)}
-                                    className="flex-1 px-2 py-1 text-[11px] border rounded"
-                                    style={{
-                                      background: editingHorizonImageId === h.id ? "var(--c-blue, #2563eb)" : "white",
-                                      color: editingHorizonImageId === h.id ? "white" : "var(--c-t1, #1f1f1f)",
-                                      borderColor: editingHorizonImageId === h.id ? "var(--c-blue, #1d4ed8)" : "var(--c-b2, #d1d5db)",
-                                    }}>
-                                    {editingHorizonImageId === h.id ? "✓ Готово" : "✎ Растянуть"}
-                                  </button>
-                                  <button
-                                    title="Разместить план в центре схемы"
-                                    onClick={() => {
-                                      const curNodes = nodesRef.current;
-                                      if (!h.image) return;
-                                      const imgW = 1, imgH = 1; // пропорции из bounds
-                                      const bw = Math.abs(h.image.bounds.x2 - h.image.bounds.x1);
-                                      const bh = Math.abs(h.image.bounds.y2 - h.image.bounds.y1);
-                                      const aspect = bw > 0 && bh > 0 ? bw / bh : 1;
-                                      void imgW; void imgH;
-                                      let cx = 0, cy = 0, halfH2 = 1000;
-                                      if (curNodes.length > 0) {
-                                        const xs = curNodes.map(n => n.x);
-                                        const ys = curNodes.map(n => n.y);
-                                        cx = (Math.min(...xs) + Math.max(...xs)) / 2;
-                                        cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-                                        const spanX = Math.max(Math.max(...xs) - Math.min(...xs), 1000);
-                                        const spanY = Math.max(Math.max(...ys) - Math.min(...ys), 1000);
-                                        halfH2 = Math.max(spanX, spanY) * 0.75;
-                                      }
-                                      const halfW2 = halfH2 * aspect;
-                                      setHorizonImageBounds(h.id, {
-                                        x1: cx - halfW2, y1: cy - halfH2,
-                                        x2: cx + halfW2, y2: cy + halfH2,
-                                      });
-                                      setEditingHorizonImageId(h.id);
-                                    }}
-                                    className="px-2 py-1 text-[11px] border border-blue-300 text-blue-700 rounded hover:bg-blue-50">
-                                    ⌖
-                                  </button>
-                                  <button onClick={() => removeHorizonImage(h.id)}
-                                    className="px-2 py-1 text-[11px] border border-red-300 text-red-700 rounded hover:bg-red-50">
-                                    Удалить
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <label className="mt-1 flex items-center justify-center gap-1 px-2 py-1 text-[11px] text-gray-500 border border-dashed border-gray-300 rounded cursor-pointer hover:bg-blue-50 hover:border-blue-400 hover:text-blue-600">
-                                <input type="file" accept="image/png,image/jpeg" className="hidden"
-                                  onChange={(e) => {
-                                    const f = e.target.files?.[0];
-                                    if (f) uploadHorizonImage(h.id, f);
-                                    e.target.value = "";
-                                  }} />
-                                <Icon name="Upload" size={10} className="inline flex-shrink-0" />
-                                Загрузить план
-                              </label>
-                            ))}
-                            {/* ── Слой печати горизонта ── */}
-                            {(() => {
-                              const pl = h.printLayer;
-                              const hasPl = !!pl;
-                              const updatePl = (patch: Partial<import("@/lib/topology").HorizonPrintLayer>) =>
-                                updateHorizon(h.id, { printLayer: pl ? { ...pl, ...patch } : {
-                                  visible: true, title: `Вентиляционный план горизонта ${h.z}м.`,
-                                  scale: "1:2000", orgName: "", approverTitle: "Главный инженер ЮПР",
-                                  approverName: "", day: "", month: "", year: String(new Date().getFullYear()),
-                                  period: "", developer: "", checker: "",
-                                  sheetNum: "1", sheetTotal: "1", showLegend: false, showStamp: false, showApprover: false,
-                                  paperFormat: "A3", orientation: "landscape",
-                                  ...patch,
-                                }});
-                              return (
-                                <div className="mt-1 border border-dashed rounded" style={{ borderColor: hasPl && pl.visible ? "var(--c-purple, #7c3aed)" : "var(--c-b2, #d1d5db)" }}>
-                                  {/* Заголовок-переключатель */}
-                                  <button
-                                    className="w-full flex items-center justify-between gap-1 px-2 py-1.5 text-[11px] font-medium rounded hover:brightness-95"
-                                    style={{
-                                      background: hasPl && pl.visible ? "var(--c-purple, #7c3aed)" : "var(--c-s3, #f3f4f6)",
-                                      color: hasPl && pl.visible ? "#ffffff" : "var(--c-t2, #374151)",
-                                    }}
-                                    title={hasPl && pl.visible ? "Выключить слой печати" : "Включить слой печати — рамка и штамп на схеме"}
-                                    onClick={() => {
-                                      if (!hasPl) {
-                                        updatePl({ visible: true });
-                                      } else {
-                                        updatePl({ visible: !pl.visible });
-                                      }
-                                    }}>
-                                    <span className="flex items-center gap-1">
-                                      <Icon name="Printer" size={12} className="flex-shrink-0" />
-                                      Слой печати
-                                    </span>
-                                    <span className="px-1.5 rounded" style={{
-                                      fontSize: 9, fontWeight: 700,
-                                      background: hasPl && pl.visible ? "rgba(255,255,255,0.25)" : "var(--c-s4, #e5e7eb)",
-                                      color: hasPl && pl.visible ? "#ffffff" : "var(--c-t3, #6b7280)",
-                                    }}>
-                                      {hasPl && pl.visible ? "ВКЛ" : "ВЫКЛ"}
-                                    </span>
-                                  </button>
-                                  {/* Настройки слоя (если включён) */}
-                                  {hasPl && pl.visible && (
-                                    <div className="px-2 pb-2 pt-1 space-y-1.5" style={{ borderTop: "1px solid #ede9fe" }}>
-                                      {/* Формат · Ориентация · УО · Штамп · Утв — всё в одну строку */}
-                                      <div className="flex items-center gap-1 flex-wrap">
-                                        <select className="cad-input text-[11px]" style={{ width: 40 }}
-                                          value={pl.paperFormat ?? "A3"}
-                                          onChange={(e) => updatePl({ paperFormat: e.target.value as import("@/lib/topology").PaperFormat, bounds: undefined })}>
-                                          {(["A4","A3","A2","A1","A0"] as const).map(f => (
-                                            <option key={f} value={f}>{f}</option>
-                                          ))}
-                                        </select>
-                                        {/* Кнопки ориентации (иконки) */}
-                                        <button
-                                          title="Альбомная"
-                                          onClick={() => updatePl({ orientation: "landscape", bounds: undefined })}
-                                          className="flex items-center justify-center border rounded"
-                                          style={{
-                                            width: 26, height: 20, padding: 0,
-                                            background: (pl.orientation ?? "landscape") === "landscape" ? "var(--c-blue, #2563eb)" : "white",
-                                            borderColor: (pl.orientation ?? "landscape") === "landscape" ? "var(--c-blue, #1d4ed8)" : "var(--c-b2, #d1d5db)",
-                                          }}>
-                                          <svg width="16" height="12" viewBox="0 0 16 12">
-                                            <rect x="1" y="1" width="14" height="10" rx="1" fill="none"
-                                              stroke={(pl.orientation ?? "landscape") === "landscape" ? "white" : "#555"} strokeWidth="1.5"/>
-                                          </svg>
-                                        </button>
-                                        <button
-                                          title="Книжная"
-                                          onClick={() => updatePl({ orientation: "portrait", bounds: undefined })}
-                                          className="flex items-center justify-center border rounded"
-                                          style={{
-                                            width: 20, height: 26, padding: 0,
-                                            background: (pl.orientation ?? "landscape") === "portrait" ? "var(--c-blue, #2563eb)" : "white",
-                                            borderColor: (pl.orientation ?? "landscape") === "portrait" ? "var(--c-blue, #1d4ed8)" : "var(--c-b2, #d1d5db)",
-                                          }}>
-                                          <svg width="12" height="16" viewBox="0 0 12 16">
-                                            <rect x="1" y="1" width="10" height="14" rx="1" fill="none"
-                                              stroke={(pl.orientation ?? "landscape") === "portrait" ? "white" : "#555"} strokeWidth="1.5"/>
-                                          </svg>
-                                        </button>
-                                        <div className="w-px self-stretch bg-gray-300 mx-0.5" />
-                                        <CadCheckbox checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="УО" />
-                                        <CadCheckbox checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
-                                        <CadCheckbox checked={pl.showApprover ?? false} onChange={(v) => updatePl({ showApprover: v })} label="Утв" />
-                                      </div>
-                                      {/* Кнопка редактирования рамки */}
-                                      <button
-                                        className="w-full px-2 py-1 text-[11px] border rounded"
-                                        style={{
-                                          background: editingPrintLayerId === h.id ? "var(--c-purple, #7c3aed)" : "white",
-                                          color: editingPrintLayerId === h.id ? "white" : "var(--c-t2, #374151)",
-                                          borderColor: editingPrintLayerId === h.id ? "#6d28d9" : "var(--c-b2, #d1d5db)",
-                                        }}
-                                        onClick={() => setEditingPrintLayerId(editingPrintLayerId === h.id ? null : h.id)}>
-                                        {editingPrintLayerId === h.id ? "✓ Готово" : "✎ Изменить рамку"}
-                                      </button>
-                                      {/* Сброс рамки — автоподстройка под горизонт */}
-                                      {pl.bounds && (
-                                        <button className="w-full px-2 py-1 text-[11px] border border-gray-200 text-gray-600 rounded hover:bg-gray-50"
-                                          onClick={() => updatePl({ bounds: undefined })}>
-                                          ↺ Авто по горизонту
-                                        </button>
-                                      )}
-                                      <button
-                                        className="w-full px-2 py-1 text-[11px] border border-red-200 text-red-600 rounded hover:bg-red-50"
-                                        onClick={() => { updateHorizon(h.id, { printLayer: undefined }); setEditingPrintLayerId(null); }}>
-                                        Удалить слой
-                                      </button>
-                                    </div>
-                                  )}
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </FrameGroup>
-              </div>
+              <HorizonsPanel
+                horizons={horizons}
+                setHorizons={setHorizons}
+                branchCountByHorizon={branchCountByHorizon}
+                activeHorizonId={activeHorizonId}
+                setActiveHorizonId={setActiveHorizonId}
+                hoveredHorizonId={hoveredHorizonId}
+                setHoveredHorizonId={setHoveredHorizonId}
+                editingHorizonImageId={editingHorizonImageId}
+                setEditingHorizonImageId={setEditingHorizonImageId}
+                editingPrintLayerId={editingPrintLayerId}
+                setEditingPrintLayerId={setEditingPrintLayerId}
+                updateHorizon={updateHorizon}
+                addHorizon={addHorizon}
+                removeHorizon={removeHorizon}
+                uploadHorizonImage={uploadHorizonImage}
+                removeHorizonImage={removeHorizonImage}
+                setHorizonImageBounds={setHorizonImageBounds}
+                getSchemaBounds={() => {
+                  const ns = nodesRef.current;
+                  if (ns.length === 0) return null;
+                  const xs = ns.map(n => n.x), ys = ns.map(n => n.y);
+                  return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
+                }}
+                moveHorizon={moveHorizon}
+                horizonAlignFor={horizonAlignFor}
+              />
             )}
 
             {/* ═══ ВКЛАДКА: ВЕНТИЛЯЦИЯ ═════════════════════════════════ */}

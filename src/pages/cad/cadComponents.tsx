@@ -162,45 +162,6 @@ export function RibbonBigBtn({ icon, iconImg, label, sublabel, disabled, onClick
   );
 }
 
-export function FrameGroup({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <fieldset className="relative pt-2 pb-2 px-2"
-      style={{ border: "1px solid var(--c-b3, #b8b8b8)", borderRadius: "0" }}>
-      <legend className="px-1 text-xs text-gray-700"
-        style={{ marginLeft: "4px", fontWeight: 400 }}>
-        {title}
-      </legend>
-      <div className="space-y-1">
-        {children}
-      </div>
-    </fieldset>
-  );
-}
-
-export function LabeledRow({ label, children, labelWidth = 140 }: {
-  label: string; children: React.ReactNode; labelWidth?: number;
-}) {
-  return (
-    <div className="flex items-start gap-1.5">
-      <span className="text-xs text-gray-700 flex-shrink-0 text-right whitespace-normal break-words leading-tight pt-1"
-        style={{ width: labelWidth }}>{label}</span>
-      {children}
-    </div>
-  );
-}
-
-export function CadCheckbox({ checked, onChange, label }: {
-  checked: boolean; onChange: (v: boolean) => void; label: string;
-}) {
-  return (
-    <label className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 px-1 py-0.5 rounded">
-      <input type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)}
-        className="w-[13px] h-[13px] cursor-pointer" />
-      <span className="text-xs text-gray-800">{label}</span>
-    </label>
-  );
-}
-
 export function ToolBtn({ icon, label, active, onClick, disabled }: {
   icon: string; label: string; active?: boolean; onClick: () => void; disabled?: boolean;
 }) {

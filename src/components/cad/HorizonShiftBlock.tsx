@@ -1,4 +1,4 @@
-// Блок «Смещение горизонта» в настройках каждого горизонта — одна строка.
+// Блок «Сдвиг горизонта» в карточке горизонта (вкладка «Горизонты»).
 //
 // Зачем нужен: горизонты часто импортируют по одному, отдельными чертежами.
 // Маркшейдер ведёт каждый горизонт в своих координатах, поэтому свежий
@@ -69,8 +69,9 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove, alig
     set: (v: string) => void,
     title: string,
   ) => (
-    <div className="flex items-center gap-0.5 flex-1 min-w-0" title={title}>
-      <span className="text-[10px] text-gray-500 flex-shrink-0">{label}</span>
+    <label className="flex items-stretch flex-1 min-w-0 overflow-hidden" title={title}
+      style={{ border: "1px solid var(--c-b2)", borderRadius: 4, background: "var(--c-s1)", opacity: empty ? 0.5 : 1 }}>
+      <span className="px-1 flex items-center text-[10px] flex-shrink-0" style={{ color: "var(--c-t4)", background: "var(--c-s3)" }}>{label}</span>
       <input
         type="text"
         inputMode="text"
@@ -79,21 +80,20 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove, alig
         onFocus={(e) => e.target.select()}
         onBlur={() => { if (value === "" || value === "-") set("0"); }}
         onKeyDown={(e) => { if (e.key === "Enter") apply(); }}
-        className="cad-input w-full min-w-0 text-right"
+        className="font-num w-full min-w-0 h-6 px-1 text-[11px] text-right outline-none bg-transparent"
+        style={{ color: "var(--c-t1)" }}
         disabled={empty}
       />
-    </div>
+    </label>
   );
 
   return (
-    <div className="pt-1 pb-1 space-y-1" style={{ borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-      {/* Всё смещение — в одну строку: подпись, три поля, кнопки */}
+    <div className="space-y-1.5">
+      <div className="text-[10px] leading-snug" style={{ color: "var(--c-t3)" }}>
+        Сдвигает только этот горизонт, в метрах. Узлы стыковки с другими горизонтами остаются на месте.
+      </div>
+      {/* Три поля и кнопки — в одну строку */}
       <div className="flex items-center gap-1">
-        <Icon name="Move" size={11} className="flex-shrink-0"
-          style={{ color: empty ? "var(--c-t3, #9ca3af)" : "var(--c-blue, #2563eb)" }} />
-        <span className="text-[10px] text-gray-600 flex-shrink-0" title="Смещение горизонта по осям, м">
-          Сдвиг:
-        </span>
 
         {field("X", dx, setDx, "Плюс — на восток (вправо), минус — на запад")}
         {field("Y", dy, setDy, "Плюс — на север (вверх), минус — на юг")}
@@ -101,32 +101,39 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove, alig
 
         <button onClick={apply} disabled={!canMove}
           title="Переместить горизонт на указанное смещение"
-          className="w-5 h-5 flex items-center justify-center rounded border flex-shrink-0 disabled:opacity-30"
+          className="h-6 px-1.5 flex items-center gap-1 rounded flex-shrink-0 text-[10.5px] font-medium disabled:opacity-40"
           style={{
-            background: canMove ? "var(--c-tint-blue, #eff6ff)" : "transparent",
-            borderColor: canMove ? "var(--c-blue-lt, #3b82f6)" : "var(--c-b2, #d1d5db)",
+            background: canMove ? "var(--c-accent)" : "var(--c-s1)",
+            border: `1px solid ${canMove ? "var(--c-accent)" : "var(--c-b2)"}`,
+            color: canMove ? "#fff" : "var(--c-t3)",
           }}>
-          <Icon name="Check" size={11} style={{ color: canMove ? "var(--c-blue, #1d4ed8)" : "var(--c-t3, #9ca3af)" }} />
+          <Icon name="Check" size={11} />Сдвинуть
         </button>
 
         <button onClick={doAlign} disabled={empty || !align}
           title={align
             ? `Совместить по узлам: ${align.label}`
             : "Совместить по узлу: выделите два узла (Ctrl+клик) — один на этом горизонте, второй на основной схеме"}
-          className="w-5 h-5 flex items-center justify-center rounded border flex-shrink-0 disabled:opacity-30"
+          className="w-6 h-6 flex items-center justify-center rounded flex-shrink-0 disabled:opacity-40"
           style={{
-            background: align && !empty ? "var(--c-tint-green, #ecfdf5)" : "transparent",
-            borderColor: align && !empty ? "var(--c-green, #10b981)" : "var(--c-b2, #d1d5db)",
+            background: align && !empty ? "var(--c-tint-green)" : "var(--c-s1)",
+            border: `1px solid ${align && !empty ? "var(--c-green)" : "var(--c-b2)"}`,
+            color: align && !empty ? "var(--c-green)" : "var(--c-t3)",
           }}>
-          <Icon name="Crosshair" size={11}
-            style={{ color: align && !empty ? "var(--c-green-dk, #047857)" : "var(--c-t3, #9ca3af)" }} />
+          <Icon name="Crosshair" size={12} />
         </button>
       </div>
 
+      {!empty && !align && (
+        <div className="text-[10px] leading-snug" style={{ color: "var(--c-t4)" }}>
+          <Icon name="Crosshair" size={10} className="inline -mt-px" /> — совместить по узлам: выделите Ctrl+клик
+          один узел на этом горизонте и один на основной схеме.
+        </div>
+      )}
       {/* Подсказка: что произойдёт по кнопке совмещения */}
       {!empty && align && (
         <div className="text-[9px] leading-snug flex items-center gap-1 flex-wrap"
-          style={{ color: "var(--c-green-dk, #047857)" }}>
+          style={{ color: "var(--c-green)" }}>
           {/* Точки повторяют цвет колец на схеме: жёлтый узел поедет,
               зелёный останется — так подсказка читается без пояснений */}
           <span className="inline-flex items-center gap-0.5">
@@ -142,7 +149,7 @@ export default function HorizonShiftBlock({ horizonId, branchCount, onMove, alig
         </div>
       )}
       {empty && (
-        <div className="text-[9px] text-gray-400 leading-snug">
+        <div className="text-[10px] leading-snug" style={{ color: "var(--c-t4)" }}>
           На горизонте нет выработок — двигать нечего.
         </div>
       )}
