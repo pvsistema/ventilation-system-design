@@ -21,6 +21,7 @@ import HQFireDiagram from "@/components/cad/HQFireDiagram";
 import HQFireDiagramDialog from "@/components/cad/HQFireDiagramDialog";
 import type { HQDiagramData } from "@/lib/hqDiagramExcel";
 import NodePropsPanel from "@/components/cad/NodePropsPanel";
+import SolverParamsPanel, { SOLVER_DEFAULTS, type SolverParams } from "@/components/cad/SolverParamsPanel";
 import NodeFirePanel from "@/components/cad/NodeFirePanel";
 import NodePeoplePanel from "@/components/cad/NodePeoplePanel";
 import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
@@ -1467,6 +1468,7 @@ export default function CadPage() {
   // Барометрическое давление на поверхности, кПа — входит в формулу 9.2.
   const [surfacePressure, setSurfacePressure] = useState(P_STD_KPA);
   const [showSolverParams, setShowSolverParams] = useState(false);
+  const closeSolverParams = useCallback(() => setShowSolverParams(false), []);
   // Диалог «Устойчивость при пожаре» (Акт устойчивости)
   const [showFireStability, setShowFireStability] = useState(false);
   // Диалог «Проверка ППЗ» (пожарно-оросительный трубопровод)
@@ -3930,6 +3932,8 @@ export default function CadPage() {
     setSolverMaxIter(5000);
     setSolverAlpha(0.5);
     setSurfaceTemp(20);
+    setMineAirTemp(15);
+    setHeatingSeason("winter");
     // Данные ОПО — паспорт прежнего объекта не должен перейти в новый проект.
     setOpoData(makeDefaultOpoData());
     setUseNaturalDraft(true);
@@ -4280,6 +4284,14 @@ export default function CadPage() {
     setSolverMaxIter(5000);
     setSolverAlpha(0.5);
     setSurfaceTemp(20);
+    setUseNaturalDraft(true);
+    setMineAirTemp(15);
+    setGeoGradient(0);
+    setHeatingSeason("winter");
+    setUseHumidity(false);
+    setSurfaceHumidity(DEFAULT_SURFACE_HUMIDITY);
+    setMineHumidity(DEFAULT_MINE_HUMIDITY);
+    setSurfacePressure(P_STD_KPA);
     // Данные ОПО — паспорт прежнего объекта не должен перейти в новый проект.
     setOpoData(makeDefaultOpoData());
 
@@ -7290,161 +7302,32 @@ export default function CadPage() {
                 <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 500 }}>Параметры</span>
               </button>
               {showSolverParams && (
-                <div
-                  className="fixed top-[160px] right-4 z-50 bg-white border border-gray-300 rounded shadow-lg p-3 overflow-y-auto"
-                  style={{ width: 300, minWidth: 300, maxWidth: 300, maxHeight: "calc(100vh - 200px)", boxSizing: "border-box" }}>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[11px] font-semibold text-gray-700">Параметры расчёта</span>
-                    <button onClick={() => setShowSolverParams(false)} className="text-gray-400 hover:text-gray-600">
-                      <Icon name="X" size={14} />
-                    </button>
-                  </div>
-                  {/* Выбор метода в диалоге */}
-                  <div className="mb-2">
-                    <label className="text-[10px] text-gray-500 block mb-1">Метод расчёта</label>
-                    <select value={calcMode} onChange={e => setCalcMode(e.target.value as "cross" | "mkr")}
-                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1">
-                      <option value="cross">Метод Кросса (Андрияшева–Кросса)</option>
-                      <option value="mkr">МКР — Метод контурных расходов</option>
-                    </select>
-                  </div>
-                  <div className="mb-2">
-                    <label className="text-[10px] text-gray-500 block mb-1">Макс. погрешность (Па)</label>
-                    <input type="number" value={solverTolerance} step="0.00001"
-                      onChange={e => setSolverTolerance(Number(e.target.value))}
-                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
-                  </div>
-                  <div className="mb-2">
-                    <label className="text-[10px] text-gray-500 block mb-1">Макс. число итераций</label>
-                    <input type="number" value={solverMaxIter} step="1000"
-                      onChange={e => setSolverMaxIter(Number(e.target.value))}
-                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
-                  </div>
-                  <div className="mb-2">
-                    <label className="text-[10px] text-gray-500 block mb-1">
-                      {calcMode === "mkr" ? "Шаг фактора сходимости (МКР)" : "Фактор сходимости α (Кросс)"}
-                    </label>
-                    <input type="number" value={solverAlpha} step="0.05" min="0.1" max="1.0"
-                      onChange={e => setSolverAlpha(Number(e.target.value))}
-                      className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
-                    <p className="text-[9px] text-gray-400 mt-0.5 leading-tight">
-                      {calcMode === "mkr"
-                        ? "Больше шаг — быстрее сходимость (0.5–0.8). Слишком большой может вызвать колебания."
-                        : "Демпфирование итераций Кросса (0.5–0.8)."}
-                    </p>
-                  </div>
-                  <div className="border-t border-gray-200 pt-2 mt-1 mb-2">
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <input
-                        id="useNaturalDraft"
-                        type="checkbox"
-                        checked={useNaturalDraft}
-                        onChange={e => setUseNaturalDraft(e.target.checked)}
-                        className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
-                      />
-                      <label htmlFor="useNaturalDraft" className="text-[11px] font-semibold text-gray-700 cursor-pointer select-none">
-                        Учитывать естественную тягу
-                      </label>
-                    </div>
-                    {useNaturalDraft && (
-                      <>
-                        <label className="text-[10px] text-gray-500 block mb-1">Температура на поверхности t_н (°C)</label>
-                        <input type="number" value={surfaceTemp} step="1" min="-60" max="50"
-                          onChange={e => setSurfaceTemp(Number(e.target.value))}
-                          className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
-                        <label className="text-[10px] text-gray-500 block mb-1">
-                          Средняя температура рудничного воздуха t_ср (°C)
-                        </label>
-                        <input type="number" value={mineAirTemp} step="1" min="-20" max="60"
-                          onChange={e => setMineAirTemp(Number(e.target.value))}
-                          className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
-                        <label className="text-[10px] text-gray-500 block mb-1">
-                          Геотерм. градиент (°C / 100 м глубины)
-                        </label>
-                        <input type="number" value={geoGradient} step="0.5" min="0" max="10"
-                          onChange={e => setGeoGradient(Number(e.target.value))}
-                          className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
-                        <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
-                          Термодинамический способ (Комаров, 7.11):<br/>
-                          h_e = γ·H·(t_н − t_ср)/(273 + t_ср). t_ср по ГОСТ 15°C.
-                        </div>
-
-                        {/* ── Влажность воздуха (норматив, прил. 9, форм. 9.2) ── */}
-                        <div className="mt-2 pt-2 border-t border-gray-200">
-                          <div className="flex items-center gap-1.5 mb-2">
-                            <input
-                              id="useHumidity"
-                              type="checkbox"
-                              checked={useHumidity}
-                              onChange={e => setUseHumidity(e.target.checked)}
-                              className="w-3.5 h-3.5 accent-blue-600 cursor-pointer"
-                            />
-                            <label htmlFor="useHumidity" className="text-[11px] font-semibold text-gray-700 cursor-pointer select-none">
-                              Учитывать влажность воздуха
-                            </label>
-                          </div>
-                          {useHumidity ? (
-                            <>
-                              <label className="text-[10px] text-gray-500 block mb-1">
-                                Влажность на поверхности φ_н (%)
-                              </label>
-                              <input type="number" value={surfaceHumidity} step="5" min="0" max="100"
-                                onChange={e => setSurfaceHumidity(Number(e.target.value))}
-                                className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
-                              <label className="text-[10px] text-gray-500 block mb-1">
-                                Влажность рудничного воздуха φ_р (%)
-                              </label>
-                              <input type="number" value={mineHumidity} step="5" min="0" max="100"
-                                onChange={e => setMineHumidity(Number(e.target.value))}
-                                className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right mb-2" />
-                              <label className="text-[10px] text-gray-500 block mb-1">
-                                Барометрическое давление (кПа)
-                              </label>
-                              <input type="number" value={surfacePressure} step="0.5" min="60" max="120"
-                                onChange={e => setSurfacePressure(Number(e.target.value))}
-                                className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1 text-right" />
-                              <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
-                                Плотность по форм. 9.2:<br/>
-                                ρ = (3,48·P − 0,0038·φ·P_нас)/(273 + t).<br/>
-                                Норматив требует учёта влажности при разности
-                                отметок замерных станций более 100 м (пп. 69, 72).
-                                Влажность отдельных узлов задаётся в их свойствах.
-                              </div>
-                            </>
-                          ) : (
-                            <div className="text-[9px] text-gray-400 leading-relaxed">
-                              Воздух считается сухим: ρ = 353/(273 + t).
-                              Результаты полностью совпадают с прежними расчётами.
-                            </div>
-                          )}
-                        </div>
-                      </>
-                    )}
-                    {!useNaturalDraft && (
-                      <div className="text-[9px] text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1">
-                        Все узлы получают T = T_пов, разность плотностей = 0, тяга = 0 Па
-                      </div>
-                    )}
-                    {/* Сезон — управляет работой калориферов */}
-                    <div className="mt-2 pt-2 border-t border-gray-200">
-                      <label className="text-[10px] text-gray-500 block mb-1">Сезон (работа калориферов)</label>
-                      <select value={heatingSeason}
-                        onChange={e => setHeatingSeason(e.target.value as HeatingSeason)}
-                        className="w-full text-[11px] border border-gray-300 rounded px-1.5 py-1">
-                        <option value="winter">Зима — калориферы включены</option>
-                        <option value="summer">Лето — калориферы отключены</option>
-                      </select>
-                      <div className="text-[9px] text-gray-400 mt-1 leading-relaxed">
-                        При переходе на лето подогрев снимается, температуры узлов
-                        возвращаются к фоновым автоматически.
-                      </div>
-                    </div>
-                  </div>
-                  <button onClick={() => setShowSolverParams(false)}
-                    className="w-full mt-1 py-1 bg-blue-600 text-white text-[11px] rounded hover:bg-blue-700">
-                    Сохранить
-                  </button>
-                </div>
+                <SolverParamsPanel
+                  values={{
+                    calcMode, solverTolerance, solverMaxIter, solverAlpha,
+                    useNaturalDraft, surfaceTemp, mineAirTemp, geoGradient,
+                    useHumidity, surfaceHumidity, mineHumidity, surfacePressure,
+                    heatingSeason,
+                  }}
+                  onChange={(key, val) => {
+                    const setters: Record<keyof SolverParams, (x: never) => void> = {
+                      calcMode: setCalcMode, solverTolerance: setSolverTolerance,
+                      solverMaxIter: setSolverMaxIter, solverAlpha: setSolverAlpha,
+                      useNaturalDraft: setUseNaturalDraft, surfaceTemp: setSurfaceTemp,
+                      mineAirTemp: setMineAirTemp, geoGradient: setGeoGradient,
+                      useHumidity: setUseHumidity, surfaceHumidity: setSurfaceHumidity,
+                      mineHumidity: setMineHumidity, surfacePressure: setSurfacePressure,
+                      heatingSeason: setHeatingSeason,
+                    };
+                    setters[key](val as never);
+                  }}
+                  onResetSolver={() => {
+                    setSolverTolerance(SOLVER_DEFAULTS.solverTolerance);
+                    setSolverMaxIter(SOLVER_DEFAULTS.solverMaxIter);
+                    setSolverAlpha(SOLVER_DEFAULTS.solverAlpha);
+                  }}
+                  onClose={closeSolverParams}
+                />
               )}
             </div>
 
