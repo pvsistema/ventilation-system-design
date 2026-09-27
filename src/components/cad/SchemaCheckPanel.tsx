@@ -7,8 +7,8 @@
 import { useState, type ReactNode } from "react";
 import Icon from "@/components/ui/icon";
 import { type TopoNode, type TopoBranch, type Horizon, calcBranchLength } from "@/lib/topology";
-import { type SchemaCheckResult } from "@/lib/schemaCheck";
-import { type CheckTab } from "@/pages/cad/useCadSchemaCheck";
+import { type BranchNote, type NodeNote, type GroupNote } from "@/lib/schemaCheckTypes";
+import { type CheckTab, type FullCheckResult } from "@/pages/cad/useCadSchemaCheck";
 
 type Level = "error" | "warn" | "info";
 
@@ -145,7 +145,7 @@ function GroupTitle({ children }: { children: ReactNode }) {
 export interface SolveBlockers { nodeIds: string[]; branchIds: string[]; message: string }
 
 interface SchemaCheckPanelProps {
-  result: SchemaCheckResult;
+  result: FullCheckResult;
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
@@ -168,6 +168,8 @@ interface SchemaCheckPanelProps {
   onFocusSolveBlocker: (nodeIds: string[], branchIds: string[]) => void;
   onUpdateBranch: (id: string, patch: Partial<TopoBranch>) => void;
   onAllManualToAuto: () => void;
+  /** Выделить группу узлов и ветвей и показать её на схеме */
+  onFocusGroup: (nodeIds: string[], branchIds: string[]) => void;
 }
 
 export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
@@ -197,6 +199,26 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
   );
   const selectAllBtn = (ids: string[]) =>
     ids.length > 1 ? <div className="px-2 pb-1.5"><ActionBtn icon="MousePointerClick" label="Выделить все на схеме" onClick={() => p.onSelectBranches(ids)} /></div> : null;
+
+  const branchNotes = (list: BranchNote[], empty: string, selectAll = true) => (
+    <>
+      {selectAll && selectAllBtn(list.map((x) => x.branch.id))}
+      {list.length === 0 ? <Empty text={empty} /> : list.map(({ branch: b, note }) => branchRow(b, note))}
+    </>
+  );
+  const nodeNotes = (list: NodeNote[], empty: string) =>
+    list.length === 0 ? <Empty text={empty} /> : list.map(({ node: n, note }) => (
+      <ItemRow key={n.id} title={nodeName(n)} detail={note}
+        selected={selectedNodeId === n.id} onClick={() => onFocusNode(n.id)} />
+    ));
+  const groupNotes = (list: GroupNote[], empty: string) =>
+    list.length === 0 ? <Empty text={empty} /> : list.map((g, i) => (
+      <ItemRow key={`${g.title}|${i}`} title={g.title} detail={g.note}
+        selected={g.branchIds.includes(selectedBranchId ?? "") || g.nodeIds.includes(selectedNodeId ?? "")}
+        onClick={() => p.onFocusGroup(g.nodeIds, g.branchIds)} />
+    ));
+  const { topo, params, solve } = r;
+  const needSolve = <Empty text="Выполните расчёт сети (F9) — проверка использует его результаты" />;
 
   const solveCount = (solveBlockers?.nodeIds.length ?? 0) + (solveBlockers?.branchIds.length ?? 0);
 
@@ -231,6 +253,242 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
               })}
             </>
           )}
+        </>
+      ),
+    },
+    // ── Связность сети ──────────────────────────────────────────────────
+    {
+      id: "noFan", group: "Связность сети", icon: "Fan", level: "error", count: topo.noActiveFan ? 1 : 0,
+      title: "Нет работающего вентилятора",
+      body: () => (
+        <>
+          <Hint>Без главного или вспомогательного вентилятора воздух по сети движется только за счёт естественной тяги.</Hint>
+          {topo.noActiveFan ? <Alert>Все вентиляторы остановлены или не заданы. Добавьте ГВУ на ветвь ствола или включите существующий.</Alert>
+            : <Empty text="Вентиляторы заданы" />}
+        </>
+      ),
+    },
+    {
+      id: "components", group: "Связность сети", icon: "Split", level: "error", count: topo.components.length,
+      title: "Сеть распалась на части",
+      body: () => (
+        <>
+          <Hint>Эти части не соединены с основной сетью ни одной ветвью. Воздух в них не попадёт — проверьте стыковку.</Hint>
+          {groupNotes(topo.components, "Сеть единая")}
+        </>
+      ),
+    },
+    {
+      id: "deadFan", group: "Связность сети", icon: "Fan", level: "error", count: topo.deadFans.length,
+      title: "Вентилятор стоит в тупике",
+      body: () => (
+        <>
+          <Hint>Один конец ветви с вентилятором никуда не ведёт — вентилятору некуда подавать воздух.</Hint>
+          {branchNotes(topo.deadFans, "Все вентиляторы включены в сеть", false)}
+        </>
+      ),
+    },
+    {
+      id: "tJunction", group: "Связность сети", icon: "GitCommitHorizontal", level: "error", count: topo.tJunctions.length,
+      title: "Примыкание без общего узла",
+      body: () => (
+        <>
+          <Hint>Узел лежит на оси другой выработки, но не соединён с ней. На чертеже примыкание есть, а в расчёте его нет. Разделите ветвь этим узлом.</Hint>
+          {groupNotes(topo.tJunctions, "Несостыкованных примыканий нет")}
+        </>
+      ),
+    },
+    {
+      id: "crossing", group: "Связность сети", icon: "X", level: "warn", count: topo.crossings.length,
+      title: "Пересечение без общего узла",
+      body: () => (
+        <>
+          <Hint>Выработки пересекаются в плане на одной отметке, но не соединены. Если это сопряжение — поставьте узел; если выработки на разных уровнях — поправьте отметки.</Hint>
+          {groupNotes(topo.crossings, "Пересечений нет")}
+        </>
+      ),
+    },
+    {
+      id: "selfLoop", group: "Связность сети", icon: "RefreshCcw", level: "error", count: topo.selfLoops.length,
+      title: "Ветвь замкнута сама на себя",
+      body: () => (
+        <>
+          <Hint>Начало и конец ветви — один узел. Обычно появляется после слияния узлов; такую ветвь нужно удалить.</Hint>
+          {branchNotes(topo.selfLoops, "Таких ветвей нет")}
+        </>
+      ),
+    },
+    {
+      id: "deadEnd", group: "Связность сети", icon: "CornerDownRight", level: "info", count: topo.deadEnds.length,
+      title: "Тупики без проветривания",
+      body: () => (
+        <>
+          <Hint>Выработка заканчивается тупиком, в ней нет ВМП и вентстава — расход в модели будет 0. Если это забой, задайте ВМП; если ветвь «Тупиковая» — отметьте это в свойствах.</Hint>
+          {nodeNotes(topo.deadEnds, "Тупиков без проветривания нет")}
+        </>
+      ),
+    },
+    // ── Параметры ───────────────────────────────────────────────────────
+    {
+      id: "invalidValues", group: "Параметры ветвей", icon: "FileWarning", level: "error", count: params.invalidValues.length,
+      title: "Некорректные числа",
+      body: () => (
+        <>
+          <Hint>Отрицательные или нечисловые значения — обычно сдвиг столбцов или запятая вместо точки при импорте.</Hint>
+          {branchNotes(params.invalidValues, "Все значения корректны")}
+        </>
+      ),
+    },
+    {
+      id: "fanNoCurve", group: "Параметры ветвей", icon: "Fan", level: "error", count: params.fanNoCurve.length,
+      title: "Вентилятор без характеристики",
+      body: () => (
+        <>
+          <Hint>Вентилятор включён, но не создаёт напора: не выбрана модель или депрессия равна нулю.</Hint>
+          {branchNotes(params.fanNoCurve, "У всех вентиляторов задана характеристика", false)}
+        </>
+      ),
+    },
+    {
+      id: "badArea", group: "Параметры ветвей", icon: "Square", level: "warn", count: params.badArea.length,
+      title: "Сечение не задано или неправдоподобно",
+      body: () => (
+        <>
+          <Hint>Допустимым считается 0,5…60 м². Сечение входит в сопротивление в кубе — ошибка в 10 раз меняет R в 1000 раз.</Hint>
+          {branchNotes(params.badArea, "Сечения в норме")}
+        </>
+      ),
+    },
+    {
+      id: "shortManualLen", group: "Параметры ветвей", icon: "Ruler", level: "warn", count: params.shortManualLen.length,
+      title: "Ручная длина короче расстояния между узлами",
+      body: () => (
+        <>
+          <Hint>Выработка не может быть короче прямой между её концами — сопротивление занижено.</Hint>
+          {params.shortManualLen.length === 0 ? <Empty text="Таких ветвей нет" /> :
+            params.shortManualLen.map(({ branch: b, note }) => {
+              const auto = autoLength(b);
+              return branchRow(b, note, auto ? <ActionBtn icon="RefreshCw" label="Авто"
+                onClick={() => p.onUpdateBranch(b.id, { manualLength: false, length: auto })} /> : undefined);
+            })}
+        </>
+      ),
+    },
+    {
+      id: "badAlpha", group: "Параметры ветвей", icon: "Waves", level: "warn", count: params.badAlpha.length,
+      title: "Коэффициент α вне диапазона",
+      body: () => (
+        <>
+          <Hint>Коэффициент аэродинамического сопротивления равен нулю или нетипичен для горных выработок.</Hint>
+          {branchNotes(params.badAlpha, "Коэффициенты в норме")}
+        </>
+      ),
+    },
+    {
+      id: "zeroBulkhead", group: "Параметры ветвей", icon: "DoorOpen", level: "warn", count: params.zeroBulkhead.length,
+      title: "Перемычка без сопротивления",
+      body: () => (
+        <>
+          <Hint>Перемычка отмечена, но её сопротивление 0 — в расчёте это открытый проём.</Hint>
+          {branchNotes(params.zeroBulkhead, "Все перемычки заданы")}
+        </>
+      ),
+    },
+    {
+      id: "lostZ", group: "Параметры ветвей", icon: "ArrowDownToLine", level: "warn", count: params.lostZ.length,
+      title: "Потерянные высотные отметки",
+      body: () => (
+        <>
+          <Hint>Узел стоит на отметке 0, а вся сеть вокруг — глубоко. Это ложный перепад высот и ложная естественная тяга.</Hint>
+          {nodeNotes(params.lostZ, "Отметки в порядке")}
+        </>
+      ),
+    },
+    {
+      id: "tinyBranch", group: "Параметры ветвей", icon: "Minimize2", level: "info", count: params.tinyBranches.length,
+      title: "Очень короткие ветви",
+      body: () => (
+        <>
+          <Hint>Ветви короче 0,5 м почти не влияют на расчёт, но усложняют схему и замедляют сходимость.</Hint>
+          {branchNotes(params.tinyBranches, "Таких ветвей нет")}
+        </>
+      ),
+    },
+    // ── После расчёта ───────────────────────────────────────────────────
+    {
+      id: "fanAgainst", group: "Результаты расчёта", icon: "Undo2", level: "error", count: solve.fanAgainstFlow.length,
+      title: "Вентилятор работает против потока",
+      body: () => (
+        <>
+          <Hint>Воздух идёт через вентилятор в обратную сторону: соседний вентилятор сильнее или неверно задано направление ветви.</Hint>
+          {!solve.solved ? needSolve : branchNotes(solve.fanAgainstFlow, "Все вентиляторы работают по направлению", false)}
+        </>
+      ),
+    },
+    {
+      id: "faceDeficit", group: "Результаты расчёта", icon: "Pickaxe", level: "error", count: solve.faceDeficit.length,
+      title: "Забою не хватает воздуха",
+      body: () => (
+        <>
+          <Hint>Фактический расход меньше требуемого по нормам (люди, ВВ, дизель, мин. скорость).</Hint>
+          {!solve.solved ? needSolve : branchNotes(solve.faceDeficit, "Воздуха хватает во всех забоях")}
+        </>
+      ),
+    },
+    {
+      id: "highV", group: "Результаты расчёта", icon: "Wind", level: "error", count: solve.highVelocity.length,
+      title: "Скорость воздуха выше допустимой",
+      body: () => (
+        <>
+          <Hint>Предел берётся из справочника норм и свойства «Макс. скорость» ветви (меньшее из двух).</Hint>
+          {!solve.solved ? needSolve : branchNotes(solve.highVelocity, "Скорости в пределах нормы")}
+        </>
+      ),
+    },
+    {
+      id: "recirc", group: "Результаты расчёта", icon: "Repeat", level: "error", count: solve.recirculation.length,
+      title: "Рециркуляция у ВМП",
+      body: () => (
+        <>
+          <Hint>ВМП забирает больше 70 % воздуха, идущего к нему по выработке, — он начнёт гонять по кругу загрязнённый воздух.</Hint>
+          {!solve.solved ? needSolve : branchNotes(solve.recirculation, "Рециркуляции нет", false)}
+        </>
+      ),
+    },
+    {
+      id: "fanRange", group: "Результаты расчёта", icon: "Gauge", level: "warn", count: solve.fanOutOfRange.length,
+      title: "Рабочая точка вне характеристики",
+      body: () => (
+        <>
+          <Hint>Расход вентилятора вышел за паспортную зону — результат ненадёжен, возможен помпаж или срыв.</Hint>
+          {!solve.solved ? needSolve : branchNotes(solve.fanOutOfRange, "Все вентиляторы в рабочей зоне", false)}
+        </>
+      ),
+    },
+    {
+      id: "leakage", group: "Результаты расчёта", icon: "Droplets", level: "warn", count: solve.leakage ? 1 : 0,
+      title: "Большие утечки через перемычки",
+      body: () => (
+        <>
+          <Hint>Через перемычки уходит больше 30 % воздуха, подаваемого главными вентиляторами.</Hint>
+          {!solve.solved ? needSolve : !solve.leakage ? <Empty text="Утечки в допустимых пределах" /> : (
+            <>
+              <Alert>
+                Утечки {fmt(solve.leakage.leakFlow, 1)} м³/с — {fmt(solve.leakage.percent, 0)} % от подачи {fmt(solve.leakage.fanFlow, 1)} м³/с
+              </Alert>
+              {branchNotes(solve.leakage.branches, "")}
+            </>
+          )}
+        </>
+      ),
+    },
+    {
+      id: "lowV", group: "Результаты расчёта", icon: "Wind", level: "info", count: solve.lowVelocity.length,
+      title: "Скорость ниже минимальной",
+      body: () => (
+        <>
+          <Hint>Застой воздуха. Минимальные скорости для забоев и прочих выработок берутся из справочника норм (ФНиП).</Hint>
+          {!solve.solved ? needSolve : branchNotes(solve.lowVelocity, "Застойных выработок нет")}
         </>
       ),
     },
@@ -393,7 +651,12 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
   const found = checks.filter((c) => c.count > 0).length;
   // Раскрытую проверку показываем всегда — даже пустую: её мог открыть расчёт.
   const visible = checks.filter((c) => showAll || c.count > 0 || c.id === openCheck);
-  const groups = [...new Set(visible.map((c) => c.group))];
+  const GROUP_ORDER = ["Расчёт сети", "Связность сети", "Ветви", "Параметры ветвей", "Узлы", "Результаты расчёта"];
+  const LEVEL_ORDER: Record<Level, number> = { error: 0, warn: 1, info: 2 };
+  const groups = GROUP_ORDER.filter((g) => visible.some((c) => c.group === g));
+  const inGroup = (g: string) => visible
+    .filter((c) => c.group === g)
+    .sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
 
   const status: { color: string; icon: string; text: string; sub: string } =
     errors > 0 ? { color: LEVEL_COLOR.error, icon: "CircleX", text: `Ошибок: ${errors}`, sub: "Расчёт может быть неверным — исправьте их в первую очередь" }
@@ -411,7 +674,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
             <div className="text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>{status.sub}</div>
           </div>
         </div>
-        {r.truncated && (
+        {(r.truncated || topo.truncated || params.truncated || solve.truncated) && (
           <div className="text-[10px] flex items-start gap-1" style={{ color: "var(--c-t3, #6b7280)" }}>
             <Icon name="Info" size={11} className="flex-shrink-0 mt-px" />
             Показаны первые 500 результатов в каждом списке.
@@ -450,7 +713,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         {groups.map((g) => (
           <div key={g} className="space-y-1.5">
             <GroupTitle>{g}</GroupTitle>
-            {visible.filter((c) => c.group === g).map((c) => (
+            {inGroup(g).map((c) => (
               <CheckCard key={c.id} icon={c.icon} title={c.title} count={c.count} level={c.level}
                 open={openCheck === c.id} onToggle={() => onOpenCheck(openCheck === c.id ? null : c.id)}>
                 {c.body()}

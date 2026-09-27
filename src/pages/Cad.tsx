@@ -53,6 +53,9 @@ import { bulkheadROfBranch, buildBulkheadRMap } from "@/lib/bulkheadResistance";
 import { type EvaluateContext, type VariantResult } from "@/lib/fireControl/evaluate";
 import { applyActions, describeActions, toRdCommand, type FireAction } from "@/lib/fireControl/actions";
 import { checkSchema } from "@/lib/schemaCheck";
+import { checkTopology } from "@/lib/schemaCheckTopology";
+import { checkParams } from "@/lib/schemaCheckParams";
+import { toast } from "sonner";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
@@ -123,7 +126,7 @@ import {
 import CadTitleBar from "./cad/CadTitleBar";
 import CadStatusBar from "./cad/CadStatusBar";
 import { useCadHotkeys } from "./cad/useCadHotkeys";
-import { useCadSchemaCheck, useCadLeftPanelResize } from "./cad/useCadSchemaCheck";
+import { useCadSchemaCheck, useCadLeftPanelResize, type CheckTab } from "./cad/useCadSchemaCheck";
 import { useCadHeaters } from "./cad/useCadHeaters";
 import { buildVentPipeLine as buildVentPipeLineImpl } from "./cad/buildVentPipeLine";
 import { collectVentPipeLine, removeVentPipeLine } from "./cad/ventPipeLineOps";
@@ -2427,7 +2430,60 @@ export default function CadPage() {
     checkHighRThreshold, setCheckHighRThreshold,
     checkBulkRThreshold, setCheckBulkRThreshold,
     schemaCheckResult,
-  } = useCadSchemaCheck(activeSide, nodes, branches);
+  } = useCadSchemaCheck(activeSide, nodes, branches, solveResult != null, ventNorms, ventSections);
+
+  // ─── ПРОВЕРКА СХЕМЫ ПОСЛЕ ИМПОРТА ───────────────────────────────────
+  // Импорт из АэроСети, Вентиляции 2.0, Ventsim, DXF и Excel чаще всего и
+  // приносит ошибки: несостыкованные примыкания, потерянные отметки, пустые
+  // сечения. Сразу после импорта проверяем схему и, если что-то нашлось,
+  // показываем сообщение с кнопкой перехода к проверке — иначе человек
+  // узнает о проблеме только по странному результату расчёта.
+  const postImportCheckRef = useRef(false);
+  useEffect(() => {
+    if (!postImportCheckRef.current) return;
+    postImportCheckRef.current = false;
+    if (branches.length === 0) return;
+    const base = checkSchema(nodes, branches);
+    const topo = checkTopology(nodes, branches);
+    const params = checkParams(nodes, branches);
+    // [вкладка, текст, число, ошибка(true) / замечание(false)] — по важности
+    const found: [CheckTab, string, number, boolean][] = ([
+      ["brokenBranch", "ветви на удалённых узлах", base.brokenBranches.length, true],
+      ["invalidValues", "некорректные числа", params.invalidValues.length, true],
+      ["components", "отдельные части сети", topo.components.length, true],
+      ["tJunction", "примыкания без общего узла", topo.tJunctions.length, true],
+      ["isolatedBranch", "ветви без связи с поверхностью", base.isolatedBranches.length, true],
+      ["noFan", "нет работающего вентилятора", topo.noActiveFan ? 1 : 0, true],
+      ["fanNoCurve", "вентиляторы без характеристики", params.fanNoCurve.length, true],
+      ["zeroLen", "ветви нулевой длины", base.zeroLenBranches.length, true],
+      ["zeroR", "ветви с R = 0", base.zeroRBranches.length, true],
+      ["selfLoop", "замкнутые сами на себя ветви", topo.selfLoops.length, true],
+      ["crossing", "пересечения без узла", topo.crossings.length, false],
+      ["badArea", "неправдоподобные сечения", params.badArea.length, false],
+      ["lostZ", "потерянные отметки Z", params.lostZ.length, false],
+      ["zeroBulkhead", "перемычки без сопротивления", params.zeroBulkhead.length, false],
+      ["dupes", "узлы в одной точке", base.dupes.length, false],
+      ["dupbranch", "повторяющиеся ветви", base.dupBranches.length, false],
+    ] as [CheckTab, string, number, boolean][]).filter(([, , n]) => n > 0);
+    if (found.length === 0) {
+      addLog("ok", "Проверка после импорта: ошибок в схеме не найдено");
+      return;
+    }
+    const errors = found.filter(([, , , e]) => e);
+    const first = (errors[0] ?? found[0])[0];
+    const summary = found.slice(0, 4).map(([, t, n]) => `${t}: ${n}`).join(" · ")
+      + (found.length > 4 ? ` · и ещё ${found.length - 4}` : "");
+    addLog(errors.length > 0 ? "warn" : "info", `Проверка после импорта: ${found.map(([, t, n]) => `${t} — ${n}`).join("; ")}`);
+    const open = () => { setActiveSide("check"); setCheckTab(first); };
+    const opts = {
+      description: summary,
+      duration: 12000,
+      action: { label: "Открыть проверку", onClick: open },
+    };
+    if (errors.length > 0) toast.error("После импорта в схеме есть ошибки — расчёт может быть неверным", opts);
+    else toast.warning("После импорта есть замечания к схеме", opts);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [nodes, branches]);
   // ─── ДИАЛОГ «АВТОНУМЕРАЦИЯ» ─────────────────────────────────────────
   const [showRenumberMenu, setShowRenumberMenu] = useState<boolean>(false);
   const [showRenumberDialog, setShowRenumberDialog] = useState<boolean>(false);
@@ -2868,6 +2924,7 @@ export default function CadPage() {
       });
     }
     setImportNonce(n => n + 1);
+    postImportCheckRef.current = true;
     setShowVentsimVsmImport(false);
     setActiveRibbon("home");
   };
@@ -2920,6 +2977,7 @@ export default function CadPage() {
       });
     }
     setImportNonce(n => n + 1);
+    postImportCheckRef.current = true;
     setShowVent2Cdf3Import(false);
     setActiveRibbon("home");
   };
@@ -3013,6 +3071,7 @@ export default function CadPage() {
     result.warnings.forEach(w => addLog("warn", `Импорт АэроСеть: ${w}`));
     addLog("info", `Импорт АэроСеть (.erp): узлов ${result.stats.nodes}, выработок ${result.stats.branches}, вентиляторов ${result.stats.fans}, перемычек ${result.stats.bulkheads}, позиций ПЛА ${result.stats.positions}`);
     setImportNonce(n => n + 1);
+    postImportCheckRef.current = true;
     setShowErpImport(false);
     setActiveRibbon("home");
   };
@@ -3029,6 +3088,7 @@ export default function CadPage() {
       setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev)]);
     }
     setImportNonce(n => n + 1);
+    postImportCheckRef.current = true;
     setShowVentsimCsvImport(false);
     setActiveRibbon("home");
   };
@@ -3242,6 +3302,7 @@ export default function CadPage() {
       setPositions(prev => [...prev, ...makeImportedPositions(prev)]);
     }
     setImportNonce(n => n + 1);
+    postImportCheckRef.current = true;
     setShowCsvImport(false);
     setActiveRibbon("home");
   };
@@ -3263,6 +3324,7 @@ export default function CadPage() {
       setBranches((prev) => [...prev, ...result.branches]);
     }
     setImportNonce((n) => n + 1);
+    postImportCheckRef.current = true;
     setShowCombinedImport(false);
     setActiveRibbon("home");
   };
@@ -3279,6 +3341,7 @@ export default function CadPage() {
       setBranches((prev) => [...prev, ...result.branches]);
     }
     setImportNonce((n) => n + 1);
+    postImportCheckRef.current = true;
     setShowExcelImport(false);
     setActiveRibbon("home");
   };
@@ -3295,6 +3358,7 @@ export default function CadPage() {
     }
     // Переключаем вид на план (сверху) и вписываем схему в экран через useEffect
     setImportNonce((n) => n + 1);
+    postImportCheckRef.current = true;
     setShowDxfImport(false);
     setActiveRibbon("home");
   };
@@ -8055,6 +8119,7 @@ export default function CadPage() {
                   setFocusNonce(Date.now());
                 }}
                 onFocusSolveBlocker={focusSolveBlocker}
+                onFocusGroup={focusSolveBlocker}
                 onUpdateBranch={(id, patch) => updateBranch(id, patch)}
                 onAllManualToAuto={() => {
                   pushHistory();

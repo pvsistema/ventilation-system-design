@@ -11,13 +11,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import { checkSchema } from "@/lib/schemaCheck";
+import { checkTopology } from "@/lib/schemaCheckTopology";
+import { checkParams } from "@/lib/schemaCheckParams";
+import { checkSolve } from "@/lib/schemaCheckSolve";
 import type { TopoNode, TopoBranch } from "@/lib/topology";
+import type { VentNorms, VentSection } from "@/lib/ventSections";
 import type { SideTab } from "./cadTypes";
 
 export type CheckTab =
   | "near" | "isolated" | "dupes" | "dupbranch" | "zeroR"
   | "zeroLen" | "highR" | "bulkR" | "manualLen" | "isolatedBranch"
   | "brokenBranch"
+  // Связность и стыковка
+  | "selfLoop" | "components" | "noFan" | "deadFan" | "deadEnd" | "tJunction" | "crossing"
+  // Параметры
+  | "badArea" | "shortManualLen" | "badAlpha" | "fanNoCurve" | "zeroBulkhead"
+  | "invalidValues" | "lostZ" | "tinyBranch"
+  // По результатам расчёта
+  | "highV" | "lowV" | "fanAgainst" | "fanRange" | "recirc" | "faceDeficit" | "leakage"
   // "solveBlock" — участки, о которые споткнулся расчёт сети. В отличие от
   // остальных вкладок, они не находятся статической проверкой схемы, а
   // приходят в диагностике от самого расчёта.
@@ -36,6 +47,10 @@ export function useCadSchemaCheck(
   activeSide: SideTab,
   nodes: TopoNode[],
   branches: TopoBranch[],
+  /** Расчёт сети выполнен — в ветвях лежат актуальные расходы. */
+  solved: boolean,
+  norms: VentNorms,
+  sections: VentSection[],
 ) {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
@@ -52,12 +67,17 @@ export function useCadSchemaCheck(
   // Мемоизация исключает тяжёлый O(n) пересчёт на каждый ререндер (ховеры и т.п.).
   const schemaCheckResult = useMemo(() => {
     if (activeSide !== "check") return null;
-    return checkSchema(nodes, branches, {
-      nearThreshold: checkThreshold,
-      highRThreshold: checkHighRThreshold,
-      bulkRThreshold: checkBulkRThreshold,
-    });
-  }, [activeSide, nodes, branches, checkThreshold, checkHighRThreshold, checkBulkRThreshold]);
+    return {
+      ...checkSchema(nodes, branches, {
+        nearThreshold: checkThreshold,
+        highRThreshold: checkHighRThreshold,
+        bulkRThreshold: checkBulkRThreshold,
+      }),
+      topo: checkTopology(nodes, branches),
+      params: checkParams(nodes, branches),
+      solve: checkSolve(branches, solved, norms, sections),
+    };
+  }, [activeSide, nodes, branches, checkThreshold, checkHighRThreshold, checkBulkRThreshold, solved, norms, sections]);
 
   return {
     searchQuery, setSearchQuery,
@@ -97,3 +117,5 @@ export function useCadLeftPanelResize() {
 
   return { leftPanelWidth, setLeftPanelWidth, startLeftDrag };
 }
+/** Полный результат проверки: базовые проверки + связность + параметры + расчёт. */
+export type FullCheckResult = NonNullable<ReturnType<typeof useCadSchemaCheck>["schemaCheckResult"]>;
