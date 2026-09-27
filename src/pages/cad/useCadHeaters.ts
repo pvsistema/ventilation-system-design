@@ -10,6 +10,7 @@ import type { TopoNode, TopoBranch } from "@/lib/topology";
 import type { HeatingSeason } from "./cadTypes";
 import type { SchemaSymbol } from "./cadTypes";
 import { HEATER_SYMBOL_IDS } from "@/lib/schemaSymbols";
+import type { LogEntry } from "@/components/cad/LogPanel";
 import {
   calcHeater, isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C,
 } from "@/lib/heaterCalculator";
@@ -31,7 +32,7 @@ export interface CadHeatersDeps {
   baseNodeTemps: Record<string, number>;
   surfaceTemp: number;
   setNodes: (fn: (prev: TopoNode[]) => TopoNode[]) => void;
-  addLog: (kind: string, msg: string) => void;
+  addLog: (level: LogEntry["level"], text: string) => void;
 }
 
 export function useCadHeaters(d: CadHeatersDeps) {

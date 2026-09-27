@@ -70,7 +70,6 @@ export interface CadToolDialogsProps {
   setShowPrintDialog: (v: boolean) => void;
   schemaSymbols: SchemaSymbol[];
   savedViewStateRef: React.MutableRefObject<SavedView | null>;
-  savedViewState: SavedView | null;
   canvasSize: { w: number; h: number };
   branchWidth: number;
   branchBorder: number;
@@ -229,7 +228,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           branches={p.branches}
           horizons={p.horizons}
           schemaSymbols={p.schemaSymbols}
-          viewState={p.savedViewStateRef.current ?? p.savedViewState ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
+          viewState={p.savedViewStateRef.current ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
           canvasSize={p.canvasSize}
           branchWidth={p.branchWidth}
           branchBorder={p.branchBorder}

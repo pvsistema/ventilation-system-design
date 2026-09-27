@@ -34,7 +34,7 @@ import InfoPanel from "@/components/cad/InfoPanel";
 import SchemaCheckPanel from "@/components/cad/SchemaCheckPanel";
 import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
-import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
+import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import PositionsPanel from "@/components/cad/PositionsPanel";
 import { type Position, type AccidentType, makePosition, matchPositionColor, ACCIDENT_TYPES } from "@/lib/positions";
@@ -66,7 +66,7 @@ import BranchVentPanel from "@/components/cad/BranchVentPanel";
 import BranchIndicatorsPanel from "@/components/cad/BranchIndicatorsPanel";
 import FanIndicatorsPanel from "@/components/cad/FanIndicatorsPanel";
 import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, HIDDEN_LEGEND_IDS } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { type PumpModel } from "@/lib/pumps";
 import PumpPanel from "@/components/cad/PumpPanel";
@@ -466,7 +466,6 @@ export default function CadPage() {
       fireSourceArea: b.fireSourceArea, fireSourceBurnRate: b.fireSourceBurnRate,
     });
     if (autoPower == null || !Number.isFinite(autoPower) || autoPower <= 0) return;
-    const airQ = Math.abs(b.flow ?? 0);
     const roundedPower = Math.round(autoPower * 100) / 100;
     const patch: Partial<TopoBranch> = {};
     if (Number.isFinite(roundedPower) && Math.abs((b.fireHeatRelease ?? 5) - roundedPower) > 0.01) {
@@ -1523,7 +1522,7 @@ export default function CadPage() {
 
   // Активная рабочая плоскость для построения в 3D
   // null = автоматически по ракурсу; иначе фиксированная пользователем
-  const [workPlane, setWorkPlane] = useState<{ axis: "x" | "y" | "z"; value: number } | null>(null);
+  const [workPlane] = useState<{ axis: "x" | "y" | "z"; value: number } | null>(null);
 
   // ─── МАСШТАБ И ВПИСЫВАНИЕ ───────────────────────────────────────────
   const [viewScale, setViewScale] = useState<number>(0.4);
@@ -1636,12 +1635,15 @@ export default function CadPage() {
   }, []);
 
   // Восстановление сохранённого вида (azimuth + scale + offset) при открытии файла
+  // Вид из файла проекта: старые файлы могут хранить не все поля.
   type SavedView = { scale?: number; offsetX?: number; offsetY?: number; azimuth?: number; elevation?: number };
+  // Текущий вид холста: TopoCanvas всегда сообщает все пять полей.
+  type LiveView = { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number };
   const [savedViewToRestore, setSavedViewToRestore] = useState<SavedView | null>(null);
   // Текущий вид TopoCanvas: ref для мгновенного доступа + state для перерисовки оверлея позиций
-  const savedViewStateRef = useRef<SavedView | null>(null);
+  const savedViewStateRef = useRef<LiveView | null>(null);
   const [viewStateTick, setViewStateTick] = useState(0);
-  const handleViewStateChange = useCallback((v: SavedView) => {
+  const handleViewStateChange = useCallback((v: LiveView) => {
     savedViewStateRef.current = v;
     // Обновляем оверлей позиций ПЛА В ТОТ ЖЕ кадр, что и схему (TopoCanvas).
     // rAF-троттлинг убран: он сдвигал перерисовку выносок/маркеров на кадр
@@ -1679,8 +1681,6 @@ export default function CadPage() {
   const [leaderCursorScreen, setLeaderCursorScreen] = useState<{ sx: number; sy: number } | null>(null);
   // Режим привязки ветвей к позиции (F3)
   const [posBranchBindMode, setPosBranchBindMode] = useState(false);
-  // Показывать выноски позиций (И/B)
-  const [showPosLeaders, setShowPosLeaders] = useState(false);
   // ПЛА: видимость позиций на схеме
   const [showPositions, setShowPositions] = useState(true);
   // ПЛА: окраска ветвей цветом позиции (внутри/снаружи)
@@ -2251,7 +2251,7 @@ export default function CadPage() {
   // ── Калориферы: подогрев воздуха и разнос температур по сети ──────────────
   // Логика вынесена в useCadHeaters без изменений: тот же алгоритм обхода вниз
   // по потоку и тот же автосброс подогрева при отключении калориферов.
-  const { calcHeaterTemps, heaterInfo, heatersWorking } = useCadHeaters({
+  const { calcHeaterTemps, heaterInfo } = useCadHeaters({
     nodes, branches, schemaSymbols, heatingSeason,
     baseNodeTemps, surfaceTemp, setNodes, addLog,
   });
@@ -2308,13 +2308,12 @@ export default function CadPage() {
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
-  const [printPreviewUrl, setPrintPreviewUrl] = useState<string>("");
   const [printDialogOpenExport, setPrintDialogOpenExport] = useState<boolean>(false);
 
+  // Окно печати берёт отсюда исходный SVG схемы (getSvgRaw).
   const getSvgRef = useRef<(() => string) | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
-  const liveSvgRef = useRef<SVGSVGElement | null>(null);
 
   // Захватывает схему и открывает диалог печати
   /**
@@ -2333,91 +2332,12 @@ export default function CadPage() {
     addLog("info", `Отчёт по вентставам сформирован: ${rows.length} шт.`);
   };
 
+  // Окно печати строит чертёж само по данным схемы и текущему виду, снимок
+  // холста ему не нужен. Раньше перед открытием делался снимок всей схемы
+  // (toDataURL / сериализация SVG) — он нигде не использовался и только
+  // задерживал открытие окна на больших схемах.
   const openPrintDialog = () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
-    // 1) Canvas-режим: читаем живой DOM-canvas напрямую
-    const canvas = liveCanvasRef.current;
-    if (canvas && canvas.width > 0 && canvas.height > 0) {
-      try {
-        const url = canvas.toDataURL("image/png");
-        if (url && url.length > 500) {
-          setPrintPreviewUrl(url);
-          setShowPrintDialog(true);
-          return;
-        }
-      } catch { /* tainted */ }
-    }
-
-    // 2) SVG-режим: XMLSerializer + viewBox из savedViewState
-    const svgEl = liveSvgRef.current;
-    if (svgEl) {
-      const w = svgEl.clientWidth || 1600;
-      const h = svgEl.clientHeight || 900;
-      const vs = savedViewStateRef.current;
-      let vx = 0, vy = 0, vw = w, vh = h;
-      if (vs && vs.scale > 0) {
-        vx = -vs.offsetX / vs.scale;
-        vy = -vs.offsetY / vs.scale;
-        vw = w / vs.scale;
-        vh = h / vs.scale;
-      }
-
-      const serializer = new XMLSerializer();
-      let s = serializer.serializeToString(svgEl);
-
-      // Скрываем <image> — они ссылаются на blob URL которые недоступны вне живого DOM
-      s = s.replace(/<image\b([^>]*)>/gi, (_m: string, attrs: string) => {
-        const cleaned = attrs
-          .replace(/\s+xlink:href="[^"]*"/g, "")
-          .replace(/\s+href="[^"]*"/g, "");
-        return `<image${cleaned}>`;
-      });
-
-      // Фиксируем <svg>: правильный viewBox
-      s = s.replace(/(<svg\b[^>]*?)(\s+width="[^"]*")?(\s+height="[^"]*")?(\s+style="[^"]*")?(\s+viewBox="[^"]*")?([^>]*>)/i,
-        (_m: string, pre: string, _w: string, _h: string, _st: string, _vb: string, post: string) => {
-          let a = pre;
-          if (!a.includes("xmlns=")) a += ' xmlns="http://www.w3.org/2000/svg"';
-          return `${a} width="${w}" height="${h}" viewBox="${vx} ${vy} ${vw} ${vh}" style="background:white"${post}`;
-        });
-
-      const dataUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(s);
-      setPrintPreviewUrl(dataUri);
-      setShowPrintDialog(true);
-      return;
-    }
-
-    // 3) Fallback: getSvgRef → строка outerHTML
-    const raw = getSvgRef.current?.() ?? "";
-    if (raw.startsWith("data:")) { setPrintPreviewUrl(raw); setShowPrintDialog(true); return; }
-
-    if (raw.includes("<svg")) {
-      const wm = raw.match(/\bwidth="(\d+(?:\.\d+)?)"/);
-      const hm = raw.match(/\bheight="(\d+(?:\.\d+)?)"/);
-      const sw = wm ? parseFloat(wm[1]) : 1600;
-      const sh = hm ? parseFloat(hm[1]) : 900;
-      const vs = savedViewState;
-      let vx2 = 0, vy2 = 0, vw2 = sw, vh2 = sh;
-      if (vs && vs.scale > 0) {
-        vx2 = -vs.offsetX / vs.scale; vy2 = -vs.offsetY / vs.scale;
-        vw2 = sw / vs.scale; vh2 = sh / vs.scale;
-      }
-      const clean = raw
-        .replace(/<image\b[^>]*\/?>/gi, "")
-        .replace(/\s+xlink:href="blob:[^"]*"/g, "")
-        .replace(/\s+href="blob:[^"]*"/g, "")
-        .replace(/<svg([^>]*)>/i, (_m: string, a: string) => {
-          let attrs = a.replace(/\s+width="[^"]*"/g, "").replace(/\s+height="[^"]*"/g, "")
-            .replace(/\s+style="[^"]*"/g, "").replace(/\s+viewBox="[^"]*"/g, "");
-          if (!attrs.includes("xmlns=")) attrs += ' xmlns="http://www.w3.org/2000/svg"';
-          return `<svg${attrs} width="${sw}" height="${sh}" viewBox="${vx2} ${vy2} ${vw2} ${vh2}" style="background:white">`;
-        });
-      setPrintPreviewUrl("data:image/svg+xml;charset=utf-8," + encodeURIComponent(clean));
-      setShowPrintDialog(true);
-      return;
-    }
-
-    setPrintPreviewUrl("");
     setShowPrintDialog(true);
   };
   // ─── ПОИСК ПО СХЕМЕ ─────────────────────────────────────────────────
@@ -2506,8 +2426,6 @@ export default function CadPage() {
   const [showSelectSimilar, setShowSelectSimilar] = useState(false);
   const lastSPressRef = useRef<number>(0);
 
-  // ─── ПАНЕЛЬ ДИАГНОСТИКИ РАСЧЁТА ─────────────────────────────────────
-  const [showDiagnostics, setShowDiagnostics] = useState(false);
 
   // Участки, из-за которых расчёт не прошёл — приходят от расчёта сети в
   // диагностике (nodeIds/branchIds). Раньше в журнале был только номер узла,
@@ -3476,7 +3394,6 @@ export default function CadPage() {
   // проекта открыл диалог выбора файла (handleSaveAs объявлен ниже по коду).
   const handleSaveAsRef = useRef<(() => Promise<void> | void) | null>(null);
   // Текущие параметры вида для сохранения в файл
-  const [savedViewState, setSavedViewState] = useState<{ scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number } | null>(null);
 
   const buildProjectData = () => ({
     version: 2,
@@ -4188,10 +4105,6 @@ export default function CadPage() {
   };
   applyProjectDataRef.current = applyProjectData;
 
-  const handlePrint = () => {
-    window.print();
-  };
-
   // ─── СОЗДАТЬ НОВЫЙ ПРОЕКТ ────────────────────────────────────────────
   const handleNewProject = () => {
     if (nodes.length > 0 || branches.length > 0) {
@@ -4343,7 +4256,7 @@ export default function CadPage() {
 
   // ─── РЕСАЙЗ ЛЕВОЙ ПАНЕЛИ ────────────────────────────────────────────
   // Вынесено в useCadLeftPanelResize без изменений: те же границы 220…640 px.
-  const { leftPanelWidth, setLeftPanelWidth, startLeftDrag } = useCadLeftPanelResize();
+  const { leftPanelWidth, startLeftDrag } = useCadLeftPanelResize();
 
   // ─────────────────────────────────────────────────────────────────────────
   // Формирует payload ветвей для запроса к backend/airflow.
@@ -5334,9 +5247,6 @@ export default function CadPage() {
       if (data.branches?.some((b: { Q: number }) => Math.abs(b.Q) > 0.1)) {
         setShowFlowArrows(true);
       }
-      if (data.diagnostics?.some((d: { level: string }) => d.level === "error")) {
-        setShowDiagnostics(true);
-      }
 
       // ── Участки, из-за которых расчёт не прошёл ────────────────────────
       // Расчёт присылает адрес проблемы (узлы/ветви). Показываем их в проверке
@@ -5663,12 +5573,6 @@ export default function CadPage() {
     requestDeleteNode(id);
   };
 
-  const handleDeleteBranch = (id: string) => {
-    pushHistory();
-    setBranches((p) => p.filter((b) => b.id !== id));
-    if (selectedBranchId === id) setSelectedBranchId(null);
-  };
-
   // Разорвать связь в узле — как в АэроСети:
   // каждая ветвь получает свой клон-узел на том же месте, исходный узел удаляется.
   // Ветви при этом НЕ удаляются — они перепривязываются к новым узлам.
@@ -5744,14 +5648,6 @@ export default function CadPage() {
 
   const handleToggleAtmosphere = (id: string) => {
     setNodes((p) => p.map((n) => n.id === id ? { ...n, atmosphereLink: !n.atmosphereLink } : n));
-  };
-
-  const handleToggleCapital = (id: string) => {
-    setBranches((p) => p.map((b) => b.id === id ? { ...b, capital: !b.capital } : b));
-  };
-
-  const handleToggleDesigned = (id: string) => {
-    setBranches((p) => p.map((b) => b.id === id ? { ...b, designed: !b.designed } : b));
   };
 
   const handleReverseBranch = (id: string) => {
@@ -7188,7 +7084,7 @@ export default function CadPage() {
               </button>
               {/* report — диагностика */}
               <button
-                onClick={() => setShowDiagnostics(true)}
+                onClick={() => setShowLogPanel(true)}
                 disabled={!solveResult}
                 className="rb-btn flex flex-col items-center justify-start gap-1 disabled:opacity-40 disabled:cursor-not-allowed"
                 style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0 }}
@@ -9540,8 +9436,6 @@ export default function CadPage() {
               })();
               const updSym = (patch: Partial<SchemaSymbol>) =>
                 setSchemaSymbols(prev => prev.map(s => s.id === sym.id ? { ...s, ...patch } : s));
-              const updBr = (patch: Partial<typeof branches[0]>) =>
-                sym.branchId && updateBranch(sym.branchId, patch);
 
               return (
                 <div className="p-2 text-[11px]">
@@ -9918,11 +9812,6 @@ export default function CadPage() {
                         <span className="text-[13px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
                           R = {(() => {
                             const mode = sym.bkResMode ?? "project";
-                            const fnFrom = nodes.find(n => n.id === brForSym.fromId);
-                            const fnTo   = nodes.find(n => n.id === brForSym.toId);
-                            const tF = fnFrom ? (fnFrom.atmosphereLink ? surfaceTemp : (fnFrom.airTemp ?? surfaceTemp)) : surfaceTemp;
-                            const tT = fnTo   ? (fnTo.atmosphereLink   ? surfaceTemp : (fnTo.airTemp   ?? surfaceTemp)) : surfaceTemp;
-                            const rho = 353.0 / (273.0 + Math.max(-30, Math.min(100, (tF + tT) / 2)));
                             // Все R в кМюрг = Па·с²/м⁶ (коэффициент = 1)
                             let rKmu = 0;
                             if (mode === "manual") {
@@ -11440,7 +11329,7 @@ export default function CadPage() {
 
             {/* ── Масштаб 1:N ── */}
             <span className="text-[11px] text-gray-700" title="Масштаб как в АэроСеть: 1:N">М 1:</span>
-            <input type="number" value={Math.round(1 / Math.max(0.0001, (savedViewState?.scale ?? viewScale) * 0.001))}
+            <input type="number" value={Math.round(1 / Math.max(0.0001, (savedViewStateRef.current?.scale ?? viewScale) * 0.001))}
               onChange={(e) => {
                 const n = Math.max(50, Math.min(500000, Number(e.target.value)));
                 // viewScale (px/м) = 1 / (N · 0.001), считаем что 1 px ≈ 1 мм на экране
@@ -11809,7 +11698,6 @@ export default function CadPage() {
                   setCanvasSize(prev => (prev.w === w && prev.h === h ? prev : { w, h }));
                 }
               }}
-              onRegisterSvgEl={(el) => { liveSvgRef.current = el; }}
               restoreView={savedViewToRestore}
               onRestoreViewDone={() => setSavedViewToRestore(null)}
               onViewStateChange={handleViewStateChange}
@@ -12997,16 +12885,6 @@ export default function CadPage() {
                 return { sx: fP.sx + (tP.sx - fP.sx) * t, sy: fP.sy + (tP.sy - fP.sy) * t };
               };
 
-              // Экранная позиция конца выноски позиции (привязка к ветви или свободная точка)
-              const posLeaderEnd = (pos: Position): { sx: number; sy: number } | null => {
-                if (pos.leaderBranchId && pos.leaderT != null) {
-                  return leaderBranchEnd(pos.leaderBranchId, pos.leaderT);
-                }
-                if (pos.leaderEndX != null && pos.leaderEndY != null) {
-                  return proj(pos.leaderEndX, pos.leaderEndY, pos.z ?? 0);
-                }
-                return null;
-              };
 
               // Экранная позиция самого маркера (кружка).
               // Маркер, выноска и точка-якорь ведут себя КАК ВЕТВИ: их геометрия
@@ -13507,7 +13385,7 @@ export default function CadPage() {
                     { hazard: "medium",  color: EXPLOSION_HAZARD_COLORS.medium, label: "С" },
                     { hazard: "light",   color: EXPLOSION_HAZARD_COLORS.light, label: "Л" },
                     { hazard: "safe",    color: EXPLOSION_HAZARD_COLORS.safe, label: "Б" },
-                  ].map(({ hazard, color, label }) => {
+                  ].map(({ hazard, color }) => {
                     const zone = activeExplosionRes.zones.find(z => z.hazardLevel === hazard);
                     const r = zone?.radius_m ?? 0;
                     if (r <= 0 || r > blastMaxRadius) return null;
@@ -14137,7 +14015,6 @@ export default function CadPage() {
       setShowPrintDialog={setShowPrintDialog}
       schemaSymbols={schemaSymbols}
       savedViewStateRef={savedViewStateRef}
-      savedViewState={savedViewState}
       canvasSize={canvasSize}
       branchWidth={branchWidth}
       branchBorder={branchBorder}
