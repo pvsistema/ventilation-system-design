@@ -30,6 +30,7 @@ import { type VentSection, type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/vent
 import VentSectionsPanel from "@/components/cad/VentSectionsPanel";
 import AirDemandDialog from "@/components/cad/AirDemandDialog";
 import InfoPanel from "@/components/cad/InfoPanel";
+import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type DxfImportResult } from "@/lib/dxfImport";
@@ -1558,7 +1559,6 @@ export default function CadPage() {
     const n = parseInt(localStorage.getItem("vent-cad/node-lod-label") ?? "", 10);
     return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 32;
   });
-  const [nodeLodOpen, setNodeLodOpen] = useState(false);
   useEffect(() => {
     try {
       localStorage.setItem("vent-cad/node-lod-auto", nodeLodAuto ? "1" : "0");
@@ -2298,7 +2298,6 @@ export default function CadPage() {
 
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
   const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
-  const [rightTab, setRightTab] = useState<"node" | "branch" | "info">("info");
   // ─── ЛЕВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (свойства/параметры) ────────────────────
   const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
@@ -5877,9 +5876,8 @@ export default function CadPage() {
         break;
       case "open_props":
         setRightPanelOpen(true);
-        if (nodeId) { setRightTab("node"); setSelectedNodeId(nodeId); }
+        if (nodeId) setSelectedNodeId(nodeId);
         if (branchId) {
-          setRightTab("branch");
           setSelectedBranchId(branchId);
           // При мультиселекте > 1 открываем диалог группового редактирования параметров
           if (selectedBranchIds.size > 1) {
@@ -14571,18 +14569,22 @@ export default function CadPage() {
         )}
         {rightPanelOpen && (
           <div className="w-[280px] flex-shrink-0 flex flex-col"
-            style={{ background: "var(--c-s1, #ffffff)", borderLeft: "1px solid var(--c-b3, #b8b8b8)" }}>
+            style={{ background: "var(--c-s2, #f8f7f4)", borderLeft: "1px solid var(--c-b2, #d5d1c8)" }}>
             {/* Заголовок */}
-            <div className="flex items-center gap-1 px-2 h-8 border-b border-gray-300"
-              style={{ background: "var(--c-s2, #f5f5f5)", fontSize: 11, fontWeight: 600 }}>
-              <Icon name="LayoutList" size={12} />
-              <span className="flex-1">Панель информации</span>
+            <div className="flex items-center gap-2 px-2.5 h-9 flex-shrink-0"
+              style={{ background: "var(--c-s1, #fff)", borderBottom: "1px solid var(--c-b1, #e7e4dd)" }}>
+              <span className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+                style={{ background: "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)", color: "var(--c-accent, #1e5a7a)" }}>
+                <Icon name="LayoutList" size={13} />
+              </span>
+              <span className="flex-1 text-[11px] font-semibold uppercase tracking-wider" style={{ color: "var(--c-t1, #1f2328)" }}>
+                Отображение
+              </span>
               <button onClick={() => setRightPanelOpen(false)}
-                className="h-6 px-1.5 flex items-center gap-1 rounded text-[10px]"
-                style={{ background: "none", border: "1px solid var(--c-b2, #c8c8c8)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
-                title="Скрыть панель свойств">
-                <Icon name="PanelRightClose" size={12} />
-                Свернуть
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--c-s3,#f1efea)]"
+                style={{ background: "transparent", border: "none", color: "var(--c-t3, #6b7280)", cursor: "pointer" }}
+                title="Свернуть панель">
+                <Icon name="PanelRightClose" size={14} />
               </button>
             </div>
 
@@ -14609,99 +14611,56 @@ export default function CadPage() {
                 />
               </div>
 
-              {/* Масштаб XY и Z */}
-              <div className="border-t border-gray-300 px-2 py-2 flex-shrink-0" style={{ background: "var(--c-s2, #f5f5f5)" }}>
-                {/* XY */}
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Масштаб XY: ×{xyScale.toFixed(1)}</span>
-                  <button onClick={() => setXyScale(1)}
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
-                    Сброс
-                  </button>
-                </div>
-                <input type="range" min="0.1" max="10" step="0.1"
-                  value={xyScale}
-                  onChange={(e) => setXyScale(parseFloat(e.target.value))}
-                  className="w-full"
-                  style={{ accentColor: "#16a34a" }} />
-                <div className="flex justify-between text-[10px] text-gray-400 mb-2">
-                  <span>0.1×</span><span>5×</span><span>10×</span>
-                </div>
-                {/* Z */}
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>Масштаб Z: ×{zScale.toFixed(1)}</span>
-                  <button onClick={() => setZScale(1)}
-                    className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200 ml-auto">
-                    Сброс
-                  </button>
-                </div>
-                <input type="range" min="0.1" max="20" step="0.1"
-                  value={zScale}
-                  onChange={(e) => setZScale(parseFloat(e.target.value))}
-                  className="w-full"
-                  style={{ accentColor: "#1e5a7a" }} />
-                <div className="flex justify-between text-[10px] text-gray-400">
-                  <span>0.1×</span><span>10×</span><span>20×</span>
-                </div>
+              {/* Масштаб и скрытие узлов */}
+              <div className="px-2 py-2 flex-shrink-0 space-y-2"
+                style={{ background: "var(--c-s2, #f8f7f4)", borderTop: "1px solid var(--c-b1, #e7e4dd)" }}>
+                <Card icon="Maximize2" title="Масштаб" collapsible defaultOpen={false}
+                  aside={<span className="text-[10px]" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-num)" }}>
+                    XY ×{xyScale.toFixed(1)} · Z ×{zScale.toFixed(1)}
+                  </span>}>
+                  <Field label="По плану (XY)">
+                    <PresetSlider value={xyScale} onChange={setXyScale} onReset={() => setXyScale(1)}
+                      min={0.1} max={10} step={0.1} presets={[0.5, 1, 2, 5, 10]} fmt={(v) => `×${v.toFixed(1)}`} />
+                  </Field>
+                  <Field label="По высоте (Z)">
+                    <PresetSlider value={zScale} onChange={setZScale} onReset={() => setZScale(1)}
+                      min={0.1} max={20} step={0.1} presets={[1, 2, 5, 10, 20]} fmt={(v) => `×${v.toFixed(1)}`} />
+                  </Field>
+                </Card>
                 {/* Настройка «Порог SVG→Canvas» убрана: схема всегда рисуется
-                    быстрым способом (см. CANVAS_THRESHOLD в canvasRenderer.ts),
-                    и выбирать между режимами больше не требуется. */}
-                {/* Скрытие узлов при отдалении (сворачиваемый, по умолчанию свёрнут) */}
-                <div className="border-t border-gray-300 mt-2 pt-2">
-                  <button onClick={() => setNodeLodOpen((v) => !v)}
-                    className="w-full flex items-center gap-1 text-[11px] font-semibold hover:opacity-80"
-                    style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
-                    <Icon name={nodeLodOpen ? "ChevronDown" : "ChevronRight"} size={12} />
-                    <span>Скрытие узлов: {nodeLodAuto ? "авто" : `${nodeLodCircle}% / ${nodeLodLabel}%`}</span>
-                  </button>
-                  {nodeLodOpen && (
-                    <div className="mt-2">
-                      <div className="text-[10px] text-gray-500 leading-tight mb-1.5">
-                        При сильном отдалении узлы сливаются в точки и тормозят схему,
-                        поэтому кружки и номера скрываются. Ниже — с какого масштаба их показывать.
-                      </div>
-                      <label className="flex items-center gap-1.5 text-[11px] mb-1.5 cursor-pointer">
-                        <input type="checkbox" checked={nodeLodAuto}
-                          onChange={(e) => setNodeLodAuto(e.target.checked)}
-                          style={{ width: 12, height: 12, cursor: "pointer", accentColor: "#1e5a7a" }} />
-                        <span>Авто (по размеру схемы)</span>
-                      </label>
-                      {!nodeLodAuto && (
-                        <>
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] text-gray-600">Кружки узлов: {nodeLodCircle}%</span>
-                            <button onClick={() => { setNodeLodCircle(12); setNodeLodLabel(32); }}
-                              className="text-[10px] px-1.5 py-0.5 rounded border border-gray-400 hover:bg-gray-200">
-                              Сброс
-                            </button>
-                          </div>
-                          <input type="range" min="0" max="100" step="1"
-                            value={nodeLodCircle}
-                            onChange={(e) => setNodeLodCircle(parseInt(e.target.value, 10))}
-                            className="w-full"
-                            style={{ accentColor: "#7c3aed" }} />
-                          <div className="text-[10px] text-gray-600 mt-1">Номера узлов: {nodeLodLabel}%</div>
-                          <input type="range" min="0" max="100" step="1"
-                            value={nodeLodLabel}
-                            onChange={(e) => setNodeLodLabel(parseInt(e.target.value, 10))}
-                            className="w-full"
-                            style={{ accentColor: "#7c3aed" }} />
-                          <div className="flex justify-between text-[10px] text-gray-400">
-                            <span>0 (не скрывать)</span><span>100%</span>
-                          </div>
-                        </>
-                      )}
-                      <div className="text-[10px] mt-1.5 text-gray-500">
-                        Узлов: {nodes.length} · текущий масштаб: ×{viewScale.toFixed(2)}
-                      </div>
-                    </div>
+                    быстрым способом (см. CANVAS_THRESHOLD в canvasRenderer.ts). */}
+                <Card icon="EyeOff" title="Скрытие узлов" collapsible defaultOpen={false}
+                  aside={<span className="text-[10px]" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-num)" }}>
+                    {nodeLodAuto ? "авто" : `${nodeLodCircle}% / ${nodeLodLabel}%`}
+                  </span>}>
+                  <div className="text-[10px] leading-snug" style={{ color: "var(--c-t3, #6b7280)" }}>
+                    При сильном отдалении кружки и номера узлов скрываются, чтобы схема не тормозила.
+                  </div>
+                  <Switch checked={nodeLodAuto} onChange={setNodeLodAuto} label="Авто (по размеру схемы)" />
+                  {!nodeLodAuto && (
+                    <>
+                      <Field label="Кружки узлов, % масштаба">
+                        <PresetSlider value={nodeLodCircle} onChange={(v) => setNodeLodCircle(Math.round(v))}
+                          onReset={() => { setNodeLodCircle(12); setNodeLodLabel(32); }}
+                          min={0} max={100} step={1} presets={[0, 12, 25, 50]} fmt={(v) => `${v}%`} />
+                      </Field>
+                      <Field label="Номера узлов, % масштаба">
+                        <PresetSlider value={nodeLodLabel} onChange={(v) => setNodeLodLabel(Math.round(v))}
+                          onReset={() => { setNodeLodCircle(12); setNodeLodLabel(32); }}
+                          min={0} max={100} step={1} presets={[0, 32, 50, 75]} fmt={(v) => `${v}%`} />
+                      </Field>
+                    </>
                   )}
-                </div>
+                  <div className="text-[10px]" style={{ color: "var(--c-t4, #767f8c)" }}>
+                    Узлов: {nodes.length} · текущий масштаб ×{viewScale.toFixed(2)}
+                  </div>
+                </Card>
               </div>
             </div>
 
             {/* ── Подвал панели: быстрые действия ── */}
-            <div className="border-t border-gray-300 p-2 flex gap-1" style={{ background: "var(--c-s2, #f5f5f5)" }}>
+            <div className="p-2 flex gap-1 flex-shrink-0"
+              style={{ background: "var(--c-s1, #fff)", borderTop: "1px solid var(--c-b1, #e7e4dd)" }}>
               {/* Фирменная кнопка главного действия: янтарь + антрацит. */}
               <button onClick={handleSolve} disabled={vcSolving}
                 className="btn-brand flex-1 h-7 text-xs flex items-center justify-center gap-1.5"
@@ -14710,18 +14669,21 @@ export default function CadPage() {
                 {vcSolving && solveProgress !== null ? `Расчёт… ${solveProgress}%` : "Расчёт"}
                 <kbd className="btn-brand-kbd">F9</kbd>
               </button>
-              <button onClick={() => setThinLines((v) => !v)}
-                className="h-7 px-2 text-xs rounded border border-gray-300 hover:bg-blue-50"
-                style={{ background: thinLines ? "var(--c-tint-blue2, #dbeafe)" : "white" }}
-                title="Тонкие линии (F6)">
-                <Icon name="Minus" size={11} /> F6
-              </button>
-              <button onClick={() => setShowFlowArrows((v) => !v)}
-                className="h-7 px-2 text-xs rounded border border-gray-300 hover:bg-blue-50"
-                style={{ background: showFlowArrows ? "var(--c-tint-red2, #fee2e2)" : "white" }}
-                title="Стрелки направления свежей струи">
-                <Icon name="ArrowRight" size={11} />
-              </button>
+              {([
+                { on: thinLines, toggle: () => setThinLines((v) => !v), icon: "Minus", title: "Тонкие линии (F6)" },
+                { on: showFlowArrows, toggle: () => setShowFlowArrows((v) => !v), icon: "ArrowRight", title: "Стрелки направления свежей струи" },
+              ]).map((b) => (
+                <button key={b.icon} onClick={b.toggle} title={b.title} aria-pressed={b.on}
+                  className="w-7 h-7 flex items-center justify-center rounded transition-colors"
+                  style={{
+                    cursor: "pointer",
+                    background: b.on ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)" : "var(--c-s1, #fff)",
+                    border: `1px solid ${b.on ? "var(--c-accent, #1e5a7a)" : "var(--c-b2, #d5d1c8)"}`,
+                    color: b.on ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)",
+                  }}>
+                  <Icon name={b.icon} size={12} />
+                </button>
+              ))}
             </div>
           </div>
         )}

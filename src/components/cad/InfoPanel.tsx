@@ -1,83 +1,182 @@
-// Панель информации — управление отображением параметров на схеме
+// Панель информации — что подписывать на схеме и какие объекты показывать.
 // (аналог «Панели информации» в ПО Вентиляция / Аэросеть)
-import { useState } from "react";
+//
+// Все цвета — из палитры темы (--c-accent, --c-s*, --c-b*, --c-t*), поэтому
+// панель одинаково читается в светлой и тёмной теме.
+import { useMemo, useState, type ReactNode } from "react";
 import Icon from "@/components/ui/icon";
-import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
+import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type TopoNode } from "@/lib/topology";
 import { type Position } from "@/lib/positions";
 
-interface CheckRowProps {
-  label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}
+type Key = keyof InfoDisplayConfig;
+/** [ключ, понятная подпись, обозначение/единица справа] */
+type Row = [Key, string, string?];
 
-function CheckRow({ label, checked, onChange }: CheckRowProps) {
-  return (
-    <label className="flex items-center gap-1.5 cursor-pointer hover:bg-blue-50 select-none"
-      style={{ paddingLeft: 20, paddingRight: 4, paddingTop: 2, paddingBottom: 2 }}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="w-3 h-3 flex-shrink-0"
-        style={{ accentColor: "#1e5a7a" }}
-      />
-      <span className="text-[11px] text-gray-800 leading-tight">{label}</span>
-    </label>
-  );
-}
+// ─── Списки параметров ─────────────────────────────────────────────────
+const NODE_ROWS: Row[] = [
+  ["nodeNumber", "Номер узла", "№"],
+  ["nodeX", "Координата X", "м"],
+  ["nodeY", "Координата Y", "м"],
+  ["nodeZ", "Отметка Z", "м"],
+  ["nodePressure", "Давление вентиляции", "даПа"],
+  ["nodeTemp", "Температура", "°C"],
+  ["nodeMethane", "Метан CH₄", "%"],
+];
 
-interface SectionHeaderProps {
-  label: string;
-  expanded: boolean;
-  onToggle: () => void;
-  onAll?: (on: boolean) => void; // если задан — показываем кнопки вкл/выкл
-}
+const BRANCH_ROWS: Row[] = [
+  ["branchNumber", "Номер ветви", "№"],
+  ["branchName", "Название", ""],
+  ["branchFlow", "Расход Q", "м³/с"],
+  ["branchFlowCalc", "Расход расчётный", "м³/с"],
+  ["branchVelocity", "Скорость V", "м/с"],
+  ["branchVMax", "Макс. скорость", "м/с"],
+  ["branchDepression", "Депрессия H", "даПа"],
+  ["branchExtraFan", "Доп. депрессия", "даПа"],
+  ["branchResistance", "Сопротивление R", "kμ"],
+  ["branchResistanceSum", "Сопротивление сумм.", "kμ"],
+  ["branchLength", "Длина L", "м"],
+  ["branchSection", "Сечение S", "м²"],
+  ["branchAngle", "Угол наклона", "°"],
+  ["branchHeight", "Высота", "м"],
+  ["branchPeople", "Количество людей", "чел"],
+];
 
-function SectionHeader({ label, expanded, onToggle, onAll }: SectionHeaderProps) {
-  return (
-    <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
-      style={{ background: "var(--c-tint-blue, #e8eef8)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
-      <button
-        onClick={onToggle}
-        className="flex items-center gap-1 flex-1 text-left hover:bg-gray-100">
-        <Icon name={expanded ? "ChevronDown" : "ChevronRight"} size={10} />
-        <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>{label}</span>
-      </button>
-      {onAll && (
-        <div className="flex gap-1 flex-shrink-0">
-          <button onClick={() => onAll(true)}
-            className="text-[10px] px-1 rounded hover:bg-green-100 text-green-700 border border-green-300">
-            вкл
-          </button>
-          <button onClick={() => onAll(false)}
-            className="text-[10px] px-1 rounded hover:bg-red-50 text-red-600 border border-red-200">
-            выкл
-          </button>
-        </div>
-      )}
-    </div>
-  );
-}
+const MS_ROWS: Row[] = [
+  ["msIndNumber", "Номер станции", "№"],
+  ["msIndLocation", "Местоположение", ""],
+  ["msIndFlow", "Расход Q", "м³/с"],
+  ["msIndArea", "Сечение S", "м²"],
+  ["msIndVelocity", "Скорость V", "м/с"],
+];
 
-const PRESETS: { label: string; config: Partial<InfoDisplayConfig> }[] = [
-  { label: "<пользовательские настройки>", config: {} },
-  { label: "Минимум (ID + Q)", config: { branchNumber: true, branchFlow: true } },
+const WATER_ROWS: Row[] = [
+  ["waterPipes", "Трубы", ""],
+  ["waterFlowDirection", "Направление течения", ""],
+  ["waterReservoir", "Резервуары", ""],
+  ["waterConsumer", "Потребители", ""],
+  ["waterPumpStation", "Насосные станции", ""],
+  ["waterPipeJoint", "Соединения труб", ""],
+  ["waterReducer", "Редукционные клапаны", ""],
+  ["waterGateValve", "Запорные вентили", ""],
+  ["waterReducerPressure", "Давление на редукторе", "МПа"],
+  ["waterVelocity", "Скорость воды", "м/с"],
+  ["waterFlow", "Расход воды", "м³/ч"],
+  ["waterDeficit", "Дефицит воды", "м³/ч"],
+  ["waterDynamicPressure", "Динамическое давление", "МПа"],
+];
+
+// Быстрые наборы меняют только подписи узлов и ветвей — водопровод,
+// вентиляторы и замерные станции не трогают.
+const PRESET_KEYS: Key[] = [...NODE_ROWS, ...BRANCH_ROWS].map((r) => r[0]);
+const PRESETS: { label: string; title: string; on: Key[] }[] = [
+  { label: "Минимум", title: "Номер ветви и расход", on: ["branchNumber", "branchFlow"] },
+  { label: "Стандарт", title: "Название, Q, V, H", on: ["branchName", "branchFlow", "branchVelocity", "branchDepression"] },
   {
-    label: "Стандарт (Q + V + ΔP)",
-    config: { branchName: true, branchFlow: true, branchVelocity: true, branchDepression: true },
-  },
-  {
-    label: "Полный отчёт",
-    config: {
-      branchNumber: true, branchName: true, branchLength: true, branchSection: true,
-      branchResistance: true, branchFlow: true, branchVelocity: true, branchDepression: true,
-      nodeNumber: true, nodeZ: true, nodePressure: true,
-    },
+    label: "Полный", title: "Все основные параметры ветвей и узлов",
+    on: ["branchNumber", "branchName", "branchLength", "branchSection", "branchResistance",
+      "branchFlow", "branchVelocity", "branchDepression", "nodeNumber", "nodeZ", "nodePressure"],
   },
 ];
 
+// ─── Примитивы ─────────────────────────────────────────────────────────
+function MiniSwitch({ on, mixed }: { on: boolean; mixed?: boolean }) {
+  return (
+    <span className="relative flex-shrink-0 rounded-full transition-colors"
+      style={{
+        width: 24, height: 13,
+        background: on ? "var(--c-accent, #1e5a7a)"
+          : mixed ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 45%, var(--c-b2, #d5d1c8))"
+          : "var(--c-b2, #d5d1c8)",
+      }}>
+      <span className="absolute top-[2px] rounded-full transition-all"
+        style={{ width: 9, height: 9, left: on ? 13 : mixed ? 7.5 : 2, background: "var(--c-s1, #fff)" }} />
+    </span>
+  );
+}
+
+function ToggleRow({ label, unit, checked, onChange }: {
+  label: string; unit?: string; checked: boolean; onChange: (v: boolean) => void;
+}) {
+  return (
+    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)}
+      className="w-full flex items-center gap-2 h-6 px-2 rounded text-left transition-colors hover:bg-[var(--c-s3,#f1efea)]"
+      style={{ background: "transparent", border: "none", cursor: "pointer" }}>
+      <span className="flex-1 min-w-0 truncate text-[11px]"
+        style={{ color: checked ? "var(--c-t1, #1f2328)" : "var(--c-t3, #6b7280)" }}>{label}</span>
+      {unit && (
+        <span className="text-[10px] flex-shrink-0" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-num)" }}>
+          {unit}
+        </span>
+      )}
+      <MiniSwitch on={checked} />
+    </button>
+  );
+}
+
+function Section({ icon, title, count, total, open, onToggle, onAll, children }: {
+  icon: string; title: string; count: number; total: number;
+  open: boolean; onToggle: () => void; onAll?: (on: boolean) => void; children: ReactNode;
+}) {
+  const all = total > 0 && count === total;
+  return (
+    <section className="rounded-lg overflow-hidden"
+      style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b1, #e7e4dd)" }}>
+      <div className="flex items-center gap-1 pr-2">
+        <button type="button" onClick={onToggle}
+          className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left select-none"
+          style={{ background: "transparent", border: "none", cursor: "pointer" }}>
+          <Icon name="ChevronRight" size={12}
+            style={{ color: "var(--c-t4, #767f8c)", transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
+          <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
+            style={{ background: "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)", color: "var(--c-accent, #1e5a7a)" }}>
+            <Icon name={icon} size={12} />
+          </span>
+          <span className="flex-1 truncate text-[11px] font-semibold uppercase tracking-wider"
+            style={{ color: "var(--c-t2, #3a3f45)" }}>{title}</span>
+          <span className="text-[10px] px-1.5 rounded-full flex-shrink-0"
+            style={{
+              fontFamily: "var(--font-num)",
+              background: count > 0 ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)" : "var(--c-s3, #f1efea)",
+              color: count > 0 ? "var(--c-accent, #1e5a7a)" : "var(--c-t4, #767f8c)",
+            }}>
+            {count}/{total}
+          </span>
+        </button>
+        {onAll && (
+          <button type="button" onClick={() => onAll(!all)}
+            title={all ? "Выключить все" : "Включить все"}
+            className="flex items-center"
+            style={{ background: "transparent", border: "none", cursor: "pointer", padding: 0 }}>
+            <MiniSwitch on={all} mixed={count > 0 && !all} />
+          </button>
+        )}
+      </div>
+      {open && <div className="px-1 pb-1.5">{children}</div>}
+    </section>
+  );
+}
+
+function IconBtn({ icon, title, active = true, onClick }: {
+  icon: string; title: string; active?: boolean; onClick: () => void;
+}) {
+  return (
+    <button type="button" onClick={onClick} title={title}
+      className="w-5 h-5 flex items-center justify-center rounded flex-shrink-0 hover:bg-[var(--c-s4,#e6e3dc)]"
+      style={{
+        background: "transparent", border: "none", cursor: "pointer",
+        color: active ? "var(--c-accent, #1e5a7a)" : "var(--c-t4, #767f8c)",
+      }}>
+      <Icon name={icon} size={12} />
+    </button>
+  );
+}
+
+function Empty({ text }: { text: string }) {
+  return <div className="px-2 py-1.5 text-[11px]" style={{ color: "var(--c-t4, #767f8c)" }}>{text}</div>;
+}
+
+// ─── Панель ────────────────────────────────────────────────────────────
 interface InfoPanelProps {
   config: InfoDisplayConfig;
   onChange: (patch: Partial<InfoDisplayConfig>) => void;
@@ -92,6 +191,8 @@ interface InfoPanelProps {
   onAllPositionsVisibility?: (visible: boolean, branchesVisible: boolean) => void;
 }
 
+type SectionId = "branches" | "nodes" | "ms" | "water" | "positions" | "nodeVis";
+
 export default function InfoPanel({
   config, onChange,
   nodes = [], selectedNodeId,
@@ -101,298 +202,174 @@ export default function InfoPanel({
   onPositionBranchesVisibilityChange,
   onAllPositionsVisibility,
 }: InfoPanelProps) {
-  const [nodesOpen, setNodesOpen] = useState(false);
-  const [branchesOpen, setBranchesOpen] = useState(false);
-  const [waterOpen, setWaterOpen] = useState(false);
-  const [msOpen, setMsOpen] = useState(false);
-  const [nodeVisOpen, setNodeVisOpen] = useState(false);
-  const [posVisOpen, setPosVisOpen] = useState(false);
-  const [preset, setPreset] = useState(0);
+  const [open, setOpen] = useState<Record<SectionId, boolean>>({
+    branches: true, nodes: false, ms: false, water: false, positions: false, nodeVis: false,
+  });
+  const [query, setQuery] = useState("");
+  const q = query.trim().toLowerCase();
+  const toggle = (id: SectionId) => setOpen((s) => ({ ...s, [id]: !s[id] }));
+  // При поиске раскрываем все разделы, где что-то нашлось
+  const isOpen = (id: SectionId) => (q ? true : open[id]);
 
-  const applyPreset = (idx: number) => {
-    if (idx === 0) return;
-    const base = Object.fromEntries(
-      Object.keys(DEFAULT_INFO_CONFIG).map((k) => [k, false])
-    ) as Partial<InfoDisplayConfig>;
-    Object.assign(base, PRESETS[idx].config);
-    onChange(base);
-    setPreset(idx);
-  };
+  const setKey = (k: Key) => (v: boolean) => onChange({ [k]: v });
+  const setRows = (rows: Row[]) => (on: boolean) =>
+    onChange(Object.fromEntries(rows.map(([k]) => [k, on])) as Partial<InfoDisplayConfig>);
+  const countOn = (rows: Row[]) => rows.filter(([k]) => config[k]).length;
+  const filterRows = (rows: Row[]) =>
+    q ? rows.filter(([, label, unit]) => `${label} ${unit ?? ""}`.toLowerCase().includes(q)) : rows;
 
-  const set = (k: keyof InfoDisplayConfig) => (v: boolean) => {
-    onChange({ [k]: v });
-    setPreset(0);
-  };
+  const applyPreset = (on: Key[]) =>
+    onChange(Object.fromEntries(PRESET_KEYS.map((k) => [k, on.includes(k)])) as Partial<InfoDisplayConfig>);
+  const activePreset = PRESETS.findIndex((p) => PRESET_KEYS.every((k) => config[k] === p.on.includes(k)));
 
-  // Массовое вкл/выкл всех индикаторов секции по префиксу ключа (node/branch/water)
-  const setGroup = (prefix: string) => (on: boolean) => {
-    const patch: Partial<InfoDisplayConfig> = {};
-    (Object.keys(DEFAULT_INFO_CONFIG) as (keyof InfoDisplayConfig)[]).forEach((k) => {
-      if (k.startsWith(prefix)) patch[k] = on;
-    });
-    onChange(patch);
-    setPreset(0);
+  const filteredNodes = useMemo(
+    () => (q ? nodes.filter((n) => String(n.number).toLowerCase().includes(q)) : nodes),
+    [nodes, q],
+  );
+  const filteredPositions = useMemo(
+    () => (q ? positions.filter((p) => `${p.number} ${p.name ?? ""}`.toLowerCase().includes(q)) : positions),
+    [positions, q],
+  );
+  const visibleNodes = nodes.filter((n) => n.visible !== false).length;
+  const visiblePositions = positions.filter((p) => p.visible !== false).length;
+
+  const paramSection = (id: SectionId, icon: string, title: string, rows: Row[]) => {
+    const shown = filterRows(rows);
+    if (q && shown.length === 0) return null;
+    return (
+      <Section icon={icon} title={title} count={countOn(rows)} total={rows.length}
+        open={isOpen(id)} onToggle={() => toggle(id)} onAll={setRows(rows)}>
+        {shown.map(([k, label, unit]) => (
+          <ToggleRow key={k} label={label} unit={unit} checked={config[k]} onChange={setKey(k)} />
+        ))}
+      </Section>
+    );
   };
 
   return (
-    <div className="flex flex-col h-full text-xs" style={{ background: "var(--c-s2, #f5f5f5)" }}>
-      {/* Пресет */}
-      <div className="flex items-center gap-1 px-1 py-1 border-b border-gray-300">
-        <select
-          value={preset}
-          onChange={(e) => applyPreset(Number(e.target.value))}
-          className="flex-1 text-[11px] border border-gray-300 rounded px-1 py-0.5"
-          style={{ background: "white", fontSize: 11 }}>
-          {PRESETS.map((p, i) => (
-            <option key={i} value={i}>{p.label}</option>
-          ))}
-        </select>
-        <button
-          className="text-[11px] px-2 py-0.5 rounded border border-gray-400 hover:bg-gray-200"
-          onClick={() => applyPreset(preset)}
-          style={{ whiteSpace: "nowrap" }}>
-          Применить
-        </button>
+    <div className="flex flex-col h-full" style={{ background: "var(--c-s2, #f8f7f4)" }}>
+      {/* Быстрые наборы + поиск */}
+      <div className="px-2 pt-2 pb-2 space-y-2 flex-shrink-0" style={{ borderBottom: "1px solid var(--c-b1, #e7e4dd)" }}>
+        <div>
+          <div className="text-[10px] font-medium mb-1" style={{ color: "var(--c-t3, #6b7280)" }}>
+            Подписи на схеме — быстрый набор
+          </div>
+          <div className="flex p-0.5 rounded" style={{ background: "var(--c-s3, #f1efea)" }}>
+            {PRESETS.map((p, i) => {
+              const on = i === activePreset;
+              return (
+                <button key={p.label} type="button" onClick={() => applyPreset(p.on)} title={p.title}
+                  className="flex-1 h-6 px-2 rounded text-[11px] transition-colors"
+                  style={{
+                    border: "none", cursor: "pointer",
+                    background: on ? "var(--c-s1, #fff)" : "transparent",
+                    color: on ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)",
+                    fontWeight: on ? 600 : 400,
+                    boxShadow: on ? "0 1px 2px rgba(0,0,0,.12)" : "none",
+                  }}>
+                  {p.label}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+        <div className="flex items-center gap-1.5 h-7 px-2 rounded"
+          style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d5d1c8)" }}>
+          <Icon name="Search" size={12} style={{ color: "var(--c-t4, #767f8c)" }} />
+          <input value={query} onChange={(e) => setQuery(e.target.value)}
+            placeholder="Найти параметр, узел, позицию…"
+            className="flex-1 min-w-0 bg-transparent outline-none text-[11px]"
+            style={{ border: "none", color: "var(--c-t1, #1f2328)" }} />
+          {query && <IconBtn icon="X" title="Очистить" active={false} onClick={() => setQuery("")} />}
+        </div>
       </div>
 
-      {/* Список параметров */}
-      <div className="flex-1 overflow-y-auto">
+      {/* Разделы */}
+      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+        {paramSection("branches", "GitBranch", "Ветви", BRANCH_ROWS)}
+        {paramSection("nodes", "CircleDot", "Узлы", NODE_ROWS)}
+        {paramSection("ms", "Gauge", "Замерные станции", MS_ROWS)}
+        {paramSection("water", "Droplets", "Водопровод", WATER_ROWS)}
 
-        {/* ─── Узлы (параметры отображения) ─── */}
-        <SectionHeader label="Узлы" expanded={nodesOpen} onToggle={() => setNodesOpen((v) => !v)} onAll={setGroup("node")} />
-        {nodesOpen && (
-          <div>
-            <CheckRow label="Номер сопряжения" checked={config.nodeNumber} onChange={set("nodeNumber")} />
-            <CheckRow label="Координата X (X), м" checked={config.nodeX} onChange={set("nodeX")} />
-            <CheckRow label="Координата Y (Y), м" checked={config.nodeY} onChange={set("nodeY")} />
-            <CheckRow label="Координата Z (Z), м" checked={config.nodeZ} onChange={set("nodeZ")} />
-            <CheckRow label="Давление вент. (P вент.), даПа" checked={config.nodePressure} onChange={set("nodePressure")} />
-            <CheckRow label="Температура (T), °С" checked={config.nodeTemp} onChange={set("nodeTemp")} />
-            <CheckRow label="Концентрация метана (CH4), %" checked={config.nodeMethane} onChange={set("nodeMethane")} />
-            <CheckRow label="Влажность (W), %" checked={config.nodeHumidity} onChange={set("nodeHumidity")} />
-            <CheckRow label="CO в узле (CO), ppm" checked={config.nodeCO} onChange={set("nodeCO")} />
-          </div>
-        )}
-
-        {/* ─── Ветви ─── */}
-        <SectionHeader label="Ветви" expanded={branchesOpen} onToggle={() => setBranchesOpen((v) => !v)} onAll={setGroup("branch")} />
-        {branchesOpen && (
-          <div>
-            <CheckRow label="Номер ветви" checked={config.branchNumber} onChange={set("branchNumber")} />
-            <CheckRow label="Название ветви (Название)" checked={config.branchName} onChange={set("branchName")} />
-            <CheckRow label="Длина ветви (L), м" checked={config.branchLength} onChange={set("branchLength")} />
-            <CheckRow label="Угол наклона (A), °" checked={config.branchAngle} onChange={set("branchAngle")} />
-            <CheckRow label="Поперечное сечение (S), м²" checked={config.branchSection} onChange={set("branchSection")} />
-            <CheckRow label="Аэродинам. сопротивление (R), km" checked={config.branchResistance} onChange={set("branchResistance")} />
-            <CheckRow label="Суммарное сопротивление (Rсум), km" checked={config.branchResistanceSum} onChange={set("branchResistanceSum")} />
-            <CheckRow label="Скорость воздуха (V), м/с" checked={config.branchVelocity} onChange={set("branchVelocity")} />
-            <CheckRow label="Макс. допустимая скорость (Vmax), м/с" checked={config.branchVMax} onChange={set("branchVMax")} />
-            <CheckRow label="Дополнительная депрессия (ДопН), даПа" checked={config.branchExtraFan} onChange={set("branchExtraFan")} />
-            <CheckRow label="Расход расчётный (Qрасч), м³/с" checked={config.branchFlowCalc} onChange={set("branchFlowCalc")} />
-            <CheckRow label="Расход (Q), м³/с" checked={config.branchFlow} onChange={set("branchFlow")} />
-            <CheckRow label="Высота ветви (Высота), м" checked={config.branchHeight} onChange={set("branchHeight")} />
-            <CheckRow label="Количество людей (Людей)" checked={config.branchPeople} onChange={set("branchPeople")} />
-            <CheckRow label="Депрессия (Н), даПа" checked={config.branchDepression} onChange={set("branchDepression")} />
-          </div>
-        )}
-
-        {/* ─── Замерные станции ───
-            Галочки работают сразу у ВСЕХ станций схемы. Раньше показатели
-            включались только в карточке отдельной станции, и чтобы показать
-            расход на всех, приходилось обойти каждую из десятков. Личная
-            галочка станции при этом сохраняется: она добавляет показатель
-            именно ей, поверх общего набора. */}
-        <SectionHeader label="Замерные станции" expanded={msOpen} onToggle={() => setMsOpen((v) => !v)} onAll={setGroup("msInd")} />
-        {msOpen && (
-          <div>
-            <CheckRow label="Номер замерной станции (№)" checked={config.msIndNumber} onChange={set("msIndNumber")} />
-            <CheckRow label="Местоположение" checked={config.msIndLocation} onChange={set("msIndLocation")} />
-            <CheckRow label="Расход воздуха (Q), м³/с" checked={config.msIndFlow} onChange={set("msIndFlow")} />
-            <CheckRow label="Площадь сечения (S), м²" checked={config.msIndArea} onChange={set("msIndArea")} />
-            <CheckRow label="Скорость воздуха (v), м/с" checked={config.msIndVelocity} onChange={set("msIndVelocity")} />
-          </div>
-        )}
-
-        {/* ─── Водопровод ─── */}
-        <SectionHeader label="Водопровод" expanded={waterOpen} onToggle={() => setWaterOpen((v) => !v)} onAll={setGroup("water")} />
-        {waterOpen && (
-          <div>
-            <CheckRow label="Резервуар с водой" checked={config.waterReservoir} onChange={set("waterReservoir")} />
-            <CheckRow label="Потребитель воды" checked={config.waterConsumer} onChange={set("waterConsumer")} />
-            <CheckRow label="Насосная станция" checked={config.waterPumpStation} onChange={set("waterPumpStation")} />
-            <CheckRow label="Соединение труб" checked={config.waterPipeJoint} onChange={set("waterPipeJoint")} />
-            <CheckRow label="Редукционный клапан" checked={config.waterReducer} onChange={set("waterReducer")} />
-            <CheckRow label="Вентиль запорный" checked={config.waterGateValve} onChange={set("waterGateValve")} />
-            <CheckRow label="Входное/выходное давление на редукторе" checked={config.waterReducerPressure} onChange={set("waterReducerPressure")} />
-            <CheckRow label="Трубы" checked={config.waterPipes} onChange={set("waterPipes")} />
-            <CheckRow label="Направление течения воды" checked={config.waterFlowDirection} onChange={set("waterFlowDirection")} />
-            <CheckRow label="Скорость воды (V), м/с" checked={config.waterVelocity} onChange={set("waterVelocity")} />
-            <CheckRow label="Расход воды (Q), м³/ч" checked={config.waterFlow} onChange={set("waterFlow")} />
-            <CheckRow label="Дефицит воды, м³/ч" checked={config.waterDeficit} onChange={set("waterDeficit")} />
-            <CheckRow label="Динамическое давление, МПа" checked={config.waterDynamicPressure} onChange={set("waterDynamicPressure")} />
-          </div>
-        )}
-
-        {/* ─── Позиции ПЛА ─── */}
-        {onPositionVisibilityChange && (
-          <>
-            <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
-              style={{ background: "var(--c-tint-blue, #e8eef8)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
-              <button onClick={() => setPosVisOpen((v) => !v)}
-                className="flex items-center gap-1 flex-1 text-left">
-                <Icon name={posVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
-                <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
-                  Позиции ПЛА
-                </span>
-              </button>
-              {onAllPositionsVisibility && (
-                <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => onAllPositionsVisibility(true, true)}
-                    className="text-[10px] px-1 rounded hover:bg-green-100 text-green-700 border border-green-300">
-                    вкл
-                  </button>
-                  <button onClick={() => onAllPositionsVisibility(false, false)}
-                    className="text-[10px] px-1 rounded hover:bg-red-50 text-red-600 border border-red-200">
-                    выкл
-                  </button>
-                </div>
-              )}
-            </div>
-            {posVisOpen && (
-              <div>
-                {positions.map((pos) => {
-                  const posVis = pos.visible !== false;
-                  const brVis = pos.branchesVisible !== false;
-                  const hasBranches = pos.branchIds.length > 0;
-                  return (
-                    <div key={pos.id}
-                      style={{
-                        borderBottom: "1px solid var(--c-b1, #f0f0f0)",
-                        background: posVis ? "transparent" : "var(--c-s2, #fafafa)",
-                        paddingTop: 2, paddingBottom: 2,
-                      }}>
-                      {/* Строка позиции */}
-                      <div className="flex items-center gap-1.5 hover:bg-blue-50 select-none"
-                        style={{ paddingLeft: 8, paddingRight: 4 }}>
-                        <input
-                          type="checkbox"
-                          checked={posVis}
-                          onChange={(e) => onPositionVisibilityChange!(pos.id, e.target.checked)}
-                          className="w-3 h-3 flex-shrink-0"
-                          style={{ accentColor: pos.color }}
-                        />
-                        {/* Цветовой кружок */}
-                        <div className="flex-shrink-0 flex items-center justify-center rounded-full font-bold"
-                          style={{
-                            width: 16, height: 16,
-                            background: posVis ? pos.color : "#ccc",
-                            border: `1.5px solid ${posVis ? pos.borderColor : "#bbb"}`,
-                            color: "#fff", fontSize: 8,
-                            opacity: posVis ? 1 : 0.5,
-                          }}>
-                          {pos.number}
-                        </div>
-                        <span className="text-[11px] flex-1 truncate"
-                          style={{ color: posVis ? "var(--c-blue-ink, #1a3a6b)" : "#aaa", fontWeight: 500 }}
-                          title={pos.name || `Позиция ${pos.number}`}>
-                          {pos.name || `Позиция ${pos.number}`}
-                        </span>
-                        {pos.accidentType && pos.accidentType !== "Нет" && (
-                          <span className="text-[9px] flex-shrink-0 px-1 rounded"
-                            style={{ background: "var(--c-s3, #f3f4f6)", color: "var(--c-t3, #6b7280)" }}>
-                            {pos.accidentType}
-                          </span>
-                        )}
-                      </div>
-                      {/* Строка ветвей (если есть привязанные) */}
-                      {hasBranches && onPositionBranchesVisibilityChange && (
-                        <div className="flex items-center gap-1.5 hover:bg-purple-50 select-none"
-                          style={{ paddingLeft: 24, paddingRight: 4, paddingTop: 1 }}>
-                          <input
-                            type="checkbox"
-                            checked={brVis}
-                            onChange={(e) => onPositionBranchesVisibilityChange!(pos.id, e.target.checked)}
-                            className="w-3 h-3 flex-shrink-0"
-                            style={{ accentColor: "#7c3aed" }}
-                          />
-                          <Icon name="GitBranch" size={10} />
-                          <span className="text-[10px]" style={{ color: brVis ? "var(--c-t2, #374151)" : "#aaa" }}>
-                            Ветви ({pos.branchIds.length})
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ─── Видимость узлов (как в Аэросети) ─── */}
-        {onNodeVisibilityChange && (
-          <>
-            <div className="w-full flex items-center gap-1 px-1 py-0.5 select-none"
-              style={{ background: "var(--c-tint-blue, #e8eef8)", borderBottom: "1px solid #c8d4e8", borderTop: "1px solid #c8d4e8" }}>
-              <button onClick={() => setNodeVisOpen((v) => !v)}
-                className="flex items-center gap-1 flex-1 text-left">
-                <Icon name={nodeVisOpen ? "ChevronDown" : "ChevronRight"} size={10} />
-                <span className="text-[11px] font-semibold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
-                  Видимость узлов
-                </span>
-              </button>
-              {onAllNodesVisibility && (
-                <div className="flex gap-1 flex-shrink-0">
-                  <button onClick={() => onAllNodesVisibility(true)}
-                    className="text-[10px] px-1 rounded hover:bg-green-100 text-green-700 border border-green-300">
-                    вкл
-                  </button>
-                  <button onClick={() => onAllNodesVisibility(false)}
-                    className="text-[10px] px-1 rounded hover:bg-red-50 text-red-600 border border-red-200">
-                    выкл
-                  </button>
-                </div>
-              )}
-            </div>
-            {nodeVisOpen && (
-              <div>
-                {nodes.map((node) => (
-                  <div key={node.id}
-                    className="flex items-center hover:bg-blue-50 select-none"
+        {onPositionVisibilityChange && (!q || filteredPositions.length > 0) && (
+          <Section icon="MapPin" title="Позиции ПЛА" count={visiblePositions} total={positions.length}
+            open={isOpen("positions")} onToggle={() => toggle("positions")}
+            onAll={onAllPositionsVisibility ? (on) => onAllPositionsVisibility(on, on) : undefined}>
+            {positions.length === 0 && <Empty text="Позиций пока нет" />}
+            {filteredPositions.map((pos) => {
+              const posVis = pos.visible !== false;
+              const brVis = pos.branchesVisible !== false;
+              const name = pos.name || `Позиция ${pos.number}`;
+              return (
+                <div key={pos.id} className="flex items-center gap-1.5 h-6 px-2 rounded hover:bg-[var(--c-s3,#f1efea)]"
+                  style={{ opacity: posVis ? 1 : 0.55 }}>
+                  <span className="flex-shrink-0 flex items-center justify-center rounded-full font-bold"
                     style={{
-                      paddingLeft: 20, paddingRight: 4, paddingTop: 1, paddingBottom: 1,
-                      borderBottom: "1px solid var(--c-b1, #f0f0f0)",
-                      background: selectedNodeId === node.id ? "var(--c-tint-blue2, #dbeafe)" : "transparent",
+                      width: 16, height: 16, fontSize: 8, color: "#fff",
+                      background: pos.color, border: `1.5px solid ${pos.borderColor}`,
                     }}>
-                    <label className="flex items-center gap-1.5 flex-1 cursor-pointer min-w-0">
-                      <input
-                        type="checkbox"
-                        checked={node.visible !== false}
-                        onChange={(e) => onNodeVisibilityChange(node.id, e.target.checked)}
-                        className="w-3 h-3 flex-shrink-0"
-                        style={{ accentColor: "#1e5a7a" }}
-                      />
-                      <span className="text-[11px] font-mono font-bold flex-shrink-0"
-                        style={{ color: "var(--c-blue-ink, #1a3a6b)", minWidth: 24 }}>
-                        {node.number}
-                      </span>
-                      <span className="text-[10px] text-gray-400 truncate font-mono">
-                        {node.x}, {node.y}
-                      </span>
-                    </label>
-                    {onSelectNode && (
-                      <button
-                        onClick={() => onSelectNode(node.id)}
-                        className="w-4 h-4 flex items-center justify-center hover:bg-blue-200 rounded flex-shrink-0"
-                        title="Выделить на схеме">
-                        <Icon name="Crosshair" size={9} className="text-blue-500" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            )}
-          </>
+                    {pos.number}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate text-[11px]" style={{ color: "var(--c-t1, #1f2328)" }} title={name}>
+                    {name}
+                  </span>
+                  {pos.accidentType && pos.accidentType !== "Нет" && (
+                    <span className="text-[9px] px-1 rounded flex-shrink-0 truncate max-w-[70px]"
+                      title={pos.accidentType}
+                      style={{ background: "var(--c-s3, #f1efea)", color: "var(--c-t3, #6b7280)" }}>
+                      {pos.accidentType}
+                    </span>
+                  )}
+                  {pos.branchIds.length > 0 && onPositionBranchesVisibilityChange && (
+                    <IconBtn icon="GitBranch" active={brVis}
+                      title={`${brVis ? "Скрыть" : "Показать"} ветви позиции (${pos.branchIds.length})`}
+                      onClick={() => onPositionBranchesVisibilityChange(pos.id, !brVis)} />
+                  )}
+                  <IconBtn icon={posVis ? "Eye" : "EyeOff"} active={posVis}
+                    title={posVis ? "Скрыть позицию" : "Показать позицию"}
+                    onClick={() => onPositionVisibilityChange(pos.id, !posVis)} />
+                </div>
+              );
+            })}
+          </Section>
+        )}
+
+        {onNodeVisibilityChange && (!q || filteredNodes.length > 0) && (
+          <Section icon="Eye" title="Видимость узлов" count={visibleNodes} total={nodes.length}
+            open={isOpen("nodeVis")} onToggle={() => toggle("nodeVis")} onAll={onAllNodesVisibility}>
+            {nodes.length === 0 && <Empty text="Узлов пока нет" />}
+            {filteredNodes.map((node) => {
+              const vis = node.visible !== false;
+              const selected = selectedNodeId === node.id;
+              return (
+                <div key={node.id} className="flex items-center gap-1.5 h-6 px-2 rounded hover:bg-[var(--c-s3,#f1efea)]"
+                  style={{
+                    background: selected ? "var(--c-tint-blue2, #d7e7ee)" : undefined,
+                    opacity: vis ? 1 : 0.55,
+                  }}>
+                  <span className="text-[11px] font-semibold flex-shrink-0"
+                    style={{ color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)", minWidth: 28 }}>
+                    {node.number}
+                  </span>
+                  <span className="flex-1 min-w-0 truncate text-[10px]"
+                    style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-num)" }}>
+                    {node.x}, {node.y}
+                  </span>
+                  {onSelectNode && (
+                    <IconBtn icon="Crosshair" title="Выделить на схеме" onClick={() => onSelectNode(node.id)} />
+                  )}
+                  <IconBtn icon={vis ? "Eye" : "EyeOff"} active={vis}
+                    title={vis ? "Скрыть узел" : "Показать узел"}
+                    onClick={() => onNodeVisibilityChange(node.id, !vis)} />
+                </div>
+              );
+            })}
+          </Section>
+        )}
+
+        {q && filterRows([...BRANCH_ROWS, ...NODE_ROWS, ...MS_ROWS, ...WATER_ROWS]).length === 0
+          && filteredNodes.length === 0 && filteredPositions.length === 0 && (
+          <Empty text="Ничего не найдено" />
         )}
       </div>
     </div>
