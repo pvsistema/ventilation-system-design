@@ -6,6 +6,7 @@
 // СЧИТАЕТСЯ по схеме и потому всегда актуальна.
 // ─────────────────────────────────────────────────────────────────────────────
 import Icon from "@/components/ui/icon";
+import { useDraggableWindow } from "@/hooks/useDraggableWindow";
 import type { Horizon } from "@/lib/topology";
 import {
   OPO_CLASS_LABELS, OPO_HAZARD_LABELS, OPO_HAZARD_ORDER,
@@ -37,6 +38,10 @@ function SummaryRow({ label, value, hint }: { label: string; value: string; hint
 
 export default function OpoDataDialog({ data, onChange, summary, horizons, onClose }: Props) {
   const set = (patch: Partial<OpoData>) => onChange({ ...data, ...patch });
+  const WIDTH = 620;
+  const { pos, dragHandleProps } = useDraggableWindow({
+    width: WIDTH, height: 560, storageKey: "pvs.opoDialogPos",
+  });
 
   const toggleHazard = (h: OpoHazardKind) => {
     const on = data.hazards.includes(h);
@@ -60,14 +65,15 @@ export default function OpoDataDialog({ data, onChange, summary, horizons, onClo
   const rockburstOn = data.hazards.includes("rockburst");
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30" onClick={onClose}>
-      <div className="bg-white rounded shadow-xl flex flex-col"
-        style={{ width: 620, maxHeight: "88vh" }}
+    <div className="fixed inset-0 z-[60] bg-black/30" onClick={onClose}>
+      <div className="fixed bg-white rounded shadow-xl flex flex-col"
+        style={{ left: pos.x, top: pos.y, width: WIDTH, maxHeight: `calc(100vh - ${pos.y + 12}px)` }}
         onClick={(e) => e.stopPropagation()}>
 
         {/* Заголовок */}
         <div className="flex items-center justify-between px-3 py-2 border-b border-gray-300 flex-shrink-0"
-          style={{ background: "var(--c-s3, #f0f0f0)" }}>
+          {...dragHandleProps}
+          style={{ ...dragHandleProps.style, background: "var(--c-s3, #f0f0f0)" }}>
           <div className="flex items-center gap-2">
             <Icon name="ShieldAlert" size={15} className="text-amber-600" />
             <span className="text-[12px] font-semibold text-gray-800">Данные ОПО</span>
