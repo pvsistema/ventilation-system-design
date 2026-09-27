@@ -9,6 +9,9 @@ import Icon from "@/components/ui/icon";
 import { type TopoNode, type TopoBranch, type Horizon, calcBranchLength } from "@/lib/topology";
 import { type BranchNote, type NodeNote, type GroupNote } from "@/lib/schemaCheckTypes";
 import { type CheckTab, type FullCheckResult } from "@/pages/cad/useCadSchemaCheck";
+import {
+  type SchemaCheckSettings, DEFAULT_SCHEMA_CHECK_SETTINGS, SCHEMA_CHECK_SETTING_GROUPS, countChangedSettings,
+} from "@/lib/schemaCheckSettings";
 
 type Level = "error" | "warn" | "info";
 
@@ -141,6 +144,61 @@ function GroupTitle({ children }: { children: ReactNode }) {
   );
 }
 
+// ─── Настройки проверки ────────────────────────────────────────────────
+function SettingsForm({ settings, onChange }: {
+  settings: SchemaCheckSettings; onChange: (patch: Partial<SchemaCheckSettings>) => void;
+}) {
+  const changed = countChangedSettings(settings);
+  return (
+    <div className="rounded-lg max-h-[45vh] overflow-y-auto"
+      style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b1, #e7e4dd)" }}>
+      <div className="px-2 pt-1.5 text-[10px] leading-snug" style={{ color: "var(--c-t3, #6b7280)" }}>
+        Пороги сохраняются на этом компьютере и применяются ко всем схемам.
+      </div>
+      {SCHEMA_CHECK_SETTING_GROUPS.map((g) => (
+        <div key={g.title}>
+          <GroupTitle>{g.title}</GroupTitle>
+          {g.fields.map((f) => {
+            const def = DEFAULT_SCHEMA_CHECK_SETTINGS[f.key];
+            const isChanged = settings[f.key] !== def;
+            return (
+              <div key={f.key} className="flex items-center gap-1.5 px-2 py-0.5">
+                <span className="flex-1 min-w-0 text-[10px] leading-tight"
+                  style={{ color: isChanged ? "var(--c-t1, #1f2328)" : "var(--c-t3, #6b7280)", fontWeight: isChanged ? 600 : 400 }}
+                  title={`По умолчанию: ${def} ${f.unit}`}>
+                  {f.label}
+                </span>
+                <input type="number" min={f.min} max={f.max} step={f.step} value={settings[f.key]}
+                  onChange={(e) => {
+                    const v = parseFloat(e.target.value);
+                    if (!Number.isFinite(v)) return;
+                    const clamped = Math.min(f.max ?? Infinity, Math.max(f.min, v));
+                    onChange({ [f.key]: clamped } as Partial<SchemaCheckSettings>);
+                  }}
+                  className="w-16 h-5 px-1 rounded text-right text-[11px] outline-none flex-shrink-0"
+                  style={{
+                    background: "var(--c-s1, #fff)", border: `1px solid ${isChanged ? "var(--c-accent, #1e5a7a)" : "var(--c-b2, #d5d1c8)"}`,
+                    color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)",
+                  }} />
+                <span className="w-10 text-[10px] flex-shrink-0" style={{ color: "var(--c-t4, #767f8c)" }}>{f.unit}</span>
+              </div>
+            );
+          })}
+        </div>
+      ))}
+      <div className="px-2 py-1.5">
+        <button type="button" disabled={changed === 0}
+          onClick={() => onChange({ ...DEFAULT_SCHEMA_CHECK_SETTINGS })}
+          className="h-6 px-2 rounded flex items-center gap-1 text-[10px] font-medium transition-colors hover:bg-[var(--c-s3,#f1efea)] disabled:opacity-50"
+          style={{ background: "transparent", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-accent, #1e5a7a)", cursor: changed ? "pointer" : "default" }}>
+          <Icon name="RotateCcw" size={11} />
+          Сбросить по умолчанию
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ─── Панель ────────────────────────────────────────────────────────────
 export interface SolveBlockers { nodeIds: string[]; branchIds: string[]; message: string }
 
@@ -160,6 +218,9 @@ interface SchemaCheckPanelProps {
   onHighRThreshold: (v: number) => void;
   bulkRThreshold: number;
   onBulkRThreshold: (v: number) => void;
+  /** Все пороги проверки (настраиваются под рудник). */
+  settings: SchemaCheckSettings;
+  onSettings: (patch: Partial<SchemaCheckSettings>) => void;
   solveBlockers: SolveBlockers | null;
   onFocusNode: (id: string) => void;
   onFocusBranch: (id: string) => void;
@@ -178,6 +239,10 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
     openCheck, onOpenCheck, solveBlockers, onFocusNode, onFocusBranch,
   } = p;
   const [showAll, setShowAll] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const cfg = p.settings;
+  const changed = countChangedSettings(cfg);
+  const num = (v: number) => String(v).replace(".", ",");
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   const branchById = new Map(branches.map((b) => [b.id, b]));
@@ -354,7 +419,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       title: "Сечение не задано или неправдоподобно",
       body: () => (
         <>
-          <Hint>Допустимым считается 0,5…60 м². Сечение входит в сопротивление в кубе — ошибка в 10 раз меняет R в 1000 раз.</Hint>
+          <Hint>Допустимым считается {num(cfg.areaMin)}…{num(cfg.areaMax)} м². Сечение входит в сопротивление в кубе — ошибка в 10 раз меняет R в 1000 раз.</Hint>
           {branchNotes(params.badArea, "Сечения в норме")}
         </>
       ),
@@ -379,7 +444,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       title: "Коэффициент α вне диапазона",
       body: () => (
         <>
-          <Hint>Коэффициент аэродинамического сопротивления равен нулю или нетипичен для горных выработок.</Hint>
+          <Hint>Коэффициент аэродинамического сопротивления равен нулю или вне диапазона {num(cfg.alphaMin)}…{num(cfg.alphaMax)}·10⁻⁴ Н·с²/м⁴.</Hint>
           {branchNotes(params.badAlpha, "Коэффициенты в норме")}
         </>
       ),
@@ -409,7 +474,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       title: "Очень короткие ветви",
       body: () => (
         <>
-          <Hint>Ветви короче 0,5 м почти не влияют на расчёт, но усложняют схему и замедляют сходимость.</Hint>
+          <Hint>Ветви короче {num(cfg.tinyLength)} м почти не влияют на расчёт, но усложняют схему и замедляют сходимость.</Hint>
           {branchNotes(params.tinyBranches, "Таких ветвей нет")}
         </>
       ),
@@ -450,7 +515,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       title: "Рециркуляция у ВМП",
       body: () => (
         <>
-          <Hint>ВМП забирает больше 70 % воздуха, идущего к нему по выработке, — он начнёт гонять по кругу загрязнённый воздух.</Hint>
+          <Hint>ВМП забирает больше {num(cfg.recircPercent)} % воздуха, идущего к нему по выработке, — он начнёт гонять по кругу загрязнённый воздух.</Hint>
           {!solve.solved ? needSolve : branchNotes(solve.recirculation, "Рециркуляции нет", false)}
         </>
       ),
@@ -470,7 +535,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       title: "Большие утечки через перемычки",
       body: () => (
         <>
-          <Hint>Через перемычки уходит больше 30 % воздуха, подаваемого главными вентиляторами.</Hint>
+          <Hint>Через перемычки уходит больше {num(cfg.leakPercent)} % воздуха, подаваемого главными вентиляторами.</Hint>
           {!solve.solved ? needSolve : !solve.leakage ? <Empty text="Утечки в допустимых пределах" /> : (
             <>
               <Alert>
@@ -679,6 +744,22 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
             <Icon name="Info" size={11} className="flex-shrink-0 mt-px" />
             Показаны первые 500 результатов в каждом списке.
           </div>
+        )}
+        <button type="button" onClick={() => setShowSettings((v) => !v)}
+          className="w-full h-6 px-2 rounded flex items-center gap-1.5 text-[11px] transition-colors hover:bg-[var(--c-s3,#f1efea)]"
+          style={{ background: "transparent", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3d434b)", cursor: "pointer" }}>
+          <Icon name="SlidersHorizontal" size={12} />
+          <span className="flex-1 text-left">Настройки проверки</span>
+          {changed > 0 && (
+            <span className="text-[10px] px-1.5 rounded-full font-semibold"
+              style={{ background: tint(LEVEL_COLOR.info), color: LEVEL_COLOR.info }} title="Изменено порогов">
+              изм. {changed}
+            </span>
+          )}
+          <Icon name={showSettings ? "ChevronUp" : "ChevronDown"} size={12} />
+        </button>
+        {showSettings && (
+          <SettingsForm settings={cfg} onChange={p.onSettings} />
         )}
         <div className="flex p-0.5 rounded" style={{ background: "var(--c-s3, #f1efea)" }}>
           {([[false, `Найдено (${found})`], [true, `Все проверки (${checks.length})`]] as const).map(([all, label]) => {

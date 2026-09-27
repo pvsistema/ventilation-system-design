@@ -35,12 +35,14 @@ export interface ParamsCheckOptions {
   areaMin?: number;     // м²
   areaMax?: number;     // м²
   tinyLength?: number;  // м
+  alphaMin?: number;    // ×10⁻⁴ Н·с²/м⁴
+  alphaMax?: number;    // ×10⁻⁴ Н·с²/м⁴
 }
 
 // Типичный диапазон α для горных выработок, ×10⁻⁴ Н·с²/м⁴ (от гладкого
 // бетона до выработок с рамной крепью и загромождением).
-const ALPHA_MIN = 2;
-const ALPHA_MAX = 400;
+const ALPHA_MIN_DEFAULT = 2;
+const ALPHA_MAX_DEFAULT = 400;
 
 const bad = (v: unknown) => typeof v !== "number" || !Number.isFinite(v);
 
@@ -52,6 +54,8 @@ export function checkParams(
   const areaMin = opts.areaMin ?? 0.5;
   const areaMax = opts.areaMax ?? 60;
   const tiny = opts.tinyLength ?? 0.5;
+  const ALPHA_MIN = opts.alphaMin ?? ALPHA_MIN_DEFAULT;
+  const ALPHA_MAX = opts.alphaMax ?? ALPHA_MAX_DEFAULT;
   let truncated = false;
   const push = <T,>(arr: T[], item: T) => { if (!pushCapped(arr, item)) truncated = true; };
 

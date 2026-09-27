@@ -9,11 +9,12 @@
 // компонента (проверка схемы получает данные параметрами), поэтому вынесены
 // целиком: те же начальные значения, те же зависимости useMemo/useEffect.
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useCallback } from "react";
 import { checkSchema } from "@/lib/schemaCheck";
 import { checkTopology } from "@/lib/schemaCheckTopology";
 import { checkParams } from "@/lib/schemaCheckParams";
 import { checkSolve } from "@/lib/schemaCheckSolve";
+import { loadSchemaCheckSettings, saveSchemaCheckSettings, type SchemaCheckSettings } from "@/lib/schemaCheckSettings";
 import type { TopoNode, TopoBranch } from "@/lib/topology";
 import type { VentNorms, VentSection } from "@/lib/ventSections";
 import type { SideTab } from "./cadTypes";
@@ -57,27 +58,48 @@ export function useCadSchemaCheck(
   // Выбранная категория УО в группе «Объекты» (пустая строка — ничего не выбрано).
   // В этой группе поиск идёт не по вводу текста, а выбором из списка.
   const [searchObjCat, setSearchObjCat] = useState<string>("");
-  const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
   const [checkTab, setCheckTab] = useState<CheckTab | null>(null);
-  // Порог «большого» сопротивления ветви, Н·с²/м⁸ (кМюрг). По умолчанию 100.
-  const [checkHighRThreshold, setCheckHighRThreshold] = useState<number>(100);
-  // Порог сопротивления перемычки, кМюрг (норматив — 686 кМюрг)
-  const [checkBulkRThreshold, setCheckBulkRThreshold] = useState<number>(686);
+  // Пороги проверки — настраиваются под рудник и сохраняются в localStorage.
+  const [checkSettings, setCheckSettingsState] = useState<SchemaCheckSettings>(loadSchemaCheckSettings);
+  const setCheckSettings = useCallback((patch: Partial<SchemaCheckSettings> | SchemaCheckSettings) => {
+    setCheckSettingsState((prev) => {
+      const next = { ...prev, ...patch };
+      saveSchemaCheckSettings(next);
+      return next;
+    });
+  }, []);
+  const checkThreshold = checkSettings.nearThreshold;
+  const checkHighRThreshold = checkSettings.highRThreshold;
+  const checkBulkRThreshold = checkSettings.bulkRThreshold;
+  const setCheckThreshold = useCallback((v: number) => setCheckSettings({ nearThreshold: v }), [setCheckSettings]);
+  const setCheckHighRThreshold = useCallback((v: number) => setCheckSettings({ highRThreshold: v }), [setCheckSettings]);
+  const setCheckBulkRThreshold = useCallback((v: number) => setCheckSettings({ bulkRThreshold: v }), [setCheckSettings]);
   // Результат проверки схемы — считается только когда открыта панель «Проверка».
   // Мемоизация исключает тяжёлый O(n) пересчёт на каждый ререндер (ховеры и т.п.).
   const schemaCheckResult = useMemo(() => {
     if (activeSide !== "check") return null;
+    const s = checkSettings;
     return {
       ...checkSchema(nodes, branches, {
-        nearThreshold: checkThreshold,
-        highRThreshold: checkHighRThreshold,
-        bulkRThreshold: checkBulkRThreshold,
+        nearThreshold: s.nearThreshold,
+        highRThreshold: s.highRThreshold,
+        bulkRThreshold: s.bulkRThreshold,
       }),
-      topo: checkTopology(nodes, branches),
-      params: checkParams(nodes, branches),
-      solve: checkSolve(branches, solved, norms, sections),
+      topo: checkTopology(nodes, branches, {
+        onAxisTolerance: s.onAxisTolerance,
+        crossingZTolerance: s.crossingZTolerance,
+      }),
+      params: checkParams(nodes, branches, {
+        areaMin: s.areaMin, areaMax: s.areaMax,
+        alphaMin: s.alphaMin, alphaMax: s.alphaMax,
+        tinyLength: s.tinyLength,
+      }),
+      solve: checkSolve(branches, solved, norms, sections, {
+        recircShare: s.recircPercent / 100,
+        leakShare: s.leakPercent / 100,
+      }),
     };
-  }, [activeSide, nodes, branches, checkThreshold, checkHighRThreshold, checkBulkRThreshold, solved, norms, sections]);
+  }, [activeSide, nodes, branches, checkSettings, solved, norms, sections]);
 
   return {
     searchQuery, setSearchQuery,
@@ -87,6 +109,7 @@ export function useCadSchemaCheck(
     checkTab, setCheckTab,
     checkHighRThreshold, setCheckHighRThreshold,
     checkBulkRThreshold, setCheckBulkRThreshold,
+    checkSettings, setCheckSettings,
     schemaCheckResult,
   };
 }

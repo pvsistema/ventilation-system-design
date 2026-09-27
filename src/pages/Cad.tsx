@@ -2429,6 +2429,7 @@ export default function CadPage() {
     checkTab, setCheckTab,
     checkHighRThreshold, setCheckHighRThreshold,
     checkBulkRThreshold, setCheckBulkRThreshold,
+    checkSettings, setCheckSettings,
     schemaCheckResult,
   } = useCadSchemaCheck(activeSide, nodes, branches, solveResult != null, ventNorms, ventSections);
 
@@ -8093,6 +8094,8 @@ export default function CadPage() {
                 onHighRThreshold={setCheckHighRThreshold}
                 bulkRThreshold={checkBulkRThreshold}
                 onBulkRThreshold={setCheckBulkRThreshold}
+                settings={checkSettings}
+                onSettings={setCheckSettings}
                 solveBlockers={solveBlockers}
                 onFocusNode={(id) => {
                   setSelectedNodeId(id);
