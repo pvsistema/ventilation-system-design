@@ -1,16 +1,7 @@
 // Базовые UI-примитивы для панелей свойств ветви
 import { useState, useEffect } from "react";
 
-export const SH = "var(--c-tint-blue, #e8eef8)";
 export const SB = "1px solid var(--c-b1, #c8d4e8)";
-export const CB = "var(--c-s4, #d4d4d4)";
-export const CBB = "1px solid var(--c-b3, #b0b0b0)";
-
-export const BRANCH_TYPES = [
-  "Ствол ЮВС", "Ствол СВС", "Квершлаг", "Штрек откат.", "Штрек вент.",
-  "Уклон", "Очистной", "Сбойка", "Камера", "Конвейер", "Вент. канал",
-];
-
 
 export function numFmt(v: number, d = 2): string {
   if (isNaN(v) || v === undefined) return "—";
@@ -42,7 +33,6 @@ const SECTION_TONES: Record<string, SectionTone> = {
   "Физика":                       TONE_AERO,
   "Вычисленные параметры":        TONE_RESULT,
   "Характеристики":               TONE_RESULT,
-  "Пожарная нагрузка":            TONE_DANGER,
   "Противопожарная защита":       TONE_DANGER,
   "Параметры дегазации":          TONE_DANGER,
   "Водопровод ППЗ":               TONE_WATER,
