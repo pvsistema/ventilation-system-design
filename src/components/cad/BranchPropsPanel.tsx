@@ -214,7 +214,6 @@ export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, 
           <BranchWaterPipeTab
             branch={branch}
             onUpdate={onUpdate}
-            numFmt={numFmt}
             waterBranchResult={waterBranchResult}
             onRemoveGate={onRemoveGate}
             onRemoveReducer={onRemoveReducer}

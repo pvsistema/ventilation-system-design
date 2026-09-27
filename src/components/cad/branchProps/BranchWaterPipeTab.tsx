@@ -1,14 +1,28 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// BranchWaterPipeTab.tsx — вкладка «Трубы» панели свойств выработки.
+//
+// Две карточки с переключателем в заголовке: «Водопровод ППЗ» и
+// «Воздухопровод». У включённой видны параметры трубы.
+// Для водопровода дополнительно:
+//   • «Результат расчёта» — расход, скорость, потери (плитки);
+//   • «Запорный вентиль» и «Редукционный клапан» — только если они стоят
+//     на ветви (ставятся значком на схеме).
+//
+// Логика расчёта не менялась — те же поля ветви, что читает
+// calcWaterNetwork() в lib/waterHydraulics.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+import { type ReactNode } from "react";
 import { type TopoBranch } from "@/lib/topology";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
+import Icon from "@/components/ui/icon";
 import {
-  SB, SectionHeader, EditInput, ComputedInput, SelectField, CheckField, InlineLabel,
-} from "@/components/cad/BranchPropsPrimitives";
+  Card, Field, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
+} from "@/components/cad/propUi";
 
 interface Props {
   branch: TopoBranch;
   onUpdate: (patch: Partial<TopoBranch>) => void;
-  numFmt: (v: number, d?: number) => string;
   waterBranchResult?: WaterBranchResult;
   onRemoveGate?: () => void;
   onRemoveReducer?: () => void;
@@ -16,331 +30,329 @@ interface Props {
   onReducerSymbolScale?: (scale: number) => void;
 }
 
-/**
- * Вкладка «Трубы: вода» панели свойств ветви (водопровод ППЗ + воздухопровод).
- * Перенос 1:1 из BranchPropsPanel — разметка и логика не менялись.
- */
+const MATERIALS = ["Сталь", "Чугун", "Полиэтилен", "ПВХ", "Асбестоцемент", "Прочее"];
+/** Шероховатость «гладкой» трубы — та же константа, что в calcWaterNetwork. */
+const SMOOTH_ROUGHNESS_MM = 0.03;
+
+const selectStyle: React.CSSProperties = { ...inputStyle, cursor: "pointer" };
+const fmt = (v: number | undefined, d: number) => (v !== undefined && Number.isFinite(v) ? v.toFixed(d) : "—");
+
+// ─── Вспомогательные элементы ───────────────────────────────────────────────
+
+/** Карточка трубы: иконка, название, переключатель «есть / нет». */
+function PipeCard({ icon, title, subtitle, enabled, onToggle, children }: {
+  icon: string; title: string; subtitle?: string; enabled: boolean;
+  onToggle: (v: boolean) => void; children: ReactNode;
+}) {
+  const color = enabled ? "var(--c-accent, #1e5a7a)" : "var(--c-t4, #767f8c)";
+  return (
+    <section className="rounded-lg overflow-hidden"
+      style={{
+        background: "var(--c-s1, #fff)",
+        border: `1px solid ${enabled ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 40%, transparent)" : "var(--c-b1, #e7e4dd)"}`,
+      }}>
+      <div className="flex items-center gap-2 px-2.5 py-2 select-none cursor-pointer" onClick={() => onToggle(!enabled)}>
+        <span className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+          style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}>
+          <Icon name={icon} size={13} />
+        </span>
+        <span className="flex-1 min-w-0">
+          <span className="block text-[11px] font-semibold uppercase tracking-wider truncate"
+            style={{ color: enabled ? "var(--c-t1, #1f2328)" : "var(--c-t3, #6b7280)" }}>{title}</span>
+          <span className="block text-[10px] truncate" style={{ color: "var(--c-t4, #767f8c)" }}>
+            {enabled ? subtitle : "Нет в выработке — включите, чтобы задать"}
+          </span>
+        </span>
+        <button type="button" role="switch" aria-checked={enabled}
+          title={enabled ? "Убрать трубу из выработки" : "Проложить трубу в выработке"}
+          onClick={(e) => { e.stopPropagation(); onToggle(!enabled); }}
+          className="relative flex-shrink-0 rounded-full transition-colors"
+          style={{ width: 28, height: 16, border: "none", cursor: "pointer",
+            background: enabled ? "var(--c-accent, #1e5a7a)" : "var(--c-b2, #d5d1c8)" }}>
+          <span className="absolute top-[2px] rounded-full transition-all"
+            style={{ width: 12, height: 12, left: enabled ? 14 : 2, background: "var(--c-s1, #fff)" }} />
+        </button>
+      </div>
+      {enabled && <div className="px-2.5 pb-2.5 pt-0.5 space-y-2">{children}</div>}
+    </section>
+  );
+}
+
+/** Переключатель «по ветви / вручную» рядом с подписью длины. */
+function AutoManual({ manual, onChange }: { manual: boolean; onChange: (manual: boolean) => void }) {
+  return (
+    <div style={{ width: 96 }}>
+      <Segmented size="sm" value={manual ? "m" : "a"} onChange={(v) => onChange(v === "m")}
+        options={[
+          { value: "a", label: "по ветви", title: "Длина трубы = длина выработки" },
+          { value: "m", label: "вручную", title: "Задать длину трубы вручную" },
+        ]} />
+    </div>
+  );
+}
+
+/** Длина трубы: по ветви (только чтение) или своя. */
+function LengthField({ manual, value, branchLen, onManual, onChange }: {
+  manual: boolean; value: number; branchLen: number;
+  onManual: (v: boolean) => void; onChange: (v: number) => void;
+}) {
+  return (
+    <Field label="Длина трубы" aside={<AutoManual manual={manual} onChange={onManual} />}>
+      {manual
+        ? <NumInput value={value} min={0} step={1} unit="м" onChange={onChange} />
+        : <ReadValue value={fmt(branchLen, 1)} unit="м" title="Берётся из длины выработки" />}
+    </Field>
+  );
+}
+
+function MaterialSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  return (
+    <select className={inputCls} style={selectStyle} value={value} onChange={(e) => onChange(e.target.value)}>
+      {MATERIALS.map((m) => <option key={m} value={m}>{m}</option>)}
+    </select>
+  );
+}
+
+/** Маленькая кнопка «убрать» в заголовке карточки оборудования. */
+function RemoveBtn({ title, onClick }: { title: string; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} title={title}
+      className="w-6 h-6 flex items-center justify-center rounded"
+      style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--c-red, #dc2626)" }}>
+      <Icon name="Trash2" size={12} />
+    </button>
+  );
+}
+
+function StateBtn({ on, onClick, icon, label, tone }: {
+  on: boolean; onClick: () => void; icon: string; label: string; tone: "green" | "red";
+}) {
+  const c  = tone === "green" ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)";
+  const bg = tone === "green" ? "var(--c-tint-green, #f0fdf4)" : "var(--c-tint-red, #fef2f2)";
+  return (
+    <button type="button" onClick={onClick}
+      className="flex-1 h-8 rounded-md flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors"
+      style={{
+        background: on ? bg : "var(--c-s1, #fff)",
+        color: on ? c : "var(--c-t3, #6b7280)",
+        border: `1px solid ${on ? `color-mix(in srgb, ${c} 45%, transparent)` : "var(--c-b2, #d5d1c8)"}`,
+        cursor: "pointer",
+      }}>
+      <Icon name={icon} size={13} /> {label}
+    </button>
+  );
+}
+
+function Hint({ icon = "Info", children }: { icon?: string; children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-1.5 text-[10px] leading-snug" style={{ color: "var(--c-t4, #767f8c)" }}>
+      <Icon name={icon} size={11} className="flex-shrink-0 mt-[1px]" />
+      <span>{children}</span>
+    </div>
+  );
+}
+
+// ─── Вкладка ────────────────────────────────────────────────────────────────
+
 export default function BranchWaterPipeTab({
-  branch, onUpdate, numFmt, waterBranchResult, onRemoveGate,
+  branch: b, onUpdate, waterBranchResult: r, onRemoveGate,
   onRemoveReducer, reducerSymbolScale, onReducerSymbolScale,
 }: Props) {
+  const hasWater = b.hasWaterPipe ?? false;
+  const hasAir   = b.hasAirPipe ?? false;
+  const branchLen = b.length ?? 0;
+
+  const wpDiam = b.wpDiameter ?? 100;
+  const roughMode = b.wpRoughnessMode ?? "rough";
+  const solved = (r?.flow ?? 0) > 0;
+
   return (
-    <div>
-      <SectionHeader title="Водопровод ППЗ" />
-      <InlineLabel label="Трубопровод задан">
-        <CheckField
-          checked={branch.hasWaterPipe ?? false}
-          onChange={(v) => onUpdate({ hasWaterPipe: v })}
-        />
-      </InlineLabel>
+    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
 
-      {(branch.hasWaterPipe) && (<>
-        <SectionHeader title="Геометрия трубы" />
-        <InlineLabel label="Диаметр, мм">
-          <EditInput
-            type="number" step="1"
-            value={branch.wpDiameter ?? 100}
-            onChange={(v) => onUpdate({ wpDiameter: parseFloat(v) || 0 })}
-          />
-        </InlineLabel>
-        <InlineLabel label="Материал">
-          <SelectField
-            value={branch.wpMaterial ?? "Сталь"}
-            options={["Сталь", "Чугун", "Полиэтилен", "ПВХ", "Асбестоцемент", "Прочее"]}
-            onChange={(v) => onUpdate({ wpMaterial: v })}
-          />
-        </InlineLabel>
-        <InlineLabel label="Длина вручную">
-          <CheckField
-            checked={branch.wpLengthManual ?? false}
-            onChange={(v) => onUpdate({ wpLengthManual: v })}
-          />
-        </InlineLabel>
-        {branch.wpLengthManual && (
-          <InlineLabel label="Длина, м">
-            <EditInput
-              type="number" step="0.1"
-              value={branch.wpLength ?? 0}
-              onChange={(v) => onUpdate({ wpLength: parseFloat(v) || 0 })}
-            />
-          </InlineLabel>
-        )}
+      {/* ═══ Водопровод ППЗ ══════════════════════════════════════════════ */}
+      <PipeCard icon="Droplets" title="Водопровод ППЗ" enabled={hasWater}
+        subtitle={`Ø${wpDiam} мм · ${b.wpMaterial ?? "Сталь"}`}
+        onToggle={(v) => onUpdate({ hasWaterPipe: v })}>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Диаметр">
+            <NumInput value={wpDiam} min={0} step={5} unit="мм" onChange={(v) => onUpdate({ wpDiameter: v })} />
+          </Field>
+          <Field label="Материал">
+            <MaterialSelect value={b.wpMaterial ?? "Сталь"} onChange={(v) => onUpdate({ wpMaterial: v })} />
+          </Field>
+        </div>
+        <LengthField manual={b.wpLengthManual ?? false} value={b.wpLength ?? 0} branchLen={branchLen}
+          onManual={(v) => onUpdate(v
+            ? { wpLengthManual: true, wpLength: b.wpLength || Math.round(branchLen) }
+            : { wpLengthManual: false })}
+          onChange={(v) => onUpdate({ wpLength: v })} />
 
-        <SectionHeader title="Гидравлическое сопротивление" />
-        <InlineLabel label="Шероховатость">
-          <SelectField
-            value={branch.wpRoughnessMode ?? "rough"}
+        <Field label="Сопротивление трубы">
+          <Segmented value={roughMode}
+            onChange={(v) => onUpdate({ wpRoughnessMode: v })}
             options={[
-              { value: "smooth", label: "Гладкая" },
-              { value: "rough",  label: "Шероховатая" },
-              { value: "manual", label: "Вручную" },
-            ]}
-            onChange={(v) => onUpdate({ wpRoughnessMode: v as TopoBranch["wpRoughnessMode"] })}
-          />
-        </InlineLabel>
-        {(branch.wpRoughnessMode ?? "rough") === "rough" && (
-          <InlineLabel label="Шероховатость, мм">
-            <EditInput
-              type="number" step="0.01"
-              value={branch.wpRoughness ?? 0.5}
-              onChange={(v) => onUpdate({ wpRoughness: parseFloat(v) || 0 })}
-            />
-          </InlineLabel>
-        )}
-        {(branch.wpRoughnessMode ?? "rough") === "manual" && (
-          <InlineLabel label="R, МН·с²/м⁸">
-            <EditInput
-              type="number" step="0.001"
-              value={branch.wpManualR ?? 0}
-              onChange={(v) => onUpdate({ wpManualR: parseFloat(v) || 0 })}
-            />
-          </InlineLabel>
-        )}
-        <InlineLabel label="Σξ местных сопр.">
-          <EditInput
-            type="number" step="0.1"
-            value={branch.wpLocalXi ?? 0}
-            onChange={(v) => onUpdate({ wpLocalXi: parseFloat(v) || 0 })}
-          />
-        </InlineLabel>
+              { value: "smooth", label: "Гладкая", title: `Шероховатость ${SMOOTH_ROUGHNESS_MM} мм` },
+              { value: "rough",  label: "Шероховатая", title: "Задать шероховатость стенки" },
+              { value: "manual", label: "Своё R", title: "Задать сопротивление напрямую" },
+            ]} />
+        </Field>
+        <div className="grid grid-cols-2 gap-2">
+          {roughMode === "rough" && (
+            <Field label="Шероховатость">
+              <NumInput value={b.wpRoughness ?? 0.5} min={0} step={0.05} unit="мм"
+                onChange={(v) => onUpdate({ wpRoughness: v })} />
+            </Field>
+          )}
+          {roughMode === "smooth" && (
+            <Field label="Шероховатость">
+              <ReadValue value={String(SMOOTH_ROUGHNESS_MM)} unit="мм" title="Фиксированное значение для гладкой трубы" />
+            </Field>
+          )}
+          {roughMode === "manual" ? (
+            <Field label="R трубы" hint="Длина, диаметр и ξ в расчёт не идут">
+              <NumInput value={b.wpManualR ?? 0} min={0} step={0.001} unit="МН·с²/м⁸"
+                onChange={(v) => onUpdate({ wpManualR: v })} />
+            </Field>
+          ) : (
+            <Field label="Местные сопр. Σξ">
+              <NumInput value={b.wpLocalXi ?? 0} min={0} step={0.5}
+                onChange={(v) => onUpdate({ wpLocalXi: v })} />
+            </Field>
+          )}
+        </div>
+      </PipeCard>
 
-        {/* ─── ЗАПОРНЫЙ ВЕНТИЛЬ ────────────────────────────────── */}
-        {(branch.wpHasGate) && (() => {
-          const closed = branch.wpGateClosed ?? false;
+      {hasWater && (<>
+        {/* ═══ Результат расчёта ═════════════════════════════════════════ */}
+        <Card icon="Gauge" title="Результат расчёта">
+          <div className="grid grid-cols-2 gap-1.5">
+            <Stat label="Расход воды" value={solved ? fmt(r?.flow, 1) : "—"} unit="м³/ч" />
+            <Stat label="Скорость" value={solved ? fmt(r?.velocity, 2) : "—"} unit="м/с" />
+          </div>
+          <div>
+            <KV label="Потери давления" value={solved ? fmt(r?.deltaP, 4) : "—"} unit="МПа" />
+            <KV label="Сопротивление трубы" value={fmt(r?.resistance ?? 0, 4)} unit="МН·с²/м⁸" />
+          </div>
+          {!solved && (
+            <Hint>
+              {b.wpHasGate && b.wpGateClosed
+                ? "Вентиль закрыт — вода по ветви не идёт."
+                : "Воды в трубе нет: откройте потребителя (кран, ороситель) или выполните расчёт водопровода."}
+            </Hint>
+          )}
+        </Card>
+
+        {/* ═══ Запорный вентиль ══════════════════════════════════════════ */}
+        {b.wpHasGate && (
+          <Card icon="CircleDot" title="Запорный вентиль"
+            aside={onRemoveGate && <RemoveBtn title="Убрать вентиль с ветви и схемы" onClick={onRemoveGate} />}>
+            <div className="flex gap-1.5">
+              <StateBtn on={!b.wpGateClosed} tone="green" icon="CircleCheck" label="Открыт"
+                onClick={() => onUpdate({ wpGateClosed: false })} />
+              <StateBtn on={!!b.wpGateClosed} tone="red" icon="CircleX" label="Закрыт"
+                onClick={() => onUpdate({ wpGateClosed: true })} />
+            </div>
+            <Hint>{b.wpGateClosed ? "Течение воды в этой ветви перекрыто." : "Вода свободно проходит через ветвь."}</Hint>
+          </Card>
+        )}
+
+        {/* ═══ Редукционный клапан ═══════════════════════════════════════ */}
+        {b.wpHasReducer && (() => {
+          const modelId = b.wpReducerModel ?? "kppr_50";
+          const model = getValveById(modelId);
+          const isManual = modelId === "manual";
+          const outMinAtm = (model?.outletPressureMin ?? 0.1) * MPA_TO_ATM;
+          const outMaxAtm = (model?.outletPressureMax ?? 9.9) * MPA_TO_ATM;
+          const active = r?.reducerActive ?? false;
+          const atm = (mpa: number | undefined) => `${fmt(mpa, 3)} МПа · ${fmt((mpa ?? 0) * MPA_TO_ATM, 1)} атм`;
           return (
-            <>
-              <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid var(--c-blue, #0284c7)", color: "#075985" }}>
-                <span>Запорный вентиль</span>
-                {onRemoveGate && (
-                  <button
-                    onClick={onRemoveGate}
-                    className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "var(--c-red-ink, #991b1b)", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
-                    title="Удалить запорный вентиль">
-                    Удалить вентиль
-                  </button>
+            <Card icon="Gauge" title="Редукционный клапан"
+              aside={<>
+                <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                  title={active ? "Клапан срезает давление" : "Давление на входе ниже настройки — клапан не работает"}
+                  style={{
+                    background: active ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-s3, #f1efea)",
+                    color: active ? "var(--c-amber, #a66b0d)" : "var(--c-t3, #6b7280)",
+                  }}>
+                  {active ? "Срезает" : "Не активен"}
+                </span>
+                {onRemoveReducer && <RemoveBtn title="Убрать клапан с ветви и схемы" onClick={onRemoveReducer} />}
+              </>}>
+              <Field label="Модель"
+                hint={model && !isManual
+                  ? `${model.manufacturer} · DN${model.nominalDiameter} · вход до ${fmt(model.inletPressureMax * MPA_TO_ATM, 0)} атм · до ${model.flowMax} м³/ч`
+                  : undefined}>
+                <select className={inputCls} style={selectStyle} value={modelId}
+                  onChange={(e) => {
+                    const valve = getValveById(e.target.value);
+                    if (!valve) return;
+                    onUpdate({
+                      wpReducerModel: valve.id,
+                      wpReducerMaxFlow: valve.id === "manual" ? (b.wpReducerMaxFlow ?? 25) : valve.flowMax,
+                    });
+                  }}>
+                  {PRESSURE_REDUCING_VALVES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </Field>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Давление на выходе" hint={`${fmt(outMinAtm, 0)}–${fmt(outMaxAtm, 0)} атм`}>
+                  <NumInput value={+((b.wpReducerOutPressure ?? 0.5) * MPA_TO_ATM).toFixed(1)}
+                    min={outMinAtm} max={outMaxAtm} step={0.5} unit="атм"
+                    onChange={(v) => onUpdate({ wpReducerOutPressure: v / MPA_TO_ATM })} />
+                </Field>
+                {isManual && (
+                  <Field label="Макс. расход">
+                    <NumInput value={b.wpReducerMaxFlow ?? 25} min={0} step={1} unit="м³/ч"
+                      onChange={(v) => onUpdate({ wpReducerMaxFlow: v })} />
+                  </Field>
                 )}
               </div>
-              <div className="px-1 py-1.5 flex items-center gap-2">
-                <button
-                  onClick={() => onUpdate({ wpGateClosed: false })}
-                  className="flex-1 text-[11px] py-1 rounded font-medium"
-                  style={{
-                    background: !closed ? "var(--c-tint-green2, #dcfce7)" : "var(--c-s3, #f3f4f6)",
-                    color: !closed ? "var(--c-green-ink, #166534)" : "var(--c-t3, #6b7280)",
-                    border: !closed ? "1px solid #86efac" : "1px solid var(--c-b1, #e5e7eb)",
-                    cursor: "pointer",
-                  }}>
-                  Открыт
-                </button>
-                <button
-                  onClick={() => onUpdate({ wpGateClosed: true })}
-                  className="flex-1 text-[11px] py-1 rounded font-medium"
-                  style={{
-                    background: closed ? "var(--c-tint-red2, #fee2e2)" : "var(--c-s3, #f3f4f6)",
-                    color: closed ? "var(--c-red-ink, #991b1b)" : "var(--c-t3, #6b7280)",
-                    border: closed ? "1px solid #fca5a5" : "1px solid var(--c-b1, #e5e7eb)",
-                    cursor: "pointer",
-                  }}>
-                  Закрыт
-                </button>
-              </div>
-              <div className="px-1 pb-1.5 text-[10px]" style={{ color: closed ? "var(--c-red-ink, #991b1b)" : "var(--c-green-ink, #166534)" }}>
-                {closed
-                  ? "Течение воды в этой ветви перекрыто"
-                  : "Вода свободно проходит через ветвь"}
-              </div>
-            </>
-          );
-        })()}
-
-        {/* ─── РЕДУКЦИОННЫЙ КЛАПАН ─────────────────────────────── */}
-        {(branch.wpHasReducer) && (() => {
-          const model = getValveById(branch.wpReducerModel ?? "kppr_50");
-          const reducerActive = waterBranchResult?.reducerActive ?? false;
-          const inPMpa  = waterBranchResult?.reducerInP  ?? 0;
-          const outPMpa = waterBranchResult?.reducerOutP ?? 0;
-          const cutMpa  = waterBranchResult?.reducerDeltaP ?? 0;
-          const inPatm  = (inPMpa  * MPA_TO_ATM).toFixed(1);
-          const outPatm = (outPMpa * MPA_TO_ATM).toFixed(1);
-          const cutAtm  = (cutMpa  * MPA_TO_ATM).toFixed(1);
-          const outTarget = branch.wpReducerOutPressure ?? 0.5;
-          return (
-            <>
-              <div className="flex items-center justify-between px-1 py-0.5 text-[11px] font-semibold select-none"
-                style={{ background: "var(--c-tint-blue, #f0f9ff)", borderBottom: SB, borderTop: SB, borderLeft: "3px solid var(--c-blue, #0284c7)", color: "#075985" }}>
-                <span>Редукционный клапан</span>
-                {onRemoveReducer && (
-                  <button
-                    onClick={onRemoveReducer}
-                    className="text-[10px] px-1.5 py-0.5 rounded"
-                    style={{ background: "var(--c-tint-red2, #fee2e2)", color: "var(--c-red-ink, #991b1b)", border: "1px solid #fca5a5", cursor: "pointer", lineHeight: 1 }}
-                    title="Удалить редукционный клапан">
-                    Удалить клапан
-                  </button>
-                )}
-              </div>
-
-              {/* Масштаб УО — как у вентилятора и насоса */}
-              {onReducerSymbolScale && (
-                <InlineLabel label="Масштаб УО">
-                  <div className="flex items-center gap-1 w-full">
-                    <input type="range" min={5} max={400} step={5}
-                      value={Math.round((reducerSymbolScale ?? 1) * 100)}
-                      onChange={(e) => onReducerSymbolScale(Number(e.target.value) / 100)}
-                      className="flex-1" style={{ accentColor: "#1e5a7a" }} />
-                    <input type="number" min={5} max={400} step={5}
-                      value={Math.round((reducerSymbolScale ?? 1) * 100)}
-                      onChange={(e) => { const v = Math.min(400, Math.max(5, Number(e.target.value) || 100)); onReducerSymbolScale(v / 100); }}
-                      className="w-12 text-right text-gray-700 flex-shrink-0 border border-gray-300 rounded px-1"
-                      style={{ fontSize: 11 }} />
-                    <span className="text-[11px] text-gray-500 flex-shrink-0">%</span>
-                  </div>
-                </InlineLabel>
-              )}
-
-              {/* Модель */}
-              <InlineLabel label="Модель:">
-                <SelectField
-                  value={branch.wpReducerModel ?? "kppr_50"}
-                  options={PRESSURE_REDUCING_VALVES.map(v => ({ value: v.id, label: v.name }))}
-                  onChange={(v) => {
-                    const valve = getValveById(v);
-                    if (valve) {
-                      onUpdate({
-                        wpReducerModel: v,
-                        wpReducerMaxFlow: valve.id === "manual" ? (branch.wpReducerMaxFlow ?? 25) : valve.flowMax,
-                      });
-                    }
-                  }}
-                />
-              </InlineLabel>
-
-              {/* Справка по модели */}
-              {model && model.id !== "manual" && (
-                <div className="px-1 pb-1 text-[10px] text-gray-400 leading-tight">
-                  {model.manufacturer} · DN{model.nominalDiameter} · вход до {(model.inletPressureMax * MPA_TO_ATM).toFixed(0)} атм · выход {(model.outletPressureMin * MPA_TO_ATM).toFixed(0)}–{(model.outletPressureMax * MPA_TO_ATM).toFixed(0)} атм
+              {active && (
+                <div>
+                  <KV label="На входе" value={atm(r?.reducerInP)} />
+                  <KV label="На выходе" value={atm(r?.reducerOutP)} />
+                  <KV label="Срезано" value={atm(r?.reducerDeltaP)} />
                 </div>
               )}
-
-              {/* Настройка выходного давления */}
-              <InlineLabel label="Вых. давление, атм:">
-                <EditInput
-                  type="number" step="0.5"
-                  value={+(outTarget * MPA_TO_ATM).toFixed(1)}
-                  onChange={(v) => {
-                    const atm = parseFloat(v) || 5;
-                    const mpa = atm / MPA_TO_ATM;
-                    const min = model ? model.outletPressureMin : 0.1;
-                    const max = model ? model.outletPressureMax : 9.9;
-                    onUpdate({ wpReducerOutPressure: Math.min(max, Math.max(min, mpa)) });
-                  }}
-                />
-              </InlineLabel>
-
-              {/* Макс. расход (для ручного режима) */}
-              {(branch.wpReducerModel ?? "kppr_50") === "manual" && (
-                <InlineLabel label="Макс. расход, м³/ч:">
-                  <EditInput
-                    type="number" step="1"
-                    value={branch.wpReducerMaxFlow ?? 25}
-                    onChange={(v) => onUpdate({ wpReducerMaxFlow: parseFloat(v) || 0 })}
-                  />
-                </InlineLabel>
+              {onReducerSymbolScale && (
+                <div>
+                  <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
+                    <span>Размер значка на схеме</span>
+                    <span style={{ fontFamily: "var(--font-num)" }}>{Math.round((reducerSymbolScale ?? 1) * 100)} %</span>
+                  </div>
+                  <input type="range" min={5} max={400} step={5}
+                    value={Math.round((reducerSymbolScale ?? 1) * 100)}
+                    onChange={(e) => onReducerSymbolScale(Number(e.target.value) / 100)}
+                    className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+                </div>
               )}
-
-              {/* Статус и результаты */}
-              <div className="flex items-center px-1 py-0.5 gap-1" style={{ borderBottom: "1px solid #ebebeb" }}>
-                <span
-                  className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
-                  style={{
-                    background: reducerActive ? "#fef08a" : "var(--c-s4, #e5e7eb)",
-                    color: reducerActive ? "var(--c-amber-ink, #92400e)" : "var(--c-t3, #6b7280)",
-                  }}>
-                  {reducerActive ? "● Активен" : "○ Не активен"}
-                </span>
-              </div>
-              {reducerActive && (
-                <>
-                  <InlineLabel label="Давл. на входе:">
-                    <ComputedInput value={`${numFmt(inPMpa, 3)} МПа (${inPatm} атм)`} />
-                  </InlineLabel>
-                  <InlineLabel label="Давл. на выходе:">
-                    <ComputedInput value={`${numFmt(outPMpa, 3)} МПа (${outPatm} атм)`} />
-                  </InlineLabel>
-                  <InlineLabel label="Срезано:">
-                    <ComputedInput value={`${numFmt(cutMpa, 3)} МПа (${cutAtm} атм)`} />
-                  </InlineLabel>
-                </>
-              )}
-            </>
+            </Card>
           );
         })()}
-
-        <SectionHeader title="Вычисленные параметры" />
-        <InlineLabel label="Сопротивление, МН·с²/м⁸">
-          <ComputedInput value={numFmt(waterBranchResult?.resistance ?? 0, 4)} />
-        </InlineLabel>
-        <InlineLabel label="Расход, м³/ч">
-          <ComputedInput value={numFmt(waterBranchResult?.flow ?? 0, 2)} />
-        </InlineLabel>
-        <InlineLabel label="Скорость, м/с">
-          <ComputedInput value={numFmt(waterBranchResult?.velocity ?? 0, 2)} />
-        </InlineLabel>
-        <InlineLabel label="Потери давл., МПа">
-          <ComputedInput value={numFmt(waterBranchResult?.deltaP ?? 0, 4)} />
-        </InlineLabel>
       </>)}
 
-      {/* ─── ВОЗДУХОПРОВОД (сжатый воздух) ──────────────────── */}
-      <SectionHeader title="Воздухопровод (сжатый воздух)" />
-      <InlineLabel label="Воздухопровод задан">
-        <CheckField
-          checked={branch.hasAirPipe ?? false}
-          onChange={(v) => onUpdate({ hasAirPipe: v })}
-        />
-      </InlineLabel>
-
-      {(branch.hasAirPipe) && (<>
-        <SectionHeader title="Геометрия трубы" />
-        <InlineLabel label="Диаметр, мм">
-          <EditInput
-            type="number" step="1"
-            value={branch.apDiameter ?? 100}
-            onChange={(v) => onUpdate({ apDiameter: parseFloat(v) || 0 })}
-          />
-        </InlineLabel>
-        <InlineLabel label="Материал">
-          <SelectField
-            value={branch.apMaterial ?? "Сталь"}
-            options={["Сталь", "Чугун", "Полиэтилен", "ПВХ", "Асбестоцемент", "Прочее"]}
-            onChange={(v) => onUpdate({ apMaterial: v })}
-          />
-        </InlineLabel>
-        <InlineLabel label="Рабочее давление, атм">
-          <EditInput
-            type="number" step="0.1"
-            value={branch.apPressure ?? 6}
-            onChange={(v) => onUpdate({ apPressure: parseFloat(v) || 0 })}
-          />
-        </InlineLabel>
-        <InlineLabel label="Длина вручную">
-          <CheckField
-            checked={branch.apLengthManual ?? false}
-            onChange={(v) => onUpdate({ apLengthManual: v })}
-          />
-        </InlineLabel>
-        {branch.apLengthManual && (
-          <InlineLabel label="Длина, м">
-            <EditInput
-              type="number" step="0.1"
-              value={branch.apLength ?? 0}
-              onChange={(v) => onUpdate({ apLength: parseFloat(v) || 0 })}
-            />
-          </InlineLabel>
-        )}
-      </>)}
+      {/* ═══ Воздухопровод ═══════════════════════════════════════════════ */}
+      <PipeCard icon="Wind" title="Воздухопровод" enabled={hasAir}
+        subtitle={`Сжатый воздух · Ø${b.apDiameter ?? 100} мм · ${fmt(b.apPressure ?? 6, 1)} атм`}
+        onToggle={(v) => onUpdate({ hasAirPipe: v })}>
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Диаметр">
+            <NumInput value={b.apDiameter ?? 100} min={0} step={5} unit="мм" onChange={(v) => onUpdate({ apDiameter: v })} />
+          </Field>
+          <Field label="Материал">
+            <MaterialSelect value={b.apMaterial ?? "Сталь"} onChange={(v) => onUpdate({ apMaterial: v })} />
+          </Field>
+        </div>
+        <Field label="Рабочее давление">
+          <NumInput value={b.apPressure ?? 6} min={0} step={0.5} unit="атм" onChange={(v) => onUpdate({ apPressure: v })} />
+        </Field>
+        <LengthField manual={b.apLengthManual ?? false} value={b.apLength ?? 0} branchLen={branchLen}
+          onManual={(v) => onUpdate(v
+            ? { apLengthManual: true, apLength: b.apLength || Math.round(branchLen) }
+            : { apLengthManual: false })}
+          onChange={(v) => onUpdate({ apLength: v })} />
+        <Hint>Воздухопровод показывается на схеме. Параметры справочные — расчёт сжатого воздуха пока не выполняется.</Hint>
+      </PipeCard>
     </div>
   );
 }
