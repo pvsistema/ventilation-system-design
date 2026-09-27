@@ -2,11 +2,12 @@
 // PrintExportDialog.tsx — окно экспорта схемы: выбор формата (PNG/JPG/BMP/
 // SVG/PDF), разрешения в точках на дюйм и качества сжатия.
 //
-// Вынесено из PrintDialog.tsx БЕЗ изменений разметки, текстов и обработчиков.
+// Оформление — в стиле темы программы (printUi.tsx).
 // ─────────────────────────────────────────────────────────────────────────────
 import React from "react";
 import Icon from "@/components/ui/icon";
 import { fitDpiToCanvas } from "@/lib/canvasLimits";
+import { PHeader } from "@/components/cad/printPreview/printUi";
 
 // Набор форматов — ровно тот же, что в состоянии PrintDialog.
 type ExportFormat = "png" | "png-hq" | "jpg" | "bmp" | "tiff" | "svg" | "pdf" | "pdf-vector";
@@ -30,39 +31,32 @@ export default function PrintExportDialog({
 }: PrintExportDialogProps) {
   return (
 <div className="fixed inset-0 z-[10000] flex items-center justify-center"
-  style={{ background: "rgba(0,0,0,0.6)", pointerEvents: "auto" }}>
-  <div className="bg-white rounded shadow-2xl border border-gray-400"
-    style={{ width: 400, fontFamily: "var(--font-ui)" }}>
+  style={{ background: "rgba(0,0,0,0.45)", pointerEvents: "auto" }}>
+  <div className="overflow-hidden"
+    style={{ width: 420, fontFamily: "var(--font-ui)", background: "var(--c-s1)", border: "1px solid var(--c-b3)", borderRadius: 8, boxShadow: "0 16px 48px -12px rgba(0,0,0,.45)" }}>
 
-    <div className="flex items-center justify-between px-4 py-2"
-      style={{ background: "linear-gradient(180deg,#4a7fc8,#3060a8)", borderRadius: "4px 4px 0 0" }}>
-      <div className="flex items-center gap-2">
-        <Icon name="Download" size={14} className="text-white" />
-        <span className="text-white font-bold text-[13px]">Экспорт схемы</span>
-      </div>
-      <button onClick={() => setShowExportDialog(false)}
-        className="text-white hover:bg-red-500 w-5 h-5 flex items-center justify-center rounded">✕</button>
-    </div>
+    <PHeader icon="Download" title="Экспорт в файл" subtitle={`Лист ${paper.w}×${paper.h} мм`}
+      onClose={() => setShowExportDialog(false)} />
 
     <div className="p-5 space-y-4">
       <div>
-        <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Формат файла:</div>
+        <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".03em", color: "var(--c-t2)", marginBottom: 8 }}>Формат файла:</div>
         <div className="grid grid-cols-3 gap-2">
           {(["png","png-hq","jpg","bmp","tiff","svg","pdf","pdf-vector"] as const).map(f => (
             <button key={f} onClick={() => setExportFormat(f)}
               className="py-1.5 rounded border text-[12px] font-semibold uppercase"
               style={{
-                background: exportFormat === f ? "#1e5a7a" : "white",
-                color: exportFormat === f ? "white" : "#1a1a1a",
-                borderColor: exportFormat === f ? "#1e5a7a" : "#9ca3af",
+                background: exportFormat === f ? "var(--c-accent)" : "var(--c-s1)",
+                color: exportFormat === f ? "#fff" : "var(--c-t2)",
+                borderColor: exportFormat === f ? "var(--c-accent)" : "var(--c-b2)",
               }}>
               {f === "pdf-vector" ? "PDF ✦" : f === "png-hq" ? "PNG ★" : f.toUpperCase()}
             </button>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: "#555", marginTop: 6 }}>
+        <div style={{ fontSize: 11, color: "var(--c-t3)", marginTop: 6 }}>
           {exportFormat === "png"        && "PNG — растр, без потерь. Рекомендуется для экрана."}
-          {exportFormat === "png-hq"     && <span style={{ color: "#1a6e2e", fontWeight: 600 }}>PNG ★ — высококачественный растр через SVG-вектор. Рамка, штамп, УО — всё чётко при любом DPI. Идеально для широкоформатной печати.</span>}
+          {exportFormat === "png-hq"     && <span style={{ color: "var(--c-green)", fontWeight: 600 }}>PNG ★ — высококачественный растр через SVG-вектор. Рамка, штамп, УО — всё чётко при любом DPI. Идеально для широкоформатной печати.</span>}
           {exportFormat === "jpg"        && "JPEG — растр, с потерями, меньше размер"}
           {exportFormat === "bmp"        && "BMP — растр, без сжатия"}
           {exportFormat === "tiff"       && "TIFF — растр, для полиграфии"}
@@ -74,38 +68,38 @@ export default function PrintExportDialog({
 
       {!["svg", "pdf-vector"].includes(exportFormat) && (
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 8 }}>Разрешение (DPI):</div>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".03em", color: "var(--c-t2)", marginBottom: 8 }}>Разрешение (DPI):</div>
           <div className="flex gap-2 mb-2">
             {[72,96,150,300,600].map(d => (
               <button key={d} onClick={() => setExportDpi(d)}
                 className="flex-1 py-1 rounded border text-[11px] font-medium"
                 style={{
-                  background: exportDpi === d ? "#1e5a7a" : "white",
-                  color: exportDpi === d ? "white" : "#1a1a1a",
-                  borderColor: exportDpi === d ? "#1e5a7a" : "#9ca3af",
+                  background: exportDpi === d ? "var(--c-accent)" : "var(--c-s1)",
+                  color: exportDpi === d ? "#fff" : "var(--c-t2)",
+                  borderColor: exportDpi === d ? "var(--c-accent)" : "var(--c-b2)",
                 }}>{d}</button>
             ))}
           </div>
           <div className="flex items-center gap-2">
-            <span style={{ fontSize: 12, color: "#333" }}>Своё:</span>
+            <span style={{ fontSize: 11.5, color: "var(--c-t3)" }}>Своё:</span>
             <input type="number" min={36} max={1200} value={exportDpi}
               onChange={e => setExportDpi(Math.max(36, Math.min(1200, +e.target.value || 96)))}
-              className="border border-gray-400 rounded px-2 text-[12px] text-gray-900"
-              style={{ width: 70, height: 24 }} />
-            <span style={{ fontSize: 11, color: "#555" }}>dpi</span>
+              className="font-num px-2 text-[12px] text-right outline-none"
+              style={{ width: 70, height: 24, border: "1px solid var(--c-b2)", borderRadius: 4, background: "var(--c-s1)", color: "var(--c-t1)" }} />
+            <span style={{ fontSize: 11, color: "var(--c-t3)" }}>dpi</span>
           </div>
           {(() => {
             // Предел холста считается по стороне И по площади: раньше учитывалась
             // только сторона, и лист A0 при 600 dpi выходил пустым (см. canvasLimits.ts).
             const fit = fitDpiToCanvas(paper.w, paper.h, exportDpi);
             return (
-              <div style={{ fontSize: 11, marginTop: 6, color: fit.limited ? "#b45309" : "#555" }}>
+              <div style={{ fontSize: 11, marginTop: 6, color: fit.limited ? "var(--c-amber)" : "var(--c-t3)" }}>
                 Размер: {fit.width} × {fit.height} пикс.
                 {fit.limited && (
                   <span> — запрошено {fit.requestedWidth}×{fit.requestedHeight}, качество снижено
                     до {fit.effectiveDpi} dpi (предел браузера)</span>
                 )}
-                {exportFormat === "png-hq" && !fit.limited && <span style={{ color: "#1a6e2e" }}> — вектор без пикселизации</span>}
+                {exportFormat === "png-hq" && !fit.limited && <span style={{ color: "var(--c-green)" }}> — вектор без пикселизации</span>}
               </div>
             );
           })()}
@@ -114,28 +108,28 @@ export default function PrintExportDialog({
 
       {exportFormat === "jpg" && (
         <div>
-          <div style={{ fontSize: 13, fontWeight: 600, color: "#1a1a1a", marginBottom: 6 }}>
+          <div style={{ fontSize: 10.5, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".03em", color: "var(--c-t2)", marginBottom: 6 }}>
             Качество: {exportQuality}%
           </div>
           <input type="range" min={10} max={100} step={5}
             value={exportQuality} onChange={e => setExportQuality(+e.target.value)}
-            className="w-full" style={{ accentColor: "#1e5a7a" }} />
+            className="w-full" style={{ accentColor: "var(--c-accent)" }} />
         </div>
       )}
     </div>
 
-    <div className="flex gap-2 px-5 pb-5 justify-end">
+    <div className="flex gap-2 px-4 py-2.5 justify-end" style={{ background: "var(--c-s2)", borderTop: "1px solid var(--c-b2)" }}>
+      <button onClick={() => setShowExportDialog(false)} disabled={pdfExporting}
+        className="px-3 py-1.5 text-[12px] font-medium hover:bg-[var(--c-s3)] disabled:opacity-60"
+        style={{ border: "1px solid var(--c-b2)", borderRadius: 6, background: "var(--c-s1)", color: "var(--c-t2)" }}>
+        Отмена
+      </button>
       <button onClick={handleExport} disabled={pdfExporting}
-        className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60 disabled:cursor-wait"
-        style={{ background: "#1e5a7a", border: "1px solid #1e4db7" }}>
+        className="btn-brand flex items-center text-[12px] px-4 py-1.5">
         {pdfExporting
           ? <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />{exportFormat === "pdf-vector" ? "Конвертация SVG→PDF..." : exportFormat === "png-hq" ? "Рендер PNG HQ..." : "Генерация PDF..."}</>
           : <><Icon name="Download" size={13} className="inline mr-1.5" />Скачать {exportFormat === "pdf-vector" ? "PDF ✦ вектор" : exportFormat === "png-hq" ? "PNG ★ HQ" : exportFormat.toUpperCase()}</>
         }
-      </button>
-      <button onClick={() => setShowExportDialog(false)} disabled={pdfExporting}
-        className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700 disabled:opacity-60">
-        Отмена
       </button>
     </div>
   </div>

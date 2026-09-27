@@ -135,7 +135,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   // Пересчитываем viewState рабочей области под размер превью.
   // Всегда делаем fit-to-screen по узлам — так схема всегда отображается по центру превью
   // в том же ракурсе (azimuth/elevation) что и рабочая область.
-  const activeView = useMemo((): ProjOptions & { scale: number; offsetX: number; offsetY: number } => {
+  const activeView = useMemo((): ProjOptions & { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number } => {
     if (width <= 0 || height <= 0) {
       return { scale: 1, offsetX: 0, offsetY: 0, azimuth, elevation, zScale };
     }

@@ -1,20 +1,18 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// PrintSettingsPanel.tsx — левая панель диалога печати: кнопки «Печать» и
-// «Экспорт», шаблоны настроек, основные параметры, печатный диапазон, размер
-// бумаги, преобразование схемы (масштаб и сдвиг), поля и номера страниц.
+// PrintSettingsPanel.tsx — левая панель окна печати.
 //
-// Вынесено из PrintDialog.tsx БЕЗ изменений разметки, стилей и обработчиков.
+// Порядок блоков — по ходу работы инженера: лист → масштаб и положение схемы →
+// принтер и копии → поля → шаблоны. Кнопки «Печать» и «Экспорт» живут в
+// подвале окна (раньше «Печать» была продублирована трижды).
 // ─────────────────────────────────────────────────────────────────────────────
-import Icon from "@/components/ui/icon";
 import {
-  Section, Row, inp, sel, ih, PAPER_SIZES, type PaperFormat, type Orientation,
+  PAPER_SIZES, type PaperFormat, type Orientation,
 } from "@/components/cad/printPreview/printDialogParts";
+import {
+  PSection, PSegmented, PField, PSelect, PCheck, PButton, PNote,
+} from "@/components/cad/printPreview/printUi";
 
 interface PrintSettingsPanelProps {
-  handlePrint: () => void;
-  printing: boolean;
-  printProgress: { done: number; total: number } | null;
-  setShowExportDialog: (v: boolean) => void;
   templates: Record<string, object>;
   loadTemplate: (name: string) => void;
   saveTemplate: () => void;
@@ -58,245 +56,162 @@ interface PrintSettingsPanelProps {
   setShowPageNumbers: (v: boolean) => void;
   paper: { w: number; h: number };
   baseView: { defaultOffsetX: number; defaultOffsetY: number };
+  totalPages: number;
 }
 
-export default function PrintSettingsPanel({
-  handlePrint, printing, printProgress, setShowExportDialog, templates, loadTemplate, saveTemplate, deleteTemplate,
-  templateName, setTemplateName, format, setFormat, orientation, setOrientation,
-  customW, setCustomW, customH, setCustomH, copies, setCopies,
-  reverseOrder, setReverseOrder, printers, printerName, setPrinterName,
-  scaleDisplay, setScaleDisplay, offsetXDisplay, setOffsetXDisplay,
-  offsetYDisplay, setOffsetYDisplay, setUserScale, setUserOffsetX, setUserOffsetY,
-  marginTop, setMarginTop, marginBottom, setMarginBottom,
-  marginLeft, setMarginLeft, marginRight, setMarginRight,
-  showPageNumbers, setShowPageNumbers, paper, baseView,
-}: PrintSettingsPanelProps) {
+const FORMATS = ["A4", "A3", "A2", "A1", "A0"] as const;
+/** Печать листов ведётся при 150 dpi: мм → px. */
+const mmToPx150 = (mm: number) => mm * 150 / 25.4;
+
+export default function PrintSettingsPanel(p: PrintSettingsPanelProps) {
+  const {
+    templates, loadTemplate, saveTemplate, deleteTemplate, templateName, setTemplateName,
+    format, setFormat, orientation, setOrientation, customW, setCustomW, customH, setCustomH,
+    copies, setCopies, reverseOrder, setReverseOrder, printers, printerName, setPrinterName,
+    scaleDisplay, setScaleDisplay, offsetXDisplay, setOffsetXDisplay, offsetYDisplay, setOffsetYDisplay,
+    setUserScale, setUserOffsetX, setUserOffsetY,
+    marginTop, setMarginTop, marginBottom, setMarginBottom, marginLeft, setMarginLeft, marginRight, setMarginRight,
+    showPageNumbers, setShowPageNumbers, paper, baseView, totalPages,
+  } = p;
+
+  const fitToSheet = () => {
+    setUserScale(null);
+    setUserOffsetX(null); setUserOffsetY(null);
+    setOffsetXDisplay(0); setOffsetYDisplay(0);
+    setScaleDisplay(100);
+  };
+
+  const resetAll = () => {
+    fitToSheet();
+    setMarginTop(5); setMarginBottom(5); setMarginLeft(5); setMarginRight(5);
+    setShowPageNumbers(true);
+    setCopies(1); setReverseOrder(false);
+  };
+
+  const marginsEqual = marginTop === marginBottom && marginTop === marginLeft && marginTop === marginRight;
+  const templateNames = Object.keys(templates);
+  const templateExists = templateNames.includes(templateName.trim());
+
   return (
-<div className="flex-shrink-0 overflow-y-auto border-r border-gray-300"
-  style={{ width: 215, background: "#f4f4f4", color: "#1a1a1a" }}>
+    <div className="flex-shrink-0 overflow-y-auto flex flex-col"
+      style={{ width: 250, background: "var(--c-s1)", borderRight: "1px solid var(--c-b2)", color: "var(--c-t1)" }}>
 
-  {/* Кнопки */}
-  <div className="flex gap-2 px-2 py-2 border-b border-gray-300">
-    <button onClick={handlePrint} disabled={printing}
-      className="flex flex-col items-center gap-0.5 flex-1 py-1.5 hover:bg-gray-200 rounded border border-gray-300 bg-white disabled:opacity-60">
-      <Icon name={printing ? "Loader" : "Printer"} size={22}
-        className={printing ? "text-gray-700 animate-spin" : "text-gray-700"} />
-      <span style={{ fontSize: 11, color: "#222" }}>
-        {printing
-          ? (printProgress && printProgress.total > 1
-              ? `${printProgress.done} / ${printProgress.total}`
-              : "Подготовка…")
-          : "Печать"}
-      </span>
-    </button>
-    <button onClick={() => setShowExportDialog(true)}
-      className="flex flex-col items-center gap-0.5 flex-1 py-1.5 hover:bg-gray-200 rounded border border-gray-300 bg-white">
-      <Icon name="Download" size={22} className="text-gray-700" />
-      <span style={{ fontSize: 11, color: "#222" }}>Экспорт</span>
-    </button>
-  </div>
+      {/* 1. Лист */}
+      <PSection icon="FileText" title="Лист">
+        <PSegmented value={orientation} onChange={setOrientation}
+          options={[
+            { value: "landscape" as Orientation, label: "Альбомная", icon: "RectangleHorizontal" },
+            { value: "portrait" as Orientation, label: "Книжная", icon: "RectangleVertical" },
+          ]} />
+        <PSegmented value={format} onChange={setFormat}
+          options={[
+            ...FORMATS.map(f => ({ value: f as PaperFormat, label: f, title: `${f}: ${PAPER_SIZES[f].w}×${PAPER_SIZES[f].h} мм` })),
+            { value: "custom" as PaperFormat, label: "Свой", title: "Произвольный размер" },
+          ]} />
+        {format === "custom" ? (
+          <div className="grid grid-cols-2 gap-2">
+            <PField label="Ширина" unit="мм" value={customW} min={50} step={10}
+              onChange={v => setCustomW(Math.max(50, v || 210))} />
+            <PField label="Высота" unit="мм" value={customH} min={50} step={10}
+              onChange={v => setCustomH(Math.max(50, v || 297))} />
+          </div>
+        ) : (
+          <div className="text-[10.5px] flex justify-between" style={{ color: "var(--c-t3)" }}>
+            <span>Размер листа</span>
+            <span className="font-num" style={{ color: "var(--c-t2)" }}>{paper.w} × {paper.h} мм</span>
+          </div>
+        )}
+      </PSection>
 
-  {/* Шаблон */}
-  <Section title="Шаблон">
-    <select className={sel} style={ih} value=""
-      onChange={e => { if (e.target.value) loadTemplate(e.target.value); }}>
-      <option value="">— выбрать шаблон —</option>
-      {Object.keys(templates).map(n => <option key={n} value={n}>{n}</option>)}
-    </select>
-    <div style={{ fontSize: 11, color: "#444", marginTop: 4 }}>Название шаблона:</div>
-    <input className={inp + " w-full"} style={ih} placeholder="Мой шаблон"
-      value={templateName} onChange={e => setTemplateName(e.target.value)} />
-    <div className="flex gap-1 pt-1">
-      <button onClick={saveTemplate}
-        className="flex-1 py-0.5 text-[11px] border border-gray-400 rounded hover:bg-gray-200 bg-white font-medium text-gray-800">Сохранить</button>
-      <button onClick={() => templateName && deleteTemplate(templateName)}
-        className="flex-1 py-0.5 text-[11px] border border-gray-400 rounded hover:bg-red-50 hover:border-red-400 bg-white text-gray-700">Удалить</button>
+      {/* 2. Масштаб и положение */}
+      <PSection icon="Scaling" title="Схема на листе">
+        <div className="grid gap-2 items-end" style={{ gridTemplateColumns: "1fr auto" }}>
+          <PField label="Масштаб" unit="%" value={scaleDisplay} min={1} max={10000} step={10}
+            hint="100 % — вся схема вписана в один лист. Больше — схема крупнее и займёт несколько листов."
+            onChange={v => {
+              const s = Math.max(1, v || 1);
+              setScaleDisplay(s);
+              setUserScale(s / 100);
+            }} />
+          <PButton icon="Maximize" onClick={fitToSheet} title="Вписать всю схему в один лист">Вписать</PButton>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <PField label="Сдвиг вправо" unit="мм" value={offsetXDisplay} step={5}
+            onChange={mm => { setOffsetXDisplay(mm); setUserOffsetX(baseView.defaultOffsetX + mmToPx150(mm)); }} />
+          <PField label="Сдвиг вниз" unit="мм" value={offsetYDisplay} step={5}
+            onChange={mm => { setOffsetYDisplay(mm); setUserOffsetY(baseView.defaultOffsetY + mmToPx150(mm)); }} />
+        </div>
+        <PNote>Схему можно двигать мышью прямо на листе. Колесо мыши приближает просмотр и на печать не влияет.
+          {totalPages > 1 && <> Сейчас схема займёт <b>{totalPages}</b> {plural(totalPages)}.</>}
+        </PNote>
+      </PSection>
+
+      {/* 3. Печать */}
+      <PSection icon="Printer" title="Печать">
+        {printers.length > 0 ? (
+          <>
+            <PSelect value={printerName} onChange={setPrinterName} title="Принтер">
+              {printers.map(pr => (
+                <option key={pr.name} value={pr.name}>{pr.name}{pr.isDefault ? " (по умолчанию)" : ""}</option>
+              ))}
+            </PSelect>
+            <PNote tone="ok">Печать сразу на выбранный принтер — без окна Windows.</PNote>
+          </>
+        ) : (
+          <PNote>Принтер и двустороннюю печать вы выберете в окне Windows после нажатия «Печать».</PNote>
+        )}
+        <div className="grid gap-2 items-end" style={{ gridTemplateColumns: "90px 1fr" }}>
+          <PField label="Копии" value={copies} min={1} max={99} step={1}
+            onChange={v => setCopies(Math.min(99, Math.max(1, Math.round(v) || 1)))} />
+          <div className="pb-1"><PCheck checked={showPageNumbers} onChange={setShowPageNumbers} label="Номера листов" /></div>
+        </div>
+        {totalPages > 1 && (
+          <PCheck checked={reverseOrder} onChange={setReverseOrder} label="В обратном порядке" />
+        )}
+      </PSection>
+
+      {/* 4. Поля */}
+      <PSection icon="Frame" title="Поля" defaultOpen={false}
+        summary={marginsEqual ? `${marginTop} мм` : `${marginTop}/${marginRight}/${marginBottom}/${marginLeft} мм`}>
+        <div className="grid grid-cols-2 gap-2">
+          <PField label="Сверху" unit="мм" value={marginTop} min={0} max={50} onChange={v => setMarginTop(clampMargin(v))} />
+          <PField label="Снизу" unit="мм" value={marginBottom} min={0} max={50} onChange={v => setMarginBottom(clampMargin(v))} />
+          <PField label="Слева" unit="мм" value={marginLeft} min={0} max={50} onChange={v => setMarginLeft(clampMargin(v))} />
+          <PField label="Справа" unit="мм" value={marginRight} min={0} max={50} onChange={v => setMarginRight(clampMargin(v))} />
+        </div>
+        <PNote>Рамка, штамп и условные обозначения настраиваются в «Слое печати» на панели горизонтов.</PNote>
+      </PSection>
+
+      {/* 5. Шаблоны */}
+      <PSection icon="Bookmark" title="Шаблоны" defaultOpen={false}
+        summary={templateNames.length ? `${templateNames.length} шт.` : "нет"}>
+        {templateNames.length > 0 && (
+          <PSelect value={templateExists ? templateName.trim() : ""}
+            onChange={name => { if (name) { setTemplateName(name); loadTemplate(name); } }}>
+            <option value="">— применить шаблон —</option>
+            {templateNames.map(n => <option key={n} value={n}>{n}</option>)}
+          </PSelect>
+        )}
+        <input value={templateName} onChange={e => setTemplateName(e.target.value)} placeholder="Название шаблона"
+          className="w-full text-[11.5px] px-2 py-1 outline-none"
+          style={{ border: "1px solid var(--c-b2)", borderRadius: 4, background: "var(--c-s1)", color: "var(--c-t1)" }} />
+        <div className="grid grid-cols-2 gap-1.5">
+          <PButton icon="Save" onClick={saveTemplate} disabled={!templateName.trim()}
+            title="Сохранить формат, ориентацию, масштаб, поля и нумерацию листов">
+            {templateExists ? "Обновить" : "Сохранить"}
+          </PButton>
+          <PButton icon="Trash2" danger onClick={() => deleteTemplate(templateName.trim())} disabled={!templateExists}>
+            Удалить
+          </PButton>
+        </div>
+      </PSection>
+
+      <div className="mt-auto px-3 py-2.5" style={{ borderTop: "1px solid var(--c-b1)" }}>
+        <PButton icon="RotateCcw" onClick={resetAll} className="w-full">Сбросить настройки</PButton>
+      </div>
     </div>
-  </Section>
-
-  {/* Основные параметры.
-      Раньше здесь стоял выпадающий список «Принтер» с единственным пунктом
-      «Системный принтер». Он ни на что не влиял: веб-страница принципиально не
-      имеет доступа к списку принтеров операционной системы — браузер запрещает
-      это из соображений безопасности. Инженер выбирал принтер тут, а потом ещё
-      раз в системном окне, и настройки противоречили друг другу.
-      Вместо нерабочего поля — понятное пояснение, где принтер выбирается. */}
-  <Section title="Основные параметры">
-    <div style={{ fontSize: 12, color: "#333", marginBottom: 3 }}>Принтер:</div>
-    {printers.length > 0 ? (
-      <>
-        <select className={sel} style={ih} value={printerName}
-          onChange={e => setPrinterName(e.target.value)}>
-          {printers.map(p => (
-            <option key={p.name} value={p.name}>
-              {p.name}{p.isDefault ? " (по умолчанию)" : ""}
-            </option>
-          ))}
-        </select>
-        <div style={{ fontSize: 10, color: "#15803d", marginTop: 4, lineHeight: 1.4 }}>
-          Печать сразу на выбранный принтер — без окна Windows.
-        </div>
-      </>
-    ) : (
-      <div style={{
-        fontSize: 11, color: "#4b5563", background: "#f3f4f6",
-        border: "1px solid #d1d5db", borderRadius: "var(--radius-ui)", padding: "5px 7px", lineHeight: 1.45,
-      }}>
-        Принтер, поля и двустороннюю печать выбирает Windows — окно выбора
-        откроется после нажатия «Печать».
-      </div>
-    )}
-  </Section>
-
-  {/* Диапазон.
-      Поле «Страницы» убрано: оно нигде не применялось при формировании
-      документа — введённый диапазон молча игнорировался, и на печать всё равно
-      уходили все листы. Выбор страниц есть в системном окне печати. */}
-  <Section title="Печатный диапазон">
-    <Row label="Копии:">
-      <input type="number" min={1} max={99} className={inp} style={{ ...ih, width: 60 }}
-        value={copies} onChange={e => setCopies(Math.max(1, +e.target.value || 1))} />
-    </Row>
-    <label className="flex items-center gap-1.5 cursor-pointer pt-0.5">
-      <input type="checkbox" checked={reverseOrder} onChange={e => setReverseOrder(e.target.checked)}
-        style={{ accentColor: "#1e5a7a" }} />
-      <span style={{ fontSize: 12, color: "#1a1a1a" }}>Печать в обратном порядке</span>
-    </label>
-  </Section>
-
-  {/* Размер бумаги */}
-  <Section title="Размер бумаги">
-    <Row label="Ориентация:">
-      <select className={sel} style={ih} value={orientation}
-        onChange={e => setOrientation(e.target.value as Orientation)}>
-        <option value="landscape">Альбомная</option>
-        <option value="portrait">Книжная</option>
-      </select>
-    </Row>
-    <Row label="Формат:">
-      <select className={sel} style={ih} value={format}
-        onChange={e => setFormat(e.target.value as PaperFormat)}>
-        {(["A4","A3","A2","A1","A0"] as Exclude<PaperFormat, "custom">[]).map(f =>
-          <option key={f} value={f}>{f} ({PAPER_SIZES[f].w}×{PAPER_SIZES[f].h} мм)</option>)}
-        <option value="custom">Произвольный</option>
-      </select>
-    </Row>
-    {format === "custom" ? (
-      <>
-        <Row label="Ширина:">
-          <div className="flex items-center gap-1">
-            <input type="number" className={inp} style={{ ...ih, width: 60 }}
-              value={customW} onChange={e => setCustomW(+e.target.value || 210)} />
-            <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-          </div>
-        </Row>
-        <Row label="Высота:">
-          <div className="flex items-center gap-1">
-            <input type="number" className={inp} style={{ ...ih, width: 60 }}
-              value={customH} onChange={e => setCustomH(+e.target.value || 297)} />
-            <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-          </div>
-        </Row>
-      </>
-    ) : (
-      <>
-        <Row label="Ширина:"><span style={{ fontSize: 12, color: "#333" }}>{paper.w} мм</span></Row>
-        <Row label="Высота:"><span style={{ fontSize: 12, color: "#333" }}>{paper.h} мм</span></Row>
-      </>
-    )}
-  </Section>
-
-  {/* Преобразование схемы */}
-  <Section title="Преобразование схемы">
-    <Row label="Масштаб:">
-      <div className="flex items-center gap-1">
-        <input type="number" min={1} max={10000} className={inp} style={{ ...ih, width: 60 }}
-          value={scaleDisplay}
-          onChange={e => {
-            const v = Math.max(1, +e.target.value || 1);
-            setScaleDisplay(v);
-            // userScale = множитель относительно fit (100% = fit = 1.0)
-            setUserScale(v / 100);
-          }} />
-        <span style={{ fontSize: 11, color: "#555" }}>%</span>
-      </div>
-    </Row>
-    <button onClick={() => {
-      // 100% = fit в 1 лист
-      setUserScale(null);
-      setUserOffsetX(null); setUserOffsetY(null);
-      setOffsetXDisplay(0); setOffsetYDisplay(0);
-      setScaleDisplay(100);
-    }}
-      className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-blue-50 hover:border-blue-400 bg-white font-medium text-gray-800">
-      Подобрать масштаб
-    </button>
-    <div style={{ fontSize: 12, color: "#333", fontWeight: 500, paddingTop: 4 }}>Смещение:</div>
-    <Row label="вправо:">
-      <div className="flex items-center gap-1">
-        <input type="number" className={inp} style={{ ...ih, width: 60 }}
-          value={offsetXDisplay}
-          onChange={e => {
-            const mm = +e.target.value || 0;
-            setOffsetXDisplay(mm);
-            // дельта от дефолтного положения
-            setUserOffsetX(baseView.defaultOffsetX + mm * 150 / 25.4);
-          }} />
-        <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-      </div>
-    </Row>
-    <Row label="вниз:">
-      <div className="flex items-center gap-1">
-        <input type="number" className={inp} style={{ ...ih, width: 60 }}
-          value={offsetYDisplay}
-          onChange={e => {
-            const mm = +e.target.value || 0;
-            setOffsetYDisplay(mm);
-            setUserOffsetY(baseView.defaultOffsetY + mm * 150 / 25.4);
-          }} />
-        <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-      </div>
-    </Row>
-  </Section>
-
-  {/* Поля */}
-  <Section title="Поля" defaultOpen={false}>
-    {([["Верхнее:", marginTop, setMarginTop],["Нижнее:", marginBottom, setMarginBottom],
-       ["Левое:", marginLeft, setMarginLeft],["Правое:", marginRight, setMarginRight]
-    ] as [string, number, (v: number) => void][]).map(([lbl, val, set]) => (
-      <Row key={lbl} label={lbl}>
-        <div className="flex items-center gap-1">
-          <input type="number" min={0} max={50} className={inp} style={{ ...ih, width: 55 }}
-            value={val} onChange={e => set(Math.max(0, +e.target.value || 0))} />
-          <span style={{ fontSize: 11, color: "#555" }}>мм</span>
-        </div>
-      </Row>
-    ))}
-  </Section>
-
-  {/* Номера страниц */}
-  <Section title="Номера страниц" defaultOpen={false}>
-    <label className="flex items-center gap-1.5 cursor-pointer">
-      <input type="checkbox" checked={showPageNumbers} onChange={e => setShowPageNumbers(e.target.checked)}
-        style={{ accentColor: "#1e5a7a" }} />
-      <span style={{ fontSize: 12, color: "#1a1a1a" }}>Номера страниц</span>
-    </label>
-    <p style={{ fontSize: 11, color: "#6b7280", marginTop: 4 }}>
-      Рамка, штамп и УО управляются через «Слой печати» в панели горизонтов.
-    </p>
-  </Section>
-
-  {/* Сброс */}
-  <div className="px-3 py-2">
-    <button onClick={() => {
-      setUserScale(null); setUserOffsetX(null); setUserOffsetY(null);
-      setScaleDisplay(100); setOffsetXDisplay(0); setOffsetYDisplay(0);
-      setMarginTop(5); setMarginBottom(5); setMarginLeft(5); setMarginRight(5);
-      setShowPageNumbers(true);
-    }} className="w-full py-0.5 text-[11px] border border-gray-400 rounded hover:bg-gray-200 bg-white text-gray-700">
-      Сбросить настройки
-    </button>
-  </div>
-</div>
   );
 }
+
+function clampMargin(v: number) { return Math.min(50, Math.max(0, v || 0)); }
+function plural(n: number) { return n === 1 ? "лист" : n < 5 ? "листа" : "листов"; }

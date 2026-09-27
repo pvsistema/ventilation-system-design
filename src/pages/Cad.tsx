@@ -2310,8 +2310,6 @@ export default function CadPage() {
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
   const [printDialogOpenExport, setPrintDialogOpenExport] = useState<boolean>(false);
 
-  // Окно печати берёт отсюда исходный SVG схемы (getSvgRaw).
-  const getSvgRef = useRef<(() => string) | null>(null);
   const liveCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [canvasSize, setCanvasSize] = useState<{ w: number; h: number }>({ w: 800, h: 600 });
 
@@ -11689,7 +11687,6 @@ export default function CadPage() {
               focusPos={focusPos}
               focusScreen={focusScreenReq && focusScreenReq.nonce === focusNonce ? focusScreenReq : null}
               highlightPos={showBlastBarrierChart ? blastHighlightPos : null}
-              onRegisterGetSvg={(fn) => { getSvgRef.current = fn; }}
               onRegisterCanvasEl={(el) => {
                 liveCanvasRef.current = el;
                 if (el) {
@@ -14025,7 +14022,6 @@ export default function CadPage() {
       textBlocks={textBlocks}
       infoConfig={infoConfig}
       zScale={zScale}
-      getSvgRef={getSvgRef}
       colorMode={colorMode === "horizon" ? "none" : colorMode}
       sectionColors={ventSectionColors}
       posColorInner={posColorInner}

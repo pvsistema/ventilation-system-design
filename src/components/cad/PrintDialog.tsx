@@ -26,6 +26,7 @@ import {
 import { fitDpiToCanvas, describeLimit } from "@/lib/canvasLimits";
 import PrintSettingsPanel from "@/components/cad/printPreview/PrintSettingsPanel";
 import PrintExportDialog from "@/components/cad/printPreview/PrintExportDialog";
+import { PHeader } from "@/components/cad/printPreview/printUi";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 
 // ── Печать через скрытый iframe (работает в Electron и браузере без всплывающих окон) ──
@@ -53,7 +54,6 @@ interface PrintDialogProps {
   infoConfig?: InfoDisplayConfig | null;
   unitsConfig?: UnitsConfig;
   zScale?: number;
-  getSvgRaw?: () => string;
   colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
   /** Цвета участков рудника: id ветви → цвет (для colorMode="ventsection") */
   sectionColors?: Map<string, string>;
@@ -80,6 +80,8 @@ interface PrintDialogProps {
 
 
 
+function pagesWord(n: number) { return n === 1 ? "лист" : n < 5 ? "листа" : "листов"; }
+
 export default function PrintDialog({
   onClose, projectName = "Проект",
   nodes, branches, horizons, viewState, canvasSize,
@@ -91,7 +93,6 @@ export default function PrintDialog({
   flowDisplay = "off", textBlocks = [], infoConfig = null,
   unitsConfig = DEFAULT_UNITS_CONFIG,
   zScale = 1,
-  getSvgRaw,
   colorMode = "none",
   sectionColors,
   posInnerColors,
@@ -1166,9 +1167,6 @@ export default function PrintDialog({
       if (printCancelRef.current) return;
     }
 
-    // Штамп теперь рендерится через HorizonPrintLayerOverlay — не нужен отдельный HTML
-    const makeStamp = (_idx: number, _total2: number) => "";
-
     // Canvas теперь = полный лист, img растягивается на весь лист без padding
     const pageHtmls: string[] = [];
     let pageNum = 0;
@@ -1177,7 +1175,6 @@ export default function PrintDialog({
         pageNum++;
         pageHtmls.push(`<div class="page">
   <img src="${png}" class="page-img" />
-  ${makeStamp(pageNum, total)}
   ${showPageNumbers ? `<div class="page-num">${pageNum} / ${total}</div>` : ''}
 </div>`);
       }
@@ -1539,12 +1536,14 @@ body{background:white;font-family:Arial,sans-serif}
   const pos = getWinPos();
   return (
     <div className="fixed inset-0 z-[9999]" style={{ pointerEvents: "none" }}>
-      <div ref={winRef} className="bg-white flex flex-col shadow-2xl border border-gray-400"
+      <div ref={winRef} className="flex flex-col overflow-hidden"
         style={{
           position: "absolute",
           left: pos.x, top: pos.y,
           width: winSize.w, height: winSize.h,
-          fontFamily: "var(--font-ui)", fontSize: 12, borderRadius: "var(--radius-ui)",
+          background: "var(--c-s1)", border: "1px solid var(--c-b3)", borderRadius: 8,
+          boxShadow: "0 16px 48px -12px rgba(0,0,0,.45)",
+          fontFamily: "var(--font-ui)", fontSize: 12,
           pointerEvents: "auto",
           userSelect: winDragRef.current || resizeRef.current ? "none" : undefined,
         }}>
@@ -1560,22 +1559,10 @@ body{background:white;font-family:Arial,sans-serif}
         ))}
 
         {/* Заголовок — drag-зона */}
-        <div className="flex items-center justify-between px-3 py-1.5 flex-shrink-0"
-          style={{ background: "linear-gradient(180deg,#4a7fc8,#3060a8)", cursor: "move", borderRadius: "2px 2px 0 0" }}
-          onMouseDown={onTitleMouseDown}>
-          <div className="flex items-center gap-2">
-            <Icon name="Printer" size={14} className="text-white opacity-90" />
-            <span className="font-bold text-white text-[13px]">{projectName} — Просмотр</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <button onClick={handlePrint}
-              className="flex items-center gap-1.5 px-3 py-0.5 bg-white rounded text-[12px] font-semibold text-gray-800 hover:bg-gray-100 border border-gray-300">
-              <Icon name="Printer" size={13} />Печать
-            </button>
-            <button onClick={onClose}
-              className="w-6 h-6 flex items-center justify-center text-white hover:bg-red-500 rounded text-[13px]">✕</button>
-          </div>
-        </div>
+        <PHeader icon="Printer" title={`Печать — ${projectName}`}
+          subtitle={`${paper.w}×${paper.h} мм · ${orientation === "landscape" ? "альбомная" : "книжная"} · ${totalPages} ${pagesWord(totalPages)}`}
+          onClose={onClose}
+          dragProps={{ onMouseDown: onTitleMouseDown }} />
 
         {/* Сообщения печати: ошибка принтера или вынужденное снижение качества.
             Раньше и то, и другое происходило молча. */}
@@ -1583,22 +1570,24 @@ body{background:white;font-family:Arial,sans-serif}
           <div className="flex flex-col">
             {printError && (
               <div className="flex items-start gap-2 px-3 py-2"
-                style={{ background: "#fef2f2", borderBottom: "1px solid #fecaca" }}>
-                <Icon name="TriangleAlert" size={14} style={{ color: "#b91c1c", marginTop: 1, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: "#991b1b", lineHeight: 1.4 }}>{printError}</span>
+                style={{ background: "var(--c-tint-red)", borderBottom: "1px solid var(--c-tint-red2)" }}>
+                <Icon name="TriangleAlert" size={14} style={{ color: "var(--c-red)", marginTop: 1, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "var(--c-red-ink)", lineHeight: 1.4 }}>{printError}</span>
                 <button onClick={() => setPrintError(null)}
-                  className="ml-auto flex-shrink-0" title="Скрыть"
-                  style={{ color: "#b91c1c", fontSize: 13 }}>✕</button>
+                  className="ml-auto flex-shrink-0" title="Скрыть" style={{ color: "var(--c-red)" }}>
+                  <Icon name="X" size={13} />
+                </button>
               </div>
             )}
             {printWarning && (
               <div className="flex items-start gap-2 px-3 py-2"
-                style={{ background: "#fffbeb", borderBottom: "1px solid #fde68a" }}>
-                <Icon name="Info" size={14} style={{ color: "#b45309", marginTop: 1, flexShrink: 0 }} />
-                <span style={{ fontSize: 12, color: "#92400e", lineHeight: 1.4 }}>{printWarning}</span>
+                style={{ background: "var(--c-tint-amber)", borderBottom: "1px solid var(--c-tint-amber2)" }}>
+                <Icon name="Info" size={14} style={{ color: "var(--c-amber)", marginTop: 1, flexShrink: 0 }} />
+                <span style={{ fontSize: 12, color: "var(--c-amber-ink)", lineHeight: 1.4 }}>{printWarning}</span>
                 <button onClick={() => setPrintWarning(null)}
-                  className="ml-auto flex-shrink-0" title="Скрыть"
-                  style={{ color: "#b45309", fontSize: 13 }}>✕</button>
+                  className="ml-auto flex-shrink-0" title="Скрыть" style={{ color: "var(--c-amber)" }}>
+                  <Icon name="X" size={13} />
+                </button>
               </div>
             )}
           </div>
@@ -1609,10 +1598,6 @@ body{background:white;font-family:Arial,sans-serif}
 
           {/* Левая панель */}
           <PrintSettingsPanel
-            handlePrint={handlePrint}
-            printing={printing}
-            printProgress={printProgress}
-            setShowExportDialog={setShowExportDialog}
             templates={templates}
             loadTemplate={loadTemplate}
             saveTemplate={saveTemplate}
@@ -1637,13 +1622,14 @@ body{background:white;font-family:Arial,sans-serif}
             showPageNumbers={showPageNumbers} setShowPageNumbers={setShowPageNumbers}
             paper={paper}
             baseView={baseView}
+            totalPages={totalPages}
           />
 
           {/* Предпросмотр */}
           <div
             ref={previewContainerRef}
             className="flex-1 overflow-scroll print-paper"
-            style={{ background: "#ffffff", cursor: isDragging ? "grabbing" : "default", position: "relative" }}
+            style={{ background: "#e6e3dc", cursor: isDragging ? "grabbing" : "default", position: "relative" }}
             onScroll={syncViewport}
             onWheel={handlePreviewWheel}
             onClick={closeCtxMenu}
@@ -1785,73 +1771,80 @@ body{background:white;font-family:Arial,sans-serif}
                 style={{
                   position: "fixed", zIndex: 9999,
                   left: ctxMenu.x, top: ctxMenu.y,
-                  background: "white", border: "1px solid #ccc",
-                  borderRadius: "var(--radius-ui)", boxShadow: "0 4px 16px rgba(0,0,0,0.18)",
-                  minWidth: 200, overflow: "hidden",
-                  fontSize: 13, color: "#1a1a1a",
+                  background: "var(--c-s1)", border: "1px solid var(--c-b2)",
+                  borderRadius: 6, boxShadow: "0 8px 24px -6px rgba(0,0,0,0.3)",
+                  minWidth: 220, overflow: "hidden",
+                  fontSize: 12, color: "var(--c-t1)",
                 }}
               >
-                <div style={{ padding: "6px 8px", background: "#f5f5f5", borderBottom: "1px solid #e0e0e0", fontSize: 11, color: "#666", fontWeight: 600 }}>
+                <div style={{ padding: "6px 10px", background: "var(--c-s3)", borderBottom: "1px solid var(--c-b1)", fontSize: 10.5, color: "var(--c-t3)", fontWeight: 700, textTransform: "uppercase", letterSpacing: ".03em" }}>
                   Лист {ctxMenu.tileIdx + 1} из {totalPages}
                 </div>
                 <button
                   onClick={() => handlePrintSingleTile(ctxMenu.tileIdx)}
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "#f0f4ff")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "none")}
-                >
-                  🖨 Печатать этот лист
+                  className="w-full flex items-center gap-2 text-left px-3 py-2 hover:bg-[var(--c-s3)]">
+                  <Icon name="File" size={13} style={{ color: "var(--c-t3)" }} />
+                  Печатать этот лист
                 </button>
                 <button
                   onClick={() => { closeCtxMenu(); handlePrint(); }}
-                  style={{ display: "block", width: "100%", textAlign: "left", padding: "8px 14px", background: "none", border: "none", cursor: "pointer", borderTop: "1px solid #f0f0f0" }}
-                  onMouseEnter={e => (e.currentTarget.style.background = "#f0f4ff")}
-                  onMouseLeave={e => (e.currentTarget.style.background = "none")}
-                >
-                  🖨 Печатать всю схему ({totalPages} {totalPages === 1 ? "лист" : totalPages < 5 ? "листа" : "листов"})
+                  className="w-full flex items-center gap-2 text-left px-3 py-2 hover:bg-[var(--c-s3)]"
+                  style={{ borderTop: "1px solid var(--c-b1)" }}>
+                  <Icon name="Files" size={13} style={{ color: "var(--c-t3)" }} />
+                  Печатать всю схему ({totalPages} {pagesWord(totalPages)})
                 </button>
               </div>
             )}
           </div>{/* конец контейнера предпросмотра */}
         </div>
 
-        {/* Статус-строка */}
-        <div className="flex items-center justify-between px-4 py-1 flex-shrink-0"
-          style={{ background: "#555", color: "white", fontSize: 11, borderTop: "1px solid #444" }}>
-          <span>{paper.w}×{paper.h} мм · {orientation === "landscape" ? "Альбомная" : "Книжная"} · Масштаб печати {scaleDisplay}% · {totalPages} {totalPages === 1 ? "лист" : totalPages < 5 ? "листа" : "листов"}</span>
-          <span style={{ cursor: "pointer" }} title="Сбросить зум предпросмотра" onClick={() => setViewZoom(1)}>
-            {Math.round(viewZoom * 100)} %
-          </span>
-        </div>
-
-        {/* Кнопки внизу */}
-        <div className="flex items-center justify-end gap-2 px-4 py-2 flex-shrink-0"
-          style={{ background: "#efefef", borderTop: "1px solid #d0d0d0" }}>
-          <button onClick={handlePrint} disabled={printing}
-            className="px-5 py-1.5 rounded text-[12px] font-semibold text-white hover:bg-blue-600 disabled:opacity-60"
-            style={{ background: "#1e5a7a", border: "1px solid #1e4db7" }}>
-            {printing ? (
-              <><Icon name="Loader" size={13} className="inline mr-1.5 animate-spin" />
-                {printProgress && printProgress.total > 1
-                  ? `Подготовка ${printProgress.done} из ${printProgress.total}`
-                  : "Подготовка…"}</>
-            ) : (
-              <><Icon name="Printer" size={13} className="inline mr-1.5" />Печать</>
-            )}
+        {/* Подвал: сводка слева, действия справа */}
+        <div className="flex items-center gap-2 px-3 py-2 flex-shrink-0"
+          style={{ background: "var(--c-s2)", borderTop: "1px solid var(--c-b2)" }}>
+          <div className="flex items-center gap-1.5 text-[11px] min-w-0" style={{ color: "var(--c-t3)" }}>
+            <span className="truncate">
+              Масштаб <b className="font-num" style={{ color: "var(--c-t1)" }}>{scaleDisplay}%</b>
+              {" · "}<b className="font-num" style={{ color: "var(--c-t1)" }}>{totalPages}</b> {pagesWord(totalPages)}
+              {copies > 1 && <> × {copies} копии</>}
+            </span>
+            <span className="w-px h-4 mx-1" style={{ background: "var(--c-b2)" }} />
+            <button onClick={() => setViewZoom(1)} title="Вернуть просмотр к 100%"
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded hover:bg-[var(--c-s3)]">
+              <Icon name="ZoomIn" size={12} />
+              <span className="font-num">{Math.round(viewZoom * 100)}%</span>
+            </button>
+          </div>
+          <div className="flex-1" />
+          <button onClick={() => setShowExportDialog(true)} disabled={printing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--c-s3)] disabled:opacity-50"
+            style={{ border: "1px solid var(--c-b2)", borderRadius: 6, background: "var(--c-s1)", color: "var(--c-t2)" }}
+            title="Сохранить в файл: PDF, PNG, SVG и др.">
+            <Icon name="Download" size={13} />Экспорт в файл
           </button>
           {/* Во время подготовки эта кнопка отменяет её, а не закрывает окно:
               закрытие посреди отрисовки оставило бы печать «висеть». */}
           {printing ? (
             <button onClick={() => { printCancelRef.current = true; }}
-              className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
+              className="px-3 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--c-s3)]"
+              style={{ border: "1px solid var(--c-b2)", borderRadius: 6, background: "var(--c-s1)", color: "var(--c-t2)" }}>
               Отмена
             </button>
           ) : (
             <button onClick={onClose}
-              className="px-4 py-1.5 rounded text-[12px] border border-gray-400 bg-white hover:bg-gray-100 text-gray-700">
+              className="px-3 py-1.5 text-[12px] font-medium transition-colors hover:bg-[var(--c-s3)]"
+              style={{ border: "1px solid var(--c-b2)", borderRadius: 6, background: "var(--c-s1)", color: "var(--c-t2)" }}>
               Закрыть
             </button>
           )}
+          <button onClick={handlePrint} disabled={printing}
+            className="btn-brand flex items-center gap-1.5 text-[12px] px-4 py-1.5 disabled:opacity-80">
+            <Icon name={printing ? "Loader" : "Printer"} size={13} className={printing ? "animate-spin" : ""} />
+            {printing
+              ? (printProgress && printProgress.total > 1
+                  ? `Лист ${printProgress.done} из ${printProgress.total}`
+                  : "Подготовка…")
+              : "Печать"}
+          </button>
         </div>
       </div>
 
