@@ -46,12 +46,6 @@ export interface SchemaCheckResult {
   noAtmosphere: boolean;
   /** Ветви, ссылающиеся на несуществующие узлы — «разорванная» связь. */
   brokenBranches: BrokenBranch[];
-  tabCounts: {
-    near: number; isolated: number; dupes: number;
-    dupbranch: number; zeroR: number; zeroLen: number; highR: number; bulkR: number; manualLen: number;
-    isolatedBranch: number; brokenBranch: number;
-  };
-  totalIssues: number;
   /** true — списки обрезаны до maxItems (схема очень большая) */
   truncated: boolean;
 }
@@ -276,25 +270,9 @@ export function checkSchema(
     }
   }
 
-  const tabCounts = {
-    near: nearPairs.length, isolated: isolated.length, dupes: dupes.length,
-    dupbranch: dupBranches.length, zeroR: zeroRBranches.length,
-    zeroLen: zeroLenBranches.length,
-    highR: highRBranches.length, bulkR: bulkBranches.length,
-    manualLen: manualLenBranches.length,
-    isolatedBranch: isolatedBranches.length,
-    brokenBranch: brokenBranches.length,
-  };
-  // Ветви с ручной длиной — информационная пометка, не критичная ошибка,
-  // поэтому в totalIssues не включаем (чтобы «схема без ошибок» оставалась зелёной).
-  const totalIssues = nearPairs.length + isolated.length + dupes.length
-    + dupBranches.length + zeroRBranches.length + zeroLenBranches.length
-    + highRBranches.length + bulkBranches.length
-    + isolatedBranches.length + brokenBranches.length;
-
   return {
     nearPairs, isolated, dupes, dupBranches, zeroRBranches, zeroLenBranches, highRBranches, bulkBranches,
     manualLenBranches, isolatedBranches, noAtmosphere, brokenBranches,
-    tabCounts, totalIssues, truncated,
+    truncated,
   };
 }

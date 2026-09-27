@@ -43,7 +43,7 @@ export function useCadSchemaCheck(
   // В этой группе поиск идёт не по вводу текста, а выбором из списка.
   const [searchObjCat, setSearchObjCat] = useState<string>("");
   const [checkThreshold, setCheckThreshold] = useState<number>(0.01);
-  const [checkTab, setCheckTab] = useState<CheckTab>("near");
+  const [checkTab, setCheckTab] = useState<CheckTab | null>(null);
   // Порог «большого» сопротивления ветви, Н·с²/м⁸ (кМюрг). По умолчанию 100.
   const [checkHighRThreshold, setCheckHighRThreshold] = useState<number>(100);
   // Порог сопротивления перемычки, кМюрг (норматив — 686 кМюрг)

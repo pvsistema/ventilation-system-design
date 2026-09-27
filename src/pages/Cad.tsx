@@ -30,6 +30,7 @@ import { type VentSection, type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/vent
 import VentSectionsPanel from "@/components/cad/VentSectionsPanel";
 import AirDemandDialog from "@/components/cad/AirDemandDialog";
 import InfoPanel from "@/components/cad/InfoPanel";
+import SchemaCheckPanel from "@/components/cad/SchemaCheckPanel";
 import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
@@ -5285,7 +5286,7 @@ export default function CadPage() {
           setActiveSide("check");
           setCheckTab("solveBlock");
           focusSolveBlocker(badNodes, badBranches);
-          addLog("warn", `Проблемные участки показаны в «Проверка → Расчёт»: узлов ${badNodes.length}, ветвей ${badBranches.length}.`);
+          addLog("warn", `Проблемные участки показаны в «Проверка → Участки, остановившие расчёт»: узлов ${badNodes.length}, ветвей ${badBranches.length}.`);
         }
       } else if (!data.diagnostics?.some((d: { level: string }) => d.level === "error")) {
         // Расчёт прошёл без топологических ошибок — снимаем прежние отметки.
@@ -5311,7 +5312,7 @@ export default function CadPage() {
     }
     // Перед расчётом проверяем сеть на изолированные ветви: подсети без выхода
     // на поверхность (нет пути к атмосферному узлу) не дают корректно рассчитать
-    // воздухораспределение. Предупреждаем и открываем вкладку «Изолир.».
+    // воздухораспределение. Предупреждаем и открываем проверку «Нет связи с поверхностью».
     const check = checkSchema(nodes, branches);
     // Обрыв связи проверяем ПЕРВЫМ: ветвь, привязанная к удалённому узлу, —
     // причина, а «сеть распадается на несвязные части» и обнулённый расчёт —
@@ -5345,7 +5346,7 @@ export default function CadPage() {
         `Найдено ветвей с оборванной связью: ${check.brokenBranches.length}.\n\n`
         + `Эти ветви привязаны к узлам, которых в схеме больше нет (узлы удалены или перенумерованы):\n${sample}${more}\n\n`
         + `Из-за этого сеть распадается на несвязные части и расчёт воздухораспределения обнуляется.\n`
-        + `Ветви отмечены на схеме и открыты во вкладке «Обрыв» — восстановите привязку к существующим узлам.\n\n`
+        + `Ветви отмечены на схеме и открыты в «Проверке» (Ветвь ссылается на удалённый узел) — восстановите привязку к существующим узлам.\n\n`
         + `Запустить расчёт всё равно?`
       )) return;
     }
@@ -5363,7 +5364,7 @@ export default function CadPage() {
       }
       const msg = check.noAtmosphere
         ? "В схеме нет ни одного выхода на поверхность (атмосферного узла).\n\nРасчёт воздухораспределения невозможен: воздуху некуда входить и выходить.\nОтметьте хотя бы один узел как связанный с атмосферой.\n\nЗапустить расчёт всё равно?"
-        : `Найдено изолированных ветвей: ${check.isolatedBranches.length}.\n\nЭти ветви не связаны с поверхностью (нет пути к выходу на поверхность) и мешают расчёту воздухораспределения. Они отмечены на схеме и открыты во вкладке «Изолир.».\n\nЗапустить расчёт всё равно?`;
+        : `Найдено изолированных ветвей: ${check.isolatedBranches.length}.\n\nЭти ветви не связаны с поверхностью (нет пути к выходу на поверхность) и мешают расчёту воздухораспределения. Они отмечены на схеме и открыты в «Проверке» (Нет связи с поверхностью).\n\nЗапустить расчёт всё равно?`;
       addLog("warn", check.noAtmosphere
         ? "Расчёт остановлен: в схеме нет выхода на поверхность (атмосферного узла)."
         : `Расчёт остановлен: изолированных ветвей ${check.isolatedBranches.length} (нет связи с поверхностью).`);
@@ -8012,789 +8013,61 @@ export default function CadPage() {
 
 
             {/* ═══ ВКЛАДКА: ПРОВЕРКА СХЕМЫ ═══════════════════════════════ */}
-            {activeSide === "check" && schemaCheckResult && (() => {
-              const {
-                nearPairs, isolated, dupes, dupBranches,
-                zeroRBranches, zeroLenBranches, highRBranches, bulkBranches, manualLenBranches,
-                isolatedBranches, noAtmosphere, brokenBranches,
-                tabCounts, totalIssues, truncated,
-              } = schemaCheckResult;
-
-              // Карта узлов для быстрого поиска в подписях ветвей (без O(n) find)
-              const nodeById = new Map(nodes.map(n => [n.id, n]));
-
-              const navBtn = (id: typeof checkTab, label: string, count: number, icon: string) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setCheckTab(id)}
-                  className="flex-1 flex flex-col items-center py-1.5 gap-0.5 text-[10px] font-medium transition-colors relative"
-                  style={{
-                    background: checkTab === id ? "var(--c-s1, #fff)" : "transparent",
-                    color: checkTab === id ? "var(--c-blue-ink, #1e40af)" : "var(--c-t3, #6b7280)",
-                    borderBottom: checkTab === id ? "2px solid var(--c-blue, #2563eb)" : "2px solid transparent",
-                  }}
-                >
-                  <Icon name={icon as Parameters<typeof Icon>[0]["name"]} size={13} />
-                  <span>{label}</span>
-                  {count > 0 && (
-                    <span className="absolute top-0.5 right-1 text-[9px] font-bold px-1 rounded-full"
-                      style={{ background: "var(--c-tint-red2, #fee2e2)", color: "var(--c-red, #dc2626)" }}>
-                      {count}
-                    </span>
-                  )}
-                </button>
-              );
-
-              const focusNode = (id: string) => {
-                setSelectedNodeId(id);
-                setSelectedBranchId(null);
-                setFocusPos(null);
-                setFocusNodeId(id);
-                setFocusNonce(Date.now());
-              };
-
-              const nodeBtn = (n: TopoNode) => (
-                <button
-                  type="button"
-                  className="text-[11px] font-medium text-blue-700 hover:underline text-left"
-                  onClick={e => { e.stopPropagation(); focusNode(n.id); }}
-                >
-                  {n.name || `Узел ${n.number || n.id}`}
-                </button>
-              );
-
-              const focusBranch = (id: string) => {
-                setSelectedBranchId(id);
-                setSelectedBranchIds(new Set([id]));
-                setSelectedNodeId(null);
-                setFocusPos(null);
-                setFocusBranchId(id);
-                setFocusNonce(Date.now());
-              };
-
-              const branchLabel = (b: TopoBranch) => {
-                const fn = nodeById.get(b.fromId);
-                const tn = nodeById.get(b.toId);
-                const nm = b.type || `Ветвь ${b.id}`;
-                return `${nm} (${fn?.number || fn?.id || "?"}→${tn?.number || tn?.id || "?"})`;
-              };
-
-              const branchBtn = (b: TopoBranch) => (
-                <button
-                  type="button"
-                  className="text-[11px] font-medium text-blue-700 hover:underline text-left"
-                  onClick={e => { e.stopPropagation(); focusBranch(b.id); }}
-                >
-                  {branchLabel(b)}
-                </button>
-              );
-
-              const EmptyOk = ({ text }: { text: string }) => (
-                <div className="flex flex-col items-center justify-center py-10 gap-2">
-                  <Icon name="CheckCircle" size={28} className="text-green-500" />
-                  <span className="text-[11px] text-gray-500 text-center">{text}</span>
-                </div>
-              );
-
-              return (
-                <div className="flex flex-col h-full overflow-hidden" style={{ fontSize: 11 }}>
-
-                  {/* Шапка */}
-                  <div className="px-2 py-1.5 flex items-center gap-1.5" style={{ background: totalIssues > 0 ? "var(--c-tint-amber, #fff7ed)" : "var(--c-tint-green, #f0fdf4)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                    <Icon name={totalIssues > 0 ? "AlertTriangle" : "CheckCircle"} size={13}
-                      className={totalIssues > 0 ? "text-amber-500" : "text-green-500"} />
-                    <span className="text-[11px] font-semibold text-gray-700">
-                      {totalIssues > 0 ? `Найдено нарушений: ${totalIssues}` : "Нарушений не найдено"}
-                    </span>
-                  </div>
-
-                  {truncated && (
-                    <div className="px-2 py-1 text-[10px] flex items-center gap-1"
-                      style={{ background: "var(--c-tint-amber, #fffbeb)", color: "var(--c-amber, #b45309)", borderBottom: "1px solid #fde68a" }}>
-                      <Icon name="Info" size={11} className="flex-shrink-0" />
-                      Показаны первые результаты — устраните их и запустите проверку повторно.
-                    </div>
-                  )}
-
-                  {/* Навигация — Узлы */}
-                  <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
-                    style={{ background: "var(--c-s3, #f3f4f6)" }}>Узлы</div>
-                  <div className="flex" style={{ background: "var(--c-s3, #f3f4f6)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                    {navBtn("near",     "Несоед.", tabCounts.near,     "GitMerge")}
-                    {navBtn("isolated", "Тупики",  tabCounts.isolated, "Unlink")}
-                    {navBtn("dupes",    "Дубли",   tabCounts.dupes,    "Copy")}
-                  </div>
-
-                  {/* Навигация — Ветви */}
-                  <div className="px-2 pt-1 text-[9px] font-semibold text-gray-400 uppercase tracking-wide"
-                    style={{ background: "var(--c-s3, #f3f4f6)" }}>Ветви</div>
-                  <div className="flex" style={{ background: "var(--c-s3, #f3f4f6)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                    {navBtn("dupbranch",      "Дубли",   tabCounts.dupbranch,     "CopyPlus")}
-                    {navBtn("zeroR",          "R = 0",   tabCounts.zeroR,         "CircleSlash")}
-                    {navBtn("zeroLen",        "L = 0",   tabCounts.zeroLen,       "MoveHorizontal")}
-                    {navBtn("highR",          "R↑",      tabCounts.highR,         "TrendingUp")}
-                    {navBtn("bulkR",          "Перем.",  tabCounts.bulkR,         "DoorClosed")}
-                    {navBtn("manualLen",      "L ручн.", tabCounts.manualLen,     "Ruler")}
-                    {navBtn("isolatedBranch", "Изолир.", tabCounts.isolatedBranch, "Network")}
-                    {navBtn("brokenBranch",   "Обрыв",   tabCounts.brokenBranch,   "Unlink")}
-                    {navBtn("solveBlock",     "Расчёт",
-                      (solveBlockers?.nodeIds.length ?? 0) + (solveBlockers?.branchIds.length ?? 0),
-                      "CircleAlert")}
-                  </div>
-
-                  {/* ── Вкладка: Несоединённые близкие узлы ── */}
-                  {checkTab === "near" && (
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                        <div className="text-[10px] text-gray-500 mb-1">Узлы близки в пространстве (X, Y, Z), но не соединены ветвью.</div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-gray-600 flex-shrink-0">Порог:</span>
-                          <input
-                            type="number" min={0.01} max={1000} step={0.1}
-                            value={checkThreshold}
-                            onChange={e => setCheckThreshold(Math.max(0.01, parseFloat(e.target.value) || 1))}
-                            className="w-16 text-right border border-gray-300 rounded px-1 bg-white"
-                            style={{ fontSize: 11, height: 20 }}
-                          />
-                          <span className="text-[10px] text-gray-500">м</span>
-                        </div>
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        {nearPairs.length === 0 ? <EmptyOk text="Близких несоединённых узлов не найдено" /> : (
-                          <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                              Пар: <b className="text-amber-700">{nearPairs.length}</b>
-                            </div>
-                            {nearPairs.map(({ a, b, dist }) => {
-                              const isSel = selectedNodeId === a.id || selectedNodeId === b.id;
-                              return (
-                                <div key={`${a.id}|${b.id}`}
-                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                  onClick={() => focusNode(a.id)}
-                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                >
-                                  <Icon name="AlertTriangle" size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-baseline gap-1 flex-wrap">
-                                      {nodeBtn(a)}
-                                      <span className="text-gray-300">↔</span>
-                                      {nodeBtn(b)}
-                                    </div>
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                      {dist < 0.1 ? dist.toFixed(3) : dist < 1 ? dist.toFixed(2) : dist.toFixed(1)} м
-                                      <span className="mx-1">·</span>№{a.number || "—"} и №{b.number || "—"}
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Изолированные узлы (тупики) ── */}
-                  {checkTab === "isolated" && (
-                    <div className="flex-1 overflow-y-auto">
-                      {isolated.length === 0 ? <EmptyOk text="Изолированных узлов нет" /> : (
-                        <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                            Узлов без ветвей: <b className="text-red-600">{isolated.length}</b>
-                          </div>
-                          {isolated.map(n => {
-                            const isSel = selectedNodeId === n.id;
-                            return (
-                              <div key={n.id}
-                                className="flex items-center gap-1.5 px-2 py-1.5 cursor-pointer"
-                                style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                onClick={() => focusNode(n.id)}
-                                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                              >
-                                <Icon name="Unlink" size={12} className="text-red-400 flex-shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <div className="font-medium text-gray-800 truncate">{n.name || `Узел ${n.number || n.id}`}</div>
-                                  <div className="text-[10px] text-gray-400">№{n.number || "—"} · X={n.x.toFixed(0)} Y={n.y.toFixed(0)}</div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Дубликаты координат ── */}
-                  {checkTab === "dupes" && (
-                    <div className="flex-1 overflow-y-auto">
-                      {dupes.length === 0 ? <EmptyOk text="Узлов с одинаковыми координатами нет" /> : (
-                        <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                            Дублей: <b className="text-red-600">{dupes.length}</b>
-                          </div>
-                          {dupes.map(({ a, b }) => {
-                            const isSel = selectedNodeId === a.id || selectedNodeId === b.id;
-                            return (
-                              <div key={`${a.id}|${b.id}`}
-                                className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                onClick={() => focusNode(a.id)}
-                                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                              >
-                                <Icon name="Copy" size={12} className="text-purple-400 flex-shrink-0 mt-0.5" />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-baseline gap-1 flex-wrap">
-                                    {nodeBtn(a)}
-                                    <span className="text-gray-300">↔</span>
-                                    {nodeBtn(b)}
-                                  </div>
-                                  <div className="text-[10px] text-gray-400 mt-0.5">
-                                    X={a.x.toFixed(2)} Y={a.y.toFixed(2)} Z={a.z.toFixed(2)}
-                                    <span className="mx-1">·</span>№{a.number || "—"} и №{b.number || "—"}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Дублирующие ветви ── */}
-                  {checkTab === "dupbranch" && (
-                    <div className="flex-1 overflow-y-auto">
-                      {dupBranches.length === 0 ? <EmptyOk text="Дублирующих ветвей нет" /> : (
-                        <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                            Несколько ветвей соединяют одну пару узлов. Групп: <b className="text-amber-700">{dupBranches.length}</b>
-                          </div>
-                          {dupBranches.map(({ branches: grp, key }) => (
-                            <div key={key} className="px-2 py-1.5" style={{ borderBottom: "1px solid #f5f5f5" }}>
-                              <div className="flex items-center gap-1.5 mb-1">
-                                <Icon name="CopyPlus" size={12} className="text-amber-500 flex-shrink-0" />
-                                <span className="text-[10px] text-gray-500">Параллельных ветвей: {grp.length}</span>
-                              </div>
-                              <div className="flex flex-col gap-0.5 pl-4">
-                                {grp.map(b => (
-                                  <div key={b.id} className="flex items-center gap-1"
-                                    style={{ background: selectedBranchId === b.id ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}>
-                                    {branchBtn(b)}
-                                    <span className="text-[10px] text-gray-400">· L={b.length.toFixed(0)}м · R={(b.resistance ?? 0).toFixed(3)}</span>
-                                  </div>
-                                ))}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Ветви с нулевым сопротивлением ── */}
-                  {checkTab === "zeroR" && (
-                    <div className="flex-1 overflow-y-auto">
-                      {zeroRBranches.length === 0 ? <EmptyOk text="Ветвей с нулевым сопротивлением нет" /> : (
-                        <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                            R = 0 приводит к некорректному расчёту. Ветвей: <b className="text-red-600">{zeroRBranches.length}</b>
-                          </div>
-                          {zeroRBranches.map(b => {
-                            const isSel = selectedBranchId === b.id;
-                            return (
-                              <div key={b.id}
-                                className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                onClick={() => focusBranch(b.id)}
-                                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                              >
-                                <Icon name="CircleSlash" size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
-                                <div className="flex-1 min-w-0">
-                                  {branchBtn(b)}
-                                  <div className="text-[10px] text-gray-400 mt-0.5">
-                                    L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м² · R={(b.resistance ?? 0).toFixed(4)}
-                                  </div>
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Ветви с нулевой длиной ── */}
-                  {checkTab === "zeroLen" && (
-                    <div className="flex-1 overflow-y-auto">
-                      {zeroLenBranches.length === 0 ? <EmptyOk text="Ветвей с длиной = 0 нет" /> : (
-                        <div className="flex flex-col">
-                          <div className="px-2 py-1 text-[10px] text-gray-500" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                            Длина = 0 → нет сопротивления, расчёт воздухораспределения невозможен. Ветвей: <b className="text-red-600">{zeroLenBranches.length}</b>
-                          </div>
-                          {zeroLenBranches.map(b => {
-                            const isSel = selectedBranchId === b.id;
-                            const fn = nodes.find(n => n.id === b.fromId);
-                            const tn = nodes.find(n => n.id === b.toId);
-                            const autoLen = fn && tn ? Math.round(calcBranchLength(fn, tn)) : null;
-                            return (
-                              <div key={b.id}
-                                className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                onClick={() => focusBranch(b.id)}
-                                onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                              >
-                                <Icon name="MoveHorizontal" size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
-                                <div className="flex-1 min-w-0">
-                                  {branchBtn(b)}
-                                  <div className="text-[10px] text-gray-400 mt-0.5">
-                                    L=<b className="text-red-600">{b.length.toFixed(0)}</b>м · S={b.area.toFixed(1)}м²
-                                    {autoLen != null && autoLen > 0 && (
-                                      <> · по коорд.: <b className="text-gray-600">{autoLen}</b>м</>
-                                    )}
-                                  </div>
-                                  {autoLen != null && autoLen > 0 && (
-                                    <button
-                                      type="button"
-                                      onClick={e => {
-                                        e.stopPropagation();
-                                        updateBranch(b.id, { manualLength: false, length: autoLen });
-                                      }}
-                                      className="mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded border"
-                                      style={{ borderColor: "#81b0c4", background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)" }}
-                                    >
-                                      Задать длину по координатам ({autoLen}м)
-                                    </button>
-                                  )}
-                                </div>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Ветви с большим сопротивлением ── */}
-                  {checkTab === "highR" && (
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                        <div className="text-[10px] text-gray-500 mb-1">Сопротивление ветви выше порога — вероятна ошибка в сечении/длине.</div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-gray-600 flex-shrink-0">Порог R:</span>
-                          <input
-                            type="number" min={0} step={10}
-                            value={checkHighRThreshold}
-                            onChange={e => setCheckHighRThreshold(Math.max(0, parseFloat(e.target.value) || 0))}
-                            className="w-20 text-right border border-gray-300 rounded px-1 bg-white"
-                            style={{ fontSize: 11, height: 20 }}
-                          />
-                          <span className="text-[10px] text-gray-500">Н·с²/м⁸</span>
-                        </div>
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        {highRBranches.length === 0 ? <EmptyOk text="Ветвей с большим сопротивлением не найдено" /> : (
-                          <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                              Ветвей: <b className="text-amber-700">{highRBranches.length}</b>
-                            </div>
-                            {highRBranches.map(b => {
-                              const isSel = selectedBranchId === b.id;
-                              return (
-                                <div key={b.id}
-                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                  onClick={() => focusBranch(b.id)}
-                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                >
-                                  <Icon name="TrendingUp" size={12} className="text-amber-500 flex-shrink-0 mt-0.5" />
-                                  <div className="flex-1 min-w-0">
-                                    {branchBtn(b)}
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                      R=<b className="text-amber-700">{(b.resistance ?? 0).toFixed(2)}</b> Н·с²/м⁸ · L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м²
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Перемычки с большим R ── */}
-                  {checkTab === "bulkR" && (
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                        <div className="text-[10px] text-gray-500 mb-1">Сопротивление перемычки выше норматива.</div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[10px] text-gray-600 flex-shrink-0">Норматив:</span>
-                          <input
-                            type="number" min={0} step={1}
-                            value={checkBulkRThreshold}
-                            onChange={e => setCheckBulkRThreshold(Math.max(0, parseFloat(e.target.value) || 0))}
-                            className="w-20 text-right border border-gray-300 rounded px-1 bg-white"
-                            style={{ fontSize: 11, height: 20 }}
-                          />
-                          <span className="text-[10px] text-gray-500">кМюрг</span>
-                        </div>
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        {bulkBranches.length === 0 ? <EmptyOk text="Перемычек с превышением норматива нет" /> : (
-                          <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                              Перемычек: <b className="text-red-600">{bulkBranches.length}</b>
-                            </div>
-                            {bulkBranches.map(({ branch: b, rKmu }) => {
-                              const isSel = selectedBranchId === b.id;
-                              return (
-                                <div key={b.id}
-                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                  onClick={() => focusBranch(b.id)}
-                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                >
-                                  <Icon name="DoorClosed" size={12} className="text-red-400 flex-shrink-0 mt-0.5" />
-                                  <div className="flex-1 min-w-0">
-                                    {branchBtn(b)}
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                      {b.bulkheadName || "Перемычка"} · R=<b className="text-red-600">{rKmu.toFixed(0)}</b> кМюрг
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Ветви с длиной, заданной вручную ── */}
-                  {checkTab === "manualLen" && (
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                        <div className="text-[10px] text-gray-500 mb-1.5">
-                          У этих ветвей длина задана вручную и не пересчитывается из координат.
-                          Если она меньше реальной — сопротивление занижено, если больше — завышено.
-                        </div>
-                        {manualLenBranches.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setBranches(prev => prev.map(b => {
-                              if (!b.manualLength) return b;
-                              const fn = nodes.find(n => n.id === b.fromId);
-                              const tn = nodes.find(n => n.id === b.toId);
-                              const len = fn && tn ? Math.round(calcBranchLength(fn, tn)) : b.length;
-                              return { ...b, manualLength: false, length: len };
-                            }))}
-                            className="text-[10px] font-medium px-2 py-1 rounded border"
-                            style={{ borderColor: "#81b0c4", background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)" }}
-                          >
-                            Все на авто (из координат)
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        {manualLenBranches.length === 0 ? <EmptyOk text="Ветвей с ручной длиной нет" /> : (
-                          <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                              Ветвей: <b className="text-amber-700">{manualLenBranches.length}</b>
-                            </div>
-                            {manualLenBranches.map(b => {
-                              const isSel = selectedBranchId === b.id;
-                              const fn = nodes.find(n => n.id === b.fromId);
-                              const tn = nodes.find(n => n.id === b.toId);
-                              const autoLen = fn && tn ? Math.round(calcBranchLength(fn, tn)) : null;
-                              const mismatch = autoLen != null && Math.abs(autoLen - b.length) >= 1;
-                              return (
-                                <div key={b.id}
-                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                  onClick={() => focusBranch(b.id)}
-                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                >
-                                  <Icon name="Ruler" size={12} className={`${mismatch ? "text-red-400" : "text-amber-500"} flex-shrink-0 mt-0.5`} />
-                                  <div className="flex-1 min-w-0">
-                                    {branchBtn(b)}
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                      Ручная: <b>{b.length.toFixed(0)}</b>м
-                                      {autoLen != null && (
-                                        <> · по коорд.: <b className={mismatch ? "text-red-600" : "text-gray-500"}>{autoLen}</b>м</>
-                                      )}
-                                    </div>
-                                    <button
-                                      type="button"
-                                      onClick={e => {
-                                        e.stopPropagation();
-                                        updateBranch(b.id, { manualLength: false, length: autoLen ?? b.length });
-                                      }}
-                                      className="mt-1 text-[10px] font-medium px-1.5 py-0.5 rounded border"
-                                      style={{ borderColor: "#81b0c4", background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-blue, #1d4ed8)" }}
-                                    >
-                                      На авто
-                                    </button>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Изолированные ветви (нет выхода на поверхность) ── */}
-                  {checkTab === "isolatedBranch" && (
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                        <div className="text-[10px] text-gray-500 mb-1.5">
-                          Ветви построены, но их подсеть не связана с поверхностью —
-                          нет ни одного пути к атмосферному узлу (выхода на поверхность).
-                          Такие ветви не дают провести расчёт воздухораспределения.
-                        </div>
-                        {noAtmosphere && (
-                          <div className="text-[10px] font-medium px-2 py-1 rounded flex items-start gap-1"
-                            style={{ background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)", border: "1px solid #fecaca" }}>
-                            <Icon name="AlertTriangle" size={12} className="flex-shrink-0 mt-0.5" />
-                            В схеме нет ни одного выхода на поверхность (атмосферного узла).
-                            Отметьте хотя бы один узел как связанный с атмосферой.
-                          </div>
-                        )}
-                        {isolatedBranches.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedBranchIds(new Set(isolatedBranches.map(b => b.id)));
-                              setSelectedNodeId(null);
-                              setSelectedBranchId(isolatedBranches[0].id);
-                              setFocusPos(null);
-                              setFocusBranchId(isolatedBranches[0].id);
-                              setFocusNonce(Date.now());
-                            }}
-                            className="mt-1.5 text-[10px] font-medium px-2 py-1 rounded border"
-                            style={{ borderColor: "#fca5a5", background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)" }}
-                          >
-                            Выделить все на схеме
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        {isolatedBranches.length === 0 ? (
-                          <EmptyOk text={noAtmosphere
-                            ? "Ветвей нет"
-                            : "Изолированных ветвей не найдено — вся сеть связана с поверхностью"} />
-                        ) : (
-                          <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                              Ветвей: <b className="text-red-600">{isolatedBranches.length}</b>
-                            </div>
-                            {isolatedBranches.map(b => {
-                              const isSel = selectedBranchId === b.id;
-                              return (
-                                <div key={b.id}
-                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                  onClick={() => focusBranch(b.id)}
-                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                >
-                                  <Icon name="Network" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
-                                  <div className="flex-1 min-w-0">
-                                    {branchBtn(b)}
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                      Нет связи с поверхностью · L={b.length.toFixed(0)}м · S={b.area.toFixed(1)}м²
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Обрыв связи (ветвь ссылается на удалённый узел) ── */}
-                  {checkTab === "brokenBranch" && (
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                        <div className="text-[10px] text-gray-500 mb-1.5">
-                          У ветви оборван конец: она ссылается на узел, которого в схеме
-                          больше нет. Обычно так получается после удаления или
-                          перенумерации узлов. Длина и сопротивление такой ветви не
-                          пересчитываются, а сеть распадается на несвязные части —
-                          расчёт воздухораспределения обнуляется.
-                        </div>
-                        {brokenBranches.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const ids = brokenBranches.map(x => x.branch.id);
-                              setSelectedBranchIds(new Set(ids));
-                              setSelectedNodeId(null);
-                              setSelectedBranchId(ids[0]);
-                              setFocusPos(null);
-                              setFocusBranchId(ids[0]);
-                              setFocusNonce(Date.now());
-                            }}
-                            className="mt-1.5 text-[10px] font-medium px-2 py-1 rounded border"
-                            style={{ borderColor: "#fca5a5", background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)" }}
-                          >
-                            Выделить все на схеме
-                          </button>
-                        )}
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        {brokenBranches.length === 0 ? (
-                          <EmptyOk text="Обрывов не найдено — все ветви привязаны к существующим узлам" />
-                        ) : (
-                          <div className="flex flex-col">
-                            <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                              Ветвей: <b className="text-red-600">{brokenBranches.length}</b>
-                            </div>
-                            {brokenBranches.map(({ branch: b, missing, missingIds }) => {
-                              const isSel = selectedBranchId === b.id;
-                              const what = missing === "both" ? "оба узла" : missing === "from" ? "начальный узел" : "конечный узел";
-                              return (
-                                <div key={b.id}
-                                  className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                  style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                  onClick={() => focusBranch(b.id)}
-                                  onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                  onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                >
-                                  <Icon name="Unlink" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
-                                  <div className="flex-1 min-w-0">
-                                    {branchBtn(b)}
-                                    <div className="text-[10px] text-gray-400 mt-0.5">
-                                      Не найден {what}: <b className="text-red-600">{missingIds.join(", ")}</b>
-                                    </div>
-                                  </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* ── Вкладка: Расчёт — участки, о которые споткнулся расчёт ──
-                      Эти ошибки находит не проверка схемы, а сам расчёт сети:
-                      он сообщает узлы и ветви, из-за которых сеть распалась.
-                      Раньше в журнале был только номер узла, и найти его на
-                      схеме в тысячи ветвей было практически невозможно. */}
-                  {checkTab === "solveBlock" && (
-                    <div className="flex flex-col flex-1 overflow-hidden">
-                      <div className="px-2 py-1.5" style={{ background: "var(--c-s2, #fafafa)", borderBottom: "1px solid var(--c-b1, #e5e7eb)" }}>
-                        <div className="text-[10px] text-gray-500 mb-1.5">
-                          Участки, из-за которых расчёт воздухораспределения не прошёл.
-                          Определяются при расчёте сети (F9): сеть распадается на
-                          несвязные части, и результат обнуляется целиком.
-                        </div>
-                        {solveBlockers && (
-                          <>
-                            <div className="text-[10px] px-2 py-1 rounded flex items-start gap-1 mb-1.5"
-                              style={{ background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)", border: "1px solid #fecaca" }}>
-                              <Icon name="CircleAlert" size={12} className="flex-shrink-0 mt-0.5" />
-                              <span>{solveBlockers.message}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => focusSolveBlocker(solveBlockers.nodeIds, solveBlockers.branchIds)}
-                              className="text-[10px] font-medium px-2 py-1 rounded border"
-                              style={{ borderColor: "#fca5a5", background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)" }}
-                            >
-                              Показать на схеме
-                            </button>
-                          </>
-                        )}
-                      </div>
-                      <div className="flex-1 overflow-y-auto">
-                        {!solveBlockers ? (
-                          <EmptyOk text="Расчёт не сообщал о проблемных участках — запустите расчёт сети (F9)" />
-                        ) : (
-                          <div className="flex flex-col">
-                            {solveBlockers.nodeIds.length > 0 && (
-                              <>
-                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)" }}>
-                                  Узлов: <b className="text-red-600">{solveBlockers.nodeIds.length}</b> — не связаны с выходом на поверхность
-                                </div>
-                                {solveBlockers.nodeIds.map(id => {
-                                  const n = nodeById.get(id);
-                                  if (!n) return null;
-                                  const isSel = selectedNodeId === id;
-                                  return (
-                                    <div key={`n-${id}`}
-                                      className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                      style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                      onClick={() => focusSolveBlocker([id], [])}
-                                      onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                      onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                    >
-                                      <Icon name="CircleAlert" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
-                                      <div className="flex-1 min-w-0">
-                                        <div className="text-[11px] font-medium text-gray-700">
-                                          Узел {n.number || n.id}
-                                        </div>
-                                        <div className="text-[10px] text-gray-400">
-                                          X={n.x.toFixed(0)} · Y={n.y.toFixed(0)} · Z={n.z.toFixed(0)}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                            {solveBlockers.branchIds.length > 0 && (
-                              <>
-                                <div className="px-2 py-1 text-[10px] text-gray-400" style={{ borderBottom: "1px solid var(--c-b1, #f0f0f0)", background: "var(--c-s2, #fafafa)" }}>
-                                  Ветвей: <b className="text-red-600">{solveBlockers.branchIds.length}</b>
-                                </div>
-                                {solveBlockers.branchIds.map(id => {
-                                  const b = branches.find(x => x.id === id);
-                                  if (!b) return null;
-                                  const isSel = selectedBranchId === id;
-                                  return (
-                                    <div key={`b-${id}`}
-                                      className="flex items-start gap-1.5 px-2 py-1.5 cursor-pointer"
-                                      style={{ borderBottom: "1px solid #f5f5f5", background: isSel ? "var(--c-tint-amber2, #fef3c7)" : "transparent" }}
-                                      onClick={() => focusBranch(id)}
-                                      onMouseEnter={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "#f9fafb"; }}
-                                      onMouseLeave={e => { if (!isSel) (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
-                                    >
-                                      <Icon name="Network" size={12} className="text-red-500 flex-shrink-0 mt-0.5" />
-                                      <div className="flex-1 min-w-0">
-                                        {branchBtn(b)}
-                                        <div className="text-[10px] text-gray-400 mt-0.5">
-                                          Горизонт: {horizons.find(h => h.id === b.horizonId)?.name ?? "не задан"}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  );
-                                })}
-                              </>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                </div>
-              );
-            })()}
+            {activeSide === "check" && schemaCheckResult && (
+              <SchemaCheckPanel
+                result={schemaCheckResult}
+                nodes={nodes}
+                branches={branches}
+                horizons={horizons}
+                selectedNodeId={selectedNodeId}
+                selectedBranchId={selectedBranchId}
+                openCheck={checkTab}
+                onOpenCheck={setCheckTab}
+                nearThreshold={checkThreshold}
+                onNearThreshold={setCheckThreshold}
+                highRThreshold={checkHighRThreshold}
+                onHighRThreshold={setCheckHighRThreshold}
+                bulkRThreshold={checkBulkRThreshold}
+                onBulkRThreshold={setCheckBulkRThreshold}
+                solveBlockers={solveBlockers}
+                onFocusNode={(id) => {
+                  setSelectedNodeId(id);
+                  setSelectedBranchId(null);
+                  setFocusPos(null);
+                  setFocusNodeId(id);
+                  setFocusNonce(Date.now());
+                }}
+                onFocusBranch={(id) => {
+                  setSelectedBranchId(id);
+                  setSelectedBranchIds(new Set([id]));
+                  setSelectedNodeId(null);
+                  setFocusPos(null);
+                  setFocusBranchId(id);
+                  setFocusNonce(Date.now());
+                }}
+                onSelectBranches={(ids) => {
+                  if (ids.length === 0) return;
+                  setSelectedBranchIds(new Set(ids));
+                  setSelectedNodeId(null);
+                  setSelectedBranchId(ids[0]);
+                  setFocusPos(null);
+                  setFocusBranchId(ids[0]);
+                  setFocusNonce(Date.now());
+                }}
+                onFocusSolveBlocker={focusSolveBlocker}
+                onUpdateBranch={(id, patch) => updateBranch(id, patch)}
+                onAllManualToAuto={() => {
+                  pushHistory();
+                  setBranches(prev => prev.map(b => {
+                    if (!b.manualLength) return b;
+                    const fn = nodesById.get(b.fromId);
+                    const tn = nodesById.get(b.toId);
+                    const len = fn && tn ? Math.round(calcBranchLength(fn, tn)) : b.length;
+                    return { ...b, manualLength: false, length: len };
+                  }));
+                }}
+              />
+            )}
 
             {/* ═══ ВКЛАДКА: ПАРАМЕТРЫ (узел) ════════════════════════════ */}
             {activeSide === "params" && selectedNode && (
