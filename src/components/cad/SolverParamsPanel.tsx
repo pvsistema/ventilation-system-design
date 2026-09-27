@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type PointerEvent } from "react";
 import Icon from "@/components/ui/icon";
 
 export type CalcMode = "cross" | "mkr";
@@ -109,10 +109,10 @@ function Field({ label, unit, value, onChange, step, min, max, hint }: {
             const n = Number(e.target.value);
             if (Number.isFinite(n)) onChange(n);
           }}
-          className="font-num w-full min-w-0 text-[11.5px] px-1.5 py-1 text-right outline-none bg-transparent"
+          className="font-num w-full min-w-0 text-[12px] px-2 py-1 text-right outline-none bg-transparent [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
           style={{ color: "var(--c-t1)" }} />
         {unit && (
-          <span className="flex items-center px-1.5 text-[10px] shrink-0"
+          <span className="flex items-center px-1.5 text-[10px] shrink-0 whitespace-nowrap"
             style={{ color: "var(--c-t3)", background: "var(--c-s3)", borderLeft: "1px solid var(--c-b1)" }}>
             {unit}
           </span>
@@ -139,6 +139,13 @@ function Note({ children, tone = "muted" }: { children: ReactNode; tone?: "muted
 
 /* ── Окно ──────────────────────────────────────────────────────────────── */
 
+/** Не даём увести окно за край экрана: шапка всегда остаётся доступной. */
+function clampPos(x: number, y: number, width: number) {
+  const maxX = Math.max(0, window.innerWidth - width);
+  const maxY = Math.max(0, window.innerHeight - 120);
+  return { x: Math.min(Math.max(0, x), maxX), y: Math.min(Math.max(0, y), maxY) };
+}
+
 export default function SolverParamsPanel({ values: v, onChange, onResetSolver, onClose }: Props) {
   // Esc закрывает окно
   useEffect(() => {
@@ -149,16 +156,47 @@ export default function SolverParamsPanel({ values: v, onChange, onResetSolver, 
 
   const draftDelta = v.surfaceTemp - v.mineAirTemp;
 
+  // Положение окна: по умолчанию — у правого края под лентой. Окно можно
+  // перетащить за шапку; позиция сохраняется между открытиями.
+  const WIDTH = 360;
+  const [pos, setPos] = useState<{ x: number; y: number }>(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("pvs.solverParamsPos") || "null");
+      if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) return clampPos(saved.x, saved.y, WIDTH);
+    } catch { /* нет сохранённой позиции */ }
+    return clampPos(window.innerWidth - WIDTH - 16, 160, WIDTH);
+  });
+  const drag = useRef<{ dx: number; dy: number } | null>(null);
+
+  const onDragStart = (e: PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest("button")) return;
+    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  };
+  const onDragMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    setPos(clampPos(e.clientX - drag.current.dx, e.clientY - drag.current.dy, WIDTH));
+  };
+  const onDragEnd = (e: PointerEvent<HTMLDivElement>) => {
+    if (!drag.current) return;
+    drag.current = null;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    try { localStorage.setItem("pvs.solverParamsPos", JSON.stringify(pos)); } catch { /* ignore */ }
+  };
+
   return (
-    <div className="fixed top-[160px] right-4 z-50 flex flex-col animate-scale-in"
+    <div className="fixed z-50 flex flex-col animate-scale-in"
       style={{
-        width: 320, maxHeight: "calc(100vh - 200px)",
+        left: pos.x, top: pos.y,
+        width: WIDTH, maxHeight: `calc(100vh - ${pos.y + 16}px)`,
         background: "var(--c-s1)", border: "1px solid var(--c-b3)", borderRadius: 8,
         boxShadow: "0 12px 32px -8px rgba(0,0,0,.35)",
       }}>
       {/* Шапка */}
-      <div className="flex items-center gap-2 px-3 py-2 shrink-0"
-        style={{ background: "var(--c-anthracite)", borderRadius: "7px 7px 0 0", borderBottom: "2px solid var(--c-signal)" }}>
+      <div className="flex items-center gap-2 px-3 py-2 shrink-0 select-none"
+        onPointerDown={onDragStart} onPointerMove={onDragMove} onPointerUp={onDragEnd} onPointerCancel={onDragEnd}
+        title="Перетащите, чтобы переместить окно"
+        style={{ background: "var(--c-anthracite)", borderRadius: "7px 7px 0 0", borderBottom: "2px solid var(--c-signal)", cursor: "move", touchAction: "none" }}>
         <Icon name="Settings" size={15} style={{ color: "var(--c-signal-lt)" }} />
         <div className="flex-1 min-w-0">
           <div className="text-[12px] font-bold text-white leading-tight">Параметры расчёта</div>
@@ -191,7 +229,7 @@ export default function SolverParamsPanel({ values: v, onChange, onResetSolver, 
               <Icon name="RotateCcw" size={10} /> По умолчанию
             </button>
           }>
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid gap-2" style={{ gridTemplateColumns: "1.35fr 1fr 0.9fr" }}>
             <Field label="Допуск Q" unit="м³/с" value={v.solverTolerance} step={0.001} min={0}
               onChange={x => onChange("solverTolerance", x)}
               hint="Допустимая невязка расхода. Решатель не делает её строже 0,05% от расхода сети — меньшие значения не ускоряют и не уточняют расчёт." />
@@ -209,7 +247,7 @@ export default function SolverParamsPanel({ values: v, onChange, onResetSolver, 
           right={<Toggle checked={v.useNaturalDraft} onChange={x => onChange("useNaturalDraft", x)} label="Учитывать естественную тягу" />}>
           {v.useNaturalDraft ? (
             <>
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr 1.25fr" }}>
                 <Field label="t поверхн." unit="°C" value={v.surfaceTemp} step={1} min={-60} max={50}
                   onChange={x => onChange("surfaceTemp", x)} hint="Температура наружного воздуха t_н" />
                 <Field label="t шахты" unit="°C" value={v.mineAirTemp} step={1} min={-20} max={60}
