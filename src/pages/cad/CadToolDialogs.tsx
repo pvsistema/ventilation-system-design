@@ -160,6 +160,9 @@ export interface CadToolDialogsProps {
   setShowVds: (v: boolean) => void;
   /** Сведения о вентсооружениях по ветвям (для «Отчёта ВДС») */
   vdsBulkheads?: Map<string, BranchBulkheadInfo>;
+  /** Климат поверхности из параметров проекта (для автозаполнения отчёта ВДС) */
+  vdsSurfaceTemp?: number;
+  vdsSurfacePressureKPa?: number;
   // Взрывоопасность рудничной атмосферы (Приложение № 11)
   showExplosibility: boolean;
   setShowExplosibility: (v: boolean) => void;
@@ -410,6 +413,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           bulkheads={p.vdsBulkheads}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
           license={p.license}
+          env={{ horizons: p.horizons, surfaceTemp: p.vdsSurfaceTemp, surfacePressureKPa: p.vdsSurfacePressureKPa }}
         />
       )}
 

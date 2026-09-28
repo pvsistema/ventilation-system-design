@@ -13712,6 +13712,8 @@ export default function CadPage() {
       showVds={showVds}
       setShowVds={setShowVds}
       vdsBulkheads={vdsBulkheads}
+      vdsSurfaceTemp={surfaceTemp}
+      vdsSurfacePressureKPa={surfacePressure}
       showExplosibility={showExplosibility}
       setShowExplosibility={setShowExplosibility}
       solveResult={solveResult}

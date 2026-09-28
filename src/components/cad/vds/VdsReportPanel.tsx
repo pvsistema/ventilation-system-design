@@ -9,6 +9,7 @@ import { calcVdsReport, f } from "@/lib/vdsReport/calc";
 import { buildConclusions } from "@/lib/vdsReport/conclusions";
 import { buildVdsDocx, downloadBlob } from "@/lib/vdsReport/docx";
 import { loadVdsAccess, verifyVdsCode, clearVdsAccess, VDS_OFFLINE_GRACE_MS } from "@/lib/vdsReport/access";
+import { buildVdsAuto, resolveVdsForm, loadOrgProfile, saveOrgProfile, type VdsEnv } from "@/lib/vdsReport/auto";
 import VdsReportFormView from "./VdsReportForm";
 
 interface LicenseLike {
@@ -24,13 +25,15 @@ interface Props {
   bulkheads: Map<string, BranchBulkheadInfo>;
   projectName: string;
   license: LicenseLike | null | undefined;
+  /** Горизонты и климат проекта — для автозаполнения раздела 1 */
+  env?: VdsEnv;
 }
 
 type Access = "checking" | "locked" | "granted" | "nolicense";
 
 const FORM_LS = (project: string) => `pvs_vds_report_form:${project || "default"}`;
 
-export default function VdsReportPanel({ branches, nodes, solved, bulkheads, projectName, license }: Props) {
+export default function VdsReportPanel({ branches, nodes, solved, bulkheads, projectName, license, env }: Props) {
   const licKey = license?.info?.key && license?.info?.licensed !== false ? license.info.key : "";
   const isOfflineKey = !!licKey && licKey.startsWith("PVSO.");
   const [access, setAccess] = useState<Access>("checking");
@@ -72,11 +75,13 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
       const s = localStorage.getItem(FORM_LS(projectName));
       if (s) return { ...emptyVdsForm(), ...JSON.parse(s) };
     } catch { /* ignore */ }
-    return emptyVdsForm();
+    // Новый проект: реквизиты организации, проводящей ВДС, — из прошлых отчётов
+    return { ...emptyVdsForm(), ...loadOrgProfile() };
   });
   const setForm = (fn: (f: VdsReportForm) => VdsReportForm) => setFormState(prev => {
     const next = fn(prev);
     try { localStorage.setItem(FORM_LS(projectName), JSON.stringify(next)); } catch { /* ignore */ }
+    saveOrgProfile(next);
     return next;
   });
 
@@ -85,16 +90,24 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
     [branches],
   );
 
+  // Автозначения по модели + итоговая форма: пустые поля заменены данными модели.
+  // Одна и та же итоговая форма идёт в раздел 1 и в расчётные разделы 2–4.
+  const auto = useMemo(
+    () => buildVdsAuto(branches, nodes, { horizons: env?.horizons, surfaceTemp: env?.surfaceTemp, surfacePressureKPa: env?.surfacePressureKPa }, form.surveyDate),
+    [branches, nodes, env?.horizons, env?.surfaceTemp, env?.surfacePressureKPa, form.surveyDate],
+  );
+  const resolved = useMemo(() => resolveVdsForm(form, auto), [form, auto]);
+
   const result = useMemo(
-    () => (access === "granted" ? calcVdsReport(branches, nodes, solved, form, bulkheads) : null),
-    [access, branches, nodes, solved, form, bulkheads],
+    () => (access === "granted" ? calcVdsReport(branches, nodes, solved, resolved, bulkheads) : null),
+    [access, branches, nodes, solved, resolved, bulkheads],
   );
 
   async function exportDocx() {
     if (!result) return;
     setExporting(true);
     try {
-      const blob = await buildVdsDocx(form, result);
+      const blob = await buildVdsDocx(resolved, result);
       const date = new Date().toISOString().slice(0, 10);
       downloadBlob(blob, `Отчет_ВДС_${(form.mineName || projectName || "рудник").replace(/[\\/:*?"<>|«»]/g, "").slice(0, 60)}_${date}.docx`);
     } finally {
@@ -173,7 +186,7 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
       )}
 
       {tab === "form" ? (
-        <VdsReportFormView form={form} setForm={setForm} gvuBranches={gvuBranches} />
+        <VdsReportFormView form={form} setForm={setForm} gvuBranches={gvuBranches} auto={auto} />
       ) : (
         <div className="text-[12px] space-y-3">
           <div className="grid grid-cols-4 gap-2">
@@ -203,7 +216,7 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
           <div>
             <div className="font-semibold text-gray-800 mb-1">Выводы (формируются автоматически)</div>
             <ol className="list-decimal pl-5 space-y-1 text-gray-700">
-              {buildConclusions(r, form.mineName).map((s, i) => <li key={i}>{s}</li>)}
+              {buildConclusions(r, resolved.mineName).map((s, i) => <li key={i}>{s}</li>)}
             </ol>
           </div>
         </div>

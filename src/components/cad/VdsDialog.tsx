@@ -24,6 +24,7 @@ import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 import VdsReportPanel from "@/components/cad/vds/VdsReportPanel";
+import type { VdsEnv } from "@/lib/vdsReport/auto";
 
 interface Props {
   branches: TopoBranch[];
@@ -35,6 +36,8 @@ interface Props {
   projectName?: string;
   /** Состояние лицензии (ключ нужен для проверки кода доступа к отчёту) */
   license?: { status?: string; info?: { key?: string; licensed?: boolean } | null; fingerprint?: string } | null;
+  /** Горизонты и климат проекта — автозаполнение отчёта ВДС */
+  env?: VdsEnv;
 }
 
 interface GvuRow {
@@ -62,7 +65,7 @@ function classify(a: number): { label: string; color: string } {
   return { label: "Легкопроветриваемая", color: "var(--c-green, #16a34a)" };
 }
 
-export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license }: Props) {
+export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, env }: Props) {
   const [tab, setTab] = useState<"opening" | "report">("opening");
   // Вентиляторы (ГВУ/ВВУ), установленные в открытой схеме. ГВУ идут первыми.
   const fanBranches = useMemo(
@@ -199,6 +202,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
               bulkheads={bulkheads ?? new Map()}
               projectName={projectName}
               license={license}
+              env={env}
             />
           </div>
         ) : (
