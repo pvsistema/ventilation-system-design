@@ -27,6 +27,8 @@ export interface BulkheadRef {
   airPermeability?: number;
   /** Сопротивление из справочника, Мюрг. */
   rMkyurg?: number;
+  /** Норма утечек при перепаде 50 Па, м³/мин. */
+  leakNorm?: number;
 }
 
 /**

@@ -32,10 +32,21 @@ export interface BranchBulkheadInfo {
   name: string;
   /** Как задано R: «вручную», «по съёмке», «по проекту» (для подсказки). */
   modeLabel: string;
+  /**
+   * Норма утечек через сооружение при перепаде 50 Па, м³/мин (0 — не задана).
+   * Значок: своё значение bkLeakNorm, иначе — из справочника перемычек рудника.
+   * Несколько сооружений на ветви — берём наименьшую (самую строгую) норму.
+   */
+  leakNorm: number;
 }
 
 const MODE_LABEL: Record<string, string> = { manual: "вручную", survey: "по съёмке", project: "по проекту" };
 const nameOf = (typeId: string) => LEGEND_TYPES.find(l => l.id === typeId)?.name ?? "Перемычка";
+
+const minPositive = (arr: number[]) => {
+  const pos = arr.filter(v => v > 0);
+  return pos.length ? Math.min(...pos) : 0;
+};
 
 /** Карта «ветвь → сведения о её вентсооружениях». В карте только ветви, где сооружение есть. */
 export function buildBulkheadInfoMap(
@@ -63,6 +74,9 @@ export function buildBulkheadInfoMap(
         hasWindow: syms.some(s => WINDOW_BULKHEAD_IDS.has(s.typeId) || (s.bkWindowArea ?? 0) > 0.001),
         name: syms.map(s => s.bkBulkheadName || nameOf(s.typeId)).join(" + "),
         modeLabel: modes.join(", "),
+        leakNorm: minPositive(syms.map(s => (s.bkLeakNorm ?? 0) > 0
+          ? (s.bkLeakNorm as number)
+          : (refMap.get(s.bkBulkheadId ?? b.bulkheadId ?? "")?.leakNorm ?? 0))),
       });
     } else if (b.hasBulkhead) {
       out.set(b.id, {
@@ -72,6 +86,9 @@ export function buildBulkheadInfoMap(
         hasWindow: (b.bulkheadWindowArea ?? 0) > 0.001,
         name: b.bulkheadName || "Перемычка",
         modeLabel: MODE_LABEL[b.bulkheadResMode ?? "project"],
+        leakNorm: (b.bulkheadLeakNorm ?? 0) > 0
+          ? (b.bulkheadLeakNorm as number)
+          : (refMap.get(b.bulkheadId ?? "")?.leakNorm ?? 0),
       });
     }
   }

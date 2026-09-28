@@ -185,6 +185,7 @@ export interface TopoBranch {
   bulkheadSurveyDP: number;        // падение давления (воздушная съемка), Па
   bulkheadManualR: number;         // вручную заданное R, кМюрг
   bulkheadWindowArea: number;      // площадь окна/проёма, м² (для перемычек с окном/проёмом)
+  bulkheadLeakNorm?: number;       // норма утечек при перепаде 50 Па, м³/мин (0/нет — из справочника)
   bulkheadFailurePressure: number; // давление разрушения, МПа (из справочника)
   bulkheadDestroyedByExplosion: boolean; // перемычка разрушена взрывом (ΔP > failurePressure)
   power: number;                // Вт

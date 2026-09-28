@@ -531,6 +531,23 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       ),
     },
     {
+      id: "leakNorm", group: "Результаты расчёта", icon: "DoorClosed", level: "warn", count: solve.leakNorm.length,
+      title: "Утечки через перемычки выше нормы",
+      body: () => (
+        <>
+          <Hint>Фактический расход через закрытую перемычку сравнивается с нормой утечек, пересчитанной на её перепад давления: Qн = Qн50·√(ΔP/50), где Qн50 — норма при 50 Па (м³/мин) из справочника перемычек или свойств значка. Список отсортирован по превышению.</Hint>
+          {!solve.solved ? needSolve : (
+            <>
+              {solve.leakNormMissing > 0 && (
+                <Hint>Не проверено перемычек без заданной нормы утечек: {solve.leakNormMissing}. Задайте норму в Справочники → Перемычки или в свойствах значка.</Hint>
+              )}
+              {branchNotes(solve.leakNorm, "Утечки через все перемычки в пределах нормы")}
+            </>
+          )}
+        </>
+      ),
+    },
+    {
       id: "leakage", group: "Результаты расчёта", icon: "Droplets", level: "warn", count: solve.leakage ? 1 : 0,
       title: "Большие утечки через перемычки",
       body: () => (

@@ -74,6 +74,21 @@ export default function BranchBulkheadTab({
             </div>
           )}
 
+          {/* ── Норма утечек при 50 Па (для проверки схемы) ── */}
+          <InlineLabel label="Норма утечек (50 Па), м³/мин:">
+            <EditInput
+              type="number" step="1"
+              value={bulkheadSymbol?.bkLeakNorm ?? branch.bulkheadLeakNorm ?? ""}
+              placeholder={String(mineBulkheads?.find(b => b.id === (bulkheadSymbol?.bkBulkheadId ?? branch.bulkheadId))?.leakNorm ?? "")}
+              onChange={v => {
+                const n = parseFloat(v);
+                const val = n > 0 ? n : undefined;
+                onUpdate({ bulkheadLeakNorm: val });
+                onUpdateBulkheadSym?.({ bkLeakNorm: val });
+              }}
+            />
+          </InlineLabel>
+
           {/* ── Аэродинамическое сопротивление перемычки ── */}
           <SectionHeader title="Аэродинамическое сопротивление" />
 

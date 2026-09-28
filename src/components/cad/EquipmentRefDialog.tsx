@@ -34,6 +34,8 @@ export interface MineBulkheadExport {
   airPermeability: number;
   rMkyurg: number;     // сопротивление в Мюрг
   failurePressure: number;
+  /** Норма утечек воздуха через перемычку при перепаде 50 Па, м³/мин. */
+  leakNorm?: number;
   note: string;
   color: string;
   isCustom?: boolean;
@@ -1369,6 +1371,15 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                   </div>
                 </div>
                 <div className="space-y-1">
+                  <label className={LABEL}>Норма утечек при перепаде 50 Па, м³/мин</label>
+                  <input type="number" min={0} step={1} value={editForm.leakNorm ?? 0}
+                    onChange={e => setEditForm(f => ({ ...f, leakNorm: parseFloat(e.target.value) || 0 }))}
+                    className={INPUT} />
+                  <div className="text-[11px] text-[var(--c-t3)]">
+                    При другом перепаде норма пересчитывается: Qн = Qн50·√(ΔP/50). Используется в проверке схемы.
+                  </div>
+                </div>
+                <div className="space-y-1">
                   <label className={LABEL}>Примечание</label>
                   <input value={editForm.note ?? ""}
                     onChange={e => setEditForm(f => ({ ...f, note: e.target.value }))}
@@ -1390,6 +1401,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                   ["Воздухопроницаемость", `${selected.airPermeability.toFixed(6)} м²/(с·√Па)`],
                   ["Сопротивление R", rFmt(selected.rMkyurg)],
                   ["Давление разрушения", selected.failurePressure > 0 ? `${selected.failurePressure} МПа` : "Не нормируется"],
+                  ["Норма утечек (50 Па)", (selected.leakNorm ?? 0) > 0 ? `${selected.leakNorm} м³/мин` : "Не задана"],
                   ["Примечание", selected.note || "—"],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-start gap-3 py-1.5 border-b border-[var(--c-b1)]">

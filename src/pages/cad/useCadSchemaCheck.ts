@@ -32,7 +32,7 @@ export type CheckTab =
   | "badArea" | "shortManualLen" | "badAlpha" | "fanNoCurve" | "zeroBulkhead"
   | "invalidValues" | "lostZ" | "tinyBranch"
   // По результатам расчёта
-  | "highV" | "lowV" | "fanAgainst" | "fanRange" | "recirc" | "faceDeficit" | "leakage"
+  | "highV" | "lowV" | "fanAgainst" | "fanRange" | "recirc" | "faceDeficit" | "leakage" | "leakNorm"
   // "solveBlock" — участки, о которые споткнулся расчёт сети. В отличие от
   // остальных вкладок, они не находятся статической проверкой схемы, а
   // приходят в диагностике от самого расчёта.

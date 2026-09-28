@@ -40,6 +40,8 @@ export interface SchemaSymbol {
   bkBulkheadName?: string;
   bkBulkheadR?: number;
   bkFailurePressure?: number;
+  /** Норма утечек через перемычку при 50 Па, м³/мин (своя; иначе из справочника). */
+  bkLeakNorm?: number;
   msNumber?: string;
   msLocation?: string;
   msArea?: number;

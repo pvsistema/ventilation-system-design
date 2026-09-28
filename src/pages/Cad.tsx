@@ -9988,6 +9988,39 @@ export default function CadPage() {
                     ) : null;
                   })()}
 
+                  {/* ── Норма утечек через перемычку (для проверки схемы) ── */}
+                  {isBulkheadSym && brForSym && !isWindowBulkhead && (() => {
+                    const refNorm = mineBulkheads.find(b => b.id === (sym.bkBulkheadId ?? brForSym.bulkheadId))?.leakNorm ?? 0;
+                    const norm50 = (sym.bkLeakNorm ?? 0) > 0 ? (sym.bkLeakNorm as number) : refNorm;
+                    const dp = Math.abs(totalDepByBranch.get(brForSym.id) ?? 0);
+                    const normQ = norm50 > 0 ? norm50 * Math.sqrt(dp / 50) : 0;
+                    const factQ = Math.abs(brForSym.flow ?? 0) * 60;
+                    const over = norm50 > 0 && factQ > normQ + 0.05;
+                    return (
+                      <>
+                        <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                          <span className="text-gray-500 flex-shrink-0" style={{ width: 120 }} title="Норма утечек при перепаде 50 Па. Пусто — из справочника перемычек">Норма утечек (50 Па):</span>
+                          <input type="number" step="1" min="0"
+                            value={sym.bkLeakNorm ?? ""}
+                            placeholder={refNorm > 0 ? String(refNorm) : "—"}
+                            onChange={e => { const v = parseFloat(e.target.value); updSym({ bkLeakNorm: v > 0 ? v : undefined }); }}
+                            className="flex-1 text-[11px] px-1 text-right"
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white", minWidth: 0 }} />
+                          <span className="text-[11px] text-gray-400 flex-shrink-0">м³/мин</span>
+                        </div>
+                        {norm50 > 0 && factQ > 0 && (
+                          <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                            <span className="text-gray-500 flex-shrink-0" style={{ width: 120 }}>Утечки факт/норма:</span>
+                            <span className="flex-1 text-right text-[11px] font-semibold"
+                              style={{ color: over ? "var(--c-red, #b91c1c)" : "var(--c-green, #2e7d32)" }}>
+                              {Math.round(factQ)} / {Math.round(normQ)} м³/мин{over ? ` (+${Math.round(factQ - normQ)})` : ""}
+                            </span>
+                          </div>
+                        )}
+                      </>
+                    );
+                  })()}
+
                   {/* Направление (вентилятор) */}
                   {sym.typeId === "fan" && (
                     <>

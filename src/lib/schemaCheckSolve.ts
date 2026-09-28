@@ -30,6 +30,14 @@ export interface SolveCheckResult {
   faceDeficit: BranchNote[];
   /** Утечки через перемычки больше порога — одно сообщение с итогом. */
   leakage: { percent: number; leakFlow: number; fanFlow: number; branches: BranchNote[]; windowFlow: number } | null;
+  /**
+   * Утечки через перемычку выше нормы: Qфакт > Qн = Qн50·√(ΔP/50),
+   * где Qн50 — норма утечек при перепаде 50 Па (м³/мин), ΔP — перепад на
+   * перемычке (Па). Как в таблице расчёта внутренних утечек рудника.
+   */
+  leakNorm: BranchNote[];
+  /** Закрытые перемычки с расходом, у которых не задана норма утечек — не проверялись. */
+  leakNormMissing: number;
   truncated: boolean;
 }
 
@@ -48,6 +56,9 @@ export interface SolveCheckOptions {
   bulkheads?: Map<string, BranchBulkheadInfo>;
 }
 
+/** R в кМюрг (кгс·с²/м⁸) → ΔP в Па: ×g (как в АэроСети и в решателе). */
+const G = 9.81;
+
 const FACE_TYPES = new Set(["stoping", "development", "deadend"]);
 
 export function checkSolve(
@@ -59,7 +70,7 @@ export function checkSolve(
 ): SolveCheckResult {
   const empty: SolveCheckResult = {
     solved, highVelocity: [], lowVelocity: [], fanAgainstFlow: [], fanOutOfRange: [],
-    recirculation: [], faceDeficit: [], leakage: null, truncated: false,
+    recirculation: [], faceDeficit: [], leakage: null, leakNorm: [], leakNormMissing: 0, truncated: false,
   };
   if (!solved) return empty;
 
@@ -119,6 +130,7 @@ export function checkSolve(
 
   let fanFlow = 0, leakFlow = 0, windowFlow = 0;
   const leakList: BranchNote[] = [];
+  const leakNormList: { note: BranchNote; excess: number }[] = [];
 
   for (const b of branches) {
     const q = b.flow ?? 0;
@@ -203,6 +215,30 @@ export function checkSolve(
       } else {
         leakFlow += aq;
         leakList.push({ branch: b, note: `${name}: ${fmtNum(aq, 2)} м³/с${rTxt}` });
+
+        // ── Норма утечек через перемычку ──────────────────────────────
+        // Qн = Qн50·√(ΔP/50); ΔP — полный перепад на ветви с перемычкой
+        // (R выработки + R перемычки)·Q²·g, тем же расчётом, что в решателе.
+        const norm50 = bk?.leakNorm ?? 0;
+        if (norm50 > 0) {
+          const rTot = (b.resistance ?? 0) + (bk?.rKmu ?? 0);
+          const dp = rTot * aq * aq * G;
+          const normQ = norm50 * Math.sqrt(Math.max(0, dp) / 50); // м³/мин
+          const factQ = aq * 60;                                  // м³/мин
+          const excess = factQ - normQ;
+          if (excess > 0.05) {
+            leakNormList.push({
+              excess,
+              note: {
+                branch: b,
+                note: `${name}: факт ${fmtNum(factQ, 0)} м³/мин при норме ${fmtNum(normQ, 0)} м³/мин `
+                  + `(ΔP ${fmtNum(dp, 0)} Па, норма при 50 Па — ${fmtNum(norm50, 1)}) · сверх нормы +${fmtNum(excess, 0)} м³/мин`,
+              },
+            });
+          }
+        } else {
+          r.leakNormMissing++;
+        }
       }
     }
 
@@ -220,6 +256,10 @@ export function checkSolve(
     leakList.sort((a, b) => Math.abs(b.branch.flow) - Math.abs(a.branch.flow));
     r.leakage = { percent: (leakFlow / fanFlow) * 100, leakFlow, fanFlow, branches: leakList.slice(0, 500), windowFlow };
   }
+
+  leakNormList.sort((a, b) => b.excess - a.excess);
+  r.leakNorm = leakNormList.slice(0, 500).map((x) => x.note);
+  if (leakNormList.length > 500) truncated = true;
 
   r.highVelocity.sort((a, b) => Math.abs(b.branch.velocity) - Math.abs(a.branch.velocity));
   r.truncated = truncated;
