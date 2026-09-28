@@ -17,6 +17,9 @@ import { checkSolve } from "@/lib/schemaCheckSolve";
 import { loadSchemaCheckSettings, saveSchemaCheckSettings, type SchemaCheckSettings } from "@/lib/schemaCheckSettings";
 import type { TopoNode, TopoBranch } from "@/lib/topology";
 import type { VentNorms, VentSection } from "@/lib/ventSections";
+import type { SchemaSymbol } from "./cadTypes";
+import type { BulkheadRef } from "@/lib/bulkheadResistance";
+import { buildBulkheadInfoMap } from "@/lib/branchBulkheadInfo";
 import type { SideTab } from "./cadTypes";
 
 export type CheckTab =
@@ -52,6 +55,10 @@ export function useCadSchemaCheck(
   solved: boolean,
   norms: VentNorms,
   sections: VentSection[],
+  /** Значки на схеме — перемычки/двери с их собственным (в т.ч. ручным) R. */
+  symbols: SchemaSymbol[] = [],
+  /** Справочник перемычек рудника — для R «по проекту». */
+  bulkheadRefs: BulkheadRef[] = [],
 ) {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
@@ -79,11 +86,15 @@ export function useCadSchemaCheck(
   const schemaCheckResult = useMemo(() => {
     if (activeSide !== "check") return null;
     const s = checkSettings;
+    // Сопротивление перемычек — тем же расчётом, что уходит в решатель.
+    const bulkheads = buildBulkheadInfoMap(branches, symbols, bulkheadRefs);
     return {
+      bulkheads,
       ...checkSchema(nodes, branches, {
         nearThreshold: s.nearThreshold,
         highRThreshold: s.highRThreshold,
         bulkRThreshold: s.bulkRThreshold,
+        bulkheads,
       }),
       topo: checkTopology(nodes, branches, {
         onAxisTolerance: s.onAxisTolerance,
@@ -93,13 +104,15 @@ export function useCadSchemaCheck(
         areaMin: s.areaMin, areaMax: s.areaMax,
         alphaMin: s.alphaMin, alphaMax: s.alphaMax,
         tinyLength: s.tinyLength,
+        bulkheads,
       }),
       solve: checkSolve(branches, solved, norms, sections, {
         recircShare: s.recircPercent / 100,
         leakShare: s.leakPercent / 100,
+        bulkheads,
       }),
     };
-  }, [activeSide, nodes, branches, checkSettings, solved, norms, sections]);
+  }, [activeSide, nodes, branches, checkSettings, solved, norms, sections, symbols, bulkheadRefs]);
 
   return {
     searchQuery, setSearchQuery,

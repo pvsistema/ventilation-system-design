@@ -11,6 +11,7 @@ import { getFanById, bladeAngleFactor } from "./fanCurves";
 import { calcFaceDemand } from "./airDemand";
 import type { VentNorms, VentSection } from "./ventSections";
 import { type BranchNote, pushCapped, fmtNum } from "./schemaCheckTypes";
+import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
 
 export interface SolveCheckResult {
   /** Расчёт выполнялся — иначе все списки пусты и проверка не имеет смысла. */
@@ -28,7 +29,7 @@ export interface SolveCheckResult {
   /** Забой получает меньше требуемого. */
   faceDeficit: BranchNote[];
   /** Утечки через перемычки больше порога — одно сообщение с итогом. */
-  leakage: { percent: number; leakFlow: number; fanFlow: number; branches: BranchNote[] } | null;
+  leakage: { percent: number; leakFlow: number; fanFlow: number; branches: BranchNote[]; windowFlow: number } | null;
   truncated: boolean;
 }
 
@@ -39,6 +40,12 @@ export interface SolveCheckOptions {
   leakShare?: number;
   /** Расход ниже этого (м³/с) считается «нет потока» */
   zeroFlow?: number;
+  /**
+   * Вентсооружения ветвей (значки + вкладка ветви) с сопротивлением, которое
+   * реально уходит в решатель. Без неё утечки считались по одному флагу
+   * hasBulkhead — без учёта значков и заданного вручную R.
+   */
+  bulkheads?: Map<string, BranchBulkheadInfo>;
 }
 
 const FACE_TYPES = new Set(["stoping", "development", "deadend"]);
@@ -110,14 +117,16 @@ export function checkSolve(
     return cur;
   };
 
-  let fanFlow = 0, leakFlow = 0;
+  let fanFlow = 0, leakFlow = 0, windowFlow = 0;
   const leakList: BranchNote[] = [];
 
   for (const b of branches) {
     const q = b.flow ?? 0;
     const aq = Math.abs(q);
     const v = Math.abs(b.velocity ?? 0);
-    const aux = !!b.isVentPipeBranch || b.isLeakage || b.hasBulkhead;
+    const bk = opts.bulkheads?.get(b.id);
+    const hasBk = bk ? bk.present : b.hasBulkhead;
+    const aux = !!b.isVentPipeBranch || b.isLeakage || hasBk;
 
     // ── Скорости ──────────────────────────────────────────────────────────
     if (!aux && b.area > 0) {
@@ -178,9 +187,23 @@ export function checkSolve(
     }
 
     // ── Утечки через перемычки ────────────────────────────────────────────
-    if (b.hasBulkhead && aq > zeroQ) {
-      leakFlow += aq;
-      leakList.push({ branch: b, note: `${b.bulkheadName || "Перемычка"}: ${fmtNum(aq, 2)} м³/с` });
+    // Утечка — это воздух, прошедший через ЗАКРЫТОЕ сооружение (глухую
+    // перемычку, закрытую дверь). Не считаются утечкой:
+    //   • ветвь с вентилятором — через ГВУ/ВМП идёт подача, а «перемычка» на
+    //     ней — это обвязка вентилятора (раньше ГВУ целиком попадала в утечки);
+    //   • регулируемое окно/проём — через него воздух пропускают намеренно;
+    //   • открытая дверь.
+    // Сопротивление берётся тем же расчётом, что уходит в решатель, в т.ч.
+    // заданное вручную в значке.
+    if (hasBk && aq > zeroQ && !b.hasFan && !b.isVentPipeBranch) {
+      const name = bk?.name ?? (b.bulkheadName || "Перемычка");
+      const rTxt = bk ? ` · R ${fmtNum(bk.rKmu, bk.rKmu < 10 ? 2 : 0)} кМюрг (${bk.modeLabel})` : "";
+      if (bk?.allOpen || bk?.hasWindow) {
+        windowFlow += aq;
+      } else {
+        leakFlow += aq;
+        leakList.push({ branch: b, note: `${name}: ${fmtNum(aq, 2)} м³/с${rTxt}` });
+      }
     }
 
     // ── Забои: расход меньше требуемого ───────────────────────────────────
@@ -195,7 +218,7 @@ export function checkSolve(
 
   if (fanFlow > zeroQ && leakFlow > fanFlow * leakShare) {
     leakList.sort((a, b) => Math.abs(b.branch.flow) - Math.abs(a.branch.flow));
-    r.leakage = { percent: (leakFlow / fanFlow) * 100, leakFlow, fanFlow, branches: leakList.slice(0, 500) };
+    r.leakage = { percent: (leakFlow / fanFlow) * 100, leakFlow, fanFlow, branches: leakList.slice(0, 500), windowFlow };
   }
 
   r.highVelocity.sort((a, b) => Math.abs(b.branch.velocity) - Math.abs(a.branch.velocity));

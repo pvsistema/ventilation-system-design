@@ -9,6 +9,7 @@
 
 import type { TopoNode, TopoBranch } from "./topology";
 import { branchBulkheadRkMurg } from "./bulkheads";
+import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
 
 export interface NearPair { a: TopoNode; b: TopoNode; dist: number }
 /**
@@ -54,6 +55,8 @@ export interface SchemaCheckOptions {
   nearThreshold?: number;   // м, порог «близких» узлов
   highRThreshold?: number;  // Н·с²/м⁸ (кМюрг), порог большого R ветви
   bulkRThreshold?: number;  // кМюрг, порог R перемычки
+  /** Вентсооружения ветвей с R, которое уходит в решатель (значки + вкладка). */
+  bulkheads?: Map<string, BranchBulkheadInfo>;
   /** ограничение на длину каждого списка (защита от зависания UI) */
   maxItems?: number;
 }
@@ -190,8 +193,9 @@ export function checkSchema(
     if ((b.length ?? 0) <= 0) {
       if (!capReached(zeroLenBranches.length)) zeroLenBranches.push(b); else truncated = true;
     }
-    if (b.hasBulkhead) {
-      const rKmu = branchBulkheadRkMurg(b);
+    const bkInfo = opts.bulkheads?.get(b.id);
+    if (bkInfo ? bkInfo.present : b.hasBulkhead) {
+      const rKmu = bkInfo ? bkInfo.rKmu : branchBulkheadRkMurg(b);
       if (rKmu > bulkRThreshold) {
         if (!capReached(bulkBranches.length)) bulkBranches.push({ branch: b, rKmu }); else truncated = true;
       }

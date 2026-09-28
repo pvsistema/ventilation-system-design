@@ -56,6 +56,7 @@ import { applyActions, describeActions, toRdCommand, type FireAction } from "@/l
 import { checkSchema } from "@/lib/schemaCheck";
 import { checkTopology } from "@/lib/schemaCheckTopology";
 import { checkParams } from "@/lib/schemaCheckParams";
+import { buildBulkheadInfoMap } from "@/lib/branchBulkheadInfo";
 import { toast } from "sonner";
 import OpoDataDialog from "@/components/cad/OpoDataDialog";
 import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData } from "@/lib/opoData";
@@ -2322,7 +2323,7 @@ export default function CadPage() {
     checkBulkRThreshold, setCheckBulkRThreshold,
     checkSettings, setCheckSettings,
     schemaCheckResult,
-  } = useCadSchemaCheck(activeSide, nodes, branches, solveResult != null, ventNorms, ventSections);
+  } = useCadSchemaCheck(activeSide, nodes, branches, solveResult != null, ventNorms, ventSections, schemaSymbols, mineBulkheads);
 
   // ─── ПРОВЕРКА СХЕМЫ ПОСЛЕ ИМПОРТА ───────────────────────────────────
   // Импорт из АэроСети, Вентиляции 2.0, Ventsim, DXF и Excel чаще всего и
@@ -2335,9 +2336,11 @@ export default function CadPage() {
     if (!postImportCheckRef.current) return;
     postImportCheckRef.current = false;
     if (branches.length === 0) return;
-    const base = checkSchema(nodes, branches);
+    // Перемычки — с сопротивлением из значков (в т.ч. ручным), как в расчёте.
+    const bulkheads = buildBulkheadInfoMap(branches, schemaSymbols, mineBulkheads);
+    const base = checkSchema(nodes, branches, { bulkheads });
     const topo = checkTopology(nodes, branches);
-    const params = checkParams(nodes, branches);
+    const params = checkParams(nodes, branches, { bulkheads });
     // [вкладка, текст, число, ошибка(true) / замечание(false)] — по важности
     const found: [CheckTab, string, number, boolean][] = ([
       ["brokenBranch", "ветви на удалённых узлах", base.brokenBranches.length, true],

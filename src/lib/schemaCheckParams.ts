@@ -10,6 +10,7 @@ import { type TopoNode, type TopoBranch, calcBranchLength } from "./topology";
 import { getFanById } from "./fanCurves";
 import { branchBulkheadRkMurg } from "./bulkheads";
 import { type BranchNote, type NodeNote, pushCapped, fmtNum } from "./schemaCheckTypes";
+import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
 
 export interface ParamsCheckResult {
   /** Сечение не задано или неправдоподобно. */
@@ -37,6 +38,8 @@ export interface ParamsCheckOptions {
   tinyLength?: number;  // м
   alphaMin?: number;    // ×10⁻⁴ Н·с²/м⁴
   alphaMax?: number;    // ×10⁻⁴ Н·с²/м⁴
+  /** Вентсооружения ветвей с R, которое уходит в решатель (значки + вкладка). */
+  bulkheads?: Map<string, BranchBulkheadInfo>;
 }
 
 // Типичный диапазон α для горных выработок, ×10⁻⁴ Н·с²/м⁴ (от гладкого
@@ -122,7 +125,14 @@ export function checkParams(
     }
 
     // Перемычка с нулевым R
-    if (b.hasBulkhead && branchBulkheadRkMurg(b) <= 0) {
+    // Значки на ветви главнее поля вкладки: R, заданное вручную в значке,
+    // учитывается так же, как в решателе. Открытая дверь с R = 0 — норма.
+    const bk = opts.bulkheads?.get(b.id);
+    if (bk) {
+      if (bk.present && !bk.allOpen && bk.rKmu <= 0) {
+        push(zeroBulkhead, { branch: b, note: `${bk.name} — сопротивление 0 (${bk.modeLabel}), воздух проходит свободно` });
+      }
+    } else if (b.hasBulkhead && branchBulkheadRkMurg(b) <= 0) {
       push(zeroBulkhead, { branch: b, note: `${b.bulkheadName || "Перемычка"} — сопротивление 0, воздух проходит свободно` });
     }
 

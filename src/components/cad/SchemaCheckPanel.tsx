@@ -535,12 +535,15 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       title: "Большие утечки через перемычки",
       body: () => (
         <>
-          <Hint>Через перемычки уходит больше {num(cfg.leakPercent)} % воздуха, подаваемого главными вентиляторами.</Hint>
+          <Hint>Через закрытые перемычки и двери уходит больше {num(cfg.leakPercent)} % воздуха, подаваемого главными вентиляторами. Сопротивление каждой перемычки учитывается так же, как в расчёте сети, — в том числе заданное вручную. Регулируемые окна, открытые двери и ветви с вентиляторами в утечки не входят.</Hint>
           {!solve.solved ? needSolve : !solve.leakage ? <Empty text="Утечки в допустимых пределах" /> : (
             <>
               <Alert>
                 Утечки {fmt(solve.leakage.leakFlow, 1)} м³/с — {fmt(solve.leakage.percent, 0)} % от подачи {fmt(solve.leakage.fanFlow, 1)} м³/с
               </Alert>
+              {solve.leakage.windowFlow > 0.01 && (
+                <Hint>Через регулируемые окна и открытые проёмы проходит ещё {fmt(solve.leakage.windowFlow, 1)} м³/с — это не утечки.</Hint>
+              )}
               {branchNotes(solve.leakage.branches, "")}
             </>
           )}
@@ -649,7 +652,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
           <Hint>Сопротивление перемычки превышает норматив.</Hint>
           <ThresholdInput label="Норматив" unit="кМюрг" value={p.bulkRThreshold} min={0} step={1} onChange={p.onBulkRThreshold} />
           {r.bulkBranches.length === 0 ? <Empty text="Все перемычки в норме" /> :
-            r.bulkBranches.map(({ branch: b, rKmu }) => branchRow(b, `${b.bulkheadName || "Перемычка"} · R ${fmt(rKmu)} кМюрг`))}
+            r.bulkBranches.map(({ branch: b, rKmu }) => branchRow(b, `${r.bulkheads.get(b.id)?.name ?? (b.bulkheadName || "Перемычка")} · R ${fmt(rKmu)} кМюрг`))}
         </>
       ),
     },
