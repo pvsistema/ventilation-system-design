@@ -4,7 +4,6 @@ import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch } from "@/lib/topology";
 import { KV_OPTIONS, type KeyValueRow, type VdsReportForm as Form } from "@/lib/vdsReport/types";
-import type { VdsAuto, AutoTextKey } from "@/lib/vdsReport/auto";
 
 const inputCls = "w-full px-2 py-1 text-[12px] border border-gray-300 rounded outline-none focus:border-blue-500 bg-white";
 
@@ -12,8 +11,6 @@ interface Props {
   form: Form;
   setForm: (fn: (f: Form) => Form) => void;
   gvuBranches: TopoBranch[];
-  /** Автозначения по модели: подставляются, если поле оставлено пустым */
-  auto: VdsAuto;
 }
 
 function Group({ title, children, open: initial = false, hint }: { title: string; children: React.ReactNode; open?: boolean; hint?: string }) {
@@ -31,25 +28,15 @@ function Group({ title, children, open: initial = false, hint }: { title: string
   );
 }
 
-function Field({ label, value, onChange, area, rows = 3, placeholder, auto }: {
+function Field({ label, value, onChange, area, rows = 3, placeholder }: {
   label: string; value: string; onChange: (v: string) => void; area?: boolean; rows?: number; placeholder?: string;
-  /** Значение из модели: используется, пока поле пустое */
-  auto?: string;
 }) {
-  const usingAuto = !!auto && !value.trim();
-  const ph = auto || placeholder;
-  const cls = `${inputCls} ${usingAuto ? "placeholder:text-emerald-700 bg-emerald-50/40" : ""}`;
   return (
     <label className="block">
-      <span className="flex items-center gap-1 text-[11px] text-gray-600 mb-0.5">
-        <span className="flex-1">{label}</span>
-        {auto && (usingAuto
-          ? <span className="text-[10px] text-emerald-700 flex items-center gap-0.5" title="Значение берётся из модели сети"><Icon name="Sparkles" size={10} />из модели</span>
-          : <button type="button" className="text-[10px] text-gray-400 hover:text-emerald-700" title="Сбросить и взять из модели" onClick={e => { e.preventDefault(); onChange(""); }}>↺ из модели</button>)}
-      </span>
+      <span className="block text-[11px] text-gray-600 mb-0.5">{label}</span>
       {area
-        ? <textarea className={cls} rows={rows} value={value} placeholder={ph} onChange={e => onChange(e.target.value)} />
-        : <input className={cls} value={value} placeholder={ph} onChange={e => onChange(e.target.value)} />}
+        ? <textarea className={inputCls} rows={rows} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
+        : <input className={inputCls} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />}
     </label>
   );
 }
@@ -81,15 +68,12 @@ function KvTable({ rows, onChange, cols }: { rows: KeyValueRow[]; onChange: (r: 
   );
 }
 
-export default function VdsReportFormView({ form, setForm, gvuBranches, auto }: Props) {
+export default function VdsReportFormView({ form, setForm, gvuBranches }: Props) {
   const set = <K extends keyof Form>(k: K) => (v: Form[K]) => setForm(f => ({ ...f, [k]: v }));
-  const A = (k: AutoTextKey) => auto.text[k];
-  const userMain = form.mainWorkings.some(x => x.name.trim());
   const gvuInput = (branchId: string) => form.gvu.find(g => g.branchId === branchId);
   const setGvu = (branchId: string, patch: Partial<Form["gvu"][number]>) => setForm(f => {
     const exists = f.gvu.some(g => g.branchId === branchId);
-    const a = auto.gvu[branchId];
-    const base = { branchId, place: "", kv: a?.kv ?? 1.05, channelArea: "", extLeakFact: "", mode: "" };
+    const base = { branchId, place: "", kv: 1.05, channelArea: "", extLeakFact: "", mode: "Всасывающий" };
     return {
       ...f,
       gvu: exists ? f.gvu.map(g => g.branchId === branchId ? { ...g, ...patch } : g) : [...f.gvu, { ...base, ...patch }],
@@ -99,10 +83,9 @@ export default function VdsReportFormView({ form, setForm, gvuBranches, auto }: 
   return (
     <div>
       <div className="text-[11px] text-gray-500 mb-2 leading-snug">
-        Разделы 1 и 2 формируются вместе из модели вентиляционной сети: горизонты, главные и вскрывающие выработки,
-        схема проветривания, ГВУ, забои, климат подставляются автоматически
-        (<span className="text-emerald-700">зелёные подсказки «из модели»</span> — поле можно оставить пустым или переписать).
-        Вручную вводятся только реквизиты и геология. Реквизиты организации, проводящей ВДС, запоминаются для всех проектов.
+        Раздел 1 (техническое задание, сведения о руднике) и титульный лист заполняются рудником.
+        Разделы 2–4, выводы и рекомендации рассчитываются автоматически по модели вентиляционной сети.
+        Данные формы сохраняются для этого проекта.
       </div>
 
       <Group title="Титульный лист" open>
@@ -122,11 +105,11 @@ export default function VdsReportFormView({ form, setForm, gvuBranches, auto }: 
 
       <Group title="Аннотация и цель ВДС">
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Период проведения ВДС" value={form.surveyPeriod} onChange={set("surveyPeriod")} placeholder="ноябре 2025 года" auto={A("surveyPeriod")} />
+          <Field label="Период проведения ВДС" value={form.surveyPeriod} onChange={set("surveyPeriod")} placeholder="ноябре 2025 года" />
           <Field label="Предыдущая съёмка" value={form.previousSurvey} onChange={set("previousSurvey")} placeholder="в феврале 2024 года" />
         </div>
         <Field label="Состав исполнителей" area rows={2} value={form.surveyTeam} onChange={set("surveyTeam")} />
-        <Field label="Дополнение к аннотации (схема подачи воздуха и т.п.)" area value={form.annotation} onChange={set("annotation")} auto={A("annotation")} />
+        <Field label="Дополнение к аннотации (схема подачи воздуха и т.п.)" area value={form.annotation} onChange={set("annotation")} />
       </Group>
 
       <Group title="1.1 Сведения о руднике">
@@ -147,43 +130,25 @@ export default function VdsReportFormView({ form, setForm, gvuBranches, auto }: 
           <Field label="Персонал всего" value={form.staffTotal} onChange={set("staffTotal")} />
           <Field label="Подземных" value={form.staffUnderground} onChange={set("staffUnderground")} />
           <Field label="ИТР" value={form.staffItr} onChange={set("staffItr")} />
-          <Field label="Макс. в смену" value={form.maxPerShift} onChange={set("maxPerShift")} auto={A("maxPerShift")} />
-          <Field label="Действ. забоев" value={form.activeFaces} onChange={set("activeFaces")} auto={A("activeFaces")} />
+          <Field label="Макс. в смену" value={form.maxPerShift} onChange={set("maxPerShift")} />
+          <Field label="Действ. забоев" value={form.activeFaces} onChange={set("activeFaces")} />
         </div>
         <Field label="Основное горное оборудование (по строке на позицию)" area rows={4} value={form.equipment} onChange={set("equipment")} />
-        <Field label="Действующие горизонты" value={form.horizons} onChange={set("horizons")} auto={A("horizons")} />
-        <Field label="Преобладающий вид крепления" value={form.supportType} onChange={set("supportType")} auto={A("supportType")} />
+        <Field label="Действующие горизонты" value={form.horizons} onChange={set("horizons")} />
+        <Field label="Преобладающий вид крепления" value={form.supportType} onChange={set("supportType")} />
         <div className="text-[11px] text-gray-600 font-medium">Характер опасности</div>
         <KvTable rows={form.hazards} onChange={set("hazards")} cols={["Вид опасности", "Оценка"]} />
         <div className="text-[11px] text-gray-600 font-medium mt-2">Сечение и протяжённость главных выработок</div>
-        {!userMain && auto.mainWorkings.length > 0 ? (
-          <div className="border border-emerald-200 bg-emerald-50/40 rounded p-2">
-            <div className="flex items-center gap-2 text-[11px] text-emerald-800 mb-1">
-              <Icon name="Sparkles" size={11} />
-              <span className="flex-1">Из модели: выработки, связанные с поверхностью, и капитальные ({auto.mainWorkings.length})</span>
-              <button type="button" className="text-blue-600 hover:underline" onClick={() => set("mainWorkings")(auto.mainWorkings.map(x => ({ ...x })))}>Редактировать</button>
-            </div>
-            <table className="w-full text-[11px]"><tbody>
-              {auto.mainWorkings.map((x, i) => <tr key={i}><td className="pr-2 text-gray-700">{x.name}</td><td className="text-gray-500">{x.value}</td></tr>)}
-            </tbody></table>
-          </div>
-        ) : (
-          <>
-            <KvTable rows={form.mainWorkings} onChange={set("mainWorkings")} cols={["Выработка", "Параметры (гор., S, L)"]} />
-            {userMain && auto.mainWorkings.length > 0 && (
-              <button type="button" className="text-[11px] text-gray-500 hover:text-emerald-700" onClick={() => set("mainWorkings")([{ name: "", value: "" }])}>↺ Вернуть таблицу из модели</button>
-            )}
-          </>
-        )}
+        <KvTable rows={form.mainWorkings} onChange={set("mainWorkings")} cols={["Выработка", "Параметры (гор., S, L)"]} />
       </Group>
 
       <Group title="1.3 Геология, водоотлив, вскрытие, системы разработки, проветривание">
         <Field label="Запасы и характеристика полезного ископаемого" area rows={4} value={form.reserves} onChange={set("reserves")} />
         <Field label="Гидрогеология (водопритоки)" area value={form.hydrogeology} onChange={set("hydrogeology")} />
         <Field label="Водоотлив и пожарно-оросительный трубопровод" area value={form.drainage} onChange={set("drainage")} />
-        <Field label="Схема вскрытия, вскрывающие выработки" area value={form.openingScheme} onChange={set("openingScheme")} auto={A("openingScheme")} />
+        <Field label="Схема вскрытия, вскрывающие выработки" area value={form.openingScheme} onChange={set("openingScheme")} />
         <Field label="Схема подготовки и системы разработки" area value={form.miningSystems} onChange={set("miningSystems")} />
-        <Field label="Проветривание рудника (проектная схема)" area rows={5} value={form.ventilationScheme} onChange={set("ventilationScheme")} auto={A("ventilationScheme")} />
+        <Field label="Проветривание рудника (проектная схема)" area rows={4} value={form.ventilationScheme} onChange={set("ventilationScheme")} />
       </Group>
 
       <Group title="Параметры ВДС для расчётных разделов" open hint="разделы 2–4">
@@ -196,13 +161,13 @@ export default function VdsReportFormView({ form, setForm, gvuBranches, auto }: 
           <Field label="Кн — коэф. неравномерности" value={form.kn} onChange={set("kn")} />
         </div>
         <div className="grid grid-cols-4 gap-2">
-          <Field label="t при ВДС, °С" value={form.tSurvey} onChange={set("tSurvey")} auto={A("tSurvey") ?? "5"} />
-          <Field label="P при ВДС, мм рт.ст." value={form.pSurvey} onChange={set("pSurvey")} auto={A("pSurvey") ?? "745"} />
+          <Field label="t при ВДС, °С" value={form.tSurvey} onChange={set("tSurvey")} />
+          <Field label="P при ВДС, мм рт.ст." value={form.pSurvey} onChange={set("pSurvey")} />
           <Field label="t лето, °С" value={form.tSummer} onChange={set("tSummer")} />
           <Field label="P лето, мм рт.ст." value={form.pSummer} onChange={set("pSummer")} />
           <Field label="t зима, °С" value={form.tWinter} onChange={set("tWinter")} />
           <Field label="P зима, мм рт.ст." value={form.pWinter} onChange={set("pWinter")} />
-          <Field label="t исходящей струи, °С" value={form.tExhaust} onChange={set("tExhaust")} auto={A("tExhaust") ?? "8"} />
+          <Field label="t исходящей струи, °С" value={form.tExhaust} onChange={set("tExhaust")} />
           <Field label="Цена эл.энергии, руб/кВт·ч" value={form.electricityCost} onChange={set("electricityCost")} />
         </div>
 
@@ -214,14 +179,14 @@ export default function VdsReportFormView({ form, setForm, gvuBranches, auto }: 
             <div key={b.id} className="border border-gray-200 rounded p-2 bg-gray-50">
               <div className="text-[12px] font-semibold text-gray-700 mb-1">{b.fanName || "ГВУ"} · {String(b.type || "").replace(/^"(.*)"$/, "$1")}</div>
               <div className="grid grid-cols-2 gap-2">
-                <Field label="Место установки" value={g?.place ?? ""} onChange={v => setGvu(b.id, { place: v })} auto={auto.gvu[b.id]?.place} />
+                <Field label="Место установки" value={g?.place ?? ""} onChange={v => setGvu(b.id, { place: v })} placeholder="Пром. площадка ВХВ …" />
                 <label className="block">
                   <span className="block text-[11px] text-gray-600 mb-0.5">Кв — внешние утечки по месту установки</span>
-                  <select className={inputCls} value={g?.kv ?? auto.gvu[b.id]?.kv ?? 1.05} onChange={e => setGvu(b.id, { kv: parseFloat(e.target.value) })}>
+                  <select className={inputCls} value={g?.kv ?? 1.05} onChange={e => setGvu(b.id, { kv: parseFloat(e.target.value) })}>
                     {KV_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
                 </label>
-                <Field label="Сечение вент. канала, м²" value={g?.channelArea ?? ""} onChange={v => setGvu(b.id, { channelArea: v })} auto={auto.gvu[b.id]?.channelArea} />
+                <Field label="Сечение вент. канала, м²" value={g?.channelArea ?? ""} onChange={v => setGvu(b.id, { channelArea: v })} />
                 <Field label="Внешние утечки по замеру, м³/с" value={g?.extLeakFact ?? ""} onChange={v => setGvu(b.id, { extLeakFact: v })} />
               </div>
             </div>
