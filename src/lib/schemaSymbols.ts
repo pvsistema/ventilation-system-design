@@ -756,3 +756,26 @@ export function symbolContentBox(typeId: string): SymbolContentBox {
   contentBoxCache.set(typeId, box);
   return box;
 }
+/**
+ * Значок техники, который ставится автоматически под очагом пожара, когда
+ * горит «Техника» (см. Cad.tsx, SYM_FIREVEH_*). Рисуется размером с очаг
+ * пожара и развёрнутым по направлению ветви.
+ */
+export function isFireVehicleSymbol(sym: { id: string; typeId: string }): boolean {
+  return sym.typeId === "heat_selfprop" && sym.id.startsWith("SYM_FIREVEH_");
+}
+
+/**
+ * Угол значка «по направлению ветви», но без переворота вверх колёсами:
+ * угол приводится к диапазону [-90°; 90°], при этом значок зеркалится,
+ * чтобы «нос» машины смотрел в сторону конца ветви.
+ */
+export function uprightAlongBranch(angleDeg: number, flipped?: boolean): { angle: number; mirror: boolean } {
+  let a = angleDeg;
+  // Нос ПДМ (ковш) нарисован слева; «вперёд по ветви» = к узлу «до».
+  let mirror = true;
+  if (a > 90) { a -= 180; mirror = !mirror; }
+  else if (a < -90) { a += 180; mirror = !mirror; }
+  if (flipped) mirror = !mirror;
+  return { angle: a, mirror };
+}

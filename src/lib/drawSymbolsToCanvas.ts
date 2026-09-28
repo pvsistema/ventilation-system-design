@@ -3,7 +3,7 @@
 // но через ctx вместо SVG.
 import { type TopoBranch } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent, symbolSvgContent, labelInsideSymbol } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, fanSvgContent, symbolSvgContent, labelInsideSymbol, isFireVehicleSymbol, uprightAlongBranch } from "@/lib/schemaSymbols";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG, getUnit } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
@@ -219,6 +219,17 @@ export async function drawSymbolsToCanvas(
       ctx.restore();
     } else if (isBulkhead && hasBranchPts) {
       drawBulkheadOnCanvas(ctx, sym, px, py, SZ, fsx, fsy, tsx2, tsy2);
+    } else if (isFireVehicleSymbol(sym) && hasBranchPts) {
+      // Техника под очагом пожара — размером с очаг (fireSZ), по направлению ветви
+      const vSZ = Math.max(6, SZ * 1.6);
+      const { angle, mirror } = uprightAlongBranch(Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI, sym.flipped);
+      const img = await svgToImage(symbolSvgContent(sym.typeId, sym.label), Math.ceil(vSZ));
+      ctx.save();
+      ctx.translate(px, py);
+      ctx.rotate(angle * Math.PI / 180);
+      if (mirror) ctx.scale(-1, 1);
+      ctx.drawImage(img, -vSZ / 2, -vSZ / 2 - vSZ * 2 / 48, vSZ, vSZ);
+      ctx.restore();
     } else if (isFireSource && hasBranchPts) {
       // Очаг пожара: рисуется поперёк ветви (как перемычка) + SVG-иконка сверху
       const fireSZ = Math.max(6, SZ * 1.6);  // крупнее обычного символа

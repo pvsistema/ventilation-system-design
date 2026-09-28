@@ -1,6 +1,6 @@
 import React from "react";
 import { type TopoBranch } from "@/lib/topology";
-import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolContentBox, symbolSvgContent } from "@/lib/schemaSymbols";
+import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolContentBox, symbolSvgContent, isFireVehicleSymbol, uprightAlongBranch } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -150,7 +150,9 @@ export function renderSymbolNode(
   // Авто-масштаб УО «Очаг пожара» от ширины ветви (как valve_reduce).
   // Если у пользователя явно задан scale ≠ 1, используем его поверх авто-базы.
   let SZ: number;
-  if ((sym.typeId === "fire_source" || sym.typeId === "explosion_source") && sym.branchId && hasBranchPts) {
+  const isFireVeh = isFireVehicleSymbol(sym) && !!sym.branchId && hasBranchPts;
+  if ((sym.typeId === "fire_source" || sym.typeId === "explosion_source" || isFireVeh) && sym.branchId && hasBranchPts) {
+    // Техника под очагом пожара — того же размера, что и сам очаг.
     const fireBw = (symBr?.lineWidth && symBr.lineWidth > 0) ? symBr.lineWidth : branchWidth;
     const autoSZ = Math.max(8, fireBw * view.scale * 4);
     SZ = Math.max(8, autoSZ * sc);
@@ -368,6 +370,8 @@ export function renderSymbolNode(
                        + iconH * Math.abs(Math.sin(bAngRad));
         const uLen = isNarrowOnBranch
           ? Math.max(uW, SZ * 0.85 * 0.38 + uW * 0.5)
+          // Техника под очагом развёрнута вдоль ветви — её длина вдоль ветви = ширина значка
+          : isFireVeh ? Math.max(uW, iconW)
           : Math.max(uW, iconProj);
         // Проекция символа на линию ветви (t вдоль from→to) — подложку
         // ставим на САМУ ветвь (не на смещённый offset'ом символ), чтобы
@@ -575,6 +579,16 @@ export function renderSymbolNode(
               stroke={jetColor} strokeWidth={tailWs} strokeLinecap="round"
               strokeDasharray={isLeakJet ? `${tailWs * 3} ${tailWs * 2}` : undefined} />
             <polygon points={pts} fill={jetColor} stroke="white" strokeWidth="0.8" strokeLinejoin="round" />
+          </g>
+        );
+      })() : (lt && isFireVeh) ? (() => {
+        // Техника под очагом пожара — развёрнута по направлению ветви.
+        const { angle, mirror } = uprightAlongBranch(Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI, sym.flipped);
+        return (
+          <g transform={`translate(${px},${py}) rotate(${angle}) scale(${mirror ? -1 : 1},1)`} pointerEvents="none">
+            <svg x={-SZ / 2} y={-SZ / 2} width={SZ} height={SZ} viewBox="0 2 48 40"
+              overflow="visible" pointerEvents="none"
+              dangerouslySetInnerHTML={{ __html: symbolSvgContent(sym.typeId, sym.label) }} />
           </g>
         );
       })() : (lt && !(sym.typeId === "emergency_exit" && hasBranchPts)

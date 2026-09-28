@@ -5,7 +5,7 @@ import {
   PAPER_SIZES_MM,   project3D, unproject2D, unprojectToPlane, calcBranchLength, VIEW_PRESETS, autoWorkPlane,
   sectionKind, SECTION_KIND_COLORS,
 } from "@/lib/topology";
-import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolSvgContent, labelInsideSymbol } from "@/lib/schemaSymbols";
+import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolSvgContent, labelInsideSymbol, isFireVehicleSymbol, uprightAlongBranch } from "@/lib/schemaSymbols";
 import {
   STAMP_W_MM, STAMP_H_MM, buildStampCells, buildStampGridLines, getStampFieldValue,
   type StampFieldKey,
@@ -2916,7 +2916,8 @@ export default function TopoCanvas(props: Props) {
 
           // Авто-масштаб УО «Очаг пожара» и перемычек от ширины ветви
           let SZ: number;
-          if ((sym.typeId === "fire_source" || sym.typeId === "explosion_source") && sym.branchId && hasBranchPts) {
+          const isFireVehSvg = isFireVehicleSymbol(sym) && !!sym.branchId && hasBranchPts;
+          if ((sym.typeId === "fire_source" || sym.typeId === "explosion_source" || isFireVehSvg) && sym.branchId && hasBranchPts) {
             const fireBwSvg = (symBrSvg?.lineWidth && symBrSvg.lineWidth > 0) ? symBrSvg.lineWidth : branchWidth;
             const autoSZsvg = Math.max(8, fireBwSvg * view.scale * 4);
             SZ = Math.max(8, autoSZsvg * sc);
@@ -3376,6 +3377,17 @@ export default function TopoCanvas(props: Props) {
                 }
                 // Остальные символы — через SVG viewBox без поворота
                 if (!lt) return null;
+                if (isFireVehSvg) {
+                  // Техника под очагом пожара — размером с очаг, по направлению ветви
+                  const { angle, mirror } = uprightAlongBranch(Math.atan2(tsy2 - fsy, tsx2 - fsx) * 180 / Math.PI, sym.flipped);
+                  return (
+                    <g transform={`translate(${px},${py}) rotate(${angle}) scale(${mirror ? -1 : 1},1)`} pointerEvents="none">
+                      <svg x={-SZ / 2} y={-SZ / 2} width={SZ} height={SZ} viewBox="0 2 48 40"
+                        overflow="visible" pointerEvents="none"
+                        dangerouslySetInnerHTML={{ __html: symbolSvgContent(sym.typeId, sym.label) }} />
+                    </g>
+                  );
+                }
                 const svgHtml = sym.typeId === "fan" ? fanSvgContent(brForSym?.fanType) : symbolSvgContent(sym.typeId, sym.label);
                 return (
                   <svg x={HX} y={HY} width={SZ} height={SZ} viewBox="0 0 48 40"
