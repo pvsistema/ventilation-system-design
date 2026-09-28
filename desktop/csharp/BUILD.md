@@ -101,7 +101,7 @@ xcopy /E /I /Y dist-desktop desktop\pywebview\pvs-core\dist
 cd C:\PVS
 
 rmdir /S /Q desktop\pywebview\pvs-core\backend_functions
-for %F in (airflow rescue-calculator water-hydraulics svg-to-pdf explosion-calculator aerodynamics) do (
+for %F in (airflow rescue-calculator water-hydraulics explosion-calculator aerodynamics) do (
   mkdir desktop\pywebview\pvs-core\backend_functions\%F 2>nul
   copy /Y backend\%F\index.py desktop\pywebview\pvs-core\backend_functions\%F\index.py
 )

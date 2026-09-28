@@ -7,7 +7,22 @@
 // лист ровно того формата, что выбран, 1 px листа = 25,4/VECTOR_DPI мм.
 // Работает и без сети — в десктопной версии на руднике это важно.
 // ─────────────────────────────────────────────────────────────────────────────
-import { VECTOR_FONT_FAMILY } from "@/lib/svgRecordingContext";
+import { VECTOR_FONT_FAMILY, type VectorFontUrls } from "@/lib/svgRecordingContext";
+// Golos Text — тот же шрифт, что на экране (см. canvasFont.ts), в статических
+// начертаниях 400/500/600/700. Метрики латиницы и кириллицы совпадают с
+// веб-шрифтом @fontsource/golos-text 1:1, поэтому ширины подписей и плашек
+// в PDF/SVG те же, что на схеме. Греческие буквы (η, Δ, ρ…) добавлены из
+// IBM Plex Sans — как и на экране, где Plex стоит запасным шрифтом; редкие
+// значки (⌀, стрелки, рамки) — из DejaVu Sans, чтобы не было «квадратиков».
+import golos400Url from "@/assets/fonts/GolosVector-400.ttf?url";
+import golos500Url from "@/assets/fonts/GolosVector-500.ttf?url";
+import golos600Url from "@/assets/fonts/GolosVector-600.ttf?url";
+import golos700Url from "@/assets/fonts/GolosVector-700.ttf?url";
+
+/** Файлы шрифта векторного листа по начертаниям. */
+export const VECTOR_FONT_URLS: VectorFontUrls = {
+  400: golos400Url, 500: golos500Url, 600: golos600Url, 700: golos700Url,
+};
 
 /**
  * Разрешение координат векторного листа. Совпадает с разрешением печати
@@ -39,8 +54,8 @@ function loadFontBase64(url: string): Promise<string> {
 export interface VectorPdfOptions {
   paperWmm: number;
   paperHmm: number;
-  fontRegularUrl: string;
-  fontBoldUrl: string;
+  /** Файлы шрифта по начертаниям (по умолчанию — Golos Text). */
+  fontUrls?: VectorFontUrls;
   /** Номера листов «N / M» в правом нижнем углу (отступы в мм) или null. */
   pageNumbers?: { rightMm: number; bottomMm: number } | null;
   title?: string;
@@ -48,11 +63,12 @@ export interface VectorPdfOptions {
 
 /** Несколько SVG-листов (каждый — paperW×paperH мм при VECTOR_DPI) → PDF. */
 export async function svgStringToPdf(svgPages: string[], o: VectorPdfOptions): Promise<Blob> {
-  const [{ jsPDF }, { svg2pdf }, reg, bold] = await Promise.all([
+  const urls = o.fontUrls ?? VECTOR_FONT_URLS;
+  const weights = [400, 500, 600, 700] as const;
+  const [{ jsPDF }, { svg2pdf }, ...fonts] = await Promise.all([
     import("jspdf"),
     import("svg2pdf.js"),
-    loadFontBase64(o.fontRegularUrl),
-    loadFontBase64(o.fontBoldUrl),
+    ...weights.map(w => loadFontBase64(urls[w])),
   ]);
   const landscape = o.paperWmm > o.paperHmm;
   const pdf = new jsPDF({
@@ -61,11 +77,16 @@ export async function svgStringToPdf(svgPages: string[], o: VectorPdfOptions): P
     format: [o.paperWmm, o.paperHmm],
     compress: true,
   });
-  // Кириллический шрифт встраивается в PDF (подмножество символов).
-  pdf.addFileToVFS("DejaVuSans.ttf", reg);
-  pdf.addFont("DejaVuSans.ttf", VECTOR_FONT_FAMILY, "normal");
-  pdf.addFileToVFS("DejaVuSans-Bold.ttf", bold);
-  pdf.addFont("DejaVuSans-Bold.ttf", VECTOR_FONT_FAMILY, "bold");
+  // Шрифт встраивается в PDF (подмножество символов). Начертания регистрируются
+  // так, как их ищет svg2pdf: 400 → "normal", 700 → "bold", 500/600 →
+  // "500normal"/"600normal" (font-weight="500" / "600" в разметке листа).
+  weights.forEach((w, i) => {
+    const file = `GolosText-${w}.ttf`;
+    pdf.addFileToVFS(file, fonts[i]);
+    if (w === 400) pdf.addFont(file, VECTOR_FONT_FAMILY, "normal");
+    else if (w === 700) pdf.addFont(file, VECTOR_FONT_FAMILY, "bold");
+    else pdf.addFont(file, VECTOR_FONT_FAMILY, "normal", w);
+  });
   pdf.setFont(VECTOR_FONT_FAMILY, "normal");
   if (o.title) pdf.setProperties({ title: o.title, creator: "ПВ-Система" });
 

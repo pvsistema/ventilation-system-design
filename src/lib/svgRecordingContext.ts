@@ -3,7 +3,7 @@
 // что и CanvasRenderingContext2D (moveTo/lineTo/arc/fillText/…), но вместо
 // пикселей собирает векторный SVG.
 //
-// ЗАЧЕМ. Раньше векторный PDF/SVG строился отдельным рендерером (svgExporter),
+// ЗАЧЕМ. Раньше векторный PDF/SVG строился отдельным рендерером (удалён),
 // который повторял логику схемы «по памяти»: свои формулы размеров позиций ПЛА,
 // условных обозначений, подписей, стрелок. Он расходился и с рабочей областью,
 // и с предпросмотром (например, позиции ПЛА выходили в разы крупнее).
@@ -12,10 +12,29 @@
 // меняется только «холст», на который идут команды.
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** Шрифт, которым набирается текст в векторном файле (кириллица + метрики). */
-export const VECTOR_FONT_FAMILY = "DejaVuSans";
+/**
+ * Шрифт, которым набирается текст в векторном файле. Это Golos Text — тот же,
+ * что на экране, поэтому надписи и плашки в PDF/SVG совпадают со схемой.
+ * Имя — внутреннее имя шрифта во встроенном PDF (см. vectorPdf.ts).
+ */
+export const VECTOR_FONT_FAMILY = "GolosText";
 /** Имя, под которым тот же шрифт загружен в браузер — для measureText. */
-const MEASURE_FONT_FAMILY = "PvDejaVuMeasure";
+const MEASURE_FONT_FAMILY = "PvGolosVectorMeasure";
+
+/** Начертания векторного шрифта: 400 / 500 / 600 / 700. */
+export type VectorFontWeight = 400 | 500 | 600 | 700;
+export type VectorFontUrls = Record<VectorFontWeight, string>;
+
+/**
+ * Положение алфавитной базовой линии относительно точки привязки (доли кегля)
+ * для textBaseline холста. Сняты с Chromium для Golos Text (ascent 0,98,
+ * descent 0,22 → em-box 0,8167 / 0,1833), то есть ровно так, как экранный
+ * холст ставит текст.
+ */
+const BASELINE_SHIFT: Record<string, number> = {
+  top: 0.8167, hanging: 0.784, middle: 0.3167,
+  bottom: -0.1833, ideographic: -0.22, alphabetic: 0,
+};
 
 /**
  * Реестр исходников векторных картинок: Image, созданный из SVG-разметки
@@ -97,32 +116,34 @@ function parseColor(v: unknown): { c: string; a: number } {
   return res;
 }
 
-/** Разбор строки ctx.font: вес, начертание, кегль (px). */
-function parseFont(font: string): { size: number; bold: boolean; italic: boolean } {
+/** Разбор строки ctx.font: вес (ближайшее из 400/500/600/700), начертание, кегль (px). */
+function parseFont(font: string): { size: number; weight: VectorFontWeight; italic: boolean } {
   const sizeM = font.match(/([\d.]+)px/);
   const size = sizeM ? parseFloat(sizeM[1]) : 10;
   const wM = font.match(/\b(bold|bolder|[1-9]00)\b/);
-  const bold = !!wM && (wM[1] === "bold" || wM[1] === "bolder" || parseInt(wM[1], 10) >= 600);
+  let weight: VectorFontWeight = 400;
+  if (wM) {
+    const n = wM[1] === "bold" || wM[1] === "bolder" ? 700 : parseInt(wM[1], 10);
+    weight = n >= 700 ? 700 : n >= 600 ? 600 : n >= 500 ? 500 : 400;
+  }
   const italic = /\b(italic|oblique)\b/.test(font);
-  return { size, bold, italic };
+  return { size, weight, italic };
 }
 
 let measureFontPromise: Promise<void> | null = null;
 /**
- * Загружает DejaVu Sans в браузер под служебным именем: measureText должен
- * мерить тем же шрифтом, которым текст будет набран в PDF, — иначе плашки
- * подписей окажутся уже текста.
+ * Загружает векторный шрифт (те же файлы, что встраиваются в PDF) в браузер
+ * под служебным именем: measureText должен мерить ровно тем шрифтом, которым
+ * текст будет набран в PDF, — иначе выравнивание и плашки подписей разойдутся.
  */
-export function ensureVectorMeasureFont(regularUrl: string, boldUrl: string): Promise<void> {
+export function ensureVectorMeasureFont(urls: VectorFontUrls): Promise<void> {
   if (measureFontPromise) return measureFontPromise;
   if (typeof FontFace === "undefined" || !document.fonts) {
     measureFontPromise = Promise.resolve();
     return measureFontPromise;
   }
-  const faces = [
-    new FontFace(MEASURE_FONT_FAMILY, `url(${regularUrl})`, { weight: "400" }),
-    new FontFace(MEASURE_FONT_FAMILY, `url(${boldUrl})`, { weight: "700" }),
-  ];
+  const faces = ([400, 500, 600, 700] as const).map(w =>
+    new FontFace(MEASURE_FONT_FAMILY, `url(${urls[w]})`, { weight: String(w) }));
   measureFontPromise = Promise.all(faces.map(ff => ff.load().then(l => { document.fonts.add(l); }).catch(() => {})))
     .then(() => {});
   return measureFontPromise;
@@ -418,7 +439,7 @@ export class SvgRecordingContext {
   measureText(text: string): TextMetrics {
     const h = helper();
     const pf = parseFont(this.st.font);
-    h.font = `${pf.italic ? "italic " : ""}${pf.bold ? 700 : 400} ${pf.size}px "${MEASURE_FONT_FAMILY}", sans-serif`;
+    h.font = `${pf.italic ? "italic " : ""}${pf.weight} ${pf.size}px "${MEASURE_FONT_FAMILY}", sans-serif`;
     return h.measureText(text);
   }
   private putText(text: string, x: number, y: number, mode: "fill" | "stroke"): void {
@@ -435,10 +456,8 @@ export class SvgRecordingContext {
     else if (al === "right" || al === "end") x -= tw;
     const anchor = "start";
     // Базовая линия — явным сдвигом: dominant-baseline в PDF-конвертерах
-    // поддерживается ненадёжно. Коэффициенты — по метрикам DejaVu Sans.
-    const bl = this.st.textBaseline;
-    const dy = bl === "middle" ? 0.36 : (bl === "top" || bl === "hanging") ? 0.76
-      : (bl === "bottom" || bl === "ideographic") ? -0.24 : 0;
+    // поддерживается ненадёжно. Коэффициенты — по метрикам Golos Text.
+    const dy = BASELINE_SHIFT[this.st.textBaseline] ?? 0;
     const [a, b, c, d, e, g] = this.st.m;
     const tr = (a === 1 && b === 0 && c === 0 && d === 1 && e === 0 && g === 0)
       ? "" : ` transform="matrix(${f(a)} ${f(b)} ${f(c)} ${f(d)} ${f(e)} ${f(g)})"`;
@@ -454,7 +473,7 @@ export class SvgRecordingContext {
     }
     this.parts.push(
       `<text x="${f(x)}" y="${f(y + dy * pf.size)}"${tr} font-family="${VECTOR_FONT_FAMILY}" font-size="${f(pf.size)}"`
-      + `${pf.bold ? ' font-weight="bold"' : ""}${anchor !== "start" ? ` text-anchor="${anchor}"` : ""}`
+      + `${pf.weight === 700 ? ' font-weight="bold"' : pf.weight !== 400 ? ` font-weight="${pf.weight}"` : ""}${anchor !== "start" ? ` text-anchor="${anchor}"` : ""}`
       + ` xml:space="preserve"${paint}>${escXml(str)}</text>`,
     );
   }
@@ -511,13 +530,22 @@ export class SvgRecordingContext {
   appendRawSvg(markup: string): void {
     const m = markup.match(/<svg[^>]*>([\s\S]*)<\/svg>\s*$/i);
     let body = m ? m[1] : markup;
-    // Кириллица: любой шрифт → встроенный DejaVu Sans (иначе в PDF «квадратики»).
+    // Любой шрифт → встроенный Golos Text (иначе в PDF кириллица — «квадратики»).
     body = body.replace(/font-family="[^"]*"/g, `font-family="${VECTOR_FONT_FAMILY}"`);
+    // Во встроенном шрифте есть только 400/500/600/700 — прочие веса приводим
+    // к ближайшему, иначе svg2pdf не найдёт начертание и возьмёт Times.
+    body = body.replace(/font-weight="([^"]*)"/g, (_m, v: string) => {
+      const w = parseFont(`${v} 10px x`).weight;
+      return w === 400 ? 'font-weight="normal"' : w === 700 ? 'font-weight="bold"' : `font-weight="${w}"`;
+    });
     // dominant-baseline PDF-конвертер понимает не всегда — переводим в явный dy.
     body = body.replace(/<text\b[^>]*>/g, (tag) => {
       const bl = tag.match(/dominant-baseline="([^"]*)"/);
       if (!bl) return tag;
-      const k = bl[1] === "hanging" ? 0.76 : (bl[1] === "middle" || bl[1] === "central") ? 0.36 : 0;
+      // Сдвиги — как у Chromium для Golos Text: hanging 0,784; middle — середина
+      // строчных (x-height 0,53 / 2); central — середина em-box (0,98−0,22)/2.
+      const k = bl[1] === "hanging" ? 0.784 : bl[1] === "middle" ? 0.265
+        : bl[1] === "central" ? 0.38 : (bl[1] === "text-before-edge" || bl[1] === "text-top") ? 0.98 : 0;
       const fs = parseFloat(tag.match(/font-size="([\d.]+)/)?.[1] ?? "12");
       let t = tag.replace(/\s*dominant-baseline="[^"]*"/, "");
       if (k && !/\sdy=/.test(t)) t = t.replace(/>$/, ` dy="${f(k * fs)}">`);

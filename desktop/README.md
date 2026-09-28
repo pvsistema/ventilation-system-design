@@ -14,7 +14,7 @@
 │   Python-сервер (sidecar)       │  ← desktop/server/main.py → python-server.exe
 │   aerodynamics / airflow /      │
 │   rescue / hydraulics /         │
-│   explosion / svg-to-pdf /      │
+│   explosion /                   │
 │   license (с offline-кэшем)     │
 └─────────────────────────────────┘
 ```
@@ -42,7 +42,7 @@ pip install pyinstaller
 sudo apt-get install -y \
   libwebkit2gtk-4.1-dev libappindicator3-dev \
   librsvg2-dev libgtk-3-dev patchelf \
-  # для cairosvg (svg-to-pdf):
+  # для cairosvg:
   libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev
 
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
@@ -100,7 +100,6 @@ cp -r ../../backend/airflow functions/
 cp -r ../../backend/rescue-calculator functions/
 cp -r ../../backend/water-hydraulics functions/
 cp -r ../../backend/explosion-calculator functions/
-cp -r ../../backend/svg-to-pdf functions/
 cp -r ../../backend/license functions/
 
 # Устанавливаем зависимости
@@ -164,7 +163,6 @@ const res = await fetch(API_URLS.aerodynamics, { ... });
 | `src/lib/license.ts` | `LICENSE_URL` | `API_URLS.license` |
 | `src/pages/Admin.tsx` | `ADMIN_URL` | `API_URLS.adminLicenses` |
 | `src/pages/Cad.tsx` | `AIRFLOW_URL`, `EXPLOSION_URL`, `WATER_URL` | `API_URLS.*` |
-| `src/components/cad/PrintDialog.tsx` | хардкод URL | `API_URLS.svgToPdf` |
 | `src/components/cad/RescuePanel.tsx` | `RESCUE_URL` | `API_URLS.rescueCalculator` |
 
 ---

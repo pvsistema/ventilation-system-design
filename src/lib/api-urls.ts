@@ -28,7 +28,6 @@ export const API_URLS = {
   rescueCalculator:   url("rescue-calculator",   "/rescue-calculator"),
   waterHydraulics:    url("water-hydraulics",    "/water-hydraulics"),
   explosionCalculator:url("explosion-calculator","/explosion-calculator"),
-  svgToPdf:           url("svg-to-pdf",          "/svg-to-pdf"),
   license:            url("license",             "/license"),
   adminLicenses:      url("admin-licenses",      "/admin-licenses"),
   computeConfig:      url("compute-config",      "/compute-config"),

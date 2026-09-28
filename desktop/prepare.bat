@@ -21,7 +21,7 @@ echo [1/4] Копирование backend-функций...
 if exist "%SERVER%\functions" rmdir /s /q "%SERVER%\functions"
 mkdir "%SERVER%\functions"
 
-for %%f in (aerodynamics airflow rescue-calculator water-hydraulics explosion-calculator svg-to-pdf license) do (
+for %%f in (aerodynamics airflow rescue-calculator water-hydraulics explosion-calculator license) do (
   if exist "%ROOT%\backend\%%f" (
     xcopy /e /i /q "%ROOT%\backend\%%f" "%SERVER%\functions\%%f\" >nul
     echo   OK %%f

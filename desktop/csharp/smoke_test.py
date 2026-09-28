@@ -7,7 +7,6 @@
 
 Проверяем именно те точки, что уже ломались после защиты .pyc:
   /api/airflow        — расчёт сети (F9)
-  /api/svg-to-pdf     — экспорт PDF+
   /api/aerodynamics   — аэродинамика (встроенный модуль)
   /                   — раздача интерфейса (index.html)
 
@@ -107,8 +106,6 @@ def main():
                 {"id": "b1", "fromId": "n1", "toId": "n2", "resistance": 1.0},
             ],
         }
-        svg = {"svg": "<svg xmlns='http://www.w3.org/2000/svg' width='10' height='10'></svg>",
-               "width_mm": 100, "height_mm": 100}
 
         # Проверяем ВСЕ расчётные модули, которые грузятся из backend_functions.
         # Раньше в списке были только airflow и aerodynamics — и поломка молча
@@ -122,7 +119,6 @@ def main():
             ("POST /api/water-hydraulics", lambda: post("/api/water-hydraulics", net)),
             ("POST /api/rescue-calculator", lambda: post("/api/rescue-calculator", net)),
             ("POST /api/explosion-calculator", lambda: post("/api/explosion-calculator", net)),
-            ("POST /api/svg-to-pdf", lambda: post("/api/svg-to-pdf", svg)),
         ]
 
         failed = []

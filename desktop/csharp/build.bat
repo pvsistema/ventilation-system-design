@@ -194,7 +194,6 @@ if exist "%BF_DST%" rmdir /S /Q "%BF_DST%"
 call :copyfn airflow
 call :copyfn rescue-calculator
 call :copyfn water-hydraulics
-call :copyfn svg-to-pdf
 call :copyfn explosion-calculator
 call :copyfn aerodynamics
 
@@ -346,8 +345,6 @@ REM Copy the WHOLE function folder, not just index.py.
 REM Previously only index.py was taken, so the build was missing:
 REM   - license_guard.py (license check, shipped as a copy inside every calc
 REM     function). Calculations failed with 500 "No module named license_guard";
-REM   - svg-to-pdf\fonts\*.ttf (Cyrillic fonts). Without them PDF export dies,
-REM     and at best Russian text turns into boxes - the smoke test cannot see it.
 REM The other builders (build.sh, prepare.bat, prepare.sh) always copied the
 REM whole folder; only this file was out of sync.
 REM Junk is removed AFTER copying. We deliberately avoid xcopy /EXCLUDE: it does

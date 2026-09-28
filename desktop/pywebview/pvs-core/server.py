@@ -171,7 +171,7 @@ def _save_store(data: dict):
         return False
 
 
-# ─── Динамическая загрузка backend-функций (airflow, rescue, hydraulics, svg-to-pdf) ──
+# ─── Динамическая загрузка backend-функций (airflow, rescue, hydraulics) ──
 # Реальные функции лежат рядом в папке backend_functions/<name>/index.py и содержат
 # handler(event, context) -> {statusCode, body}. Загружаем handler один раз и кэшируем.
 _HANDLER_CACHE = {}
@@ -473,15 +473,6 @@ def api_water():
     if request.method == "OPTIONS":
         return handle_options()
     return call_backend("water-hydraulics")
-
-
-# ─── SVG → векторный PDF (экспорт PDF+) ──────────────────────────────────────
-
-@app.route("/api/svg-to-pdf", methods=["POST", "OPTIONS"])
-def api_svg_to_pdf():
-    if request.method == "OPTIONS":
-        return handle_options()
-    return call_backend("svg-to-pdf")
 
 
 # ─── Лицензия (проксируем в облако) ──────────────────────────────────────────

@@ -13,11 +13,8 @@ import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 // jsPDF подключается по требованию (в момент экспорта в PDF), а не при старте
 // программы: библиотека весит сотни килобайт, а нужна лишь при печати.
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
-import { downloadSvg } from "@/lib/svgExporter";
 import { SvgRecordingContext, ensureVectorMeasureFont } from "@/lib/svgRecordingContext";
-import { svgStringToPdf, VECTOR_DPI } from "@/lib/vectorPdf";
-import dejavuRegularUrl from "@/assets/fonts/DejaVuSans.ttf?url";
-import dejavuBoldUrl from "@/assets/fonts/DejaVuSans-Bold.ttf?url";
+import { svgStringToPdf, VECTOR_DPI, VECTOR_FONT_URLS } from "@/lib/vectorPdf";
 // Общие части и блоки диалога вынесены в отдельные файлы (перенос 1:1)
 import {
   printDocument, PAPER_SIZES,
@@ -1173,7 +1170,7 @@ export default function PrintDialog({
   // печати (300 dpi), поэтому толщины, кегли и размеры УО совпадают с печатью.
   const renderTileToSvg = useCallback(async (col: number, row: number): Promise<string> => {
     await ensureFireCraneIcons();
-    await ensureVectorMeasureFont(dejavuRegularUrl, dejavuBoldUrl);
+    await ensureVectorMeasureFont(VECTOR_FONT_URLS);
     const W = Math.round(paper.w * VECTOR_DPI / 25.4);
     const H = Math.round(paper.h * VECTOR_DPI / 25.4);
     const rec = new SvgRecordingContext(W, H);
@@ -1349,7 +1346,10 @@ body{background:white;font-family:Arial,sans-serif}
         const list = tiles.list;
         for (let i = 0; i < list.length; i++) {
           const svgStr = await renderTileToSvg(list[i].col, list[i].row);
-          downloadSvg(svgStr, list.length > 1 ? `${projectName}-лист${i + 1}` : projectName);
+          downloadBlob(
+            new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" }),
+            `${list.length > 1 ? `${projectName}-лист${i + 1}` : projectName}.svg`,
+          );
         }
         setShowExportDialog(false);
       } catch (e) {
@@ -1371,7 +1371,6 @@ body{background:white;font-family:Arial,sans-serif}
         }
         const blob = await svgStringToPdf(svgPages, {
           paperWmm: paper.w, paperHmm: paper.h,
-          fontRegularUrl: dejavuRegularUrl, fontBoldUrl: dejavuBoldUrl,
           pageNumbers: showPageNumbers
             ? { rightMm: marginRight + 2, bottomMm: marginBottom + 2 }
             : null,

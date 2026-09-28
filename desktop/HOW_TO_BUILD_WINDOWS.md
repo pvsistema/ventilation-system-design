@@ -131,7 +131,6 @@ xcopy /e /i ..\..\backend\airflow functions\airflow\
 xcopy /e /i ..\..\backend\rescue-calculator functions\rescue-calculator\
 xcopy /e /i ..\..\backend\water-hydraulics functions\water-hydraulics\
 xcopy /e /i ..\..\backend\explosion-calculator functions\explosion-calculator\
-xcopy /e /i ..\..\backend\svg-to-pdf functions\svg-to-pdf\
 xcopy /e /i ..\..\backend\license functions\license\
 ```
 
@@ -251,7 +250,6 @@ desktop/
 │       ├── rescue-calculator/
 │       ├── water-hydraulics/
 │       ├── explosion-calculator/
-│       ├── svg-to-pdf/
 │       └── license/
 └── tauri/
     ├── tauri.conf.json

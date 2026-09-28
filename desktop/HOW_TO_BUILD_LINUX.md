@@ -140,7 +140,6 @@ cp -r ../../backend/airflow            functions/
 cp -r ../../backend/rescue-calculator  functions/
 cp -r ../../backend/water-hydraulics   functions/
 cp -r ../../backend/explosion-calculator functions/
-cp -r ../../backend/svg-to-pdf         functions/
 cp -r ../../backend/license            functions/
 ```
 

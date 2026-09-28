@@ -21,7 +21,7 @@ echo "[1/4] Копирование backend-функций..."
 rm -rf "$SERVER_DIR/functions"
 mkdir -p "$SERVER_DIR/functions"
 
-for fn in aerodynamics airflow rescue-calculator water-hydraulics explosion-calculator svg-to-pdf license; do
+for fn in aerodynamics airflow rescue-calculator water-hydraulics explosion-calculator license; do
   src="$ROOT_DIR/backend/$fn"
   if [ -d "$src" ]; then
     cp -r "$src" "$SERVER_DIR/functions/$fn"

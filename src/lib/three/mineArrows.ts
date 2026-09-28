@@ -346,7 +346,7 @@ function planArrows(input: ArrowsInput): { plan: Placement[]; total: number } {
     // Само тело тупиковой выработки в объёме теперь рисуется (см. mineScene),
     // но сквозного тока в ней нет: стрелка показывала бы направление там, где
     // движения воздуха не существует, а это прямая ошибка чтения схемы. На
-    // чертеже правило то же (см. svgExporter).
+    // чертеже правило то же (см. canvasRenderer).
     if (b.isDead) continue;
     if (Math.abs(b.flow ?? 0) < MIN_FLOW) continue;
     const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);

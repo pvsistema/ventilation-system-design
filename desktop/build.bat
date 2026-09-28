@@ -29,7 +29,7 @@ echo [1/5] Копирование backend-функций...
 if exist "%FUNCTIONS_DIR%" rmdir /s /q "%FUNCTIONS_DIR%"
 mkdir "%FUNCTIONS_DIR%"
 
-for %%f in (aerodynamics airflow rescue-calculator water-hydraulics explosion-calculator svg-to-pdf license) do (
+for %%f in (aerodynamics airflow rescue-calculator water-hydraulics explosion-calculator license) do (
   if exist "%ROOT_DIR%\backend\%%f" (
     xcopy /e /i /q "%ROOT_DIR%\backend\%%f" "%FUNCTIONS_DIR%\%%f\" >nul
     echo   OK: %%f
