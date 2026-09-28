@@ -9999,14 +9999,24 @@ export default function CadPage() {
                     return (
                       <>
                         <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
-                          <span className="text-gray-500 flex-shrink-0" style={{ width: 120 }} title="Норма утечек при перепаде 50 Па. Пусто — из справочника перемычек">Норма утечек (50 Па):</span>
+                          <span className="text-gray-500 flex-shrink-0" style={{ width: 120 }} title="Норма утечек при перепаде 50 Па. Пусто — из справочника перемычек">Норма утечек:</span>
                           <input type="number" step="1" min="0"
                             value={sym.bkLeakNorm ?? ""}
                             placeholder={refNorm > 0 ? String(refNorm) : "—"}
                             onChange={e => { const v = parseFloat(e.target.value); updSym({ bkLeakNorm: v > 0 ? v : undefined }); }}
                             className="flex-1 text-[11px] px-1 text-right"
                             style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white", minWidth: 0 }} />
-                          <span className="text-[11px] text-gray-400 flex-shrink-0">м³/мин</span>
+                          <span className="text-[11px] text-gray-400 flex-shrink-0" style={{ width: 38 }}>м³/мин</span>
+                        </div>
+                        <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                          <span className="flex-shrink-0" style={{ width: 120 }} />
+                          <input type="number" step="0.01" min="0"
+                            value={sym.bkLeakNorm != null ? +(sym.bkLeakNorm / 60).toFixed(4) : ""}
+                            placeholder={refNorm > 0 ? String(+(refNorm / 60).toFixed(4)) : "—"}
+                            onChange={e => { const v = parseFloat(e.target.value); updSym({ bkLeakNorm: v > 0 ? v * 60 : undefined }); }}
+                            className="flex-1 text-[11px] px-1 text-right"
+                            style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white", minWidth: 0 }} />
+                          <span className="text-[11px] text-gray-400 flex-shrink-0" style={{ width: 38 }}>м³/с</span>
                         </div>
                         {norm50 > 0 && factQ > 0 && (
                           <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
@@ -10014,6 +10024,7 @@ export default function CadPage() {
                             <span className="flex-1 text-right text-[11px] font-semibold"
                               style={{ color: over ? "var(--c-red, #b91c1c)" : "var(--c-green, #2e7d32)" }}>
                               {Math.round(factQ)} / {Math.round(normQ)} м³/мин{over ? ` (+${Math.round(factQ - normQ)})` : ""}
+                              <span className="block">{(factQ / 60).toFixed(2)} / {(normQ / 60).toFixed(2)} м³/с</span>
                             </span>
                           </div>
                         )}
