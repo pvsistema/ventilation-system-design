@@ -34,6 +34,7 @@ import {
   type MineMeasureStations,
 } from "@/lib/three/mineMeasureStations";
 import { buildMineBulkheads, type MineBulkheads } from "@/lib/three/mineBulkheads";
+import { buildMineFire, type MineFire, type SmokeSegment } from "@/lib/three/mineFire";
 import { BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
@@ -82,6 +83,10 @@ export interface MineView3DProps {
   pollutedBranchIds?: Set<string>;
   /** Множитель скорости анимации: 1 — обычная, 0.5 — вдвое медленнее. */
   animSpeed?: number;
+  /** Пожар по результату расчёта: null — расчёт пожара не выполнен. */
+  fire3d?: { timeMin: number | null } | null;
+  /** Задымление выработок на текущей минуте — то же, что на чертеже. */
+  fireSmoke?: Map<string, SmokeSegment>;
   /**
    * Включена ли кнопка «Анимация» на ленте.
    *
@@ -255,6 +260,14 @@ export default function MineView3D(p: MineView3DProps) {
   // Стрелки бегут — значит кадры нужны непрерывно, а не по событию. Держим это
   // признаком в ref: цикл отрисовки не должен зависеть от перерисовок React.
   const animatingRef = useRef(false);
+
+  // ── Пожар в объёме ────────────────────────────────────────────────────
+  // После расчёта пожара: горящая техника, пламя, свет и дым по струе.
+  // Пламя и дым живые, поэтому, пока пожар показан, кадры идут непрерывно.
+  const fireRef = useRef<MineFire | null>(null);
+  const [showFire3D, setShowFire3D] = useState(true);
+  const [fireInfo, setFireInfo] = useState<{ fires: number; smoke: number } | null>(null);
+  const [fireIntensity, setFireIntensity] = useState(0);
 
   const [stats, setStats] = useState({ branches: 0, drawCalls: 0, fps: 0 });
   // Выработка под курсором: её имя показываем в плашке, а саму — подсвечиваем.
@@ -575,6 +588,8 @@ export default function MineView3D(p: MineView3DProps) {
         skipMeasureStations: showMs3D,
         // Перемычка показана объёмной плитой по сечению — двойник не нужен.
         skipBulkheads: showBk3D,
+        // Пожар показан объёмно — плоские значки очага и техники не нужны.
+        skipFire: showFire3D && !!p.fire3d,
         // Картинки значков грузятся браузером асинхронно. Режим «Модель»
         // рисует по событию, и без этого сигнала знаки появлялись бы только
         // после первого поворота схемы.
@@ -595,7 +610,7 @@ export default function MineView3D(p: MineView3DProps) {
       s.dispose();
       symbolsRef.current = null;
     };
-  }, [ready, showSymbols, showFans3D, showMs3D, showBk3D, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+  }, [ready, showSymbols, showFans3D, showMs3D, showBk3D, showFire3D, !!p.fire3d, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
 
   // ── Объёмные перемычки ────────────────────────────────────────────────
   // Свой слой, как вентиляторы и станции: перемычки переставляют и меняют им
@@ -742,6 +757,59 @@ export default function MineView3D(p: MineView3DProps) {
   }, [ready, showSymbols, showFans3D, symSizeK, p.schemaSymbols, p.nodes, p.branches,
       p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
 
+  // Карта задымления приходит новой на каждую перерисовку страницы — сравниваем
+  // по содержимому, иначе дым пересобирался бы без всякой причины.
+  const fireSmokeKey = p.fireSmoke
+    ? [...p.fireSmoke.entries()].map(([k, v]) => `${k}:${v.color}:${v.fromT.toFixed(3)}:${v.toT.toFixed(3)}`).join("|")
+    : "";
+  const fireSmokeRef = useRef(p.fireSmoke);
+  fireSmokeRef.current = p.fireSmoke;
+
+  // ── Пожар ─────────────────────────────────────────────────────────────
+  // Слой пересобирается, когда меняется минута шкалы задымления: фронт дыма
+  // в выработках — ровно тот, что на чертеже на эту минуту.
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const prev = fireRef.current;
+    if (prev) { scene.remove(prev.group); prev.dispose(); fireRef.current = null; }
+    setFireInfo(null);
+    if (showFire3D && p.fire3d) {
+      const built = buildMineFire({
+        nodes: p.nodes, branches: p.branches,
+        symbols: p.schemaSymbols,
+        xyScale: p.xyScale, zScale: p.zScale,
+        smoke: fireSmokeRef.current,
+        timeMin: p.fire3d.timeMin,
+        animSpeed: p.animSpeed,
+      });
+      if (built) {
+        scene.add(built.group);
+        fireRef.current = built;
+        setFireInfo({ fires: built.fires, smoke: built.smokeParticles });
+      }
+    }
+    needsRenderRef.current = true;
+    return () => {
+      const f = fireRef.current;
+      if (!f) return;
+      scene.remove(f.group);
+      f.dispose();
+      fireRef.current = null;
+    };
+  }, [ready, showFire3D, p.fire3d?.timeMin, !!p.fire3d, fireSmokeKey, p.schemaSymbols,
+      p.nodes, p.branches, p.xyScale, p.zScale, p.animSpeed]);
+
+  // Интенсивность для подписи на панели — раз в полсекунды, не каждый кадр.
+  useEffect(() => {
+    if (!fireInfo) return;
+    const id = window.setInterval(() => {
+      const f = fireRef.current;
+      if (f) setFireIntensity(f.intensity());
+    }, 500);
+    return () => window.clearInterval(id);
+  }, [fireInfo]);
+
   // ── Смена окраски без пересборки ──────────────────────────────────────
   // Переключили заливку (расход / скорость / участки / горизонты) — меняется
   // только цвет. Геометрия та же, поэтому переписываем буфер цветов и сразу
@@ -795,6 +863,16 @@ export default function MineView3D(p: MineView3DProps) {
       const bk = bkRef.current;
       if (bkSailRef.current && bk) {
         bk.setTime(flowTime());
+        needsRenderRef.current = true;
+      }
+
+      // Пожар живёт всегда, пока показан: пламя и дым — не декор, а процесс.
+      const fire = fireRef.current;
+      if (fire && cam) {
+        const { h } = sizeRef.current;
+        // Пикселей на единицу сцены: по нему частицы получают размер на экране.
+        const pxPerUnit = h / Math.max(1e-6, 2 * camRef.current.zoom);
+        fire.setTime(flowTime(), pxPerUnit);
         needsRenderRef.current = true;
       }
 
@@ -1768,6 +1846,39 @@ export default function MineView3D(p: MineView3DProps) {
             <span style={{ width: 10, height: 10, borderRadius: 2, background: "#2563eb", display: "inline-block" }} />
             исходящая (загазованная)
           </div>
+        </div>
+      )}
+
+      {/* Пожар в объёме: кнопка и шкала развития */}
+      {p.fire3d && (
+        <div className="absolute right-2 text-[10px] px-2 py-1.5 rounded flex flex-col gap-1"
+          style={{ top: showArrows && arrowCount > 0 ? 58 : 8, background: "rgba(24,8,4,0.88)", border: "1px solid #7f1d1d", color: "#fecaca", minWidth: 170 }}>
+          <div className="flex items-center gap-2">
+            <span style={{ fontWeight: 700 }}>🔥 Пожар в объёме</span>
+            <button onClick={() => setShowFire3D(v => !v)}
+              className="ml-auto px-1.5 rounded"
+              style={{ border: "1px solid #b91c1c", background: showFire3D ? "#b91c1c" : "transparent", color: "#fff" }}>
+              {showFire3D ? "вкл" : "выкл"}
+            </button>
+          </div>
+          {showFire3D && fireInfo && (
+            <>
+              <div>
+                {p.fire3d.timeMin != null
+                  ? <>Время от начала: <b>{p.fire3d.timeMin} мин</b></>
+                  : <>Возгорание (шкала задымления не запущена)</>}
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span>Развитие</span>
+                <span style={{ flex: 1, height: 5, background: "#3f1d16", borderRadius: 3, overflow: "hidden" }}>
+                  <span style={{ display: "block", height: "100%", width: `${Math.round(fireIntensity * 100)}%`,
+                    background: "linear-gradient(90deg,#fde047,#f97316,#dc2626)" }} />
+                </span>
+                <b>{fireIntensity < 0.35 ? "возгорание" : fireIntensity < 0.85 ? "развитие" : "развитый"}</b>
+              </div>
+              <div style={{ color: "#fca5a5" }}>Дым уходит по струе; фронт — по шкале задымления</div>
+            </>
+          )}
         </div>
       )}
 

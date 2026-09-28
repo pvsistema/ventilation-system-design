@@ -92,6 +92,7 @@ export default function TopoCanvas(props: Props) {
     waterNodeResults,
     waterBranchResults,
     branchFireColors,
+    fire3d,
     branchExplosionColors,
     reversedBranchIds,
     rescuePathBranchIds,
@@ -1846,6 +1847,10 @@ export default function TopoCanvas(props: Props) {
                  показывал голую геометрию: перемычки, двери, вентиляторы и
                  очаги пожара несут половину содержания вентиляционного плана. */
               schemaSymbols={modelSymbols}
+              /* Пожар в объёме: горящая техника, пламя и задымление по
+                 результату расчёта пожара — тот же фронт дыма, что на чертеже. */
+              fire3d={fire3d}
+              fireSmoke={branchFireColors}
               pollutedBranchIds={pollutedBranchIds}
               animSpeed={animSpeed}
               /* Кнопка «Анимация» на ленте — одна на оба режима. Выключив

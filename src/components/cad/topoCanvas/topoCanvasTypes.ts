@@ -226,6 +226,12 @@ export interface Props {
   waterBranchResults?: Map<string, import("@/lib/waterHydraulics").WaterBranchResult>;
   /** Карта branchId → сегмент задымления {color, fromT, toT} */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
+  /**
+   * Пожар для режима «Модель»: null/undefined — расчёт пожара не выполнен,
+   * объёмный пожар не показывается. timeMin — минута со шкалы задымления
+   * (null — шкала не запущена, возгорание разыгрывается само).
+   */
+  fire3d?: { timeMin: number | null } | null;
   /** Карта branchId → зона поражения взрывом {color, hazardLevel} */
   branchExplosionColors?: Map<string, {
     color: string; hazardLevel: string;

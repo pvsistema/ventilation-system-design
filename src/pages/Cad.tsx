@@ -11633,6 +11633,9 @@ export default function CadPage() {
                 setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz, placed: true } : p));
                 setPositionPlaceMode(false);
               }}
+              fire3d={fireCalcDone && fireResult && !fireControlPreview
+                ? { timeMin: showSmoke && smokeTimeMinutes > 0 ? smokeTimeMinutes : null }
+                : null}
               branchFireColors={(() => {
                 // Предпросмотр варианта главнее обычной картины задымления:
                 // человек явно попросил показать ДРУГОЙ режим, и смешивать

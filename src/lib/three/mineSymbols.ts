@@ -222,6 +222,11 @@ export interface SymbolsInput {
    * висящая внутри собственной плиты и просвечивающая сквозь неё.
    */
   skipBulkheads?: boolean;
+  /**
+   * Пожар показан объёмно (mineFire.ts): горящая техника и пламя. Плоские
+   * значки очага и техники тогда не нужны — они висели бы поверх огня.
+   */
+  skipFire?: boolean;
   /** Картинка значка догрузилась — нужен новый кадр. */
   onReady?: () => void;
 }
@@ -300,6 +305,8 @@ export function buildMineSymbols(input: SymbolsInput): MineSymbols | null {
     // Перемычка в объёме — не карточка, а плита по контуру сечения выработки
     // (mineBulkheads.ts). Плоский значок ей в этом режиме не нужен.
     if (input.skipBulkheads && BULKHEAD_SYMBOL_IDS.has(sym.typeId)) continue;
+    if (input.skipFire && (sym.typeId === "fire_source"
+      || (sym.typeId === "heat_selfprop" && sym.id.startsWith("SYM_FIREVEH_")))) continue;
     // Свободные значки (без привязки к выработке) в объёме поставить некуда:
     // их экранные координаты к трёхмерной схеме отношения не имеют.
     if (!sym.branchId) continue;
