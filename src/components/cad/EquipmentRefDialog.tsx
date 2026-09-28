@@ -16,6 +16,9 @@ import {
   type ExplosionThresholds, DEFAULT_EXPLOSION_THRESHOLDS,
   TYPICAL_EXPLOSION_THRESHOLDS, EXPLOSION_HAZARD_COLORS,
 } from "@/lib/explosionCalculator";
+import { LEGEND_TYPES, guessBulkheadSymbolId, bulkheadLegendTypes } from "@/lib/schemaSymbols";
+import { useDraggableWindow } from "@/hooks/useDraggableWindow";
+import { PHeader } from "@/components/cad/printPreview/printUi";
 
 type TabId = "fans" | "types" | "bulkheads" | "airnorms" | "blastzones" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units";
 
@@ -39,6 +42,24 @@ export interface MineBulkheadExport {
   note: string;
   color: string;
   isCustom?: boolean;
+  /** Условное обозначение (id из LEGEND_TYPES). Не задано — подбирается по названию. */
+  symbolId?: string;
+}
+
+/** УО перемычки справочника: заданное вручную или подобранное по названию. */
+export function mineBulkheadSymbolId(b: Pick<MineBulkheadExport, "name" | "symbolId">): string {
+  return b.symbolId || guessBulkheadSymbolId(b.name);
+}
+
+/** Миниатюра УО на фоне ветви — как значок выглядит на схеме. */
+function SymbolPreview({ id, size = 28 }: { id: string; size?: number }) {
+  const lt = LEGEND_TYPES.find(l => l.id === id);
+  return (
+    <svg width={size} height={size * 40 / 48} viewBox="0 0 48 40" style={{ flexShrink: 0, overflow: "visible" }}>
+      <line x1="0" y1="20" x2="48" y2="20" stroke="var(--c-b3, #b9b4aa)" strokeWidth="5" />
+      {lt && <g dangerouslySetInnerHTML={{ __html: lt.svgContent }} />}
+    </svg>
+  );
 }
 
 interface Props {
@@ -1123,6 +1144,59 @@ function ViewRow({ label, children }: { label: string; children: React.ReactNode
 }
 
 
+// ─── Выбор УО перемычки: выпадающий список с миниатюрами ─────────────────────
+// Список и названия — те же, что в меню УО главной панели (подгруппы
+// «Глухие перемычки», «С вент. окном», «Прочие»).
+function BulkheadSymbolSelect({ value, autoId, onChange }: {
+  value?: string; autoId: string; onChange: (v: string | undefined) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const current = value || autoId;
+  const items = bulkheadLegendTypes();
+  const groups = Array.from(new Set(items.map(i => i.subgroup ?? "Прочие")));
+  const cur = LEGEND_TYPES.find(l => l.id === current);
+  const autoName = LEGEND_TYPES.find(l => l.id === autoId)?.name ?? autoId;
+  return (
+    <div className="relative">
+      <button type="button" onClick={() => setOpen(v => !v)}
+        className={INPUT + " flex items-center gap-2 text-left !h-10"}>
+        <SymbolPreview id={current} size={30} />
+        <span className="flex-1 truncate">{cur?.name ?? "—"}</span>
+        {!value && <span className="text-[10px] text-[var(--c-t4)]">авто</span>}
+        <Icon name="ChevronDown" size={13} className="text-[var(--c-t3)]" />
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-[70]" onMouseDown={() => setOpen(false)} />
+          <div className="absolute left-0 right-0 top-full mt-1 z-[71] max-h-72 overflow-y-auto rounded-md shadow-xl"
+            style={{ background: "var(--c-s1)", border: "1px solid var(--c-b2)" }}>
+            <button type="button" onClick={() => { onChange(undefined); setOpen(false); }}
+              className="w-full flex items-center gap-2 px-2 py-1.5 text-left text-[12px] hover:bg-[var(--c-tint-blue)]"
+              style={{ background: !value ? "var(--c-tint-blue2)" : undefined }}>
+              <SymbolPreview id={autoId} size={26} />
+              <span className="flex-1 truncate text-[var(--c-t1)]">Авто по названию — {autoName}</span>
+            </button>
+            {groups.map(g => (
+              <div key={g}>
+                <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--c-t4)]"
+                  style={{ borderTop: "1px solid var(--c-b1)" }}>{g}</div>
+                {items.filter(i => (i.subgroup ?? "Прочие") === g).map(i => (
+                  <button key={i.id} type="button" onClick={() => { onChange(i.id); setOpen(false); }}
+                    className="w-full flex items-center gap-2 px-2 py-1 text-left text-[12px] hover:bg-[var(--c-tint-blue)]"
+                    style={{ background: value === i.id ? "var(--c-tint-blue2)" : undefined }}>
+                    <SymbolPreview id={i.id} size={26} />
+                    <span className="flex-1 truncate text-[var(--c-t1)]">{i.name}</span>
+                  </button>
+                ))}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── Справочник перемычек ─────────────────────────────────────────────────────
 function rFmt(r: number): string {
   if (r >= 1_000_000) return `${(r / 1_000_000).toFixed(1)} ММюрг`;
@@ -1256,7 +1330,9 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
               className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-[var(--c-b1)] select-none hover:bg-[var(--c-tint-blue)]"
               style={{ background: selectedId === b.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
               <div className="flex items-start gap-1.5 flex-1 min-w-0">
-                <div className="w-3 h-3 rounded-sm flex-shrink-0 mt-0.5" style={{ background: b.color }} />
+                <span title={LEGEND_TYPES.find(l => l.id === mineBulkheadSymbolId(b))?.name}>
+                  <SymbolPreview id={mineBulkheadSymbolId(b)} size={26} />
+                </span>
                 <div className="flex-1 min-w-0">
                   <div className="text-[12px] font-medium text-[var(--c-t1)] truncate">{b.name}</div>
                   <div className="text-[10px] text-[var(--c-t3)]">{BULKHEAD_TYPE_LABELS[b.type]}</div>
@@ -1288,7 +1364,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Шапка */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-            <div className="w-5 h-5 rounded-sm border border-[var(--c-b2)] flex-shrink-0" style={{ background: selected.color }} />
+            <SymbolPreview id={mineBulkheadSymbolId(isEditing ? { name: editForm.name ?? "", symbolId: editForm.symbolId } : selected)} size={30} />
             <span className="text-[13px] font-bold text-[var(--c-t1)] truncate flex-1">
               {isEditing ? (editForm.name || "Перемычка") : selected.name}
             </span>
@@ -1336,6 +1412,13 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                     ))}
                   </select>
                 </div>
+                <div className="space-y-1">
+                  <label className={LABEL}>Условное обозначение (УО)</label>
+                  <BulkheadSymbolSelect
+                    value={editForm.symbolId}
+                    autoId={guessBulkheadSymbolId(editForm.name ?? "")}
+                    onChange={v => setEditForm(f => ({ ...f, symbolId: v }))} />
+                </div>
                 <div className="grid grid-cols-2 gap-3">
                   <div className="space-y-1">
                     <label className={LABEL}>Воздухопроницаемость A, м²/(с·√Па)</label>
@@ -1371,7 +1454,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <label className={LABEL}>Норма утечек при перепаде 50 Па, м³/мин</label>
+                  <label className={LABEL}>Норма утечек, м³/мин</label>
                   <input type="number" min={0} step={1} value={editForm.leakNorm ?? 0}
                     onChange={e => setEditForm(f => ({ ...f, leakNorm: parseFloat(e.target.value) || 0 }))}
                     className={INPUT} />
@@ -1397,11 +1480,19 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
                     <span className="px-2 py-0.5 rounded-md text-[10px] bg-[var(--c-s3)] text-[var(--c-t2)]">Пользовательская</span>
                   )}
                 </div>
+                <div className="flex items-center gap-3 py-1.5 border-b border-[var(--c-b1)]">
+                  <span className="text-[12px] text-[var(--c-t3)] w-44 flex-shrink-0">Условное обозначение</span>
+                  <SymbolPreview id={mineBulkheadSymbolId(selected)} size={30} />
+                  <span className="text-[13px] text-[var(--c-t1)] font-medium">
+                    {LEGEND_TYPES.find(l => l.id === mineBulkheadSymbolId(selected))?.name ?? "—"}
+                    {!selected.symbolId && <span className="ml-1 text-[10px] text-[var(--c-t4)] font-normal">(по названию)</span>}
+                  </span>
+                </div>
                 {[
                   ["Воздухопроницаемость", `${selected.airPermeability.toFixed(6)} м²/(с·√Па)`],
                   ["Сопротивление R", rFmt(selected.rMkyurg)],
                   ["Давление разрушения", selected.failurePressure > 0 ? `${selected.failurePressure} МПа` : "Не нормируется"],
-                  ["Норма утечек (50 Па)", (selected.leakNorm ?? 0) > 0 ? `${selected.leakNorm} м³/мин` : "Не задана"],
+                  ["Норма утечек", (selected.leakNorm ?? 0) > 0 ? `${selected.leakNorm} м³/мин (${+((selected.leakNorm ?? 0) / 60).toFixed(3)} м³/с)` : "Не задана"],
                   ["Примечание", selected.note || "—"],
                 ].map(([label, value]) => (
                   <div key={label} className="flex items-start gap-3 py-1.5 border-b border-[var(--c-b1)]">
@@ -2035,25 +2126,30 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-      style={{ background: "rgba(15,20,25,0.45)" }}
-      // mousedown, а не click: иначе выделение текста мышью с отпусканием
-      // за пределами окна закрывало справочник
-      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className={MODAL}
-        style={{ width: 960, maxWidth: "100%", height: 620, maxHeight: "100%", fontFamily: "var(--font-ui)" }}>
+  // Окно перемещается за шапку (как «Печать» и «Данные ОПО»); положение
+  // запоминается. Схема под окном остаётся видна и не затемняется.
+  const WIN_W = Math.min(960, window.innerWidth - 16);
+  const WIN_H = Math.min(620, window.innerHeight - 16);
+  const { pos, dragHandleProps } = useDraggableWindow({
+    width: WIN_W, height: WIN_H, storageKey: "pvs.refDialogPos",
+  });
 
-        {/* Заголовок */}
-        <div className={MODAL_HEAD} style={{ background: "var(--c-s1, #fff)" }}>
-          <IconBadge icon="BookOpen" />
-          <span className="text-[13px] font-semibold text-[var(--c-t1)]">Справочники</span>
-          <Icon name="ChevronRight" size={13} className="text-[var(--c-t4)]" />
-          <span className="text-[13px] text-[var(--c-t2)] truncate">{currentTab.label}</span>
-          <button onClick={onClose} title="Закрыть (Esc)" className={ICON_BTN + " ml-auto"}>
-            <Icon name="X" size={15} />
-          </button>
-        </div>
+  return (
+    <div className="fixed inset-0 z-50" style={{ pointerEvents: "none" }}>
+      <div className="flex flex-col overflow-hidden"
+        style={{
+          position: "absolute", left: pos.x, top: pos.y,
+          width: WIN_W, height: WIN_H, maxHeight: `calc(100vh - ${pos.y + 8}px)`,
+          background: "var(--c-s1)", border: "1px solid var(--c-b3)", borderRadius: 8,
+          boxShadow: "0 16px 48px -12px rgba(0,0,0,.45)",
+          fontFamily: "var(--font-ui)", pointerEvents: "auto",
+        }}>
+
+        {/* Заголовок — за него окно перетаскивается */}
+        <PHeader icon="BookOpen" title={`Справочники — ${currentTab.label}`}
+          subtitle={currentTab.group}
+          onClose={onClose}
+          dragProps={dragHandleProps} />
 
         <div className="flex flex-1 overflow-hidden">
           {/* Навигация по разделам */}
@@ -2071,7 +2167,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
                         background: active ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 12%, transparent)" : "transparent",
                         color: active ? "var(--c-accent-ink, #173d52)" : "var(--c-t2, #3a3f45)",
                         fontWeight: active ? 600 : 400,
-                        boxShadow: active ? "inset 3px 0 0 var(--c-accent, #1e5a7a)" : "none",
+                        boxShadow: active ? "inset 3px 0 0 var(--c-signal, #e8a317)" : "none",
                       }}
                       onMouseEnter={e => { if (!active) e.currentTarget.style.background = "var(--c-s4, #e6e3dc)"; }}
                       onMouseLeave={e => { if (!active) e.currentTarget.style.background = "transparent"; }}>

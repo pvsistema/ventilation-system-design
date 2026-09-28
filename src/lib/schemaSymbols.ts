@@ -609,6 +609,33 @@ export const BULKHEAD_SYMBOL_IDS = new Set([
   "bulkhead_barrier", "fire_door", "barrier", "fire_door_pp",
 ]);
 
+/**
+ * УО перемычки по её названию — по тем же описаниям, что в выпадающем меню УО
+ * главной панели: конструкция (глухая / дверь закрытая / автоматическая /
+ * открытая / с окном / решётчатая / парус / регулятор) + материал
+ * (бетонная / деревянная / кирпичная / металлическая).
+ */
+export function guessBulkheadSymbolId(name: string): string {
+  const t = (name ?? "").toLowerCase();
+  const mat = /бетон/.test(t) ? "conc" : /дерев/.test(t) ? "wood"
+    : /кирпич/.test(t) ? "brick" : /металл/.test(t) ? "metal" : "base";
+  if (/противопож/.test(t)) return "fire_door_pp";
+  if (/барьер/.test(t)) return "barrier";
+  if (/парус/.test(t)) return "sail";
+  if (/регулятор|шибер/.test(t)) return "regulator";
+  if (/автомат/.test(t)) return `auto_${mat}`;
+  if (/откр/.test(t)) return `open_${mat}`;
+  if (/решёт|решет/.test(t)) return `lat_${mat}`;
+  if (/окн|проём|проем/.test(t)) return `win_${mat}`;
+  if (/двер/.test(t)) return `door_${mat}`;
+  return mat === "base" ? "bk_base" : mat === "conc" ? "bk_concrete" : `bk_${mat}`;
+}
+
+/** УО перемычек, доступные для выбора (без скрытых дублей). */
+export function bulkheadLegendTypes(): LegendType[] {
+  return LEGEND_TYPES.filter(l => BULKHEAD_SYMBOL_IDS.has(l.id) && !HIDDEN_LEGEND_IDS.has(l.id));
+}
+
 // ID символов оборудования водопровода — для поиска по объектам схемы.
 export const WATER_SYMBOL_IDS = new Set([
   "pump", "pump_station", "valve_reduce", "valve_water",
