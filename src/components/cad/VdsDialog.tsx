@@ -22,12 +22,19 @@
 import { useMemo, useState } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
+import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
+import VdsReportPanel from "@/components/cad/vds/VdsReportPanel";
 
 interface Props {
   branches: TopoBranch[];
   nodes: TopoNode[];
   solved: boolean; // выполнен ли расчёт сети (тогда flow/fanPressure заполнены)
   onClose: () => void;
+  /** Вентсооружения по ветвям — для раздела «Отчёт ВДС» */
+  bulkheads?: Map<string, BranchBulkheadInfo>;
+  projectName?: string;
+  /** Состояние лицензии (ключ нужен для проверки кода доступа к отчёту) */
+  license?: { status?: string; info?: { key?: string; licensed?: boolean } | null; fingerprint?: string } | null;
 }
 
 interface GvuRow {
@@ -55,7 +62,8 @@ function classify(a: number): { label: string; color: string } {
   return { label: "Легкопроветриваемая", color: "var(--c-green, #16a34a)" };
 }
 
-export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
+export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license }: Props) {
+  const [tab, setTab] = useState<"opening" | "report">("opening");
   // Вентиляторы (ГВУ/ВВУ), установленные в открытой схеме. ГВУ идут первыми.
   const fanBranches = useMemo(
     () =>
@@ -148,7 +156,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
     >
       <div
         className="bg-white rounded shadow-2xl flex flex-col"
-        style={{ width: 680, maxHeight: "82vh", border: "1px solid #b0b8cc" }}
+        style={{ width: tab === "report" ? 920 : 680, maxWidth: "96vw", maxHeight: "88vh", border: "1px solid #b0b8cc" }}
       >
         {/* Заголовок */}
         <div
@@ -168,6 +176,32 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
           </button>
         </div>
 
+        {/* Подвкладки ВДС */}
+        <div className="flex gap-1 px-3 pt-2" style={{ borderBottom: "1px solid #dde3ec" }}>
+          {([
+            ["opening", "Эквивалентное отверстие", "Gauge"],
+            ["report", "Отчёт ВДС", "FileLock2"],
+          ] as const).map(([id, label, icon]) => (
+            <button key={id} onClick={() => setTab(id)}
+              className={`px-3 py-1.5 text-[12px] rounded-t border border-b-0 flex items-center gap-1.5 ${tab === id ? "bg-white text-blue-700 font-semibold border-gray-300" : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100"}`}
+              style={tab === id ? { marginBottom: -1 } : undefined}>
+              <Icon name={icon} size={13} />{label}
+            </button>
+          ))}
+        </div>
+
+        {tab === "report" ? (
+          <div className="overflow-y-auto px-4 py-3" style={{ flex: 1 }}>
+            <VdsReportPanel
+              branches={branches}
+              nodes={nodes}
+              solved={solved}
+              bulkheads={bulkheads ?? new Map()}
+              projectName={projectName}
+              license={license}
+            />
+          </div>
+        ) : (
         <div className="overflow-y-auto px-4 py-3" style={{ flex: 1 }}>
           {/* ── Секция: Эквивалентное отверстие шахты ── */}
           <div className="mb-2">
@@ -322,6 +356,8 @@ export default function VdsDialog({ branches, nodes, solved, onClose }: Props) {
             проветривания.
           </div>
         </div>
+
+        )}
 
         {/* Футер */}
         <div

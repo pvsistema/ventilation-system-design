@@ -28,13 +28,49 @@ interface Props {
   inputCls: string;
   /** Уже заведённые группы — подсказка, чтобы не плодить опечатки в названиях. */
   orgGroups?: string[];
+  /** Сгенерировать код доступа к «Отчёту ВДС» для формы создания/редактирования */
+  generateVdsCode?: (target: "create" | "edit") => void;
+}
+
+/** Поле «Код доступа к Отчёту ВДС» — общее для создания и редактирования. */
+function VdsCodeField({ value, onChange, onGenerate }: {
+  value: string; onChange: (v: string) => void; onGenerate?: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3">
+      <label className="block text-[11px] font-semibold text-indigo-800 mb-1 flex items-center gap-1">
+        <Icon name="FileLock2" size={13} />Код доступа к «Отчёту ВДС»
+      </label>
+      <div className="flex gap-2">
+        <input type="text" value={value}
+          onChange={e => onChange(e.target.value.toUpperCase())}
+          placeholder="VDS-XXXX-XXXX — пусто, модуль не подключён"
+          className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-[12px] font-mono focus:outline-none focus:ring-2 focus:ring-indigo-300 bg-white" />
+        {onGenerate && (
+          <button type="button" onClick={onGenerate} title="Сгенерировать код"
+            className="px-3 py-2 rounded-lg text-white flex-shrink-0" style={{ background: "#4f46e5" }}>
+            <Icon name="Shuffle" size={14} />
+          </button>
+        )}
+        {value && (
+          <button type="button" onClick={() => onChange("")} title="Отключить модуль"
+            className="px-3 py-2 rounded-lg border border-gray-300 text-gray-500 hover:text-red-600 flex-shrink-0 bg-white">
+            <Icon name="X" size={14} />
+          </button>
+        )}
+      </div>
+      <div className="text-[10px] text-gray-500 mt-1">
+        Код передаётся клиенту вместе с ключом. Отчёт ВДС открывается только при совпадении пары «ключ + код».
+      </div>
+    </div>
+  );
 }
 
 export default function LicenseDialogs({
   showCreate, setShowCreate, form, setForm, createErr, setCreateErr, createOk,
   generatedKey, setGeneratedKey, generateKey, handleCreate,
   editingLic, editForm, setEditForm, editErr, editOk, editSaving, handleUpdate, closeEdit,
-  inputCls, orgGroups = [],
+  inputCls, orgGroups = [], generateVdsCode,
 }: Props) {
   return (
     <>
@@ -125,6 +161,10 @@ export default function LicenseDialogs({
                   className={inputCls} />
               </div>
 
+              <VdsCodeField value={form.vds_code}
+                onChange={v => setForm(f => ({ ...f, vds_code: v }))}
+                onGenerate={generateVdsCode ? () => generateVdsCode("create") : undefined} />
+
               {createErr && <div className="text-[12px] text-red-600 flex items-center gap-1"><Icon name="AlertCircle" size={13} />{createErr}</div>}
               {createOk && <div className="text-[12px] text-green-600 flex items-center gap-1"><Icon name="CheckCircle2" size={13} />Лицензия создана!</div>}
 
@@ -211,6 +251,10 @@ export default function LicenseDialogs({
                   placeholder="Договор №123..."
                   className={inputCls} />
               </div>
+
+              <VdsCodeField value={editForm.vds_code}
+                onChange={v => setEditForm(f => ({ ...f, vds_code: v }))}
+                onGenerate={generateVdsCode ? () => generateVdsCode("edit") : undefined} />
 
               {editErr && <div className="text-[12px] text-red-600 flex items-center gap-1"><Icon name="AlertCircle" size={13} />{editErr}</div>}
               {editOk && <div className="text-[12px] text-green-600 flex items-center gap-1"><Icon name="CheckCircle2" size={13} />Изменения сохранены!</div>}

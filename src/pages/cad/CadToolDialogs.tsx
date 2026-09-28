@@ -21,6 +21,7 @@ import type { FireStabilityFact } from "@/lib/fireStability";
 import type { EvaluateContext, VariantResult } from "@/lib/fireControl/evaluate";
 import type { FireAction } from "@/lib/fireControl/actions";
 import DialogErrorBoundary from "@/components/cad/DialogErrorBoundary";
+import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 
 const LegendDialog           = lazy(() => import("@/components/cad/LegendDialog"));
 const PrintDialog            = lazy(() => import("@/components/cad/PrintDialog"));
@@ -157,6 +158,8 @@ export interface CadToolDialogsProps {
   // ВДС (воздушно-депрессионная съёмка)
   showVds: boolean;
   setShowVds: (v: boolean) => void;
+  /** Сведения о вентсооружениях по ветвям (для «Отчёта ВДС») */
+  vdsBulkheads?: Map<string, BranchBulkheadInfo>;
   // Взрывоопасность рудничной атмосферы (Приложение № 11)
   showExplosibility: boolean;
   setShowExplosibility: (v: boolean) => void;
@@ -404,6 +407,9 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           nodes={p.nodes}
           solved={!!p.solveResult}
           onClose={() => p.setShowVds(false)}
+          bulkheads={p.vdsBulkheads}
+          projectName={p.projectFileName.replace(/\.vproj$/, "")}
+          license={p.license}
         />
       )}
 

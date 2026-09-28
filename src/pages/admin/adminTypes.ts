@@ -24,6 +24,8 @@ export interface License {
    * админ-панели в один раскрывающийся раздел. null = вне групп.
    */
   org_group: string | null;
+  /** Код доступа к модулю «Отчёт ВДС» (null — модуль не подключён) */
+  vds_code?: string | null;
   /**
    * Сколько мест лицензии задвоено: один компьютер занял несколько мест.
    * Такие места можно освобождать — работа идёт на более свежем.
@@ -154,6 +156,8 @@ export interface LicenseForm {
   expires_at: string;
   notes: string;
   key: string;
+  /** Код доступа к «Отчёту ВДС», пусто — модуль не подключён */
+  vds_code: string;
 }
 
 export async function adminApi(password: string, body: object) {
@@ -182,4 +186,4 @@ export function toInputDate(s: string | null): string {
   } catch { return ""; }
 }
 
-export const emptyForm: LicenseForm = { owner_name: "", org_group: "", owner_email: "", max_seats: "5", expires_at: "", notes: "", key: "" };
+export const emptyForm: LicenseForm = { owner_name: "", org_group: "", owner_email: "", max_seats: "5", expires_at: "", notes: "", key: "", vds_code: "" };

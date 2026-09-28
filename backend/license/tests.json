@@ -4,81 +4,168 @@
       "name": "Check unknown fingerprint returns not licensed",
       "method": "POST",
       "path": "/",
-      "body": {"action": "check", "fingerprint": "test-unknown-fp-xyz-999", "hw_fingerprint": "test-unknown-hw-fp-xyz-999", "hostname": "Chrome / Windows 10", "platform": "Windows 10", "screen_info": "1920x1080"},
+      "body": {
+        "action": "check",
+        "fingerprint": "test-unknown-fp-xyz-999",
+        "hw_fingerprint": "test-unknown-hw-fp-xyz-999",
+        "hostname": "Chrome / Windows 10",
+        "platform": "Windows 10",
+        "screen_info": "1920x1080"
+      },
       "expectedStatus": 200,
-      "expectedBody": {"licensed": false},
+      "expectedBody": {
+        "licensed": false
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Check with legacy_hw_fingerprint returns not licensed for unknown",
       "method": "POST",
       "path": "/",
-      "body": {"action": "check", "fingerprint": "test-unknown-fp-new-1", "hw_fingerprint": "test-unknown-hw-new-1", "legacy_hw_fingerprint": "test-unknown-hw-legacy-1", "hostname": "Firefox / Windows", "platform": "Windows"},
+      "body": {
+        "action": "check",
+        "fingerprint": "test-unknown-fp-new-1",
+        "hw_fingerprint": "test-unknown-hw-new-1",
+        "legacy_hw_fingerprint": "test-unknown-hw-legacy-1",
+        "hostname": "Firefox / Windows",
+        "platform": "Windows"
+      },
       "expectedStatus": 200,
-      "expectedBody": {"licensed": false},
+      "expectedBody": {
+        "licensed": false
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Check with prev_hw_fingerprint returns not licensed for unknown",
       "method": "POST",
       "path": "/",
-      "body": {"action": "check", "fingerprint": "test-unknown-fp-iid-1", "hw_fingerprint": "test-unknown-hw-iid-1", "prev_hw_fingerprint": "test-unknown-hw-prev-1", "hostname": "Chrome / Windows", "platform": "Windows"},
+      "body": {
+        "action": "check",
+        "fingerprint": "test-unknown-fp-iid-1",
+        "hw_fingerprint": "test-unknown-hw-iid-1",
+        "prev_hw_fingerprint": "test-unknown-hw-prev-1",
+        "hostname": "Chrome / Windows",
+        "platform": "Windows"
+      },
       "expectedStatus": 200,
-      "expectedBody": {"licensed": false},
+      "expectedBody": {
+        "licensed": false
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Activate with invalid key format",
       "method": "POST",
       "path": "/",
-      "body": {"action": "activate", "fingerprint": "test-fp-abc-123", "key": "BADKEY", "hostname": "Chrome / Windows 10"},
+      "body": {
+        "action": "activate",
+        "fingerprint": "test-fp-abc-123",
+        "key": "BADKEY",
+        "hostname": "Chrome / Windows 10"
+      },
       "expectedStatus": 400,
-      "expectedBody": {"error": "invalid_key_format"},
+      "expectedBody": {
+        "error": "invalid_key_format"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Activate with non-existent valid-format key",
       "method": "POST",
       "path": "/",
-      "body": {"action": "activate", "fingerprint": "test-fp-abc-123", "key": "PVS-0000-0000-0000-0000", "platform": "Windows 10", "screen_info": "1920x1080"},
+      "body": {
+        "action": "activate",
+        "fingerprint": "test-fp-abc-123",
+        "key": "PVS-0000-0000-0000-0000",
+        "platform": "Windows 10",
+        "screen_info": "1920x1080"
+      },
       "expectedStatus": 404,
-      "expectedBody": {"error": "key_not_found"},
+      "expectedBody": {
+        "error": "key_not_found"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Transfer with invalid key format",
       "method": "POST",
       "path": "/",
-      "body": {"action": "transfer", "fingerprint": "old-fp", "new_fingerprint": "new-fp", "key": "BADKEY"},
+      "body": {
+        "action": "transfer",
+        "fingerprint": "old-fp",
+        "new_fingerprint": "new-fp",
+        "key": "BADKEY"
+      },
       "expectedStatus": 400,
-      "expectedBody": {"error": "invalid_key_format"},
+      "expectedBody": {
+        "error": "invalid_key_format"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Heartbeat unknown fingerprint returns not ok",
       "method": "POST",
       "path": "/",
-      "body": {"action": "heartbeat", "fingerprint": "test-unknown-fp-heartbeat-999", "app_version": "2.44.116", "modules": "vent"},
+      "body": {
+        "action": "heartbeat",
+        "fingerprint": "test-unknown-fp-heartbeat-999",
+        "app_version": "2.44.116",
+        "modules": "vent"
+      },
       "expectedStatus": 200,
-      "expectedBody": {"ok": false},
+      "expectedBody": {
+        "ok": false
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Clock rollback report from unknown seat is accepted",
       "method": "POST",
       "path": "/",
-      "body": {"action": "clock_rollback", "fingerprint": "test-unknown-fp-clock-999", "days_back": 365, "hostname": "Chrome / Windows 10", "platform": "Windows 10", "app_version": "2.44.116"},
+      "body": {
+        "action": "clock_rollback",
+        "fingerprint": "test-unknown-fp-clock-999",
+        "days_back": 365,
+        "hostname": "Chrome / Windows 10",
+        "platform": "Windows 10",
+        "app_version": "2.44.116"
+      },
       "expectedStatus": 200,
-      "expectedBody": {"ok": true},
+      "expectedBody": {
+        "ok": true
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Clock rollback with missing days_back still accepted",
       "method": "POST",
       "path": "/",
-      "body": {"action": "clock_rollback", "fingerprint": "test-unknown-fp-clock-998", "hostname": "Chrome / Windows 10"},
+      "body": {
+        "action": "clock_rollback",
+        "fingerprint": "test-unknown-fp-clock-998",
+        "hostname": "Chrome / Windows 10"
+      },
       "expectedStatus": 200,
-      "expectedBody": {"ok": true},
+      "expectedBody": {
+        "ok": true
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "VDS check with unknown key denied",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "vds_check",
+        "fingerprint": "test-vds-fp",
+        "key": "PVS-XXXX-XXXX-XXXX-XXXX",
+        "vds_code": "VDS-0000-0000"
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "ok": false
+      },
       "bodyMatcher": "partial"
     }
   ]

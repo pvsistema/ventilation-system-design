@@ -598,6 +598,12 @@ export default function Admin() {
     setForm(f => ({ ...f, key: data.key }));
   };
 
+  const generateVdsCode = async (target: "create" | "edit") => {
+    const data = await adminApi(password, { action: "generate_vds_code" });
+    if (target === "create") setForm(f => ({ ...f, vds_code: data.code }));
+    else setEditForm(f => ({ ...f, vds_code: data.code }));
+  };
+
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateErr("");
@@ -612,6 +618,7 @@ export default function Admin() {
         expires_at: form.expires_at || undefined,
         notes: form.notes || undefined,
         key: form.key || undefined,
+        vds_code: form.vds_code || undefined,
       });
       setCreateOk(true);
       setForm(emptyForm);
@@ -633,6 +640,7 @@ export default function Admin() {
       expires_at: toInputDate(lic.expires_at),
       notes: lic.notes ?? "",
       key: lic.key,
+      vds_code: lic.vds_code ?? "",
     });
     setEditErr("");
     setEditOk(false);
@@ -660,6 +668,7 @@ export default function Admin() {
         max_seats: parseInt(editForm.max_seats),
         expires_at: editForm.expires_at || undefined,
         notes: editForm.notes || undefined,
+        vds_code: editForm.vds_code || "",
       });
       setEditOk(true);
       // Обновляем локальный список без перезагрузки
@@ -671,6 +680,7 @@ export default function Admin() {
         max_seats: parseInt(editForm.max_seats),
         expires_at: editForm.expires_at || null,
         notes: editForm.notes || null,
+        vds_code: editForm.vds_code || null,
       } : l));
       setTimeout(() => closeEdit(), 1200);
     } catch (e: unknown) {
@@ -1088,6 +1098,7 @@ export default function Admin() {
         generatedKey={generatedKey} setGeneratedKey={setGeneratedKey}
         generateKey={generateKey} handleCreate={handleCreate}
         editingLic={editingLic} editForm={editForm} setEditForm={setEditForm}
+        generateVdsCode={generateVdsCode}
         editErr={editErr} editOk={editOk} editSaving={editSaving}
         handleUpdate={handleUpdate} closeEdit={closeEdit}
         inputCls={inputCls}

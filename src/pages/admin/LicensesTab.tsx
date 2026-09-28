@@ -81,7 +81,15 @@ function LicenseRow({
                       <span className="px-1.5 py-0.5 rounded text-[10px] bg-orange-100 text-orange-600 font-medium">ИСТЕКЛА</span>
                     )}
                   </div>
-                  <div className="font-mono text-[11px] text-blue-600 mt-0.5">{lic.key}</div>
+                  <div className="font-mono text-[11px] text-blue-600 mt-0.5 flex items-center gap-2 flex-wrap">
+                    {lic.key}
+                    {lic.vds_code && (
+                      <span className="px-1.5 py-0.5 rounded text-[10px] bg-indigo-100 text-indigo-700 font-medium inline-flex items-center gap-1 select-all"
+                        title="Код доступа к модулю «Отчёт ВДС»">
+                        <Icon name="FileLock2" size={11} />Отчёт ВДС: {lic.vds_code}
+                      </span>
+                    )}
+                  </div>
                   <div className="mt-1 flex items-center gap-4 text-[11px] text-gray-500 flex-wrap">
                     <span>Мест: <b className={lic.used_seats >= lic.max_seats ? "text-red-600" : "text-green-600"}>{lic.used_seats}/{lic.max_seats}</b></span>
                     {(lic.stale_duplicates ?? 0) > 0 && (

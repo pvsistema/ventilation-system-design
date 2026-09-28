@@ -39,6 +39,9 @@ POST /  body: {action, password, ...params}
   set_offline_autobind — вкл/выкл автопривязку ключа к рабочему месту
                         {offline_key_id, autobind}
   reset_offline_binding — сбросить привязку (замена компьютера) {offline_key_id}
+  generate_vds_code  — сгенерировать код доступа к «Отчёту ВДС» (VDS-XXXX-XXXX)
+  create_license / update_license принимают vds_code — код доступа к отчёту ВДС
+                        (пусто = модуль не подключён)
 """
 import json
 import os
@@ -174,6 +177,11 @@ def generate_key() -> str:
     return "PVS-" + "-".join(parts)
 
 
+def generate_vds_code() -> str:
+    chars = string.ascii_uppercase + string.digits
+    return "VDS-" + "-".join("".join(random.choices(chars, k=4)) for _ in range(2))
+
+
 def handler(event: dict, context) -> dict:
     if event.get("httpMethod") == "OPTIONS":
         return {"statusCode": 200, "headers": CORS, "body": ""}
@@ -198,12 +206,15 @@ def handler(event: dict, context) -> dict:
         if action == "generate_key":
             return resp(200, {"key": generate_key()})
 
+        if action == "generate_vds_code":
+            return resp(200, {"code": generate_vds_code()})
+
         # ── list_licenses ────────────────────────────────────────────────────────
         if action == "list_licenses":
             cur.execute("""
                 SELECT l.id, l.key, l.owner_name, l.owner_email,
                        l.max_seats, l.is_active, l.created_at, l.expires_at, l.notes,
-                       l.org_group,
+                       l.org_group, l.vds_code,
                        COUNT(s.id) AS used_seats,
                        MAX(s.last_seen_at) AS last_activity,
                        -- Сколько мест лицензии задвоено: один компьютер занял
@@ -235,9 +246,10 @@ def handler(event: dict, context) -> dict:
                     "expires_at": str(r[7]) if r[7] else None,
                     "notes": r[8],
                     "org_group": r[9],
-                    "used_seats": int(r[10]),
-                    "last_activity": str(r[11]) if r[11] else None,
-                    "stale_duplicates": int(r[12] or 0),
+                    "vds_code": r[10],
+                    "used_seats": int(r[11]),
+                    "last_activity": str(r[12]) if r[12] else None,
+                    "stale_duplicates": int(r[13] or 0),
                 })
             return resp(200, {"licenses": licenses})
 
@@ -250,6 +262,7 @@ def handler(event: dict, context) -> dict:
             notes       = body.get("notes", "").strip()
             org_group   = body.get("org_group", "").strip()
             key         = body.get("key") or generate_key()
+            vds_code    = (body.get("vds_code") or "").strip().upper()[:32]
 
             if not owner_name:
                 return resp(400, {"error": "owner_name_required"})
@@ -257,11 +270,11 @@ def handler(event: dict, context) -> dict:
                 return resp(400, {"error": "invalid_seats"})
 
             cur.execute("""
-                INSERT INTO licenses (key, owner_name, owner_email, max_seats, expires_at, notes, org_group)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+                INSERT INTO licenses (key, owner_name, owner_email, max_seats, expires_at, notes, org_group, vds_code)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 RETURNING id, key, created_at
             """, (key, owner_name, owner_email or None, max_seats, expires_at,
-                  notes or None, org_group or None))
+                  notes or None, org_group or None, vds_code or None))
             row = cur.fetchone()
             conn.commit()
             return resp(200, {
@@ -278,6 +291,7 @@ def handler(event: dict, context) -> dict:
             expires_at  = body.get("expires_at") or None
             notes       = body.get("notes", "").strip()
             org_group   = body.get("org_group", "").strip()
+            vds_code    = (body.get("vds_code") or "").strip().upper()[:32]
 
             if not owner_name:
                 return resp(400, {"error": "owner_name_required"})
@@ -287,11 +301,11 @@ def handler(event: dict, context) -> dict:
             cur.execute("""
                 UPDATE licenses
                 SET owner_name = %s, owner_email = %s, max_seats = %s,
-                    expires_at = %s, notes = %s, org_group = %s
+                    expires_at = %s, notes = %s, org_group = %s, vds_code = %s
                 WHERE id = %s
                 RETURNING id
             """, (owner_name, owner_email or None, max_seats, expires_at,
-                  notes or None, org_group or None, lic_id))
+                  notes or None, org_group or None, vds_code or None, lic_id))
             if not cur.fetchone():
                 return resp(404, {"error": "not_found"})
             conn.commit()

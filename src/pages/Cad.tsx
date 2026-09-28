@@ -1911,6 +1911,11 @@ export default function CadPage() {
     })),
     [branches, totalDepByBranch, totalRByBranch],
   );
+  // Вентсооружения по ветвям для «Отчёта ВДС» — считаем только при открытом окне.
+  const vdsBulkheads = useMemo(
+    () => (showVds ? buildBulkheadInfoMap(branches, schemaSymbols, mineBulkheads) : undefined),
+    [showVds, branches, schemaSymbols, mineBulkheads],
+  );
   // Пользовательские модели насосов (сохраняются в проекте)
   const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
   // Участки рудника и нормы расхода воздуха (ФНиП № 505 п.155) — в проекте
@@ -7274,7 +7279,7 @@ export default function CadPage() {
               icon="Gauge"
               label="ВДС"
               sublabel=""
-              title="Воздушно-депрессионная съёмка: эквивалентное отверстие шахты и другие расчёты по схеме"
+              title="Воздушно-депрессионная съёмка: эквивалентное отверстие шахты и Отчёт ВДС (по коду доступа)"
               onClick={() => setShowVds(true)}
             />
             <RibbonBigBtn
@@ -13706,6 +13711,7 @@ export default function CadPage() {
       fireControlPreviewActive={!!fireControlPreview}
       showVds={showVds}
       setShowVds={setShowVds}
+      vdsBulkheads={vdsBulkheads}
       showExplosibility={showExplosibility}
       setShowExplosibility={setShowExplosibility}
       solveResult={solveResult}

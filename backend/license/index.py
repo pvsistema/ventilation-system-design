@@ -258,6 +258,38 @@ def handler(event: dict, context) -> dict:
     bump_usage(cur, action or "unknown")
     conn.commit()
 
+    # ── vds_check — доступ к модулю «Отчёт ВДС» ───────────────────────────────
+    # Отчёт открывается, только если пара «лицензионный ключ + код ВДС»
+    # совпадает с выданной администратором, а сама лицензия активна и не истекла.
+    if action == "vds_check":
+        lic_key  = (body.get("key") or "").strip().upper()
+        vds_code = (body.get("vds_code") or "").strip().upper()
+        if not lic_key or not vds_code:
+            conn.close()
+            return resp(200, {"ok": False, "reason": "missing"})
+        cur.execute(
+            "SELECT id, is_active, expires_at, vds_code FROM licenses WHERE key = %s",
+            (lic_key,))
+        row = cur.fetchone()
+        reason = ""
+        if not row:
+            reason = "license_not_found"
+        elif not row[1]:
+            reason = "license_inactive"
+        elif row[2] and row[2] < datetime.now(timezone.utc):
+            reason = "license_expired"
+        elif not row[3]:
+            reason = "module_not_enabled"
+        elif row[3].strip().upper() != vds_code:
+            reason = "wrong_code"
+        log_event(cur, license_id=row[0] if row else None, license_key=lic_key,
+                  event_type="vds_ok" if not reason else "vds_denied", fph=fph,
+                  hostname=hostname, platform=platform, app_version=app_version,
+                  ip=ip, detail=reason or None)
+        conn.commit()
+        conn.close()
+        return resp(200, {"ok": not reason, "reason": reason or None})
+
     # ── check ──────────────────────────────────────────────────────────────────
     if action == "check":
         # Привязка к рабочему месту — ТОЛЬКО по железу (hw_fingerprint).
