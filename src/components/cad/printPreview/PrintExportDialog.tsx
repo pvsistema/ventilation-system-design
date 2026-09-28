@@ -56,13 +56,13 @@ export default function PrintExportDialog({
         </div>
         <div style={{ fontSize: 11, color: "var(--c-t3)", marginTop: 6 }}>
           {exportFormat === "png"        && "PNG — растр, без потерь. Рекомендуется для экрана."}
-          {exportFormat === "png-hq"     && <span style={{ color: "var(--c-green)", fontWeight: 600 }}>PNG ★ — высококачественный растр через SVG-вектор. Рамка, штамп, УО — всё чётко при любом DPI. Идеально для широкоформатной печати.</span>}
+          {exportFormat === "png-hq"     && <span style={{ color: "var(--c-green)", fontWeight: 600 }}>PNG ★ — лист печати в выбранном DPI, точно как в предпросмотре. Для широкоформатной печати.</span>}
           {exportFormat === "jpg"        && "JPEG — растр, с потерями, меньше размер"}
           {exportFormat === "bmp"        && "BMP — растр, без сжатия"}
           {exportFormat === "tiff"       && "TIFF — растр, для полиграфии"}
-          {exportFormat === "svg"        && "SVG — вектор, идеально для плоттера, масштаб бесконечен"}
+          {exportFormat === "svg"        && "SVG — вектор, точно как в предпросмотре, масштаб бесконечен"}
           {exportFormat === "pdf"        && "PDF — растровый, все страницы, выбранный DPI"}
-          {exportFormat === "pdf-vector" && "PDF ✦ — векторный, идеально для плоттера. Конвертируется на сервере из SVG."}
+          {exportFormat === "pdf-vector" && "PDF ✦ — векторный, все листы, точно как в предпросмотре. Формируется в программе, без сервера."}
         </div>
       </div>
 

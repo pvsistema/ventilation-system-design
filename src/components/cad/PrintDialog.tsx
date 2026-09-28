@@ -1,6 +1,5 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { API_URLS } from "@/lib/api-urls";
 import PrintPreviewCanvas, { type PrintPreviewCanvasHandle } from "./PrintPreviewCanvas";
 import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D } from "@/lib/topology";
 import { renderCanvas, computeObjSF, ensureFireCraneIcons, type FlowDisplayMode } from "@/lib/canvasRenderer";
@@ -14,7 +13,11 @@ import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 // jsPDF подключается по требованию (в момент экспорта в PDF), а не при старте
 // программы: библиотека весит сотни килобайт, а нужна лишь при печати.
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
-import { generateSvg, downloadSvg } from "@/lib/svgExporter";
+import { downloadSvg } from "@/lib/svgExporter";
+import { SvgRecordingContext, ensureVectorMeasureFont } from "@/lib/svgRecordingContext";
+import { svgStringToPdf, VECTOR_DPI } from "@/lib/vectorPdf";
+import dejavuRegularUrl from "@/assets/fonts/DejaVuSans.ttf?url";
+import dejavuBoldUrl from "@/assets/fonts/DejaVuSans-Bold.ttf?url";
 // Общие части и блоки диалога вынесены в отдельные файлы (перенос 1:1)
 import {
   printDocument, PAPER_SIZES,
@@ -923,33 +926,19 @@ export default function PrintDialog({
     return { rx: scx - rsw / 2, ry: scy - rsh / 2, rw: Math.max(rsw, 40), rh: Math.max(rsh, 40) };
   }, []);
 
-  // ─── Рендер одного тайла ─────────────────────────────────────────────
-  const renderTileToCanvas = useCallback(async (
+  // ─── Рисование одного листа на ЛЮБОЙ 2D-контекст ─────────────────────
+  // Один и тот же код для растровой печати/экспорта (настоящий canvas) и для
+  // векторного PDF/SVG (SvgRecordingContext записывает те же команды в SVG).
+  // Поэтому векторный файл совпадает с листом печати и предпросмотром 1:1.
+  const drawTile = useCallback(async (
+    ctx: CanvasRenderingContext2D,
+    oc: { width: number; height: number },
+    effectiveDpi: number,
     col: number,
     row: number,
-    dpi: number,
-  ): Promise<string> => {
-    // Дожидаемся готовности иконок пожарных кранов. Лист печати рисуется ОДИН
-    // раз, и если иконка ещё читалась с диска, в чертёж вместо условного
-    // обозначения крана попал бы запасной кружок.
-    await ensureFireCraneIcons();
-    // Подбор безопасного качества: учитываются И длина стороны, И общая
-    // площадь холста. Раньше проверялась только сторона — из-за этого лист
-    // A0 при 600 dpi (19866×28087 px) молча выходил ПУСТЫМ: стороны в предел
-    // укладывались, а площадь превышала его втрое. См. lib/canvasLimits.ts.
-    const fit = fitDpiToCanvas(paper.w, paper.h, dpi);
-    const effectiveDpi = fit.effectiveDpi;
+    vec: SvgRecordingContext | null,
+  ): Promise<void> => {
     const mmToPxE = (mm: number) => Math.round(mm * effectiveDpi / 25.4);
-
-    const oc = document.createElement("canvas");
-    oc.width = fit.width;
-    oc.height = fit.height;
-    const ctx = oc.getContext("2d");
-    if (!ctx) throw new Error(
-      `Не удалось подготовить лист ${fit.width}×${fit.height} пикс. — не хватило памяти. `
-      + "Уменьшите формат листа или качество печати.",
-    );
-
     const { sc, offsetX, offsetY, isScene3D, horizonMap, pageW, pageH } = baseView;
     const BASE_DPI = 150;
     const dpiRatio = effectiveDpi / BASE_DPI;
@@ -1052,6 +1041,12 @@ export default function PrintDialog({
         animOffset: 0, infoConfig, unitsConfig,
         printMode: true, fixedObjectScale, xyScale, widthBySection,
         colorMode, sectionColors, posInnerColors, posOuterColors,
+        pollutedBranchIds,
+        // Пределы ширины «по сечению» — как в рабочей области. В режиме печати
+        // остальные поля scaleLimits не используются (objSF/текст считаются отдельно).
+        scaleLimits: widthLimits ? {
+          textMin: 100, textMax: 100, branchMin: widthLimits.min, branchMax: widthLimits.max,
+        } : undefined,
       });
 
       if (schemaSymbols.length > 0) {
@@ -1068,7 +1063,14 @@ export default function PrintDialog({
       // с рабочей областью в т.ч. в наклонных видах.
       const frameRect = computeFrameRect(pl, projNodes, visibleBranches, sv, _xySFPL, activePrintHorizon.z ?? 0);
       if (frameRect) {
-        await drawPrintLayerFrame(ctx, oc.width, oc.height, pl, frameRect);
+        if (vec) {
+          // В векторный файл рамку и штамп вставляем исходной SVG-разметкой.
+          vec.appendRawSvg(buildPrintLayerSvgString({
+            pl, ...frameRect, totalW: oc.width, totalH: oc.height, schemaSymbols, branches,
+          }));
+        } else {
+          await drawPrintLayerFrame(ctx, oc.width, oc.height, pl, frameRect);
+        }
       }
     } else {
       // Стандартный режим: тайлы с полями
@@ -1107,6 +1109,12 @@ export default function PrintDialog({
         animOffset: 0, infoConfig, unitsConfig,
         printMode: true, fixedObjectScale, xyScale, widthBySection,
         colorMode, sectionColors, posInnerColors, posOuterColors,
+        pollutedBranchIds,
+        // Пределы ширины «по сечению» — как в рабочей области. В режиме печати
+        // остальные поля scaleLimits не используются (objSF/текст считаются отдельно).
+        scaleLimits: widthLimits ? {
+          textMin: 100, textMax: 100, branchMin: widthLimits.min, branchMax: widthLimits.max,
+        } : undefined,
       });
       ctx.restore();
       if (schemaSymbols.length > 0) {
@@ -1126,14 +1134,52 @@ export default function PrintDialog({
       drawTextBlocksToCanvas(ctx, sv, scaledSc);
       ctx.restore();
     }
-
-    return oc.toDataURL("image/png");
-  }, [baseView, paper, workArea, marginLeft, marginTop, canvasSize,
+  }, [baseView, workArea, marginLeft, marginTop, canvasSize,
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
-      branchWidth, branchBorder, thinLines, colorByHorizon, flowDisplay, infoConfig, unitsConfig,
-      colorMode, sectionColors, posInnerColors, posOuterColors, fixedObjectScale, xyScale,
+      branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows, flowDisplay, infoConfig, unitsConfig,
+      colorMode, sectionColors, posInnerColors, posOuterColors, fixedObjectScale, xyScale, widthBySection,
       hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect,
-      drawPositionsToCanvas, symSizingFor]);
+      drawPositionsToCanvas, drawTextBlocksToCanvas, symSizingFor, pollutedBranchIds, widthLimits]);
+
+  // ─── Растровый лист (печать, PNG/JPG/растровый PDF) ──────────────────
+  const renderTileToCanvas = useCallback(async (
+    col: number,
+    row: number,
+    dpi: number,
+  ): Promise<string> => {
+    // Дожидаемся готовности иконок пожарных кранов. Лист печати рисуется ОДИН
+    // раз, и если иконка ещё читалась с диска, в чертёж вместо условного
+    // обозначения крана попал бы запасной кружок.
+    await ensureFireCraneIcons();
+    // Подбор безопасного качества: учитываются И длина стороны, И общая
+    // площадь холста. Раньше проверялась только сторона — из-за этого лист
+    // A0 при 600 dpi (19866×28087 px) молча выходил ПУСТЫМ: стороны в предел
+    // укладывались, а площадь превышала его втрое. См. lib/canvasLimits.ts.
+    const fit = fitDpiToCanvas(paper.w, paper.h, dpi);
+    const oc = document.createElement("canvas");
+    oc.width = fit.width;
+    oc.height = fit.height;
+    const ctx = oc.getContext("2d");
+    if (!ctx) throw new Error(
+      `Не удалось подготовить лист ${fit.width}×${fit.height} пикс. — не хватило памяти. `
+      + "Уменьшите формат листа или качество печати.",
+    );
+    await drawTile(ctx, oc, fit.effectiveDpi, col, row, null);
+    return oc.toDataURL("image/png");
+  }, [paper, drawTile]);
+
+  // ─── Векторный лист (SVG-строка) — тот же рендер, что и растровый ────
+  // Координаты листа — пиксели при VECTOR_DPI: ровно те же числа, что у листа
+  // печати (300 dpi), поэтому толщины, кегли и размеры УО совпадают с печатью.
+  const renderTileToSvg = useCallback(async (col: number, row: number): Promise<string> => {
+    await ensureFireCraneIcons();
+    await ensureVectorMeasureFont(dejavuRegularUrl, dejavuBoldUrl);
+    const W = Math.round(paper.w * VECTOR_DPI / 25.4);
+    const H = Math.round(paper.h * VECTOR_DPI / 25.4);
+    const rec = new SvgRecordingContext(W, H);
+    await drawTile(rec.asContext(), rec.canvas, VECTOR_DPI, col, row, rec);
+    return rec.toSvg(projectName);
+  }, [paper, drawTile, projectName]);
 
 
   // ─── Печать ──────────────────────────────────────────────────────────
@@ -1256,165 +1302,82 @@ body{background:white;font-family:Arial,sans-serif}
       showPageNumbers, renderTileToCanvas, closeCtxMenu,
       printerName, copies, orientation]);
 
-  // ─── Вспомогательная функция: строим ProjOptions для SVG/PDF-vector ─────
-  // SVG-холст = paper.w × paper.h мм при 96dpi (3.78px/мм).
-  // baseView рассчитан при DPI=150 (5.906px/мм). Пересчитываем sc и offset под 96dpi.
-  const buildProjForExport = useCallback(() => {
-    const DPI_PRINT = 150;
-    const DPI_SVG   = 96;
-    const k = DPI_SVG / DPI_PRINT;          // ≈ 0.64
-    const { sc, offsetX, offsetY } = baseView;
-    return {
-      scale:   sc      * k,
-      offsetX: offsetX * k,
-      offsetY: offsetY * k,
-      azimuth: viewState.azimuth, elevation: viewState.elevation, zScale,
-    };
-  }, [baseView, viewState, zScale]);
-
   // ─── Экспорт ─────────────────────────────────────────────────────────
+  // ВАЖНО. Все форматы (PNG/JPG/PDF растр, PDF-вектор, SVG, PNG ★) рисуются
+  // ОДНИМ кодом — drawTile, тем же, что печать и предпросмотр. Раньше SVG,
+  // векторный PDF и PNG ★ строились отдельным рендерером generateSvg со своими
+  // формулами — и не совпадали со схемой (позиции ПЛА в разы крупнее, другие
+  // размеры УО и подписей, лист всегда A3).
+  const downloadBlob = useCallback((blob: Blob, fileName: string) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = fileName;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+  }, []);
+
   const handleExport = useCallback(async () => {
-    // ── PNG HQ — SVG→canvas с заданным DPI (максимальное качество для печати) ──
+    // ── PNG ★ — лист печати в заданном DPI (тот же рендер, что печать) ──
     if (exportFormat === "png-hq") {
       setPdfExporting(true);
       try {
-        const proj = buildProjForExport();
-        // Единый расчёт предела холста (сторона + площадь) — см. canvasLimits.ts.
-        const expFit = fitDpiToCanvas(paper.w, paper.h, exportDpi);
-        const canvasW = expFit.width;
-        const canvasH = expFit.height;
-
-        const svgStr = generateSvg({
-          nodes, branches, horizons, horizonMap: baseView.horizonMap,
-          proj, viewState, zScale,
-          is3D: baseView.isScene3D,
-          branchWidth, branchBorder, thinLines, colorByHorizon,
-          infoConfig, unitsConfig, colorMode, sectionColors,
-          posInnerColors, posOuterColors,
-          positions: showPositions ? positions : [],
-          positionGostMm, scalePositionMin, scalePositionMax,
-          canvasW, canvasH,
-          paperWidthMm: paper.w,
-          title: projectName,
-          fixedObjectScale, xyScale, widthBySection, widthLimits,
-          bulkheadScale, fanScale,
-          pollutedBranchIds,
-          schemaSymbols: schemaSymbols ?? [],
-          showFlowArrows, textBlocks,
-        });
-
-        // SVG → data URL → <img> → canvas → PNG
-        const svgBlob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
-        const svgUrl = URL.createObjectURL(svgBlob);
-        await new Promise<void>((resolve, reject) => {
-          const img = new Image();
-          img.onload = () => {
-            const oc = document.createElement("canvas");
-            oc.width = canvasW;
-            oc.height = canvasH;
-            const ctx = oc.getContext("2d")!;
-            ctx.fillStyle = "#ffffff";
-            ctx.fillRect(0, 0, canvasW, canvasH);
-            ctx.drawImage(img, 0, 0, canvasW, canvasH);
-            URL.revokeObjectURL(svgUrl);
-            const a = document.createElement("a");
-            a.href = oc.toDataURL("image/png");
-            a.download = `${projectName}-${exportDpi}dpi.png`;
-            a.style.display = "none";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-            resolve();
-          };
-          img.onerror = () => { URL.revokeObjectURL(svgUrl); reject(new Error("Ошибка загрузки SVG")); };
-          img.src = svgUrl;
-        });
+        const { colMin, rowMin } = tiles;
+        const png = await renderTileToCanvas(colMin, rowMin, exportDpi);
+        const a = document.createElement("a");
+        a.href = png;
+        a.download = `${projectName}-${exportDpi}dpi.png`;
+        a.style.display = "none";
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
         setShowExportDialog(false);
       } catch (e) {
-        alert(`Ошибка PNG HQ: ${e instanceof Error ? e.message : String(e)}`);
+        alert(`Ошибка PNG ★: ${e instanceof Error ? e.message : String(e)}`);
       } finally {
         setPdfExporting(false);
       }
       return;
     }
 
-    // ── SVG (векторный, масштабируется бесконечно) ───────────────────────
+    // ── SVG (вектор) — первый лист; при нескольких листах — каждый файлом ──
     if (exportFormat === "svg") {
-      const proj = buildProjForExport();
-      const svgStr = generateSvg({
-        nodes, branches, horizons, horizonMap: baseView.horizonMap,
-        proj, viewState, zScale,
-        is3D: baseView.isScene3D,
-        branchWidth, branchBorder, thinLines, colorByHorizon,
-        infoConfig, unitsConfig, colorMode, sectionColors,
-        posInnerColors, posOuterColors,
-        positions: showPositions ? positions : [],
-        positionGostMm, scalePositionMin, scalePositionMax,
-        canvasW: Math.round(paper.w * 3.78),
-        canvasH: Math.round(paper.h * 3.78),
-        paperWidthMm: paper.w,
-        title: projectName,
-        fixedObjectScale, xyScale, widthBySection, widthLimits,
-        bulkheadScale, fanScale,
-        pollutedBranchIds,
-        schemaSymbols: schemaSymbols ?? [],
-        showFlowArrows, textBlocks,
-      });
-      downloadSvg(svgStr, projectName);
-      setShowExportDialog(false);
+      setPdfExporting(true);
+      try {
+        const list = tiles.list;
+        for (let i = 0; i < list.length; i++) {
+          const svgStr = await renderTileToSvg(list[i].col, list[i].row);
+          downloadSvg(svgStr, list.length > 1 ? `${projectName}-лист${i + 1}` : projectName);
+        }
+        setShowExportDialog(false);
+      } catch (e) {
+        alert(`Ошибка SVG: ${e instanceof Error ? e.message : String(e)}`);
+      } finally {
+        setPdfExporting(false);
+      }
       return;
     }
 
-    // ── PDF векторный (SVG → PDF через бэкенд, идеально для плоттера) ────
-    // Оба режима (SVG и Canvas) используют generateSvg — единый рендерер
-    // с правильной поддержкой рамки слоя печати и вписыванием в лист.
+    // ── PDF векторный — формируется прямо в программе (без сервера) ───────
     if (exportFormat === "pdf-vector") {
       setPdfExporting(true);
       try {
-        const proj = buildProjForExport();
-        const svgStr = generateSvg({
-          nodes, branches, horizons, horizonMap: baseView.horizonMap,
-          proj, viewState, zScale,
-          is3D: baseView.isScene3D,
-          branchWidth, branchBorder, thinLines, colorByHorizon,
-          infoConfig, unitsConfig, colorMode, sectionColors,
-          posInnerColors, posOuterColors,
-          positions: showPositions ? positions : [],
-          positionGostMm, scalePositionMin, scalePositionMax,
-          canvasW: Math.round(paper.w * 3.78),
-          canvasH: Math.round(paper.h * 3.78),
-          paperWidthMm: paper.w,
+        const svgPages: string[] = [];
+        for (const t of tiles.list) {
+          svgPages.push(await renderTileToSvg(t.col, t.row));
+          await new Promise((r) => setTimeout(r, 0));
+        }
+        const blob = await svgStringToPdf(svgPages, {
+          paperWmm: paper.w, paperHmm: paper.h,
+          fontRegularUrl: dejavuRegularUrl, fontBoldUrl: dejavuBoldUrl,
+          pageNumbers: showPageNumbers
+            ? { rightMm: marginRight + 2, bottomMm: marginBottom + 2 }
+            : null,
           title: projectName,
-          fixedObjectScale, xyScale, widthBySection, widthLimits,
-          bulkheadScale, fanScale,
-          pollutedBranchIds,
-          schemaSymbols: schemaSymbols ?? [],
-          showFlowArrows, textBlocks,
         });
-
-        const isLandscape = paper.w > paper.h;
-        const res = await fetch(API_URLS.svgToPdf, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            svg: svgStr,
-            paper: "A3",
-            orientation: isLandscape ? "landscape" : "portrait",
-          }),
-        });
-        if (!res.ok) throw new Error("Ошибка сервера");
-        const data = await res.json() as { pdf?: string; error?: string };
-        if (!data.pdf) throw new Error(data.error ?? "Нет данных");
-        const bytes = Uint8Array.from(atob(data.pdf), c => c.charCodeAt(0));
-        const blob = new Blob([bytes], { type: "application/pdf" });
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `${projectName}-vector.pdf`;
-        a.style.display = "none";
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        downloadBlob(blob, `${projectName}-vector.pdf`);
         setShowExportDialog(false);
       } catch (e) {
         alert(`Ошибка векторного PDF: ${e instanceof Error ? e.message : String(e)}`);
@@ -1497,12 +1460,8 @@ body{background:white;font-family:Arial,sans-serif}
       setPdfExporting(false);
     }
   }, [exportFormat, exportDpi, exportQuality, projectName,
-      renderTileToCanvas, tiles, paper, showPageNumbers,
-      marginLeft, marginRight, marginBottom,
-      buildProjForExport, nodes, branches, horizons, baseView, viewState, zScale,
-      branchWidth, branchBorder, thinLines, colorByHorizon, infoConfig, unitsConfig, colorMode, sectionColors,
-      posInnerColors, posOuterColors, positions, showPositions,
-      fixedObjectScale, xyScale, pollutedBranchIds, schemaSymbols]);
+      renderTileToCanvas, renderTileToSvg, downloadBlob, tiles, paper, showPageNumbers,
+      marginRight, marginBottom]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {

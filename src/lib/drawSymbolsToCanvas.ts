@@ -15,6 +15,7 @@ import {
   indicatorFontSize, indicatorOffsetSF,
 } from "@/lib/symbolSizing";
 import { canvasFont } from "@/lib/canvasFont";
+import { vectorImageSources } from "@/lib/svgRecordingContext";
 
 /**
  * Ширина самой длинной строки подписи в пикселях — по реальному шрифту.
@@ -40,6 +41,8 @@ function svgToImage(svgContent: string, size: number): Promise<HTMLImageElement>
     const blob = new Blob([svg], { type: "image/svg+xml" });
     const url  = URL.createObjectURL(blob);
     const img  = new Image(size, size);
+    // Векторный экспорт вставит иконку исходной SVG-разметкой, а не растром.
+    vectorImageSources.set(img, { svg: svgContent, viewBox: "0 0 48 40" });
     img.onload  = () => { svgImageCache.set(key, img); URL.revokeObjectURL(url); resolve(img); };
     img.onerror = () => resolve(img);
     img.src = url;
