@@ -26,6 +26,10 @@ export interface SchemaCheckSettings {
   recircPercent: number;
   /** % — доля утечек через перемычки от подачи ГВУ, выше которой предупреждение */
   leakPercent: number;
+  /** м³/с — в список утечек попадают перемычки с утечкой от этого значения */
+  leakBulkMin: number;
+  /** м³/с — и до этого значения (0 — без ограничения сверху) */
+  leakBulkMax: number;
 }
 
 export const DEFAULT_SCHEMA_CHECK_SETTINGS: SchemaCheckSettings = {
@@ -41,6 +45,8 @@ export const DEFAULT_SCHEMA_CHECK_SETTINGS: SchemaCheckSettings = {
   tinyLength: 0.5,
   recircPercent: 70,
   leakPercent: 30,
+  leakBulkMin: 5,
+  leakBulkMax: 0,
 };
 
 export interface SchemaCheckSettingField {
@@ -89,6 +95,8 @@ export const SCHEMA_CHECK_SETTING_GROUPS: { title: string; fields: SchemaCheckSe
     fields: [
       { key: "recircPercent", label: "Рециркуляция ВМП — доля выше", unit: "%", min: 1, max: 100, step: 5 },
       { key: "leakPercent", label: "Утечки через перемычки — доля выше", unit: "%", min: 1, max: 100, step: 5 },
+      { key: "leakBulkMin", label: "Утечка через перемычку — от", unit: "м³/с", min: 0, step: 0.5 },
+      { key: "leakBulkMax", label: "Утечка через перемычку — до (0 — без предела)", unit: "м³/с", min: 0, step: 0.5 },
     ],
   },
 ];

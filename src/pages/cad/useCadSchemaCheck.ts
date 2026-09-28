@@ -109,6 +109,8 @@ export function useCadSchemaCheck(
       solve: checkSolve(branches, solved, norms, sections, {
         recircShare: s.recircPercent / 100,
         leakShare: s.leakPercent / 100,
+        leakBulkMin: s.leakBulkMin,
+        leakBulkMax: s.leakBulkMax,
         bulkheads,
       }),
     };

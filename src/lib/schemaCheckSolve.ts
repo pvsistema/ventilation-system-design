@@ -29,7 +29,15 @@ export interface SolveCheckResult {
   /** Забой получает меньше требуемого. */
   faceDeficit: BranchNote[];
   /** Утечки через перемычки больше порога — одно сообщение с итогом. */
-  leakage: { percent: number; leakFlow: number; fanFlow: number; branches: BranchNote[]; windowFlow: number } | null;
+  leakage: {
+    percent: number; leakFlow: number; fanFlow: number; branches: BranchNote[]; windowFlow: number;
+    /** Диапазон утечки через одну перемычку, по которому отобран список, м³/с */
+    rangeMin: number; rangeMax: number;
+    /** Сколько перемычек с утечкой вне диапазона не попало в список */
+    hiddenCount: number;
+    /** Утечка через перемычки из списка, м³/с */
+    listedFlow: number;
+  } | null;
   /**
    * Утечки через перемычку выше нормы: Qфакт > Qн = Qн50·√(ΔP/50),
    * где Qн50 — норма утечек при перепаде 50 Па (м³/мин), ΔP — перепад на
@@ -46,6 +54,10 @@ export interface SolveCheckOptions {
   recircShare?: number;
   /** Доля утечек через перемычки от подачи ГВУ, выше которой — предупреждение */
   leakShare?: number;
+  /** м³/с — в список попадают перемычки с утечкой не меньше (по умолчанию 5) */
+  leakBulkMin?: number;
+  /** м³/с — и не больше (0 — без ограничения) */
+  leakBulkMax?: number;
   /** Расход ниже этого (м³/с) считается «нет потока» */
   zeroFlow?: number;
   /**
@@ -76,6 +88,9 @@ export function checkSolve(
 
   const recircShare = opts.recircShare ?? 0.7;
   const leakShare = opts.leakShare ?? 0.3;
+  const leakBulkMin = opts.leakBulkMin ?? 5;
+  const leakBulkMax = opts.leakBulkMax ?? 0;
+  const inLeakRange = (q: number) => q >= leakBulkMin && (leakBulkMax <= 0 || q <= leakBulkMax);
   const zeroQ = opts.zeroFlow ?? 0.01;
   let truncated = false;
   const push = <T,>(arr: T[], item: T) => { if (!pushCapped(arr, item)) truncated = true; };
@@ -252,9 +267,20 @@ export function checkSolve(
     }
   }
 
-  if (fanFlow > zeroQ && leakFlow > fanFlow * leakShare) {
-    leakList.sort((a, b) => Math.abs(b.branch.flow) - Math.abs(a.branch.flow));
-    r.leakage = { percent: (leakFlow / fanFlow) * 100, leakFlow, fanFlow, branches: leakList.slice(0, 500), windowFlow };
+  // Список — только перемычки с утечкой в заданном диапазоне: утечки в сотые
+  // доли м³/с через каждую перемычку по отдельности ничего не значат и лишь
+  // засоряли список. Общая доля утечек считается по ВСЕМ перемычкам.
+  const listed = leakList.filter((x) => inLeakRange(Math.abs(x.branch.flow ?? 0)));
+  const shareExceeded = fanFlow > zeroQ && leakFlow > fanFlow * leakShare;
+  if (shareExceeded || listed.length > 0) {
+    listed.sort((a, b) => Math.abs(b.branch.flow) - Math.abs(a.branch.flow));
+    r.leakage = {
+      percent: fanFlow > zeroQ ? (leakFlow / fanFlow) * 100 : 0,
+      leakFlow, fanFlow, branches: listed.slice(0, 500), windowFlow,
+      rangeMin: leakBulkMin, rangeMax: leakBulkMax,
+      hiddenCount: leakList.length - listed.length,
+      listedFlow: listed.reduce((s, x) => s + Math.abs(x.branch.flow ?? 0), 0),
+    };
   }
 
   leakNormList.sort((a, b) => b.excess - a.excess);

@@ -145,6 +145,28 @@ function GroupTitle({ children }: { children: ReactNode }) {
 }
 
 // ─── Настройки проверки ────────────────────────────────────────────────
+/** Диапазон утечки через одну перемычку, м³/с — правится прямо в проверке. */
+function LeakRangeEditor({ min, max, onChange }: {
+  min: number; max: number; onChange: (patch: Partial<SchemaCheckSettings>) => void;
+}) {
+  const box = (value: number, set: (v: number) => void, placeholder?: string) => (
+    <input type="number" min={0} step={0.5} value={value === 0 && placeholder ? "" : value} placeholder={placeholder}
+      onChange={(e) => { const v = parseFloat(e.target.value); set(Number.isFinite(v) && v >= 0 ? v : 0); }}
+      onClick={(e) => e.stopPropagation()}
+      className="w-16 h-6 px-1.5 text-[11px] text-right rounded outline-none"
+      style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)" }} />
+  );
+  return (
+    <div className="mx-2 mb-1.5 flex items-center gap-1.5 text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>
+      <span>Утечка через перемычку от</span>
+      {box(min, (v) => onChange({ leakBulkMin: v }))}
+      <span>до</span>
+      {box(max, (v) => onChange({ leakBulkMax: v }), "∞")}
+      <span>м³/с</span>
+    </div>
+  );
+}
+
 function SettingsForm({ settings, onChange }: {
   settings: SchemaCheckSettings; onChange: (patch: Partial<SchemaCheckSettings>) => void;
 }) {
@@ -548,20 +570,31 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       ),
     },
     {
-      id: "leakage", group: "Результаты расчёта", icon: "Droplets", level: "warn", count: solve.leakage ? 1 : 0,
+      id: "leakage", group: "Результаты расчёта", icon: "Droplets", level: "warn", count: solve.leakage ? Math.max(1, solve.leakage.branches.length) : 0,
       title: "Большие утечки через перемычки",
       body: () => (
         <>
-          <Hint>Через закрытые перемычки и двери уходит больше {num(cfg.leakPercent)} % воздуха, подаваемого главными вентиляторами. Сопротивление каждой перемычки учитывается так же, как в расчёте сети, — в том числе заданное вручную. Регулируемые окна, открытые двери и ветви с вентиляторами в утечки не входят.</Hint>
+          <Hint>В список попадают закрытые перемычки и двери, через которые уходит от {num(cfg.leakBulkMin)}{cfg.leakBulkMax > 0 ? ` до ${num(cfg.leakBulkMax)}` : ""} м³/с. Отдельно проверяется общая доля: через все перемычки уходит больше {num(cfg.leakPercent)} % подачи главных вентиляторов. Регулируемые окна, открытые двери и ветви с вентиляторами в утечки не входят.</Hint>
+          <LeakRangeEditor min={cfg.leakBulkMin} max={cfg.leakBulkMax} onChange={p.onSettings} />
           {!solve.solved ? needSolve : !solve.leakage ? <Empty text="Утечки в допустимых пределах" /> : (
             <>
-              <Alert>
-                Утечки {fmt(solve.leakage.leakFlow, 1)} м³/с — {fmt(solve.leakage.percent, 0)} % от подачи {fmt(solve.leakage.fanFlow, 1)} м³/с
-              </Alert>
+              {solve.leakage.fanFlow > 0 && solve.leakage.percent > cfg.leakPercent && (
+                <Alert>
+                  Утечки {fmt(solve.leakage.leakFlow, 1)} м³/с — {fmt(solve.leakage.percent, 0)} % от подачи {fmt(solve.leakage.fanFlow, 1)} м³/с
+                </Alert>
+              )}
               {solve.leakage.windowFlow > 0.01 && (
                 <Hint>Через регулируемые окна и открытые проёмы проходит ещё {fmt(solve.leakage.windowFlow, 1)} м³/с — это не утечки.</Hint>
               )}
-              {branchNotes(solve.leakage.branches, "")}
+              {solve.leakage.branches.length > 0 && (
+                <Hint>В диапазоне: {solve.leakage.branches.length} шт., всего {fmt(solve.leakage.listedFlow, 1)} м³/с.</Hint>
+              )}
+              {solve.leakage.hiddenCount > 0 && (
+                <Hint>Перемычек с утечкой вне диапазона (не показаны): {solve.leakage.hiddenCount}.</Hint>
+              )}
+              {solve.leakage.branches.length === 0
+                ? <Empty text="Перемычек с утечкой в заданном диапазоне нет" />
+                : branchNotes(solve.leakage.branches, "")}
             </>
           )}
         </>
