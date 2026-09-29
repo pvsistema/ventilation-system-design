@@ -208,6 +208,27 @@ function decodeXml(buf: Uint8Array): string {
   return new TextDecoder("utf-16le").decode(buf);
 }
 
+/**
+ * Поля ТОЛЬКО самого элемента: <el><customFields><fields><field/>…
+ *
+ * ВАЖНО для выработок. readFields() собирает все <field> на любой глубине,
+ * а внутри <rib> лежат ещё объекты (<ribItems>) и точки излома (<innerNodes>)
+ * со своими полями. Раньше они перетирали поля выработки: у перемычки
+ * «Airflow.AirResistanceCalculationType=2» выдавался за способ задания R
+ * самой выработки (17 случаев в проекте ЮПР).
+ */
+function ownFields(el: Element): Record<string, string> {
+  const out: Record<string, string> = {};
+  const cf = Array.from(el.children).find(c => c.tagName === "customFields");
+  const fs = cf ? Array.from(cf.children).find(c => c.tagName === "fields") : undefined;
+  if (!fs) return out;
+  for (const f of Array.from(fs.children)) {
+    const n = f.getAttribute("name");
+    if (n) out[n] = f.getAttribute("value") ?? "";
+  }
+  return out;
+}
+
 /** Собирает <field name=… value=…> элемента в обычный словарь. */
 function readFields(el: Element): Record<string, string> {
   const out: Record<string, string> = {};
@@ -223,6 +244,25 @@ function readFields(el: Element): Record<string, string> {
  * Наши поля R хранятся в кМюрг — см. depression() в aerodynamics.ts.
  */
 const SI_TO_KMU = 1 / 9.81;
+
+/**
+ * КОЭФФИЦИЕНТ α В АэроСети — в СИ (кг/м³, Н·с²/м⁴), а у нас — в рудничных
+ * единицах (кгс·с²/м⁴ ×10⁻⁴): resistanceFromAlpha() даёт R сразу в кМюрг.
+ * Поэтому α из файла делим на g. Проверено на проекте ЮПР: сопротивление,
+ * посчитанное по записанным в файле давлениям узлов (ΔP/Q²), совпало с
+ * R = α/g·P·L/S³ у 442 выработок из 444. Без деления R выходило в 9,8 раза
+ * больше.
+ */
+const G = 9.80665;
+
+/**
+ * Параметры, которые АэроСеть подставляет выработке без типа и сечения
+ * (72 таких в проекте ЮПР). Подобраны по файлу: ΔP/(Q²·L) у всех этих
+ * выработок одинаково 5,06·10⁻⁶ = 0,004426/g · 11,21 / 10³.
+ */
+const ERP_DEFAULT_AREA = 10;
+const ERP_DEFAULT_PERIMETER = 11.21;
+const ERP_DEFAULT_ALPHA_SI = 0.004426;
 
 /**
  * Определение единиц сопротивления в .erp по самим данным.
@@ -245,7 +285,8 @@ export function detectErpResistanceUnit(
   const ratios: number[] = [];
   for (const s of samples) {
     if (s.r <= 0 || s.alpha <= 0 || s.area <= 0.5 || s.perimeter <= 0 || s.length <= 0) continue;
-    const geom = (s.alpha * s.perimeter * s.length) / Math.pow(s.area, 3);
+    // α в файле — в СИ, поэтому делим на g, чтобы геометрическое R было в кМюрг.
+    const geom = (s.alpha / G * s.perimeter * s.length) / Math.pow(s.area, 3);
     if (geom > 0) ratios.push(s.r / geom);
   }
   if (ratios.length < 3) return "kmu";
@@ -315,8 +356,14 @@ export async function parseErp(
   const doc = new DOMParser().parseFromString(xmlText, "application/xml");
   if (doc.querySelector("parsererror")) throw new Error("schema.xml повреждён: ошибка разбора XML");
 
-  // ── Справочник типов выработок: имя и максимальная скорость ────────────────
-  const ribTypes = new Map<string, { name: string; vMax: number }>();
+  // ── Справочник типов выработок: имя, скорость, форма сечения, крепь ───────
+  // АэроСеть считает сопротивление по α ТИПА ПОВЕРХНОСТИ (крепи) и периметру
+  // по ФОРМЕ СЕЧЕНИЯ (P = k·√S). Поля Airflow.Alpha / Airflow.Perimeter в
+  // самой выработке — лишь устаревший след ручного ввода: у 344 выработок
+  // проекта ЮПР там стояло 0,004426 при крепи с α = 0,01, и расчёт АэроСети
+  // шёл именно по 0,01. Поэтому справочник поверхностей главнее.
+  const ribTypes = new Map<string, { name: string; vMax: number; surfaceTypeId: string; crossSectionTypeId: string }>();
+  const surfaceTypes = new Map<string, { name: string; alpha: number }>();
   // Формы сечения: хранят отношение периметра к корню из площади (P = k·√S).
   // Нужны потому, что периметр записан лишь у части выработок, а без него
   // нельзя посчитать сопротивление по коэффициенту α.
@@ -326,13 +373,22 @@ export async function parseErp(
     const rtDoc = new DOMParser().parseFromString(decodeXml(await rtEntry.async("uint8array")), "application/xml");
     rtDoc.querySelectorAll("ribType").forEach(t => {
       const id = t.getAttribute("id");
-      if (id) ribTypes.set(id, { name: t.getAttribute("name") ?? "", vMax: num(t.getAttribute("defaultMaxAirVelocity"), 0) });
+      if (id) ribTypes.set(id, {
+        name: t.getAttribute("name") ?? "",
+        vMax: num(t.getAttribute("defaultMaxAirVelocity"), 0),
+        surfaceTypeId: t.getAttribute("surfaceTypeId") ?? "",
+        crossSectionTypeId: t.getAttribute("crossSectionTypeId") ?? "",
+      });
+    });
+    rtDoc.querySelectorAll("surfaceType").forEach(t => {
+      const id = t.getAttribute("id");
+      if (id) surfaceTypes.set(id, { name: t.getAttribute("name") ?? "", alpha: num(t.getAttribute("alpha"), 0) });
     });
     rtDoc.querySelectorAll("crossSectionType").forEach(t => {
       const id = t.getAttribute("id");
       if (id) crossTypes.set(id, { name: t.getAttribute("name") ?? "", k: num(t.getAttribute("perimeterToAreaRatio"), 0) });
     });
-    log.push(`типов выработок: ${ribTypes.size}, форм сечения: ${crossTypes.size}`);
+    log.push(`типов выработок: ${ribTypes.size}, форм сечения: ${crossTypes.size}, типов крепи: ${surfaceTypes.size}`);
   }
 
   // ── Узлы ──────────────────────────────────────────────────────────────────
@@ -365,9 +421,12 @@ export async function parseErp(
   // Слой АэроСети — это группа выработок (Стволы, Слой 1). Отметку слоя файл
   // не хранит, поэтому z горизонта вычислим ниже как медиану отметок его узлов.
   interface RawItem { code: string; description: string; f: Record<string, string> }
+  /** Точка излома выработки: экранные x/y файла и отметка z, м. */
+  interface RawBend { x: number; y: number; z: number }
   interface RawBranch {
     id: string; fromId: string; toId: string; horizonId: string;
     f: Record<string, string>; items: RawItem[]; thickness: number;
+    bends: RawBend[];
   }
   const rawBranches: RawBranch[] = [];
   const horizonMeta: { id: string; name: string; color: string; visible: boolean; order: number }[] = [];
@@ -398,7 +457,27 @@ export async function parseErp(
           f: readFields(it),
         });
       });
-      rawBranches.push({ id, fromId, toId, horizonId: lid, f: readFields(rib), items, thickness: num(rib.getAttribute("thickness"), 3) });
+      // Точки излома: <innerNodes><ribNode index x y><…field name="z"/>.
+      // Они задают настоящую трассу выработки — длину считаем по ломаной.
+      const bends: RawBend[] = [];
+      const inner = Array.from(rib.children).find(c => c.tagName === "innerNodes");
+      if (inner) {
+        Array.from(inner.children)
+          .filter(c => c.tagName === "ribNode")
+          .map(c => ({ el: c, i: num(c.getAttribute("index")) }))
+          .sort((a, b) => a.i - b.i)
+          .forEach(({ el }) => {
+            bends.push({
+              x: num(el.getAttribute("x")),
+              y: num(el.getAttribute("y")),
+              z: num(readFields(el)["z"]),
+            });
+          });
+      }
+      rawBranches.push({
+        id, fromId, toId, horizonId: lid,
+        f: ownFields(rib), items, thickness: num(rib.getAttribute("thickness"), 3), bends,
+      });
     });
   });
   log.push(`слоёв: ${horizonMeta.length}, ветвей: ${rawBranches.length}`);
@@ -481,26 +560,90 @@ export async function parseErp(
     });
   const horizonIdMap = new Map(horizonMeta.map(h => [h.id, `h_erp_${h.id.slice(0, 8)}`]));
 
+  // ── Геометрия и крепь выработки — так же, как их берёт сама АэроСеть ──────
+  // Правила выверены по проекту ЮПР сверкой с давлениями узлов из файла
+  // (R = ΔP/Q²): совпадение у 442 выработок из 444 против 1 из 444 раньше.
+  //
+  // ДЛИНА. Airflow.UserDefinedRibLength действует ТОЛЬКО при флаге
+  // RibLengthIsUserDefined=True. Без флага это устаревшее число, а АэроСеть
+  // считает длину по трассе — через все точки излома (раньше мы брали это
+  // устаревшее число или прямую между концами: 46,8 м вместо 91,9 м).
+  //
+  // α. Сначала крепь выработки (Airflow.SurfaceTypeId), затем крепь её типа,
+  // и только затем Airflow.Alpha. P — по форме сечения (P = k·√S), иначе
+  // записанный периметр.
+  //
+  // БЕЗ ПАРАМЕТРОВ. Выработка без сечения и типа считается АэроСетью с
+  // параметрами по умолчанию (S = 10, P = 11,21, α = 0,004426), а не как
+  // соединение без сопротивления.
+  interface ErpGeom {
+    area: number; perimeter: number; length: number;
+    /** α в единицах файла (СИ, кг/м³). */
+    alphaSi: number;
+    alphaSource: "surface" | "ribType" | "rib" | "default" | "none";
+    surfaceName: string;
+    defaulted: boolean;
+    lengthFromBends: boolean;
+  }
+  const geomOf = (rb: RawBranch): ErpGeom => {
+    const f = rb.f;
+    const rt = ribTypes.get(f["Airflow.RibTypeId"] ?? "");
+    const hasArea = f["Airflow.CrossSectionArea"] != null && f["Airflow.CrossSectionArea"] !== "";
+    const defaulted = !hasArea && !rt;
+    const area = hasArea ? num(f["Airflow.CrossSectionArea"], 0) : (defaulted ? ERP_DEFAULT_AREA : 0);
+
+    const surfOwn = surfaceTypes.get(f["Airflow.SurfaceTypeId"] ?? "");
+    const surfType = rt ? surfaceTypes.get(rt.surfaceTypeId) : undefined;
+    const alphaRib = num(f["Airflow.Alpha"], 0);
+    let alphaSi = 0;
+    let alphaSource: ErpGeom["alphaSource"] = "none";
+    let surfaceName = "";
+    if (surfOwn && surfOwn.alpha > 0) { alphaSi = surfOwn.alpha; alphaSource = "surface"; surfaceName = surfOwn.name; }
+    else if (surfType && surfType.alpha > 0) { alphaSi = surfType.alpha; alphaSource = "ribType"; surfaceName = surfType.name; }
+    else if (alphaRib > 0) { alphaSi = alphaRib; alphaSource = "rib"; }
+    else if (defaulted) { alphaSi = ERP_DEFAULT_ALPHA_SI; alphaSource = "default"; }
+
+    const ct = crossTypes.get(f["Airflow.CrossSectionTypeId"] ?? "")
+      ?? (rt ? crossTypes.get(rt.crossSectionTypeId) : undefined);
+    const perimeter = defaulted
+      ? ERP_DEFAULT_PERIMETER
+      : (ct && ct.k > 0 && area > 0 ? +(ct.k * Math.sqrt(area)).toFixed(3) : num(f["Airflow.Perimeter"], 0));
+
+    const na = rawNodes.get(rb.fromId), nb = rawNodes.get(rb.toId);
+    let polyLength = 0;
+    if (na && nb) {
+      const pts = [na, ...rb.bends, nb].map(p => {
+        const q = toPlan(p.x, p.y, p.z);
+        return { x: q.x, y: q.y, z: p.z };
+      });
+      for (let i = 1; i < pts.length; i++) {
+        polyLength += Math.hypot(pts[i].x - pts[i - 1].x, pts[i].y - pts[i - 1].y, pts[i].z - pts[i - 1].z);
+      }
+    }
+    const userFlag = bool(f["Airflow.RibLengthIsUserDefined"]);
+    const userLength = num(f["Airflow.UserDefinedRibLength"], 0);
+    const useUser = userFlag && userLength > 0;
+    return {
+      area, perimeter,
+      length: +(useUser ? userLength : polyLength).toFixed(2),
+      alphaSi, alphaSource, surfaceName, defaulted,
+      lengthFromBends: !useUser && rb.bends.length > 0,
+    };
+  };
+  const geoms = new Map(rawBranches.map(rb => [rb, geomOf(rb)] as const));
+
   // ── Сборка ветвей ─────────────────────────────────────────────────────────
   // Единицы сопротивления: либо заданы пользователем, либо определяются по
   // данным. Считаем ДО сборки ветвей — коэффициент нужен каждой из них.
   const rUnit: "kmu" | "si" = requestedUnit === "auto"
     ? detectErpResistanceUnit(rawBranches.map(rb => {
-        // Длина: заданная вручную, иначе по координатам — иначе выборка для
-        // автоопределения выходит слишком куцей (в реальных проектах длина
-        // чаще берётся из чертежа, чем вводится руками).
-        const a = rawNodes.get(rb.fromId), b = rawNodes.get(rb.toId);
-        let length = num(rb.f["Airflow.UserDefinedRibLength"], 0);
-        if (length <= 0 && a && b) {
-          const pa = toPlan(a.x, a.y, a.z), pb = toPlan(b.x, b.y, b.z);
-          length = Math.hypot(pb.x - pa.x, pb.y - pa.y, b.z - a.z);
-        }
+        const g = geoms.get(rb)!;
         return {
           r: num(rb.f["Airflow.UserDefinedResistance"], 0),
-          alpha: num(rb.f["Airflow.Alpha"], 0),
-          area: num(rb.f["Airflow.CrossSectionArea"], 0),
-          perimeter: num(rb.f["Airflow.Perimeter"], 0),
-          length,
+          alpha: g.alphaSi,
+          area: g.area,
+          perimeter: g.perimeter,
+          length: g.length,
         };
       }))
     : requestedUnit;
@@ -514,6 +657,8 @@ export async function parseErp(
   /** GUID выработки в файле → её id на нашей схеме (нужно позициям ПЛА). */
   const branchIdMap = new Map<string, string>();
   let fans = 0, bulkheads = 0, skipped = 0, branchNum = 1;
+  const alphaStat = { surface: 0, ribType: 0, rib: 0, default: 0, none: 0 };
+  let bendLengths = 0, notPassable = 0, longwalls = 0;
 
   for (const rb of rawBranches) {
     const fromId = idMap.get(rb.fromId);
@@ -521,24 +666,18 @@ export async function parseErp(
     if (!fromId || !toId) { skipped++; continue; }
     const f = rb.f;
 
-    const area = num(f["Airflow.CrossSectionArea"], 0);
-    // Периметр записан не у всех выработок. Если его нет — восстанавливаем по
-    // форме сечения (P = k·√S): без периметра не считается сопротивление по α.
-    const ct = crossTypes.get(f["Airflow.CrossSectionTypeId"] ?? "");
-    const perimeter = num(f["Airflow.Perimeter"], 0)
-      || (ct && ct.k > 0 && area > 0 ? +(ct.k * Math.sqrt(area)).toFixed(3) : 0);
-
-    // Длину АэроСеть хранит только когда её задали вручную; в остальных случаях
-    // она берётся из чертежа. Считаем её сами по координатам — с учётом
-    // перепада отметок, иначе наклонные выработки и стволы окажутся короче.
-    const na = rawNodes.get(rb.fromId)!, nb = rawNodes.get(rb.toId)!;
-    const pa = toPlan(na.x, na.y, na.z), pb = toPlan(nb.x, nb.y, nb.z);
-    const geomLength = Math.hypot(pb.x - pa.x, pb.y - pa.y, nb.z - na.z);
-    const userLength = num(f["Airflow.UserDefinedRibLength"], 0);
-    const length = +(userLength > 0 ? userLength : geomLength).toFixed(2);
+    const g = geoms.get(rb)!;
+    const { area, perimeter, length } = g;
+    alphaStat[g.alphaSource]++;
+    if (g.lengthFromBends) bendLengths++;
+    const isNotPassable = bool(f["Position.RibIsNotPassable"]);
+    if (isNotPassable) notPassable++;
+    const isLongwall = bool(f["Rib.IsLongwall"]);
+    if (isLongwall) longwalls++;
+    // α: из СИ (файл) в наши рудничные единицы ×10⁻⁴ — см. константу G.
+    const alphaCoef = g.alphaSi > 0 ? +(g.alphaSi / G * 1e4).toFixed(4) : 0;
     // Сопротивление приводим к нашим единицам (кМюрг) — см. rFactor выше.
     const rUser = +(num(f["Airflow.UserDefinedResistance"], 0) * rFactor).toFixed(6);
-    const alpha = num(f["Airflow.Alpha"], 0);
     const rt = ribTypes.get(f["Airflow.RibTypeId"] ?? "");
 
     // Способ задания сопротивления (Airflow.AirResistanceCalculationType).
@@ -591,10 +730,12 @@ export async function parseErp(
       manualSection: area > 0 && perimeter > 0,
       dh: area > 0 && perimeter > 0 ? +(4 * area / perimeter).toFixed(3) : 0,
       length,
-      manualLength: true,   // длина уже известна (задана в файле или по чертежу)
+      manualLength: true,   // длина уже известна (задана в файле или по трассе с изломами)
       resistanceMode: useManualR ? "manual" : "alpha",
       manualR: useManualR ? rUser : 0,
-      alphaCoef: alpha > 0 ? alpha * 1e4 : 0,
+      alphaCoef,
+      // Название крепи из справочника АэроСети — для подписи в свойствах.
+      surface: g.surfaceName || "",
       resistance: rUser,
       flow: num(f["Airflow.Discharge"], 0),
       vMax: num(f["Airflow.MaxAirVelocity"], 0) || rt?.vMax || 0,
@@ -617,9 +758,25 @@ export async function parseErp(
       bulkheadResMode: hasBulkhead ? "manual" : "project",
       bulkheadManualR: hasBulkhead ? bulkR : 0,
       bulkheadSurveyQ: hasBulkhead ? num(bf["Airflow.BulkheadDepressionSurveyDischarge"], 0) : 0,
-      comment: f["Rib.Comment"] ?? "",
+      comment: [
+        f["Rib.Comment"] ?? "",
+        isNotPassable ? "Непроходимая для людей (АэроСеть)" : "",
+        g.defaulted ? "Параметры по умолчанию АэроСети: S=10 м², P=11,21 м" : "",
+      ].filter(Boolean).join("\n"),
     }));
     branchNum++;
+  }
+
+  log.push(`α: по крепи выработки ${alphaStat.surface}, по крепи типа ${alphaStat.ribType}, из поля выработки ${alphaStat.rib}, по умолчанию ${alphaStat.default}, нет ${alphaStat.none}`);
+  log.push(`длина по трассе с изломами: ${bendLengths}; непроходимых: ${notPassable}; лав: ${longwalls}`);
+  if (alphaStat.default > 0) {
+    warnings.push(`Выработок без сечения и типа: ${alphaStat.default}. Им подставлены параметры АэроСети по умолчанию (S = 10 м², P = 11,21 м, α = 0,004426) — так их считает и сама АэроСеть`);
+  }
+  if (alphaStat.none > 0) {
+    warnings.push(`У ${alphaStat.none} выработок не найден коэффициент α — их сопротивление будет нулевым, проверьте крепь`);
+  }
+  if (notPassable > 0) {
+    warnings.push(`Выработок, отмеченных в АэроСети как непроходимые: ${notPassable} — отметка перенесена в комментарий выработки`);
   }
 
   if (skipped > 0) warnings.push(`Пропущено выработок без узлов: ${skipped}`);

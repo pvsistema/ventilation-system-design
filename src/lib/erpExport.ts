@@ -274,7 +274,9 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       + `<field name="Airflow.Perimeter" value="${n(br.perimeter, 3)}" />`
       + `<field name="Airflow.UserDefinedRibLength" value="${n(br.length, 2)}" />`
       + `<field name="Airflow.RibLengthIsUserDefined" value="True" />`
-      + `<field name="Airflow.Alpha" value="${n((br.alphaCoef ?? 0) * 1e-4)}" />`
+      // α у нас в рудничных единицах (кгс·с²/м⁴), а АэроСеть хранит его в СИ
+      // (кг/м³) — домножаем на g. Парно с делением в erpImport.ts.
+      + `<field name="Airflow.Alpha" value="${n((br.alphaCoef ?? 0) * 1e-4 * 9.80665)}" />`
       + `<field name="Airflow.UserDefinedResistance" value="${n(manualR ? br.manualR : 0)}" />`
       + `<field name="Airflow.AirResistanceCalculationType" value="${manualR ? 2 : 0}" />`
       + `<field name="Airflow.Discharge" value="${n(withResults ? (br.flow ?? 0) : 0, 4)}" />`
