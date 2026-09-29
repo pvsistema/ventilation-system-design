@@ -21,6 +21,25 @@ const LEVEL_COLOR: Record<Level, string> = {
   info: "var(--c-accent, #1e5a7a)",
 };
 
+/**
+ * Критические проверки — из-за них расчёт воздухораспределения невозможен
+ * или его результат заведомо неверен (ошибка самой модели сети).
+ * Остальные проверки — некритические: расчёт корректен, но есть нарушения
+ * норм по его результатам, подозрительные значения или справочные замечания.
+ */
+const CRITICAL_CHECKS = new Set<CheckTab>([
+  // Расчёт не прошёл
+  "solveBlock",
+  // Топология: сеть в расчёте не совпадает с чертежом
+  "noFan", "components", "deadFan", "tJunction", "selfLoop",
+  "brokenBranch", "isolatedBranch", "dupes",
+  // Параметры, искажающие сопротивления и тягу
+  "invalidValues", "fanNoCurve", "zeroLen", "zeroR", "badArea",
+  "shortManualLen", "zeroBulkhead", "lostZ",
+  // Результат вентилятора недостоверен
+  "fanAgainst", "fanRange",
+]);
+
 const tint = (color: string, pct = 14) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 const fmt = (v: number, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
 
@@ -784,21 +803,49 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
     },
   ];
 
-  const errors = checks.filter((c) => c.level === "error").reduce((s, c) => s + c.count, 0);
-  const warns = checks.filter((c) => c.level === "warn").reduce((s, c) => s + c.count, 0);
+  // Критические — ошибки модели, из-за которых расчёт невозможен или заведомо
+  // неверен (топология, сопротивления, вентиляторы, высоты). Всё остальное —
+  // некритические: нарушения норм по результатам корректного расчёта,
+  // подозрительные, но допустимые значения и справочные замечания.
+  const isCritical = (c: Check) => CRITICAL_CHECKS.has(c.id);
+  for (const c of checks) {
+    if (isCritical(c)) c.level = "error";
+    else if (c.level === "error") c.level = "warn";
+  }
+
+  const critical = checks.filter(isCritical);
+  const minor = checks.filter((c) => !isCritical(c));
+  const errors = critical.reduce((s, c) => s + c.count, 0);
+  const warns = minor.reduce((s, c) => s + c.count, 0);
   const found = checks.filter((c) => c.count > 0).length;
   // Раскрытую проверку показываем всегда — даже пустую: её мог открыть расчёт.
-  const visible = checks.filter((c) => showAll || c.count > 0 || c.id === openCheck);
+  const isVisible = (c: Check) => showAll || c.count > 0 || c.id === openCheck;
   const GROUP_ORDER = ["Расчёт сети", "Связность сети", "Ветви", "Параметры ветвей", "Узлы", "Результаты расчёта"];
   const LEVEL_ORDER: Record<Level, number> = { error: 0, warn: 1, info: 2 };
-  const groups = GROUP_ORDER.filter((g) => visible.some((c) => c.group === g));
-  const inGroup = (g: string) => visible
-    .filter((c) => c.group === g)
-    .sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]);
+  const buildSection = (list: Check[]) => {
+    const vis = list.filter(isVisible);
+    return GROUP_ORDER
+      .map((g) => ({ g, items: vis.filter((c) => c.group === g).sort((a, b) => LEVEL_ORDER[a.level] - LEVEL_ORDER[b.level]) }))
+      .filter((x) => x.items.length > 0);
+  };
+  const sections = [
+    {
+      key: "critical", title: "Критические", sub: "Расчёт невозможен или будет неверным",
+      icon: "OctagonAlert", color: LEVEL_COLOR.error, count: errors, groups: buildSection(critical),
+    },
+    {
+      key: "minor", title: "Некритические", sub: "Расчёт верный — нарушения норм и замечания",
+      icon: "AlertTriangle", color: LEVEL_COLOR.warn, count: warns, groups: buildSection(minor),
+    },
+  ].filter((s) => s.groups.length > 0);
+  const visibleCount = sections.reduce((s, x) => s + x.groups.length, 0);
 
   const status: { color: string; icon: string; text: string; sub: string } =
-    errors > 0 ? { color: LEVEL_COLOR.error, icon: "CircleX", text: `Ошибок: ${errors}`, sub: "Расчёт может быть неверным — исправьте их в первую очередь" }
-    : warns > 0 ? { color: LEVEL_COLOR.warn, icon: "AlertTriangle", text: `Замечаний: ${warns}`, sub: "Расчёт возможен, но стоит проверить" }
+    errors > 0 ? {
+      color: LEVEL_COLOR.error, icon: "CircleX", text: `Критических ошибок: ${errors}`,
+      sub: `Расчёт будет неверным — исправьте их в первую очередь${warns > 0 ? ` · некритических: ${warns}` : ""}`,
+    }
+    : warns > 0 ? { color: LEVEL_COLOR.warn, icon: "AlertTriangle", text: `Некритических замечаний: ${warns}`, sub: "Критических ошибок нет — расчёт корректен, но стоит проверить" }
     : { color: "var(--c-green, #15803d)", icon: "CircleCheck", text: "Схема в порядке", sub: "Ошибок и замечаний не найдено" };
 
   return (
@@ -856,7 +903,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
 
       {/* Проверки */}
       <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
-        {visible.length === 0 && (
+        {visibleCount === 0 && (
           <div className="flex flex-col items-center gap-2 py-10 text-center">
             <Icon name="ShieldCheck" size={28} style={{ color: "var(--c-green, #15803d)" }} />
             <span className="text-[11px]" style={{ color: "var(--c-t3, #6b7280)" }}>
@@ -864,14 +911,34 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
             </span>
           </div>
         )}
-        {groups.map((g) => (
-          <div key={g} className="space-y-1.5">
-            <GroupTitle>{g}</GroupTitle>
-            {inGroup(g).map((c) => (
-              <CheckCard key={c.id} icon={c.icon} title={c.title} count={c.count} level={c.level}
-                open={openCheck === c.id} onToggle={() => onOpenCheck(openCheck === c.id ? null : c.id)}>
-                {c.body()}
-              </CheckCard>
+        {sections.map((s, si) => (
+          <div key={s.key} className={`space-y-1.5 ${si > 0 ? "pt-2" : ""}`}>
+            <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg"
+              style={{ background: tint(s.color, 8), borderLeft: `3px solid ${s.color}` }}>
+              <Icon name={s.icon} size={14} style={{ color: s.color }} className="flex-shrink-0" />
+              <div className="flex-1 min-w-0">
+                <div className="text-[11px] font-bold uppercase tracking-wide" style={{ color: s.color }}>{s.title}</div>
+                <div className="text-[10px] leading-tight" style={{ color: "var(--c-t3, #6b7280)" }}>{s.sub}</div>
+              </div>
+              <span className="text-[10px] px-1.5 rounded-full font-semibold flex-shrink-0"
+                style={{
+                  fontFamily: "var(--font-num)",
+                  background: s.count > 0 ? tint(s.color) : tint("var(--c-green, #15803d)"),
+                  color: s.count > 0 ? s.color : "var(--c-green, #15803d)",
+                }}>
+                {s.count}
+              </span>
+            </div>
+            {s.groups.map(({ g, items }) => (
+              <div key={g} className="space-y-1.5">
+                <GroupTitle>{g}</GroupTitle>
+                {items.map((c) => (
+                  <CheckCard key={c.id} icon={c.icon} title={c.title} count={c.count} level={c.level}
+                    open={openCheck === c.id} onToggle={() => onOpenCheck(openCheck === c.id ? null : c.id)}>
+                    {c.body()}
+                  </CheckCard>
+                ))}
+              </div>
             ))}
           </div>
         ))}
