@@ -74,6 +74,7 @@ export default function CadStatusBar({
           <Kv k="Ветвь" v={selectedBranch.id} />
           <span className="sb-k truncate">({selectedBranch.fromId} → {selectedBranch.toId})</span>
           <Kv k="L" v={selectedBranch.length} unit="м" />
+          <Kv k="∠" v={Number.isFinite(selectedBranch.angle) ? `${selectedBranch.angle > 0 ? "+" : ""}${selectedBranch.angle.toFixed(1)}` : "—"} unit="°" />
         </span>
       )}
       {!selectedNode && !selectedBranch && <span className="sb-k">Выделите узел или ветвь</span>}
