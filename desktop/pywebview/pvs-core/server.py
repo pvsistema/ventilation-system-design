@@ -11,6 +11,11 @@ import importlib.util
 
 from flask import Flask, jsonify, request, send_from_directory
 
+# Расчётные функции запускаются здесь, на компьютере пользователя: включаем
+# в license_guard режим локального ядра (строгая проверка без базы, привязка
+# пропуска к ЭТОМУ компьютеру, локальный список отозванных аварийных ключей).
+os.environ["PVS_LOCAL_CORE"] = "1"
+
 import calc_aerodynamics
 import calc_explosion
 
@@ -235,6 +240,8 @@ def call_backend(name: str):
     handler = _load_backend_handler(name)
     if handler is None:
         return cors_response({"error": f"{name} модуль не найден"}, 500)
+    # Строгая проверка в самой функции — с отпечатком этого ПК и списком отзыва.
+    _prepare_guard()
 
     event = {
         "httpMethod": request.method,
@@ -256,6 +263,144 @@ def call_backend(name: str):
     except Exception:
         data = {"raw": raw_body}
     return cors_response(data, status)
+
+
+# ─── Проверка лицензии в локальном ядре ──────────────────────────────────────
+# Раньше расчёты в настольной версии не проверяли лицензию вовсе: облачная
+# проверка без базы уходила в мягкий режим, а взрыв и аэродинамика считались
+# встроенными модулями в обход неё. Теперь каждый расчёт проходит тот же
+# license_gate, что и в облаке, но в строгом режиме и с привязкой к железу.
+
+def _sha256hex(text: str) -> str:
+    import hashlib
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _machine_fingerprints():
+    """(fingerprint, fp_hash, код места) — ровно так, как их считает программа
+    (src/lib/license.ts: fingerprint = sha256("mid:"+machineId))."""
+    mid = get_machine_id()
+    if not mid:
+        return "", "", ""
+    fp = _sha256hex(f"mid:{mid}")
+    return fp, _sha256hex(fp), fp[:8].upper()
+
+
+# Отозванные аварийные ключи. Отдельный файл в профиле: переживает чистку
+# данных WebView2, поэтому отзыв нельзя сбросить очисткой браузера и повторным
+# вводом ключа без интернета. Пополняется, когда сервер при квартальной сверке
+# (action=offline_check) отвечает «ключ не действует».
+def _revoked_path():
+    return os.path.join(os.path.dirname(_license_store_path()), "offline_revoked.json")
+
+
+def _load_revoked() -> dict:
+    try:
+        p = _revoked_path()
+        if os.path.exists(p):
+            with open(p, "r", encoding="utf-8") as f:
+                d = json.load(f)
+                return {"kids": [int(k) for k in d.get("kids", []) if str(k).isdigit()],
+                        "keys": [str(k) for k in d.get("keys", []) if k]}
+    except Exception:
+        pass
+    return {"kids": [], "keys": []}
+
+
+def _save_revoked(d: dict) -> None:
+    try:
+        with open(_revoked_path(), "w", encoding="utf-8") as f:
+            json.dump(d, f, ensure_ascii=False)
+    except Exception:
+        pass
+
+
+def _offline_key_kid(key_text: str):
+    """Номер ключа из подписанного payload (без проверки подписи — только для учёта)."""
+    try:
+        import base64
+        part = key_text.split(".")[1]
+        part += "=" * (-len(part) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(part).decode("utf-8"))
+        k = payload.get("kid")
+        return int(k) if str(k).isdigit() else None
+    except Exception:
+        return None
+
+
+def _note_offline_verdict(req_body: dict, resp_data: dict) -> None:
+    """Запомнить ответ сервера об аварийном ключе (отзыв / восстановление)."""
+    if not isinstance(resp_data, dict) or not resp_data.get("ok"):
+        return
+    kid = req_body.get("kid")
+    kid = int(kid) if str(kid).isdigit() else None
+    key_text = str(req_body.get("offline_key") or "").strip()
+    if kid is None and key_text:
+        kid = _offline_key_kid(key_text)
+    d = _load_revoked()
+    kids, keys = set(d["kids"]), set(d["keys"])
+    if resp_data.get("valid") is False:
+        if kid is not None:
+            kids.add(kid)
+        if key_text:
+            keys.add(key_text)
+    else:
+        # Администратор вернул ключ — снимаем отметку.
+        if kid is not None:
+            kids.discard(kid)
+        if key_text:
+            keys.discard(key_text)
+    _save_revoked({"kids": sorted(kids), "keys": sorted(keys)})
+
+
+_GUARD = None
+
+
+def _guard():
+    """license_guard, общий для всех расчётных модулей ядра."""
+    global _GUARD
+    if _GUARD is not None:
+        return _GUARD
+    # Модуль лежит рядом с index.py каждой функции — берём первый найденный.
+    for name in ("airflow", "explosion-calculator", "aerodynamics", "water-hydraulics", "rescue-calculator"):
+        _load_backend_handler(name)
+    try:
+        import license_guard  # noqa: E402 — путь добавлен загрузчиком функций
+        _GUARD = license_guard
+    except Exception as e:
+        print(f"[core] license_guard не найден: {e}")
+        _GUARD = None
+    return _GUARD
+
+
+def _prepare_guard():
+    """Передать в проверку отпечаток этого ПК и список отозванных ключей."""
+    g = _guard()
+    if g is None:
+        return None
+    _, fph, seat = _machine_fingerprints()
+    rv = _load_revoked()
+    g.set_local_context(machine_fph=fph, revoked_kids=rv["kids"], revoked_keys=rv["keys"])
+    g.set_local_seat(seat)
+    return g
+
+
+def _gate(body, func: str):
+    """None — считать можно; иначе Flask-ответ с отказом."""
+    g = _prepare_guard()
+    if g is None:
+        # Модуль проверки не собран в ядро — это поломка сборки, а не повод
+        # считать без лицензии.
+        return cors_response({"error": "license_required", "reason": "guard_missing",
+                              "message": "Модуль проверки лицензии не найден. Переустановите программу."}, 403)
+    denied = g.license_gate(body, CORS_HEADERS, func)
+    if denied is None:
+        return None
+    try:
+        data = json.loads(denied.get("body") or "{}")
+    except Exception:
+        data = {"error": "license_required"}
+    return cors_response(data, denied.get("statusCode", 403))
 
 
 def _find_dist():
@@ -433,6 +578,9 @@ def api_aerodynamics():
     if request.method == "OPTIONS":
         return handle_options()
     body = request.get_json(force=True, silent=True) or {}
+    denied = _gate(body, "aerodynamics")
+    if denied is not None:
+        return denied
     result = calc_aerodynamics.run(body)
     return cors_response(result)
 
@@ -462,6 +610,9 @@ def api_explosion():
     if request.method == "OPTIONS":
         return handle_options()
     body = request.get_json(force=True, silent=True) or {}
+    denied = _gate(body, "explosion")
+    if denied is not None:
+        return denied
     result = calc_explosion.run(body)
     return cors_response(result)
 
@@ -497,6 +648,14 @@ def api_license():
         # по таймауту, хотя ключ верный и интернет есть.
         with urllib.request.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode())
+            # Ответ квартальной сверки аварийного ключа запоминаем в ядре:
+            # отзыв должен действовать и без интернета, и после чистки WebView2.
+            try:
+                req_body = json.loads(body_bytes.decode("utf-8") or "{}")
+                if req_body.get("action") == "offline_check":
+                    _note_offline_verdict(req_body, data)
+            except Exception:
+                pass
             return cors_response(data)
     except urllib.error.HTTPError as e:
         # Облако вернуло ошибку (например неверный ключ) — пробрасываем
@@ -554,6 +713,15 @@ def api_license_store():
         store[key] = body.get("value")
     ok = _save_store(store)
     return cors_response({"ok": ok})
+
+
+# ─── Отозванные аварийные ключи (для окна лицензии) ─────────────────────────
+
+@app.route("/api/offline-revoked", methods=["GET", "OPTIONS"])
+def api_offline_revoked():
+    if request.method == "OPTIONS":
+        return handle_options()
+    return cors_response(_load_revoked())
 
 
 # ─── Статус сервера ───────────────────────────────────────────────────────────

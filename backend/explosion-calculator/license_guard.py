@@ -70,6 +70,38 @@ DEFAULT_DEMO_NODES = 20
 DEFAULT_DEMO_BRANCHES = 30
 
 
+# ── Локальное расчётное ядро настольной версии ───────────────────────────────
+# В настольной программе эти же функции запускает server.exe на компьютере
+# пользователя. Базы там нет, и раньше проверка всегда уходила в МЯГКИЙ режим —
+# расчёты в десктопе фактически не были защищены лицензией.
+#
+# Ядро выставляет PVS_LOCAL_CORE=1 и передаёт сюда:
+#   • хэш отпечатка ЭТОГО компьютера (из настоящего machine-id ОС) — пропуск,
+#     выданный другому ПК, не принимается;
+#   • список отозванных аварийных ключей, сохранённый в файле профиля
+#     (переживает чистку данных WebView2).
+# Режим в ядре всегда СТРОГИЙ: подпись, срок и привязка проверяются без
+# интернета, поэтому мягкий режим здесь не нужен.
+_LOCAL = {"fph": "", "seat": "", "revoked_kids": set(), "revoked_keys": set()}
+
+
+def is_local_core() -> bool:
+    return os.environ.get("PVS_LOCAL_CORE") == "1"
+
+
+def set_local_context(machine_fph: str = "", revoked_kids=None, revoked_keys=None) -> None:
+    """Вызывается ядром перед каждой проверкой (значения из железа и файла профиля)."""
+    fph = (machine_fph or "").strip().lower()
+    _LOCAL["fph"] = fph
+    _LOCAL["seat"] = ""
+    _LOCAL["revoked_kids"] = {int(k) for k in (revoked_kids or []) if str(k).isdigit()}
+    _LOCAL["revoked_keys"] = {str(k).strip() for k in (revoked_keys or []) if k}
+
+
+def set_local_seat(seat_code: str) -> None:
+    _LOCAL["seat"] = (seat_code or "").strip().upper()
+
+
 def _b64url_decode(s: str) -> bytes:
     s = s.replace("-", "+").replace("_", "/")
     pad = "=" * (-len(s) % 4)
@@ -139,6 +171,9 @@ def _load_settings() -> dict:
     полностью, случаи всё равно попадают в счётчик.
     """
     global _settings_cache, _settings_expire
+    if is_local_core():
+        return {"mode": "strict", "demo_nodes": DEFAULT_DEMO_NODES,
+                "demo_branches": DEFAULT_DEMO_BRANCHES}
     now = time.time()
     if _settings_cache is not None and now < _settings_expire:
         return _settings_cache
@@ -290,6 +325,21 @@ def _check_offline_key(key: str, client_fp: str, client_fph: str = "") -> Tuple[
     if exp_ts < time.time() - CLOCK_SKEW_SEC:
         return False, "expired"
 
+    # Локальное ядро: отзыв — по сохранённому списку, привязка — по
+    # настоящему отпечатку ЭТОГО компьютера (а не по тому, что прислал клиент).
+    if is_local_core():
+        kid_l = payload.get("kid")
+        if str(kid_l).isdigit() and int(kid_l) in _LOCAL["revoked_kids"]:
+            return False, "revoked"
+        if key.strip() in _LOCAL["revoked_keys"]:
+            return False, "revoked"
+        want = str(payload.get("fp") or "").strip().upper()
+        if want:
+            seat = _LOCAL["seat"]
+            if not seat or not (seat.startswith(want) or want.startswith(seat)):
+                return False, "wrong_computer"
+        return True, "emergency"
+
     # Отзыв и привязка — по реестру на сервере.
     kid = payload.get("kid")
     revoked, bound, seats = _load_offline_keys()
@@ -376,6 +426,13 @@ def check_license(body: Any) -> Tuple[bool, str]:
     if not payload.get("fp"):
         return False, "no_fingerprint"
 
+    # Локальное ядро: пропуск должен быть выдан именно этому компьютеру.
+    # Скопированная с другого ПК лицензия отсекается здесь, даже если
+    # интерфейс программы изменён.
+    if is_local_core() and _LOCAL["fph"]:
+        if str(payload.get("fp")).strip().lower() != _LOCAL["fph"]:
+            return False, "wrong_computer"
+
     now = time.time()
     exp = payload.get("exp")
     if exp:
@@ -452,6 +509,8 @@ def _bump_counter(func: str, outcome: str) -> None:
            "ON CONFLICT (day, func, outcome) DO UPDATE "
            "SET cnt = compute_license_daily.cnt + 1")
     global _conn
+    if is_local_core():
+        return
     for attempt in (1, 2):
         conn = _get_conn()
         if conn is None:

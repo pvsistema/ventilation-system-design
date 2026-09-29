@@ -4,6 +4,7 @@ import {
   isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey,
   verifySignedPayload, decodeB64urlText, setSeatCode, getSeatCode,
   loadOfflineVerdict, saveOfflineVerdict, isOfflineRecheckDue, OFFLINE_RECHECK_MS,
+  markOfflineKeyRevoked, isOfflineKeyRevoked, syncRevokedFromCore,
 } from "@/lib/offlineKey";
 import { checkClock, trustServerTime, takePendingClockReport, restorePendingClockReport } from "@/lib/clockGuard";
 const LICENSE_URL = API_URLS.license;
@@ -124,8 +125,9 @@ const storage = {
   },
 };
 
-// Восстанавливаем лицензию с диска при загрузке (десктоп)
-export const storageReady: Promise<void> = storage.init();
+// Восстанавливаем лицензию с диска при загрузке (десктоп) и список отозванных
+// аварийных ключей из ядра.
+export const storageReady: Promise<void> = storage.init().then(() => syncRevokedFromCore());
 
 export interface LicenseInfo {
   licensed: boolean;
@@ -300,7 +302,7 @@ export function licenseTicket():
   // Аварийный оффлайн-ключ: он сам себе подписанный документ.
   try {
     const loaded = loadOfflineKey();
-    if (loaded?.info.valid) {
+    if (loaded?.info.valid && !isOfflineKeyRevoked(loaded.key)) {
       const verdict = loadOfflineVerdict();
       // Ключ отозван — пропуск не выдаём, даже если подпись цела.
       //
@@ -843,10 +845,10 @@ export function checkOfflineEmergency(): LicenseInfo | null {
   // отказ действует и без интернета: иначе отзыв можно было бы обойти, просто
   // выдернув сетевой кабель.
   const verdict = loadOfflineVerdict();
-  if (verdict && !verdict.valid) {
+  if ((verdict && !verdict.valid) || isOfflineKeyRevoked(key)) {
     return {
       licensed: false, emergency: true,
-      offlineRevoked: true, revokeReason: verdict.reason,
+      offlineRevoked: true, revokeReason: verdict?.reason ?? "revoked",
       owner: info.org,
     };
   }
@@ -929,6 +931,9 @@ export async function recheckOfflineKey(fingerprint: string,
       nextCheckAt: now + OFFLINE_RECHECK_MS,
     });
 
+    // Отзыв запоминаем в отдельном списке (в десктопе — ещё и в файле
+    // профиля): он переживает выход из лицензии и чистку данных WebView2.
+    markOfflineKeyRevoked(loaded.key, data.valid === false);
     if (data.valid === false) {
       return {
         licensed: false, emergency: true,
@@ -1081,6 +1086,12 @@ export async function activateLicense(
       throw new Error(msgs[v.reason ?? ""] ?? "Аварийный ключ недействителен");
     }
 
+    // Ключ уже отзывался сервером на этом компьютере — не принимаем его и без
+    // интернета. Раньше очистка данных и повторный ввод «воскрешали» ключ.
+    if (isOfflineKeyRevoked(key)) {
+      throw new Error("Аварийный ключ отозван правообладателем");
+    }
+
     // ПРОВЕРКА ОТЗЫВА ПРИ ВВОДЕ. Если в момент активации есть интернет,
     // сверяемся с сервером сразу: отозванный ключ не должен включаться даже
     // на один квартал. Нет связи — включаем по подписи, как и раньше, а
@@ -1117,6 +1128,7 @@ export async function activateLicense(
           checkedAt: now,
           nextCheckAt: now + OFFLINE_RECHECK_MS,
         });
+        markOfflineKeyRevoked(key, data.valid === false);
         if (data.valid === false) {
           clearOfflineKey();
           const msgs: Record<string, string> = {

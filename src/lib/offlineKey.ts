@@ -23,6 +23,92 @@ const PUBLIC_KEY_B64 = "MsyBGg0UlSyEns_shvQD_Ob82SJ-9Klds-naVhQl9hc";
 
 const OFFLINE_PREFIX = "PVSO.";
 const STORAGE_KEY = "pvs_offline_key";
+/** Отозванные аварийные ключи: {kids: number[], keys: string[]}. */
+const REVOKED_KEY = "pvs_offline_revoked";
+
+const IS_DESKTOP = typeof window !== "undefined"
+  && !!(window as Window & { __IS_DESKTOP__?: boolean }).__IS_DESKTOP__;
+
+// ── Хранение ────────────────────────────────────────────────────────────────
+// В десктопе аварийный ключ, вердикт сервера и список отозванных ключей пишем
+// не только в localStorage, но и в файл профиля через ядро (/api/license-store)
+// — так же, как основную лицензию. Раньше они жили только в localStorage:
+// очистка данных WebView2 стирала отметку «ключ отозван», и отозванный ключ,
+// введённый заново без интернета, снова работал до своего срока.
+// При запуске файл возвращает значения в localStorage (storage.init в license.ts).
+function persist(key: string, value: string | null): void {
+  try {
+    if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value);
+  } catch { /* ignore */ }
+  if (!IS_DESKTOP) return;
+  try {
+    fetch("/api/license-store", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value === null ? { key, remove: true } : { key, value }),
+    }).catch(() => { /* ignore */ });
+  } catch { /* ignore */ }
+}
+
+interface RevokedList { kids: number[]; keys: string[] }
+
+function readRevoked(): RevokedList {
+  try {
+    const d = JSON.parse(localStorage.getItem(REVOKED_KEY) || "{}") as Partial<RevokedList>;
+    return {
+      kids: Array.isArray(d.kids) ? d.kids.filter((k) => Number.isInteger(k)) : [],
+      keys: Array.isArray(d.keys) ? d.keys.filter((k) => typeof k === "string") : [],
+    };
+  } catch { return { kids: [], keys: [] }; }
+}
+
+function kidOf(key: string): number | undefined {
+  try {
+    const p = JSON.parse(new TextDecoder().decode(b64urlToBytes(key.trim().split(".")[1]))) as { kid?: unknown };
+    return typeof p.kid === "number" ? p.kid : (typeof p.kid === "string" && /^\d+$/.test(p.kid) ? Number(p.kid) : undefined);
+  } catch { return undefined; }
+}
+
+/** Отметить ключ отозванным (или снять отметку, если сервер его вернул). */
+export function markOfflineKeyRevoked(key: string, revoked: boolean): void {
+  const k = key.trim();
+  const kid = kidOf(k);
+  const list = readRevoked();
+  const kids = new Set(list.kids), keys = new Set(list.keys);
+  if (revoked) { if (kid !== undefined) kids.add(kid); keys.add(k); }
+  else { if (kid !== undefined) kids.delete(kid); keys.delete(k); }
+  persist(REVOKED_KEY, JSON.stringify({ kids: [...kids], keys: [...keys] }));
+}
+
+/** Ключ ранее отозван сервером (список хранится на устройстве, в десктопе — и в файле). */
+export function isOfflineKeyRevoked(key: string): boolean {
+  const k = key.trim();
+  const list = readRevoked();
+  if (list.keys.includes(k)) return true;
+  const kid = kidOf(k);
+  return kid !== undefined && list.kids.includes(kid);
+}
+
+/**
+ * Десктоп: подтянуть список отзыва из ядра. Ядро запоминает отзыв из ответа
+ * сервера в отдельном файле — он переживает и чистку WebView2, и удаление
+ * записей в license_store.
+ */
+export async function syncRevokedFromCore(): Promise<void> {
+  if (!IS_DESKTOP) return;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2000);
+    const res = await fetch("/api/offline-revoked", { cache: "no-store", signal: ctrl.signal });
+    clearTimeout(t);
+    if (!res.ok) return;
+    const d = await res.json() as Partial<RevokedList>;
+    const cur = readRevoked();
+    const kids = new Set([...cur.kids, ...(d.kids ?? []).filter((k) => Number.isInteger(k))]);
+    const keys = new Set([...cur.keys, ...(d.keys ?? []).filter((k) => typeof k === "string")]);
+    persist(REVOKED_KEY, JSON.stringify({ kids: [...kids], keys: [...keys] }));
+  } catch { /* ядро старой версии — эндпоинта нет */ }
+}
 
 export interface OfflineKeyInfo {
   valid: boolean;
@@ -195,7 +281,7 @@ export function verifyOfflineKey(key: string): OfflineKeyInfo {
 
 /** Сохранить аварийный ключ на устройстве (для повторных запусков без сети). */
 export function saveOfflineKey(key: string): void {
-  try { localStorage.setItem(STORAGE_KEY, key.trim()); } catch { /* ignore */ }
+  persist(STORAGE_KEY, key.trim());
 }
 
 /** Загрузить сохранённый аварийный ключ, если он ещё валиден. */
@@ -208,10 +294,10 @@ export function loadOfflineKey(): { key: string; info: OfflineKeyInfo } | null {
 }
 
 export function clearOfflineKey(): void {
-  try {
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem(VERDICT_KEY);
-  } catch { /* ignore */ }
+  // Список отозванных ключей НЕ очищаем: он и нужен, чтобы отозванный ключ
+  // нельзя было ввести заново после выхода из лицензии.
+  persist(STORAGE_KEY, null);
+  persist(VERDICT_KEY, null);
 }
 
 // ── Квартальная сверка аварийного ключа с сервером ───────────────────────────
@@ -246,7 +332,7 @@ export function loadOfflineVerdict(): OfflineVerdict | null {
 }
 
 export function saveOfflineVerdict(v: OfflineVerdict): void {
-  try { localStorage.setItem(VERDICT_KEY, JSON.stringify(v)); } catch { /* ignore */ }
+  persist(VERDICT_KEY, JSON.stringify(v));
 }
 
 /** Пора ли сверяться с сервером (наступил срок или сверки не было ни разу). */
