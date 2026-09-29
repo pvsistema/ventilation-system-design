@@ -1590,6 +1590,10 @@ export default function CadPage() {
   const [focusPos, setFocusPos] = useState<{ x: number; y: number; z: number } | null>(null);
   // Экранная точка фокуса — действует только для своего nonce (иначе центр холста)
   const [focusScreenReq, setFocusScreenReq] = useState<{ nonce: number; x: number; y: number } | null>(null);
+  // Точка перемычки/двери на ветви (по доле t значка) — чтобы при переходе из
+  // проверки схемы камера вставала ровно на сооружение, а не на середину
+  // длинной выработки. Заполняется ниже, когда известны значки схемы.
+  const bulkheadFocusPosRef = useRef<(branchId: string) => { x: number; y: number; z: number } | null>(() => null);
   // Подсветка перемычки, выбранной в диаграмме волны
   const [blastHighlightPos, setBlastHighlightPos] = useState<{ x: number; y: number; z: number } | null>(null);
   // Флаг: файл был загружен — не сбрасываем вид начальным пресетом
@@ -4901,6 +4905,30 @@ export default function CadPage() {
    * Если узла в списке нет (например, изолированы только ветви), центрируем
    * по первой ветви.
    */
+  /** Показать горизонты, на которых лежат ветви (иначе камера смотрит в пустоту). */
+  const revealBranchHorizons = (branchIds: string[]) => {
+    const ids = new Set(branchIds);
+    const need = new Set<string>();
+    for (const b of branches) if (ids.has(b.id) && b.horizonId) need.add(b.horizonId);
+    if (need.size === 0) return;
+    setHorizons(prev => prev.some(h => need.has(h.id) && !h.visible)
+      ? prev.map(h => (need.has(h.id) && !h.visible) ? { ...h, visible: true } : h)
+      : prev);
+  };
+
+  // Точка вентсооружения на ветви: по значку перемычки (доля t вдоль ветви),
+  // иначе null — тогда центрируется середина выработки.
+  bulkheadFocusPosRef.current = (branchId: string) => {
+    const sym = schemaSymbols.find(sm => sm.branchId === branchId && BULKHEAD_SYMBOL_IDS.has(sm.typeId));
+    if (!sym) return null;
+    const br = branches.find(b => b.id === branchId);
+    const fN = br ? nodesById.get(br.fromId) : undefined;
+    const tN = br ? nodesById.get(br.toId) : undefined;
+    if (!fN || !tN) return null;
+    const t = sym.t ?? 0.5;
+    return { x: fN.x + (tN.x - fN.x) * t, y: fN.y + (tN.y - fN.y) * t, z: fN.z + (tN.z - fN.z) * t };
+  };
+
   const focusSolveBlocker = (nodeIds: string[], branchIds: string[]) => {
     // Участок может лежать на скрытом горизонте — тогда центрировать вид
     // бессмысленно, пользователь увидит пустое место. Включаем видимость
@@ -4925,10 +4953,12 @@ export default function CadPage() {
       setSelectedNodeId(firstNode.id);
       setSelectedBranchId(branchIds[0] ?? null);
       setFocusBranchId(null);
+      setFocusNodeId(null);
       setFocusPos({ x: firstNode.x, y: firstNode.y, z: firstNode.z });
     } else if (branchIds.length > 0) {
       setSelectedNodeId(null);
       setSelectedBranchId(branchIds[0]);
+      setFocusNodeId(null);
       setFocusPos(null);
       setFocusBranchId(branchIds[0]);
     } else {
@@ -5285,6 +5315,7 @@ export default function CadPage() {
       setSelectedBranchIds(new Set(brokenIds));
       setSelectedNodeId(null);
       setSelectedBranchId(brokenIds[0]);
+      setFocusNodeId(null);
       setFocusPos(null);
       setFocusBranchId(brokenIds[0]);
       setFocusNonce(Date.now());
@@ -5318,6 +5349,7 @@ export default function CadPage() {
         setSelectedBranchIds(new Set(ids));
         setSelectedNodeId(null);
         setSelectedBranchId(ids[0]);
+        setFocusNodeId(null);
         setFocusPos(null);
         setFocusBranchId(ids[0]);
         setFocusNonce(Date.now());
@@ -7857,19 +7889,26 @@ export default function CadPage() {
                   setFocusNonce(Date.now());
                 }}
                 onFocusBranch={(id) => {
+                  revealBranchHorizons([id]);
                   setSelectedBranchId(id);
                   setSelectedBranchIds(new Set([id]));
                   setSelectedNodeId(null);
-                  setFocusPos(null);
+                  // Фокус на узел от прошлого клика сбрасываем: эффект
+                  // центрирования проверяет узел раньше ветви, и камера
+                  // уезжала к старому узлу вместо выбранной ветви.
+                  setFocusNodeId(null);
+                  setFocusPos(bulkheadFocusPosRef.current(id));
                   setFocusBranchId(id);
                   setFocusNonce(Date.now());
                 }}
                 onSelectBranches={(ids) => {
                   if (ids.length === 0) return;
+                  revealBranchHorizons(ids);
                   setSelectedBranchIds(new Set(ids));
                   setSelectedNodeId(null);
                   setSelectedBranchId(ids[0]);
-                  setFocusPos(null);
+                  setFocusNodeId(null);
+                  setFocusPos(bulkheadFocusPosRef.current(ids[0]));
                   setFocusBranchId(ids[0]);
                   setFocusNonce(Date.now());
                 }}
@@ -10409,7 +10448,7 @@ export default function CadPage() {
                                 setCompareSelectedId(diff.id === compareSelectedId ? null : diff.id);
                                 // Центрируем камеру на ветви если она есть в текущей схеме
                                 const br = branches.find(b => b.id === diff.id);
-                                if (br) { setFocusPos(null); setFocusBranchId(diff.id); setFocusNonce(n => n + 1); setSelectedBranchId(diff.id); }
+                                if (br) { setFocusPos(null); setFocusNodeId(null); setFocusBranchId(diff.id); setFocusNonce(n => n + 1); setSelectedBranchId(diff.id); }
                               }}>
                               {/* Строка ветви */}
                               <div className="flex items-center gap-1.5 px-2 py-1.5">
