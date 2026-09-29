@@ -24,6 +24,7 @@ import {
   isDesktopPrintAvailable, listPrinters, type DesktopPrinter,
 } from "@/lib/desktopPrint";
 import { fitDpiToCanvas, describeLimit } from "@/lib/canvasLimits";
+import { drawPlaSheet, plaSheetPageCount, type PlaSheetOptions } from "@/lib/plaPositionsSheet";
 import PrintSettingsPanel from "@/components/cad/printPreview/PrintSettingsPanel";
 import PrintExportDialog from "@/components/cad/printPreview/PrintExportDialog";
 import { PHeader } from "@/components/cad/printPreview/printUi";
@@ -162,6 +163,8 @@ export default function PrintDialog({
   const [marginLeft, setMarginLeft] = useState(5);
   const [marginRight, setMarginRight] = useState(5);
   const [showPageNumbers, setShowPageNumbers] = useState(true);
+  // Приложить к печати перечень позиций ПЛА (общешахтные, сценарии, режимы).
+  const [withPlaSheet, setWithPlaSheet] = useState(false);
   const [copies, setCopies] = useState(1);
   const [reverseOrder, setReverseOrder] = useState(false);
   // Принтеры Windows — только в десктопной сборке с собранным мостом печати.
@@ -1179,6 +1182,36 @@ export default function PrintDialog({
   }, [paper, drawTile, projectName]);
 
 
+  // ─── Перечень позиций ПЛА — отдельные листы после схемы ──────────────
+  const plaOpts = useMemo<PlaSheetOptions>(() => ({
+    paperW: paper.w, paperH: paper.h,
+    margin: { top: marginTop + 5, right: marginRight + 5, bottom: marginBottom + 5, left: marginLeft + 5 },
+    title: projectName,
+  }), [paper, marginTop, marginRight, marginBottom, marginLeft, projectName]);
+  const plaEnabled = withPlaSheet && positions.length > 0;
+  const plaPageCount = useMemo(() => {
+    if (!plaEnabled) return 0;
+    const c = document.createElement("canvas").getContext("2d");
+    return c ? plaSheetPageCount(c, 150 / 25.4, positions, plaOpts) : 0;
+  }, [plaEnabled, positions, plaOpts]);
+  const renderPlaSheetToCanvas = useCallback((pageIdx: number, dpi: number): string => {
+    const fit = fitDpiToCanvas(paper.w, paper.h, dpi);
+    const oc = document.createElement("canvas");
+    oc.width = fit.width; oc.height = fit.height;
+    const ctx = oc.getContext("2d");
+    if (!ctx) throw new Error("Не удалось подготовить лист перечня позиций ПЛА — не хватило памяти");
+    drawPlaSheet(ctx, fit.effectiveDpi / 25.4, positions, plaOpts, pageIdx);
+    return oc.toDataURL("image/png");
+  }, [paper, positions, plaOpts]);
+  const renderPlaSheetToSvg = useCallback(async (pageIdx: number): Promise<string> => {
+    await ensureVectorMeasureFont(VECTOR_FONT_URLS);
+    const W = Math.round(paper.w * VECTOR_DPI / 25.4);
+    const H = Math.round(paper.h * VECTOR_DPI / 25.4);
+    const rec = new SvgRecordingContext(W, H);
+    drawPlaSheet(rec.asContext(), VECTOR_DPI / 25.4, positions, plaOpts, pageIdx);
+    return rec.toSvg(`${projectName} — позиции ПЛА`);
+  }, [paper, positions, plaOpts, projectName]);
+
   // ─── Печать ──────────────────────────────────────────────────────────
   const handlePrint = useCallback(async () => {
     if (printingRef.current) return;
@@ -1188,7 +1221,7 @@ export default function PrintDialog({
     setPrintError(null);
     try {
     const PRINT_DPI = 300;
-    const total = totalPages * copies;
+    const total = (totalPages + plaPageCount) * copies;
 
     // Предупреждаем ЗАРАНЕЕ, если лист такого формата не удастся отрисовать в
     // полном качестве: человек должен узнать об этом до того, как отправит
@@ -1202,11 +1235,17 @@ export default function PrintDialog({
     const pngPages: string[] = [];
     for (const t of tilesList) {
       pngPages.push(await renderTileToCanvas(t.col, t.row, PRINT_DPI));
-      setPrintProgress({ done: pngPages.length, total: tilesList.length });
+      setPrintProgress({ done: pngPages.length, total: tilesList.length + plaPageCount });
       // Отдаём управление интерфейсу между листами: без этого при печати
       // многолистовой схемы окно программы «замирало» на всё время рендера.
       await new Promise((r) => setTimeout(r, 0));
       // Пользователь нажал «Отмена» — выходим, не отправляя ничего на печать.
+      if (printCancelRef.current) return;
+    }
+    for (let i = 0; i < plaPageCount; i++) {
+      pngPages.push(renderPlaSheetToCanvas(i, PRINT_DPI));
+      setPrintProgress({ done: pngPages.length, total: tilesList.length + plaPageCount });
+      await new Promise((r) => setTimeout(r, 0));
       if (printCancelRef.current) return;
     }
 
@@ -1255,7 +1294,7 @@ body{background:white;font-family:Arial,sans-serif}
     }
   }, [paper, marginTop, marginBottom, marginRight,
       showPageNumbers, copies, reverseOrder, projectName,
-      tiles, totalPages, renderTileToCanvas, printerName, orientation]);
+      tiles, totalPages, renderTileToCanvas, printerName, orientation, plaPageCount, renderPlaSheetToCanvas]);
 
   // Печать одного тайла (после tiles и renderTileToCanvas)
   const handlePrintSingleTile = useCallback(async (tileIdx: number) => {
@@ -1351,6 +1390,12 @@ body{background:white;font-family:Arial,sans-serif}
             `${list.length > 1 ? `${projectName}-лист${i + 1}` : projectName}.svg`,
           );
         }
+        for (let i = 0; i < plaPageCount; i++) {
+          downloadBlob(
+            new Blob([await renderPlaSheetToSvg(i)], { type: "image/svg+xml;charset=utf-8" }),
+            `${projectName}-позиции-ПЛА${plaPageCount > 1 ? `-${i + 1}` : ""}.svg`,
+          );
+        }
         setShowExportDialog(false);
       } catch (e) {
         alert(`Ошибка SVG: ${e instanceof Error ? e.message : String(e)}`);
@@ -1369,6 +1414,7 @@ body{background:white;font-family:Arial,sans-serif}
           svgPages.push(await renderTileToSvg(t.col, t.row));
           await new Promise((r) => setTimeout(r, 0));
         }
+        for (let i = 0; i < plaPageCount; i++) svgPages.push(await renderPlaSheetToSvg(i));
         const blob = await svgStringToPdf(svgPages, {
           paperWmm: paper.w, paperHmm: paper.h,
           pageNumbers: showPageNumbers
@@ -1411,7 +1457,17 @@ body{background:white;font-family:Arial,sans-serif}
           pdf.addImage(pngSrc, "PNG", 0, 0, paper.w, paper.h, undefined, "MEDIUM");
           if (showPageNumbers) {
             pdf.setFontSize(8); pdf.setTextColor(80);
-            pdf.text(`${i + 1} / ${tilesList.length}`, paper.w - marginRight - 2,
+            pdf.text(`${i + 1} / ${tilesList.length + plaPageCount}`, paper.w - marginRight - 2,
+              paper.h - marginBottom - 2, { align: "right" });
+          }
+        }
+        const pdfTotal = tilesList.length + plaPageCount;
+        for (let i = 0; i < plaPageCount; i++) {
+          pdf.addPage([paper.w, paper.h], isLandscape ? "landscape" : "portrait");
+          pdf.addImage(renderPlaSheetToCanvas(i, DPI), "PNG", 0, 0, paper.w, paper.h, undefined, "MEDIUM");
+          if (showPageNumbers) {
+            pdf.setFontSize(8); pdf.setTextColor(80);
+            pdf.text(`${tilesList.length + i + 1} / ${pdfTotal}`, paper.w - marginRight - 2,
               paper.h - marginBottom - 2, { align: "right" });
           }
         }
@@ -1460,12 +1516,13 @@ body{background:white;font-family:Arial,sans-serif}
     }
   }, [exportFormat, exportDpi, exportQuality, projectName,
       renderTileToCanvas, renderTileToSvg, downloadBlob, tiles, paper, showPageNumbers,
+      plaPageCount, renderPlaSheetToCanvas, renderPlaSheetToSvg,
       marginRight, marginBottom]);
 
   // ─── Шаблоны ─────────────────────────────────────────────────────────
   const saveTemplate = () => {
     if (!templateName.trim()) { alert("Введите название"); return; }
-    const tpl = { format, orientation, scale: scaleDisplay, marginTop, marginBottom, marginLeft, marginRight, showPageNumbers };
+    const tpl = { format, orientation, scale: scaleDisplay, marginTop, marginBottom, marginLeft, marginRight, showPageNumbers, withPlaSheet };
     const next = { ...templates, [templateName.trim()]: tpl };
     setTemplates(next); localStorage.setItem("printTemplates", JSON.stringify(next));
   };
@@ -1484,6 +1541,7 @@ body{background:white;font-family:Arial,sans-serif}
     if (t.marginLeft !== undefined) setMarginLeft(t.marginLeft as number);
     if (t.marginRight !== undefined) setMarginRight(t.marginRight as number);
     if (t.showPageNumbers !== undefined) setShowPageNumbers(t.showPageNumbers as boolean);
+    if (t.withPlaSheet !== undefined) setWithPlaSheet(t.withPlaSheet as boolean);
   };
   const deleteTemplate = (name: string) => {
     const next = { ...templates }; delete next[name];
@@ -1578,6 +1636,10 @@ body{background:white;font-family:Arial,sans-serif}
             marginLeft={marginLeft} setMarginLeft={setMarginLeft}
             marginRight={marginRight} setMarginRight={setMarginRight}
             showPageNumbers={showPageNumbers} setShowPageNumbers={setShowPageNumbers}
+            withPlaSheet={withPlaSheet} setWithPlaSheet={setWithPlaSheet}
+            positionsCount={positions.length}
+            mineWideCount={positions.filter(x => x.isMineWide).length}
+            plaPageCount={plaPageCount}
             paper={paper}
             baseView={baseView}
             totalPages={totalPages}

@@ -54,6 +54,12 @@ interface PrintSettingsPanelProps {
   setMarginRight: (v: number) => void;
   showPageNumbers: boolean;
   setShowPageNumbers: (v: boolean) => void;
+  /** Приложить перечень позиций ПЛА отдельными листами. */
+  withPlaSheet: boolean;
+  setWithPlaSheet: (v: boolean) => void;
+  positionsCount: number;
+  mineWideCount: number;
+  plaPageCount: number;
   paper: { w: number; h: number };
   baseView: { defaultOffsetX: number; defaultOffsetY: number };
   totalPages: number;
@@ -72,6 +78,7 @@ export default function PrintSettingsPanel(p: PrintSettingsPanelProps) {
     setUserScale, setUserOffsetX, setUserOffsetY,
     marginTop, setMarginTop, marginBottom, setMarginBottom, marginLeft, setMarginLeft, marginRight, setMarginRight,
     showPageNumbers, setShowPageNumbers, paper, baseView, totalPages,
+    withPlaSheet, setWithPlaSheet, positionsCount, mineWideCount, plaPageCount,
   } = p;
 
   const fitToSheet = () => {
@@ -167,6 +174,22 @@ export default function PrintSettingsPanel(p: PrintSettingsPanelProps) {
         </div>
         {totalPages > 1 && (
           <PCheck checked={reverseOrder} onChange={setReverseOrder} label="В обратном порядке" />
+        )}
+      </PSection>
+
+      {/* Позиции ПЛА */}
+      <PSection icon="MapPin" title="Позиции ПЛА" defaultOpen={false}
+        summary={withPlaSheet && positionsCount > 0 ? `+${plaPageCount} ${plural(plaPageCount)}` : "нет"}>
+        {positionsCount === 0 ? (
+          <PNote>На схеме нет позиций ПЛА.</PNote>
+        ) : (
+          <>
+            <PCheck checked={withPlaSheet} onChange={setWithPlaSheet} label="Приложить перечень позиций" />
+            <PNote>
+              Отдельными листами после схемы: № и маркер, название, вид аварии, режим проветривания, тип и сценарий.
+              Общешахтные позиции ({mineWideCount}) — в начале перечня. Всего позиций: {positionsCount}.
+            </PNote>
+          </>
         )}
       </PSection>
 
