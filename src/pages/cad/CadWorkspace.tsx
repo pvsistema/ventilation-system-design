@@ -1115,9 +1115,11 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               positionPlaceMode={positionPlaceMode}
               onPositionPlace={(wx, wy, wz) => {
                 const sel = selectedPositionId ? positions.find(p => p.id === selectedPositionId) : null;
+                // Режим выключаем в любом случае: без выбранной позиции он
+                // иначе «зависал» — курсор-прицел оставался, а клик ничего не делал.
+                setPositionPlaceMode(false);
                 if (!sel) return;
                 setPositions(prev => prev.map(p => p.id === sel.id ? { ...p, x: wx, y: wy, z: wz, placed: true } : p));
-                setPositionPlaceMode(false);
               }}
               fire3d={fireCalcDone && fireResult && !fireControlPreview
                 ? { timeMin: showSmoke && smokeTimeMinutes > 0 ? smokeTimeMinutes : null }

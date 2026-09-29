@@ -50,6 +50,10 @@ export interface CadHotkeysDeps {
   setPendingSymbol: (v: SchemaSymbol | null) => void;
   setSymbolClipboard: (v: SchemaSymbol) => void;
   setPosBranchBindMode: (fn: (v: boolean) => boolean) => void;
+  /** Режим размещения маркера позиции ПЛА — Esc его отменяет. */
+  positionPlaceMode?: boolean;
+  setPositionPlaceMode?: (v: boolean) => void;
+  posBranchBindMode?: boolean;
   setThinLines: (fn: (v: boolean) => boolean) => void;
   /** Переключение режима правки маркшейдерских координат (F2) */
   setSurveyEditMode?: (fn: (v: boolean) => boolean) => void;
@@ -285,6 +289,9 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
           setPendingSymbol(null);
           return;
         }
+        // Выход из режимов позиции ПЛА (размещение маркера, привязка F3)
+        if (d.positionPlaceMode) { d.setPositionPlaceMode?.(false); return; }
+        if (d.posBranchBindMode) { setPosBranchBindMode(() => false); return; }
         setSelectedNodeId(null);
         setSelectedBranchId(null);
         setTool("select");
@@ -293,5 +300,5 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, selectedSymbolIds, selectedBranchIds, schemaSymbols, symbolClipboard, pendingSymbol, selectedPositionId, leaderDrawMode]);
+  }, [nodes, branchesRaw, selectedNodeId, selectedBranchId, selectedSymbolId, selectedSymbolIds, selectedBranchIds, schemaSymbols, symbolClipboard, pendingSymbol, selectedPositionId, leaderDrawMode, d.positionPlaceMode, d.posBranchBindMode]);
 }

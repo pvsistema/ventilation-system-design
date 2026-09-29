@@ -14,6 +14,7 @@ import { RibbonTabBtn, RibbonGroup, RibbonBigBtn } from "./cadComponents";
 import { EXPLOSION_URL, safeFixed } from "./cadCompute";
 import CadTitleBar from "./CadTitleBar";
 import type { CadPageState } from "./useCadPage";
+import { makePosition } from "@/lib/positions";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CAD-интерфейс шахтной/вентиляционной сети в стиле инженерного ПО
@@ -160,6 +161,9 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
     setCompareSelectedId,
     setCompareShowDialog,
     selectedPositionId,
+    setSelectedPositionId,
+    positions,
+    setPositions,
     positionPlaceMode,
     setPositionPlaceMode,
     showPositions,
@@ -1376,10 +1380,25 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
             label="Позиция"
             sublabel="ПЛА"
             active={positionPlaceMode}
-            title="Разместить маркер выбранной позиции ПЛА на схеме"
+            title={selectedPositionId
+              ? "Разместить маркер выбранной позиции ПЛА на схеме"
+              : "Открыть позиции ПЛА: выберите или добавьте позицию"}
             onClick={() => {
-              if (!selectedPositionId) { setActiveSide("positions"); }
-              else { setPositionPlaceMode(v => !v); }
+              // Вкладка «Позиции» открывается всегда: там видно, какая позиция
+              // выбрана и включён ли режим размещения.
+              setLeftPanelOpen(true);
+              setActiveSide("positions");
+              if (!selectedPositionId) {
+                setPositionPlaceMode(false);
+                if (positions.length === 0) {
+                  const pos = makePosition({ number: 1 });
+                  setPositions(prev => [...prev, pos]);
+                  setSelectedPositionId(pos.id);
+                  setPositionPlaceMode(true);
+                }
+                return;
+              }
+              setPositionPlaceMode(v => !v);
             }} />
           {/* Текстовый блок */}
           <RibbonBigBtn

@@ -3217,7 +3217,13 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 branches={branches}
                 nodes={nodes}
                 selectedPositionId={selectedPositionId}
-                onSelect={(id) => { setSelectedPositionId(id); if (!id) { setPosBranchBindMode(false); setLeaderDrawMode(null); } }}
+                onSelect={(id) => {
+                  // Смена позиции прерывает режимы, начатые для предыдущей:
+                  // иначе маркер или выноска ушли бы не той позиции.
+                  if (id !== selectedPositionId) { setPositionPlaceMode(false); setLeaderDrawMode(null); }
+                  setSelectedPositionId(id);
+                  if (!id) setPosBranchBindMode(false);
+                }}
                 onFocus={(pos) => {
                   setFocusPos({ x: pos.x, y: pos.y, z: pos.z ?? 0 });
                   setFocusNodeId(null); setFocusBranchId(null);
@@ -3225,8 +3231,8 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 }}
                 onAdd={(pos) => setPositions((prev) => [...prev, pos])}
                 onUpdate={(id, patch) => setPositions((prev) => prev.map((p) => p.id === id ? { ...p, ...patch } : p))}
-                onDelete={(id) => { setPositions((prev) => prev.filter((p) => p.id !== id)); setPosBranchBindMode(false); setLeaderDrawMode(null); }}
-                onPlaceMode={() => setPositionPlaceMode((v) => !v)}
+                onDelete={(id) => { setPositions((prev) => prev.filter((p) => p.id !== id)); setPosBranchBindMode(false); setLeaderDrawMode(null); setPositionPlaceMode(false); }}
+                onPlaceMode={() => { if (selectedPositionId || positionPlaceMode) setPositionPlaceMode((v) => !v); }}
                 placeModeActive={positionPlaceMode}
                 branchBindMode={posBranchBindMode}
                 onToggleBranchBind={() => { if (selectedPositionId) setPosBranchBindMode((v) => !v); }}

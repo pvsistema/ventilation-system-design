@@ -5686,6 +5686,7 @@ export function useCadPage() {
     handleFlipSymbols, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
+    positionPlaceMode, setPositionPlaceMode, posBranchBindMode,
     setThinLines, setSurveyEditMode, requestResetToSurvey,
     setPositions, setLeaderDrawMode, setLeaderExtraMode,
     setLeaderCursorScreen, setLeaderSnapBranch, setShowSelectSimilar,
