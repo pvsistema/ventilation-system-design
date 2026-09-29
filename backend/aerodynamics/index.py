@@ -193,5 +193,7 @@ def handler(event: dict, context) -> dict:
     branches_in = body.get("branches", [])
 
     result = [calc_branch_aero(b) for b in branches_in]
-    return {"statusCode": 200, "headers": CORS,
+    # Content-Type обязателен: без него шлюз отдаёт тело как строку, и клиент
+    # получал JSON, упакованный в строку дважды.
+    return {"statusCode": 200, "headers": {**CORS, "Content-Type": "application/json"},
             "body": json.dumps({"branches": result}, ensure_ascii=False)}
