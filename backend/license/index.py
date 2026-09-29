@@ -34,6 +34,12 @@ def get_conn():
 
 
 def resp(status: int, body: dict) -> dict:
+    # Точное время сервера в КАЖДОМ ответе (check, activate, отказы и т.д.).
+    # Программа переставляет по нему отметку времени (clockGuard): раньше
+    # в check/activate отметка ставилась по часам самого ПК, и перевод даты
+    # вперёд-назад при подключённом интернете «узаконивался».
+    if isinstance(body, dict) and "server_now" not in body:
+        body = {**body, "server_now": int(datetime.now(timezone.utc).timestamp() * 1000)}
     return {
         "statusCode": status,
         "headers": {**CORS, "Content-Type": "application/json"},
@@ -300,6 +306,13 @@ def handler(event: dict, context) -> dict:
         row = None
 
         # 1. Ищем место по железу (hw_fingerprint) — основной способ привязки
+        #
+        # ПРИОРИТЕТ ДЕЙСТВУЮЩЕЙ ЛИЦЕНЗИИ (во всех поисках места ниже, а также
+        # в heartbeat и clock_rollback). У одного ПК может быть несколько мест
+        # в разных ключах: старый просроченный + новый. Раньше бралось место с
+        # самым свежим last_seen_at, и если последним «отметился» старый ключ,
+        # программа отвечала «лицензия истекла», хотя новый ключ действует.
+        # Теперь сначала места в действующих лицензиях, затем — по свежести.
         if hw_fph:
             cur.execute("""
                 SELECT l.key, l.owner_name, l.max_seats, l.is_active, l.expires_at,
@@ -308,7 +321,7 @@ def handler(event: dict, context) -> dict:
                 FROM license_seats s
                 JOIN licenses l ON l.id = s.license_id
                 WHERE s.hw_fingerprint = %s
-                ORDER BY s.last_seen_at DESC LIMIT 1
+                ORDER BY COALESCE(l.is_active AND (l.expires_at IS NULL OR l.expires_at > NOW()), FALSE) DESC, s.last_seen_at DESC NULLS LAST LIMIT 1
             """, (hw_fph,))
             row = cur.fetchone()
             # Совпало по железу, но точный fingerprint (браузер) другой —
@@ -330,7 +343,7 @@ def handler(event: dict, context) -> dict:
                 JOIN licenses l ON l.id = s.license_id
                 WHERE (s.hw_fingerprint = %s OR s.fingerprint = %s)
                   AND s.install_bound = FALSE
-                ORDER BY s.last_seen_at DESC LIMIT 1
+                ORDER BY COALESCE(l.is_active AND (l.expires_at IS NULL OR l.expires_at > NOW()), FALSE) DESC, s.last_seen_at DESC NULLS LAST LIMIT 1
             """, (legacy_fph, legacy_fph))
             row = cur.fetchone()
             if row:
@@ -360,7 +373,7 @@ def handler(event: dict, context) -> dict:
                 FROM license_seats s
                 JOIN licenses l ON l.id = s.license_id
                 WHERE s.hw_fingerprint = %s AND s.install_bound = FALSE
-                ORDER BY s.last_seen_at DESC LIMIT 1
+                ORDER BY COALESCE(l.is_active AND (l.expires_at IS NULL OR l.expires_at > NOW()), FALSE) DESC, s.last_seen_at DESC NULLS LAST LIMIT 1
             """, (prev_fph,))
             row = cur.fetchone()
             if row:
@@ -381,7 +394,7 @@ def handler(event: dict, context) -> dict:
                 FROM license_seats s
                 JOIN licenses l ON l.id = s.license_id
                 WHERE s.fingerprint = %s
-                ORDER BY s.activated_at DESC LIMIT 1
+                ORDER BY COALESCE(l.is_active AND (l.expires_at IS NULL OR l.expires_at > NOW()), FALSE) DESC, s.activated_at DESC NULLS LAST LIMIT 1
             """, (fph,))
             row = cur.fetchone()
             hw_restored = False
@@ -659,7 +672,7 @@ def handler(event: dict, context) -> dict:
                 FROM license_seats s
                 JOIN licenses l ON l.id = s.license_id
                 WHERE s.hw_fingerprint = %s
-                ORDER BY s.last_seen_at DESC LIMIT 1
+                ORDER BY COALESCE(l.is_active AND (l.expires_at IS NULL OR l.expires_at > NOW()), FALSE) DESC, s.last_seen_at DESC NULLS LAST LIMIT 1
             """, (hw_fph,))
             srow = cur.fetchone()
         if not srow:
@@ -668,7 +681,7 @@ def handler(event: dict, context) -> dict:
                 FROM license_seats s
                 JOIN licenses l ON l.id = s.license_id
                 WHERE s.fingerprint = %s
-                ORDER BY s.last_seen_at DESC LIMIT 1
+                ORDER BY COALESCE(l.is_active AND (l.expires_at IS NULL OR l.expires_at > NOW()), FALSE) DESC, s.last_seen_at DESC NULLS LAST LIMIT 1
             """, (fph,))
             srow = cur.fetchone()
         if not srow:
@@ -725,7 +738,7 @@ def handler(event: dict, context) -> dict:
             FROM license_seats s
             JOIN licenses l ON l.id = s.license_id
             WHERE s.fingerprint = %s
-            ORDER BY s.last_seen_at DESC LIMIT 1
+            ORDER BY COALESCE(l.is_active AND (l.expires_at IS NULL OR l.expires_at > NOW()), FALSE) DESC, s.last_seen_at DESC NULLS LAST LIMIT 1
         """, (fph,))
         srow = cur.fetchone()
         seat_id = srow[0] if srow else None

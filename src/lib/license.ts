@@ -560,10 +560,16 @@ export async function getMachineInfo(): Promise<MachineInfo> {
   // и при копировании файла на другой ПК чужой компьютер получал отпечаток
   // исходного — подпись лицензии сходилась, и лицензия переносилась без
   // места в лимите. machine-id ядро отдаёт мгновенно, кэш здесь не нужен.
-  // Кэш используем только если ядро не ответило (временный сбой при старте).
+  //
+  // Если ядро НЕ ответило — сохранённый отпечаток тоже НЕ берём: раньше это
+  // была лазейка (скопировать license_store.json и заблокировать /api/machine —
+  // и чужой ПК получал отпечаток исходного). Считаем отпечаток без machine-id:
+  // он не совпадёт с подписью лицензии, программа честно покажет демо до
+  // следующего запуска. Ядро само отдаёт страницу, так что на практике оно
+  // отвечает всегда, а ~3 секунды повторов (getDesktopMachine) покрывают старт.
   if (IS_DESKTOP) {
     const { machineId } = await getDesktopMachine();
-    if (machineId) return computeMachineInfo(machineId);
+    return computeMachineInfo(machineId);
   }
 
   // Кэш на 30 дней
@@ -596,7 +602,6 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     }
   } catch { /* ignore */ }
 
-  // В десктопе ядро уже опрошено выше (и не ответило) — повторно не ждём.
   return computeMachineInfo("");
 }
 
@@ -966,6 +971,8 @@ export function clearFingerprintCache() {
 // В десктопе ограничение жёстче: там запрос идёт через локальное ядро, которое
 // само ретранслирует его в облако, и «подвисание» ощущается как зависание окна.
 const CHECK_TIMEOUT_MS = IS_DESKTOP ? 4000 : 8000;
+// Активация ключа — действие человека, он готов подождать дольше, но не вечно.
+const ACTIVATE_TIMEOUT_MS = 15000;
 
 export async function checkLicense(fingerprint: string, machineInfo?: MachineInfo): Promise<LicenseInfo> {
   const coreVersion = await getCoreVersion();
@@ -1010,6 +1017,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
     licensed?: boolean; key?: string; owner?: string; seats?: LicenseInfo["seats"];
     offline?: boolean; days_left?: number; expires_at?: string; reason?: string;
     fingerprint_updated?: boolean; signed?: { payload?: string; sig?: string };
+    server_now?: number;
   };
   try {
     data = await res.json();
@@ -1023,7 +1031,10 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
   // Сервер ответил — значит есть связь, и это единственный надёжный источник
   // времени. Переставляем отметку часов на текущий момент: так снимается
   // блокировка, если часы были сбиты, и чинится случайный сдвиг даты вперёд.
-  trustServerTime();
+  // ВАЖНО: берём ВРЕМЯ СЕРВЕРА (server_now), а не часы ПК. Раньше здесь был
+  // trustServerTime() без аргумента: отметка ставилась по часам компьютера,
+  // и перевод даты с включённым интернетом проходил незамеченным.
+  trustServerTime(typeof data.server_now === "number" ? data.server_now : undefined);
 
   // Появилась связь — досылаем отложенный сигнал о переводе часов, чтобы
   // случай был виден в админ-панели. Отправка фоновая и ничего не задерживает.
@@ -1031,11 +1042,6 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
 
   // Если сервер обновил fingerprint (восстановление после переустановки) — сбрасываем кэш
   if (data.fingerprint_updated) clearFingerprintCache();
-
-  // Кэш просрочен (>14 дней без интернета)
-  if (data.reason === "offline_cache_expired") {
-    return { licensed: false, offlineExpired: true, daysLeft: 0 };
-  }
 
   const info: LicenseInfo = {
     licensed:  !!data.licensed,
@@ -1100,7 +1106,7 @@ export async function activateLicense(
     try {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
-      let data: { ok?: boolean; valid?: boolean; reason?: string; org?: string };
+      let data: { ok?: boolean; valid?: boolean; reason?: string; org?: string; server_now?: number };
       try {
         const res = await fetch(LICENSE_URL, {
           method: "POST",
@@ -1121,7 +1127,12 @@ export async function activateLicense(
         clearTimeout(timer);
       }
       if (data?.ok) {
-        const now = Date.now();
+        // Дату решения берём по часам СЕРВЕРА: иначе, переведя часы ПК вперёд
+        // перед вводом, можно было отодвинуть следующую сверку ключа.
+        const srvNow = typeof data.server_now === "number" && data.server_now > 0
+          ? data.server_now : undefined;
+        if (srvNow) trustServerTime(srvNow);
+        const now = srvNow ?? Date.now();
         saveOfflineVerdict({
           valid: data.valid !== false,
           reason: data.reason,
@@ -1158,9 +1169,16 @@ export async function activateLicense(
   }
 
   const coreVersion = await getCoreVersion();
-  const res = await fetch(LICENSE_URL, {
+  // Ограничение времени: без него при плохой связи окно активации «висело»
+  // до 30 секунд (столько ядро ждёт облако) и не давало понятного ответа.
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ACTIVATE_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(LICENSE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    signal: ctrl.signal,
     body: JSON.stringify({
       action: "activate",
       fingerprint,
@@ -1175,8 +1193,23 @@ export async function activateLicense(
       core_version: coreVersion || undefined,
       is_desktop: IS_DESKTOP,
     }),
-  });
-  const data = await res.json();
+    });
+  } catch {
+    throw new Error(ctrl.signal.aborted
+      ? "Сервер лицензий не ответил за 15 секунд. Проверьте интернет и повторите попытку"
+      : "Нет связи с сервером лицензий. Проверьте интернет и повторите попытку");
+  } finally {
+    clearTimeout(timer);
+  }
+  if (res.status >= 500) {
+    throw new Error("Нет связи с сервером лицензий. Проверьте интернет и повторите попытку");
+  }
+  let data: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("Сервер лицензий вернул некорректный ответ. Повторите попытку позже");
+  }
   if (!res.ok) {
     const msgs: Record<string, string> = {
       key_not_found:      "Ключ не найден",
@@ -1187,6 +1220,9 @@ export async function activateLicense(
     };
     throw new Error(msgs[data.error] ?? "Ошибка активации");
   }
+
+  // Отметку времени — по часам сервера (см. checkLicense).
+  trustServerTime(typeof data.server_now === "number" ? data.server_now : undefined);
 
   // Если сервер восстановил seat по hw_fingerprint — сбрасываем кэш fp чтобы пересчитать
   if (data.fingerprint_updated) clearFingerprintCache();

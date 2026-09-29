@@ -314,8 +314,9 @@ export function useLicense(): UseLicenseReturn {
       if (res.licensed) {
         setInfo(res);
         setStatus("licensed");
-        // Часы подтверждены сервером — отметку можно двинуть вперёд.
-        noteTimeMark();
+        // Отметку времени уже переставил checkLicense по часам СЕРВЕРА.
+        // noteTimeMark() здесь не вызываем: он сдвинул бы отметку по часам
+        // ПК, и перевод даты вперёд снова «узаконивался» бы.
         return true;
       }
       // Сервер по-прежнему не подтверждает лицензию. Показываем причину,
@@ -328,8 +329,9 @@ export function useLicense(): UseLicenseReturn {
         return true;
       }
       setInfo(res);
-      setStatus(res.offlineExpired ? "offline_expired"
-        : res.clockRollback ? "clock_rollback" : "demo");
+      // Ответ сервера уже выровнял часы, поэтому «перевод часов» здесь
+      // невозможен — остаются только истёкший кэш или демо.
+      setStatus(res.offlineExpired ? "offline_expired" : "demo");
       return false;
     } catch (e: unknown) {
       // Связи нет — это не повод отбирать уже работающую лицензию.
