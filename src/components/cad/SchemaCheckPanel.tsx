@@ -37,7 +37,7 @@ const CRITICAL_CHECKS = new Set<CheckTab>([
   "invalidValues", "fanNoCurve", "zeroLen", "zeroR", "badArea",
   "shortManualLen", "zeroBulkhead", "lostZ",
   // Результат вентилятора недостоверен
-  "fanAgainst", "fanRange",
+  "fanAgainst",
   // Модель не совпадает с замерами — воздухораспределение в модели неверное
   "measureMismatch",
 ]);
