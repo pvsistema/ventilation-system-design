@@ -11,7 +11,7 @@
 // ветвь кладётся в ячейки своего габарита, сравниваются только ветви и узлы
 // из общих ячеек — это O(n) вместо O(n²) на схемах в тысячи выработок.
 // ─────────────────────────────────────────────────────────────────────────────
-import type { TopoNode, TopoBranch } from "./topology";
+import { type TopoNode, type TopoBranch, surveyXYZ } from "./topology";
 import { type BranchNote, type GroupNote, pushCapped, fmtNum } from "./schemaCheckTypes";
 
 export interface TopologyCheckResult {
@@ -231,10 +231,38 @@ export function checkTopology(
     }
   }
 
-  // Пересечения в плане на одной отметке
+  // ── Пересечения без общего узла ──────────────────────────────────────────
+  // Считаем по МАРКШЕЙДЕРСКИМ координатам (по ним идёт расчёт), а не по
+  // координатам отрисовки: узлы, раздвинутые мышью ради читаемости схемы,
+  // давали ложные пересечения, которых в руднике нет.
+  //
+  // И проверяем настоящее сближение осей В ОБЪЁМЕ, а не пересечение проекций
+  // в плане с оценкой отметки: у наклонных и почти параллельных выработок
+  // интерполированная отметка на «точке пересечения в плане» могла совпасть,
+  // хотя сами выработки расходятся — при повороте схемы пересечения не было.
+  // Пересечение засчитывается, если кратчайшее расстояние между осями
+  // выработок не больше допуска, и ближайшие точки лежат внутри обеих
+  // выработок (не у их концов — там это обычное примыкание к узлу).
+  const sv = new Map<string, { x: number; y: number; z: number }>();
+  const S = (id: string) => {
+    let p = sv.get(id);
+    if (!p) { p = surveyXYZ(nodeById.get(id)!); sv.set(id, p); }
+    return p;
+  };
+  const sgrid = new Map<string, TopoBranch[]>();
+  for (const b of geo) {
+    const a = S(b.fromId), c = S(b.toId);
+    const x0 = Math.floor((Math.min(a.x, c.x) - zTol) / CELL), x1 = Math.floor((Math.max(a.x, c.x) + zTol) / CELL);
+    const y0 = Math.floor((Math.min(a.y, c.y) - zTol) / CELL), y1 = Math.floor((Math.max(a.y, c.y) + zTol) / CELL);
+    if ((x1 - x0 + 1) * (y1 - y0 + 1) > 4000) continue;
+    for (let i = x0; i <= x1; i++) for (let j = y0; j <= y1; j++) {
+      const k = `${i}|${j}`;
+      (sgrid.get(k) ?? sgrid.set(k, []).get(k)!).push(b);
+    }
+  }
   const crossings: GroupNote[] = [];
   const seen = new Set<string>();
-  for (const cell of grid.values()) {
+  for (const cell of sgrid.values()) {
     if (truncated) break;
     for (let i = 0; i < cell.length; i++) {
       for (let j = i + 1; j < cell.length; j++) {
@@ -243,22 +271,35 @@ export function checkTopology(
         const key = b1.id < b2.id ? `${b1.id}|${b2.id}` : `${b2.id}|${b1.id}`;
         if (seen.has(key)) continue;
         seen.add(key);
-        const p1 = nodeById.get(b1.fromId)!, p2 = nodeById.get(b1.toId)!;
-        const q1 = nodeById.get(b2.fromId)!, q2 = nodeById.get(b2.toId)!;
-        const rx = p2.x - p1.x, ry = p2.y - p1.y, sx = q2.x - q1.x, sy = q2.y - q1.y;
-        const den = rx * sy - ry * sx;
-        if (Math.abs(den) < 1e-9) continue;
-        const qpx = q1.x - p1.x, qpy = q1.y - p1.y;
-        const t = (qpx * sy - qpy * sx) / den;
-        const u = (qpx * ry - qpy * rx) / den;
+        const p1 = S(b1.fromId), p2 = S(b1.toId), q1 = S(b2.fromId), q2 = S(b2.toId);
+        // Кратчайшее расстояние между отрезками p1p2 и q1q2 в объёме
+        const d1 = { x: p2.x - p1.x, y: p2.y - p1.y, z: p2.z - p1.z };
+        const d2 = { x: q2.x - q1.x, y: q2.y - q1.y, z: q2.z - q1.z };
+        const r = { x: p1.x - q1.x, y: p1.y - q1.y, z: p1.z - q1.z };
+        const a = d1.x * d1.x + d1.y * d1.y + d1.z * d1.z;
+        const e = d2.x * d2.x + d2.y * d2.y + d2.z * d2.z;
+        if (a < 1e-9 || e < 1e-9) continue;
+        const bb = d1.x * d2.x + d1.y * d2.y + d1.z * d2.z;
+        const c = d1.x * r.x + d1.y * r.y + d1.z * r.z;
+        const f = d2.x * r.x + d2.y * r.y + d2.z * r.z;
+        const den = a * e - bb * bb;
+        // Почти параллельные выработки не пересекаются — это соседние штреки
+        if (den < 1e-9 * a * e) continue;
+        const t = (bb * f - c * e) / den;
+        const u = (a * f - bb * c) / den;
         if (t <= 0.02 || t >= 0.98 || u <= 0.02 || u >= 0.98) continue;
-        const z1 = p1.z + (p2.z - p1.z) * t;
-        const z2 = q1.z + (q2.z - q1.z) * u;
-        if (Math.abs(z1 - z2) > zTol) continue;
+        const cx = p1.x + d1.x * t - (q1.x + d2.x * u);
+        const cy = p1.y + d1.y * t - (q1.y + d2.y * u);
+        const cz = p1.z + d1.z * t - (q1.z + d2.z * u);
+        const dist = Math.sqrt(cx * cx + cy * cy + cz * cz);
+        if (dist > zTol) continue;
+        // Точка для показа на схеме — в координатах отрисовки
+        const P1 = nodeById.get(b1.fromId)!, P2 = nodeById.get(b1.toId)!;
+        const focus = { x: P1.x + (P2.x - P1.x) * t, y: P1.y + (P2.y - P1.y) * t, z: P1.z + (P2.z - P1.z) * t };
         push(crossings, {
           title: `${b1.type || `Ветвь ${b1.id}`} × ${b2.type || `Ветвь ${b2.id}`}`,
-          note: `Пересекаются на отметке ${fmtNum(z1, 1)} м без общего узла`,
-          nodeIds: [], branchIds: [b1.id, b2.id],
+          note: `Оси сходятся на ${fmtNum(dist, 2)} м на отметке ${fmtNum(p1.z + d1.z * t, 1)} м без общего узла`,
+          nodeIds: [], branchIds: [b1.id, b2.id], focus,
         });
       }
     }

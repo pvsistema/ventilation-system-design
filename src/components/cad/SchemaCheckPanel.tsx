@@ -252,7 +252,7 @@ interface SchemaCheckPanelProps {
   onUpdateBranch: (id: string, patch: Partial<TopoBranch>) => void;
   onAllManualToAuto: () => void;
   /** Выделить группу узлов и ветвей и показать её на схеме */
-  onFocusGroup: (nodeIds: string[], branchIds: string[]) => void;
+  onFocusGroup: (nodeIds: string[], branchIds: string[], focus?: { x: number; y: number; z: number }) => void;
 }
 
 export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
@@ -302,7 +302,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
     list.length === 0 ? <Empty text={empty} /> : list.map((g, i) => (
       <ItemRow key={`${g.title}|${i}`} title={g.title} detail={g.note}
         selected={g.branchIds.includes(selectedBranchId ?? "") || g.nodeIds.includes(selectedNodeId ?? "")}
-        onClick={() => p.onFocusGroup(g.nodeIds, g.branchIds)} />
+        onClick={() => p.onFocusGroup(g.nodeIds, g.branchIds, g.focus)} />
     ));
   const { topo, params, solve } = r;
   const needSolve = <Empty text="Выполните расчёт сети (F9) — проверка использует его результаты" />;
@@ -390,7 +390,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       title: "Пересечение без общего узла",
       body: () => (
         <>
-          <Hint>Выработки пересекаются в плане на одной отметке, но не соединены. Если это сопряжение — поставьте узел; если выработки на разных уровнях — поправьте отметки.</Hint>
+          <Hint>Оси выработок сходятся в объёме ближе допуска (по маркшейдерским координатам), но общего узла нет. Если это сопряжение — поставьте узел; если выработки на разных уровнях — поправьте отметки.</Hint>
           {groupNotes(topo.crossings, "Пересечений нет")}
         </>
       ),

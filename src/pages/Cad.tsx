@@ -4929,7 +4929,7 @@ export default function CadPage() {
     return { x: fN.x + (tN.x - fN.x) * t, y: fN.y + (tN.y - fN.y) * t, z: fN.z + (tN.z - fN.z) * t };
   };
 
-  const focusSolveBlocker = (nodeIds: string[], branchIds: string[]) => {
+  const focusSolveBlocker = (nodeIds: string[], branchIds: string[], focus?: { x: number; y: number; z: number }) => {
     // Участок может лежать на скрытом горизонте — тогда центрировать вид
     // бессмысленно, пользователь увидит пустое место. Включаем видимость
     // горизонтов, к которым относятся проблемные ветви.
@@ -4959,7 +4959,8 @@ export default function CadPage() {
       setSelectedNodeId(null);
       setSelectedBranchId(branchIds[0]);
       setFocusNodeId(null);
-      setFocusPos(null);
+      // Точка проблемы (например, место пересечения) — центрируем именно её
+      setFocusPos(focus ?? null);
       setFocusBranchId(branchIds[0]);
     } else {
       return;

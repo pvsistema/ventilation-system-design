@@ -9,7 +9,11 @@ export interface NodeNote { node: TopoNode; note: string }
 /** Пара ветвей (например, пересечение без общего узла). */
 export interface BranchPairNote { a: TopoBranch; b: TopoBranch; note: string }
 /** Группа объектов (например, отдельная часть сети). */
-export interface GroupNote { title: string; nodeIds: string[]; branchIds: string[]; note: string }
+export interface GroupNote {
+  title: string; nodeIds: string[]; branchIds: string[]; note: string;
+  /** Точка для центрирования вида (координаты отрисовки), если известна. */
+  focus?: { x: number; y: number; z: number };
+}
 
 /** Лимит длины каждого списка — защита от зависания интерфейса. */
 export const CHECK_MAX_ITEMS = 500;

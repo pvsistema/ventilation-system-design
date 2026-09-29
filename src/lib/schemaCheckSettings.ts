@@ -64,7 +64,7 @@ export const SCHEMA_CHECK_SETTING_GROUPS: { title: string; fields: SchemaCheckSe
     title: "Связность сети",
     fields: [
       { key: "onAxisTolerance", label: "Узел на оси ветви — допуск", unit: "м", min: 0.01, step: 0.1 },
-      { key: "crossingZTolerance", label: "Пересечение на одной отметке — допуск", unit: "м", min: 0, step: 0.5 },
+      { key: "crossingZTolerance", label: "Пересечение без узла — сближение осей до", unit: "м", min: 0, step: 0.5 },
     ],
   },
   {
