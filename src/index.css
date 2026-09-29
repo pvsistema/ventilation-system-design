@@ -1552,3 +1552,17 @@ html.ui-compact .rb-label { font-size: 9px !important; }
 html.ui-compact .tab-btn,
 html.ui-compact .tab-file { width: 80px !important; }
 html.ui-compact .tool-btn { padding-left: 6px; padding-right: 6px; }
+
+/* ─── Запрет «документного» выделения текста ─────────────────────────────
+   Это CAD-приложение, а не документ: Ctrl+A и протягивание мышью не должны
+   закрашивать синим все подписи интерфейса. Выделение остаётся только там,
+   где оно нужно: поля ввода, textarea, contenteditable, справка и .selectable. */
+html, body, #root {
+  -webkit-user-select: none;
+  user-select: none;
+}
+input, textarea, select, [contenteditable="true"], [contenteditable=""],
+.help-body, .help-body *, .selectable, .selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}
