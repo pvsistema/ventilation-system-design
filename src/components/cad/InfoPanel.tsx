@@ -120,7 +120,9 @@ function Section({ icon, title, count, total, open, onToggle, onAll, children }:
 }) {
   const all = total > 0 && count === total;
   return (
-    <section className="rounded-lg overflow-hidden"
+    // flex-shrink-0: раскрытые разделы не сжимают друг друга — список
+    // прокручивается целиком, а не «сплющивает» соседние разделы.
+    <section className="rounded-lg overflow-hidden flex-shrink-0"
       style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b1, #e7e4dd)" }}>
       <div className="flex items-center gap-1 pr-2">
         <button type="button" onClick={onToggle}
@@ -132,8 +134,8 @@ function Section({ icon, title, count, total, open, onToggle, onAll, children }:
             style={{ background: "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)", color: "var(--c-accent, #1e5a7a)" }}>
             <Icon name={icon} size={12} />
           </span>
-          <span className="flex-1 truncate text-[11px] font-semibold uppercase tracking-wider"
-            style={{ color: "var(--c-t2, #3a3f45)" }}>{title}</span>
+          <span className="flex-1 truncate text-[10px] font-semibold uppercase tracking-wide"
+            style={{ color: "var(--c-t2, #3a3f45)" }} title={title}>{title}</span>
           <span className="text-[10px] px-1.5 rounded-full flex-shrink-0"
             style={{
               fontFamily: "var(--font-num)",
@@ -285,7 +287,7 @@ export default function InfoPanel({
       </div>
 
       {/* Разделы */}
-      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-0.5">
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-2 flex flex-col gap-0.5">
         {paramSection("branches", "GitBranch", "Ветви", BRANCH_ROWS)}
         {paramSection("nodes", "CircleDot", "Узлы", NODE_ROWS)}
         {paramSection("ms", "Gauge", "Замерные станции", MS_ROWS)}

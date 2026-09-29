@@ -2821,8 +2821,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               </button>
             </div>
 
-            <div className="flex-1 flex flex-col overflow-hidden">
-              <div className="flex-1 overflow-hidden">
+            <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+              <div className="flex-1 min-h-0 overflow-hidden">
                 <InfoPanel
                   config={infoPanelConfig}
                   onChange={updateInfoConfigSynced}
@@ -2851,8 +2851,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               </div>
 
               {/* Масштаб и скрытие узлов */}
-              <div className="px-2 py-2 flex-shrink-0 space-y-2"
-                style={{ background: "var(--c-s2, #f8f7f4)", borderTop: "1px solid var(--c-b1, #e7e4dd)" }}>
+              <div className="px-2 py-2 flex-shrink-0 space-y-2 overflow-y-auto overscroll-contain"
+                style={{ maxHeight: "45%", background: "var(--c-s2, #f8f7f4)", borderTop: "1px solid var(--c-b1, #e7e4dd)" }}>
                 <Card icon="Maximize2" title="Масштаб" collapsible defaultOpen={false}
                   aside={<span className="text-[10px]" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-num)" }}>
                     XY ×{xyScale.toFixed(1)} · Z ×{zScale.toFixed(1)}
