@@ -30,23 +30,42 @@ export interface SchemaCheckSettings {
   leakBulkMin: number;
   /** м³/с — и до этого значения (0 — без ограничения сверху) */
   leakBulkMax: number;
+  /** % — допуск «замер / модель» на замерных станциях, капитальные выработки */
+  measureTolCapital: number;
+  /** % — то же для остальных выработок */
+  measureTolOther: number;
+  /** Н·с²/м⁴ — допустимый диапазон контрольного α = R·S³/(P·L) */
+  controlAlphaMin: number;
+  controlAlphaMax: number;
+  /** % — разница сечений соседних ветвей одной выработки */
+  areaJumpPercent: number;
+  /** кМюрг — максимум сопротивления изолирующей перемычки (без герметизации) */
+  isolMaxR: number;
 }
 
 export const DEFAULT_SCHEMA_CHECK_SETTINGS: SchemaCheckSettings = {
-  nearThreshold: 0.01,
+  nearThreshold: 0.5,
   highRThreshold: 100,
   bulkRThreshold: 686,
   onAxisTolerance: 0.5,
   crossingZTolerance: 1,
   areaMin: 0.5,
   areaMax: 60,
-  alphaMin: 2,
-  alphaMax: 400,
+  // Методика ВГСЧ: контрольный α действующих выработок 0,001…1,0 Н·с²/м⁴.
+  // В наших единицах (×10⁻⁴ кгс·с²/м⁴, см. resistanceFromAlpha) это ≈ 1…1000.
+  alphaMin: 1,
+  alphaMax: 1000,
   tinyLength: 0.5,
   recircPercent: 70,
   leakPercent: 30,
   leakBulkMin: 5,
   leakBulkMax: 0,
+  measureTolCapital: 10,
+  measureTolOther: 20,
+  controlAlphaMin: 0.001,
+  controlAlphaMax: 1,
+  areaJumpPercent: 10,
+  isolMaxR: 305,
 };
 
 export interface SchemaCheckSettingField {
@@ -72,6 +91,7 @@ export const SCHEMA_CHECK_SETTING_GROUPS: { title: string; fields: SchemaCheckSe
     fields: [
       { key: "highRThreshold", label: "Большое сопротивление ветви", unit: "кМюрг", min: 0, step: 10 },
       { key: "bulkRThreshold", label: "Норматив сопротивления перемычки", unit: "кМюрг", min: 0, step: 1 },
+      { key: "isolMaxR", label: "Изолирующая перемычка — максимум (×2,25 с герметизацией)", unit: "кМюрг", min: 1, step: 5 },
     ],
   },
   {
@@ -82,6 +102,9 @@ export const SCHEMA_CHECK_SETTING_GROUPS: { title: string; fields: SchemaCheckSe
       { key: "alphaMin", label: "Коэффициент α, минимум", unit: "×10⁻⁴", min: 0, step: 1 },
       { key: "alphaMax", label: "Коэффициент α, максимум", unit: "×10⁻⁴", min: 0, step: 10 },
       { key: "tinyLength", label: "Очень короткая ветвь — короче", unit: "м", min: 0, step: 0.1 },
+      { key: "controlAlphaMin", label: "Контрольный α, минимум", unit: "Н·с²/м⁴", min: 0, step: 0.001 },
+      { key: "controlAlphaMax", label: "Контрольный α, максимум", unit: "Н·с²/м⁴", min: 0, step: 0.1 },
+      { key: "areaJumpPercent", label: "Соседние ветви — разница сечений более", unit: "%", min: 1, max: 100, step: 1 },
     ],
   },
   {
@@ -97,6 +120,8 @@ export const SCHEMA_CHECK_SETTING_GROUPS: { title: string; fields: SchemaCheckSe
       { key: "leakPercent", label: "Утечки через перемычки — доля выше", unit: "%", min: 1, max: 100, step: 5 },
       { key: "leakBulkMin", label: "Утечка через перемычку — от", unit: "м³/с", min: 0, step: 0.5 },
       { key: "leakBulkMax", label: "Утечка через перемычку — до (0 — без предела)", unit: "м³/с", min: 0, step: 0.5 },
+      { key: "measureTolCapital", label: "Замер / модель — допуск, капитальные", unit: "%", min: 1, max: 100, step: 1 },
+      { key: "measureTolOther", label: "Замер / модель — допуск, прочие", unit: "%", min: 1, max: 100, step: 1 },
     ],
   },
 ];
@@ -113,6 +138,11 @@ export function loadSchemaCheckSettings(): SchemaCheckSettings {
       const v = parsed[k];
       if (typeof v === "number" && Number.isFinite(v) && v >= 0) s[k] = v;
     });
+    // Прежние значения по умолчанию заменены на методические. Если человек
+    // их не менял, подставляем новые — иначе старый порог «застрял» бы навсегда.
+    if (parsed.nearThreshold === 0.01) s.nearThreshold = DEFAULT_SCHEMA_CHECK_SETTINGS.nearThreshold;
+    if (parsed.alphaMin === 2) s.alphaMin = DEFAULT_SCHEMA_CHECK_SETTINGS.alphaMin;
+    if (parsed.alphaMax === 400) s.alphaMax = DEFAULT_SCHEMA_CHECK_SETTINGS.alphaMax;
   } catch { /* повреждённые настройки — берём по умолчанию */ }
   return s;
 }

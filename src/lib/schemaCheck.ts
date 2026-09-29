@@ -71,7 +71,7 @@ export function checkSchema(
   branches: TopoBranch[],
   opts: SchemaCheckOptions = {},
 ): SchemaCheckResult {
-  const nearThreshold = opts.nearThreshold ?? 0.01;
+  const nearThreshold = opts.nearThreshold ?? 0.5;
   const highRThreshold = opts.highRThreshold ?? 100;
   const bulkRThreshold = opts.bulkRThreshold ?? 686;
   const maxItems = opts.maxItems ?? 500;
@@ -147,7 +147,9 @@ export function checkSchema(
 
             // Близкие несоединённые узлы
             const d2 = ddx * ddx + ddy * ddy + ddz * ddz;
-            if (d2 <= thr2 && !branchPairs.has(`${n.id}|${m.id}`)) {
+            // Совпадающие узлы уже показаны в «Узлы с одинаковыми координатами».
+            const isDup = Math.abs(ddx) < DUP_EPS && Math.abs(ddy) < DUP_EPS && Math.abs(ddz) < DUP_EPS;
+            if (!isDup && d2 <= thr2 && !branchPairs.has(`${n.id}|${m.id}`)) {
               if (!capReached(nearPairs.length)) {
                 nearPairs.push({ a: n, b: m, dist: Math.sqrt(d2) });
               } else truncated = true;

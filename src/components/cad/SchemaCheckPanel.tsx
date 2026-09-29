@@ -32,12 +32,14 @@ const CRITICAL_CHECKS = new Set<CheckTab>([
   "solveBlock",
   // Топология: сеть в расчёте не совпадает с чертежом
   "noFan", "components", "deadFan", "tJunction", "selfLoop",
-  "brokenBranch", "isolatedBranch", "dupes",
+  "brokenBranch", "isolatedBranch", "dupes", "surfaceMulti",
   // Параметры, искажающие сопротивления и тягу
   "invalidValues", "fanNoCurve", "zeroLen", "zeroR", "badArea",
   "shortManualLen", "zeroBulkhead", "lostZ",
   // Результат вентилятора недостоверен
   "fanAgainst", "fanRange",
+  // Модель не совпадает с замерами — воздухораспределение в модели неверное
+  "measureMismatch",
 ]);
 
 const tint = (color: string, pct = 14) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
@@ -327,7 +329,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         selected={g.branchIds.includes(selectedBranchId ?? "") || g.nodeIds.includes(selectedNodeId ?? "")}
         onClick={() => p.onFocusGroup(g.nodeIds, g.branchIds, g.focus)} />
     ));
-  const { topo, params, solve } = r;
+  const { topo, params, solve, method } = r;
   const needSolve = <Empty text="Выполните расчёт сети (F9) — проверка использует его результаты" />;
 
   const solveCount = (solveBlockers?.nodeIds.length ?? 0) + (solveBlockers?.branchIds.length ?? 0);
@@ -633,6 +635,75 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         </>
       ),
     },
+    // ── По методике проверки моделей (ВГСЧ, 2023) ───────────────────────
+    {
+      id: "measureMismatch", group: "Результаты расчёта", icon: "Gauge", level: "error",
+      count: method.measureMismatch.length,
+      title: "Замер на станции не совпадает с моделью",
+      body: () => (
+        <>
+          <Hint>Модельный расход отличается от замеренного на замерной станции более чем на {num(cfg.measureTolCapital)} % в капитальных и {num(cfg.measureTolOther)} % в остальных выработках. Модель не соответствует фактическому воздухораспределению — уточните сопротивления.</Hint>
+          {method.measureTotal === 0 ? <Empty text="На схеме нет замерных станций" /> : (
+            <>
+              {method.measureNoData > 0 && (
+                <Hint>Без замеренного расхода: {method.measureNoData} из {method.measureTotal} станций — они не проверялись.</Hint>
+              )}
+              {!solve.solved ? needSolve : branchNotes(method.measureMismatch, "Замеры совпадают с моделью")}
+            </>
+          )}
+        </>
+      ),
+    },
+    {
+      id: "controlAlpha", group: "Параметры ветвей", icon: "Sigma", level: "warn", count: method.controlAlpha.length,
+      title: "Контрольный α вне диапазона",
+      body: () => (
+        <>
+          <Hint>α = R·S³/(P·L) по итоговому сопротивлению ветви, в т. ч. заданному вручную или по съёмке. Для действующих выработок {num(cfg.controlAlphaMin)}…{num(cfg.controlAlphaMax)} Н·с²/м⁴. Выход за пределы — неверное R или неучтённое местное сопротивление (укажите его в примечании ветви).</Hint>
+          {branchNotes(method.controlAlpha, "Контрольные α в норме")}
+        </>
+      ),
+    },
+    {
+      id: "alphaJump", group: "Параметры ветвей", icon: "ChartNoAxesColumn", level: "warn", count: method.alphaJump.length,
+      title: "Скачок α между соседними ветвями",
+      body: () => (
+        <>
+          <Hint>Соседние ветви одной выработки с близкими сечениями, а α отличается более чем на 100 %. Причина — местное (лобовое) сопротивление: привод, перегруз, энергопоезд — или ошибка в R. Местное сопротивление отметьте в примечании ветви.</Hint>
+          {groupNotes(method.alphaJump, "Скачков α нет")}
+        </>
+      ),
+    },
+    {
+      id: "areaJump", group: "Параметры ветвей", icon: "Scaling", level: "info", count: method.areaJump.length,
+      title: "Сечение меняется вдоль выработки",
+      body: () => (
+        <>
+          <Hint>Сечения соседних ветвей одной выработки отличаются более чем на {num(cfg.areaJumpPercent)} %. Сверьте с документацией ОПО; подтверждённое расширение или сужение укажите в примечании ветви.</Hint>
+          {groupNotes(method.areaJump, "Сечения вдоль выработок согласованы")}
+        </>
+      ),
+    },
+    {
+      id: "surfaceMulti", group: "Связность сети", icon: "Cloud", level: "error", count: method.surfaceMulti.length,
+      title: "Поверхностный узел соединён с несколькими ветвями",
+      body: () => (
+        <>
+          <Hint>Узел связи с атмосферой должен быть концом одной ветви (устье ствола, выход штольни). Если к нему подходит несколько ветвей, давление атмосферы подаётся внутрь сети и искажает воздухораспределение.</Hint>
+          {nodeNotes(method.surfaceMulti, "Поверхностные узлы заданы верно")}
+        </>
+      ),
+    },
+    {
+      id: "bulkheadNorm", group: "Ветви", icon: "ShieldAlert", level: "warn", count: method.bulkheadNorm.length,
+      title: "Сопротивление сооружения вне нормы для вида",
+      body: () => (
+        <>
+          <Hint>Ориентировочные нормы: изолирующие перемычки не менее 10 кμ и не более {num(cfg.isolMaxR)} кμ (с герметизацией ×2,25); шлюзы — от 1,5 кμ в капитальных, 0,8 кμ в участковых, 0,3 кμ в конвейерных выработках; регуляторы с окном — не более 10 кμ и не меньше сопротивления своей выработки.</Hint>
+          {branchNotes(method.bulkheadNorm, "Сооружения в норме")}
+        </>
+      ),
+    },
     {
       id: "brokenBranch", group: "Ветви", icon: "Unlink", level: "error", count: r.brokenBranches.length,
       title: "Ветвь ссылается на удалённый узел",
@@ -859,7 +930,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
             <div className="text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>{status.sub}</div>
           </div>
         </div>
-        {(r.truncated || topo.truncated || params.truncated || solve.truncated) && (
+        {(r.truncated || topo.truncated || params.truncated || solve.truncated || method.truncated) && (
           <div className="text-[10px] flex items-start gap-1" style={{ color: "var(--c-t3, #6b7280)" }}>
             <Icon name="Info" size={11} className="flex-shrink-0 mt-px" />
             Показаны первые 500 результатов в каждом списке.

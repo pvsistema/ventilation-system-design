@@ -42,10 +42,10 @@ export interface ParamsCheckOptions {
   bulkheads?: Map<string, BranchBulkheadInfo>;
 }
 
-// Типичный диапазон α для горных выработок, ×10⁻⁴ Н·с²/м⁴ (от гладкого
-// бетона до выработок с рамной крепью и загромождением).
-const ALPHA_MIN_DEFAULT = 2;
-const ALPHA_MAX_DEFAULT = 400;
+// Диапазон α, ×10⁻⁴ кгс·с²/м⁴ (единицы поля alphaCoef). Методика ВГСЧ
+// допускает 0,001…1,0 Н·с²/м⁴ — это ≈ 1…1000 в наших единицах.
+const ALPHA_MIN_DEFAULT = 1;
+const ALPHA_MAX_DEFAULT = 1000;
 
 const bad = (v: unknown) => typeof v !== "number" || !Number.isFinite(v);
 

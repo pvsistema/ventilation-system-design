@@ -14,6 +14,7 @@ import { checkSchema } from "@/lib/schemaCheck";
 import { checkTopology } from "@/lib/schemaCheckTopology";
 import { checkParams } from "@/lib/schemaCheckParams";
 import { checkSolve } from "@/lib/schemaCheckSolve";
+import { checkMethod } from "@/lib/schemaCheckMethod";
 import { loadSchemaCheckSettings, saveSchemaCheckSettings, type SchemaCheckSettings } from "@/lib/schemaCheckSettings";
 import type { TopoNode, TopoBranch } from "@/lib/topology";
 import type { VentNorms, VentSection } from "@/lib/ventSections";
@@ -33,6 +34,8 @@ export type CheckTab =
   | "invalidValues" | "lostZ" | "tinyBranch"
   // По результатам расчёта
   | "highV" | "lowV" | "fanAgainst" | "fanRange" | "recirc" | "faceDeficit" | "leakage" | "leakNorm"
+  // По методике проверки моделей ВГСЧ
+  | "measureMismatch" | "controlAlpha" | "alphaJump" | "areaJump" | "surfaceMulti" | "bulkheadNorm"
   // "solveBlock" — участки, о которые споткнулся расчёт сети. В отличие от
   // остальных вкладок, они не находятся статической проверкой схемы, а
   // приходят в диагностике от самого расчёта.
@@ -112,6 +115,16 @@ export function useCadSchemaCheck(
         leakBulkMin: s.leakBulkMin,
         leakBulkMax: s.leakBulkMax,
         bulkheads,
+      }),
+      method: checkMethod(nodes, branches, solved, {
+        measureTolCapital: s.measureTolCapital,
+        measureTolOther: s.measureTolOther,
+        controlAlphaMin: s.controlAlphaMin,
+        controlAlphaMax: s.controlAlphaMax,
+        areaJumpPercent: s.areaJumpPercent,
+        isolMaxR: s.isolMaxR,
+        bulkheads,
+        symbols,
       }),
     };
   }, [activeSide, nodes, branches, checkSettings, solved, norms, sections, symbols, bulkheadRefs]);
