@@ -1596,6 +1596,16 @@ export default function CadPage() {
   const bulkheadFocusPosRef = useRef<(branchId: string) => { x: number; y: number; z: number } | null>(() => null);
   // Подсветка перемычки, выбранной в диаграмме волны
   const [blastHighlightPos, setBlastHighlightPos] = useState<{ x: number; y: number; z: number } | null>(null);
+  // Маркер «вот здесь» после перехода из панели проверки. Нужен прежде всего
+  // для ветвей нулевой длины: начало и конец у них совпадают, ветвь рисуется
+  // точкой, и без маркера казалось, что схема никуда не перешла.
+  const [checkHighlightPos, setCheckHighlightPos] = useState<{ x: number; y: number; z: number } | null>(null);
+  const checkHighlightTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const flashCheckHighlight = (pos: { x: number; y: number; z: number } | null) => {
+    if (checkHighlightTimer.current) clearTimeout(checkHighlightTimer.current);
+    setCheckHighlightPos(pos);
+    if (pos) checkHighlightTimer.current = setTimeout(() => setCheckHighlightPos(null), 3500);
+  };
   // Флаг: файл был загружен — не сбрасываем вид начальным пресетом
   const initialFileLoadedRef = useRef(false);
   // При первом рендере — дефолтный вид только если файл не открывался
@@ -7888,6 +7898,8 @@ export default function CadPage() {
                   setFocusPos(null);
                   setFocusNodeId(id);
                   setFocusNonce(Date.now());
+                  const n = nodesById.get(id);
+                  flashCheckHighlight(n ? { x: n.x, y: n.y, z: n.z } : null);
                 }}
                 onFocusBranch={(id) => {
                   revealBranchHorizons([id]);
@@ -7898,9 +7910,21 @@ export default function CadPage() {
                   // центрирования проверяет узел раньше ветви, и камера
                   // уезжала к старому узлу вместо выбранной ветви.
                   setFocusNodeId(null);
-                  setFocusPos(bulkheadFocusPosRef.current(id));
+                  const bPos = bulkheadFocusPosRef.current(id);
+                  setFocusPos(bPos);
                   setFocusBranchId(id);
                   setFocusNonce(Date.now());
+                  const br = branches.find(b => b.id === id);
+                  const fN = br ? nodesById.get(br.fromId) : undefined;
+                  const tN = br ? nodesById.get(br.toId) : undefined;
+                  if (!bPos && (!fN || !tN)) {
+                    toast.error("У ветви нет начального или конечного узла — показать её на схеме нельзя");
+                    flashCheckHighlight(null);
+                    return;
+                  }
+                  flashCheckHighlight(bPos ?? {
+                    x: (fN!.x + tN!.x) / 2, y: (fN!.y + tN!.y) / 2, z: (fN!.z + tN!.z) / 2,
+                  });
                 }}
                 onSelectBranches={(ids) => {
                   if (ids.length === 0) return;
@@ -11363,7 +11387,7 @@ export default function CadPage() {
               focusBranchId={focusBranchId}
               focusPos={focusPos}
               focusScreen={focusScreenReq && focusScreenReq.nonce === focusNonce ? focusScreenReq : null}
-              highlightPos={showBlastBarrierChart ? blastHighlightPos : null}
+              highlightPos={(showBlastBarrierChart ? blastHighlightPos : null) ?? checkHighlightPos}
               onRegisterCanvasEl={(el) => {
                 liveCanvasRef.current = el;
                 if (el) {
