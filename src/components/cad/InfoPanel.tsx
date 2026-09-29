@@ -124,7 +124,7 @@ function Section({ icon, title, count, total, open, onToggle, onAll, children }:
       style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b1, #e7e4dd)" }}>
       <div className="flex items-center gap-1 pr-2">
         <button type="button" onClick={onToggle}
-          className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1.5 text-left select-none"
+          className="flex-1 min-w-0 flex items-center gap-2 px-2 py-1 text-left select-none"
           style={{ background: "transparent", border: "none", cursor: "pointer" }}>
           <Icon name="ChevronRight" size={12}
             style={{ color: "var(--c-t4, #767f8c)", transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
@@ -285,7 +285,7 @@ export default function InfoPanel({
       </div>
 
       {/* Разделы */}
-      <div className="flex-1 overflow-y-auto p-2 space-y-1.5">
+      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-0.5">
         {paramSection("branches", "GitBranch", "Ветви", BRANCH_ROWS)}
         {paramSection("nodes", "CircleDot", "Узлы", NODE_ROWS)}
         {paramSection("ms", "Gauge", "Замерные станции", MS_ROWS)}
