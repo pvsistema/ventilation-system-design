@@ -251,6 +251,9 @@ interface SchemaCheckPanelProps {
   onFocusSolveBlocker: (nodeIds: string[], branchIds: string[]) => void;
   onUpdateBranch: (id: string, patch: Partial<TopoBranch>) => void;
   onAllManualToAuto: () => void;
+  /** Задать длину всем ветвям нулевой длины: по координатам узлов,
+   *  а где узлы совпадают — указанное значение (вручную). */
+  onFixZeroLen: (fallbackLen: number) => void;
   /** Выделить группу узлов и ветвей и показать её на схеме */
   onFocusGroup: (nodeIds: string[], branchIds: string[], focus?: { x: number; y: number; z: number }) => void;
 }
@@ -262,6 +265,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
   } = p;
   const [showAll, setShowAll] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [zeroLenFallback, setZeroLenFallback] = useState(1);
   const cfg = p.settings;
   const changed = countChangedSettings(cfg);
   const num = (v: number) => String(v).replace(".", ",");
@@ -646,6 +650,22 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       body: () => (
         <>
           <Hint>Без длины у ветви нет сопротивления — расчёт невозможен.</Hint>
+          {r.zeroLenBranches.length > 0 && (() => {
+            const noCoords = r.zeroLenBranches.filter((b) => !autoLength(b)).length;
+            return (
+              <>
+                {noCoords > 0 && (
+                  <ThresholdInput label={`Узлы совпадают (${noCoords}) — длина`} unit="м"
+                    value={zeroLenFallback} min={0.1} step={1} onChange={setZeroLenFallback} />
+                )}
+                <div className="px-2 pb-1.5">
+                  <ActionBtn icon="Ruler" label={`Задать длину всем (${r.zeroLenBranches.length})`}
+                    onClick={() => p.onFixZeroLen(zeroLenFallback)} />
+                </div>
+                <Hint>По координатам узлов; если узлы совпадают — заданное значение (как ручная длина).</Hint>
+              </>
+            );
+          })()}
           {r.zeroLenBranches.length === 0 ? <Empty text="Таких ветвей нет" /> :
             r.zeroLenBranches.map((b) => {
               const auto = autoLength(b);

@@ -772,6 +772,26 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     return { ...b, manualLength: false, length: len };
                   }));
                 }}
+                onFixZeroLen={(fallbackLen) => {
+                  const fixes = new Map<string, Partial<TopoBranch>>();
+                  let byCoords = 0, byValue = 0;
+                  for (const b of branches) {
+                    if ((b.length ?? 0) > 0) continue;
+                    const fn = nodesById.get(b.fromId);
+                    const tn = nodesById.get(b.toId);
+                    const auto = fn && tn ? Math.round(calcBranchLength(fn, tn)) : 0;
+                    if (auto > 0) { byCoords++; fixes.set(b.id, { manualLength: false, length: auto }); }
+                    else { byValue++; fixes.set(b.id, { manualLength: true, length: fallbackLen }); }
+                  }
+                  if (fixes.size === 0) return;
+                  pushHistory();
+                  setBranches(prev => prev.map(b => { const f = fixes.get(b.id); return f ? { ...b, ...f } : b; }));
+                  const parts = [
+                    byCoords ? `по координатам: ${byCoords}` : "",
+                    byValue ? `вручную ${fallbackLen} м: ${byValue}` : "",
+                  ].filter(Boolean).join(", ");
+                  if (parts) toast.success(`Длина задана (${parts})`);
+                }}
               />
             )}
 
