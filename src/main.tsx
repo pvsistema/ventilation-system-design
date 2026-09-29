@@ -17,6 +17,7 @@ import '@fontsource/jetbrains-mono/500.css'
 import '@fontsource/jetbrains-mono/600.css'
 import { applyTheme, getStoredTheme } from './lib/theme'
 import { installAntiDebug } from './lib/antiDebug'
+import { installUiScale } from './lib/uiScale'
 
 // __IS_DESKTOP__ инжектируется Vite только в десктопной сборке
 // (vite.config.desktop.ts). В браузере флаг отсутствует.
@@ -25,6 +26,8 @@ declare const __IS_DESKTOP__: boolean | undefined;
 // Тему применяем ДО первой отрисовки, иначе при тёмной теме на миг
 // мелькнёт белый интерфейс.
 applyTheme(getStoredTheme());
+// Масштаб интерфейса и компактный режим — тоже до первой отрисовки.
+installUiScale();
 
 // Защита от инспекции кода — только в десктопной версии.
 if (typeof __IS_DESKTOP__ !== 'undefined' && __IS_DESKTOP__) {

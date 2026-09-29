@@ -4,6 +4,7 @@ import { applyTheme, getStoredTheme, resolveTheme, watchSystemTheme, type ThemeM
 import {
   DEFAULT_POLLUTION_THRESHOLD, POLLUTION_THRESHOLD_MIN, POLLUTION_THRESHOLD_MAX,
 } from "@/lib/airPollution";
+import { getUiScale, setUiScale, UI_SCALE_STEPS } from "@/lib/uiScale";
 
 interface Props {
   onClose: () => void;
@@ -57,6 +58,8 @@ export default function SettingsDialog({
   onClose, pollutionThreshold = DEFAULT_POLLUTION_THRESHOLD, onPollutionThreshold,
 }: Props) {
   const [mode, setMode] = useState<ThemeMode>(getStoredTheme);
+  const [uiScale, setUiScaleState] = useState(getUiScale);
+  const chooseScale = (v: number) => { setUiScaleState(v); setUiScale(v); };
 
   // Порог редактируем как проценты — так его задаёт инженер.
   const [pctText, setPctText] = useState(() => String(Math.round(pollutionThreshold * 100)));
@@ -141,6 +144,29 @@ export default function SettingsDialog({
               На печать и в экспортируемые документы схема всегда выводится на белом фоне —
               тема оформления на них не влияет.
             </div>
+          </div>
+
+          {/* ── Масштаб интерфейса ────────────────────────────────────────── */}
+          <div className="text-[12px] font-semibold text-gray-800 mt-5 mb-1">Масштаб интерфейса</div>
+          <div className="text-[11px] text-gray-500 mb-3 leading-snug">
+            Размер ленты, панелей и надписей. На небольших экранах и ноутбуках
+            уменьшите масштаб — под схему останется больше места. Боковые панели
+            и так подстраиваются под размер окна.
+          </div>
+          <div className="flex gap-1.5 mb-1">
+            {UI_SCALE_STEPS.map(v => {
+              const active = Math.abs(uiScale - v) < 1e-3;
+              return (
+                <button key={v} onClick={() => chooseScale(v)}
+                  className={`flex-1 text-[12px] py-1.5 rounded border transition-colors ${active ? "font-semibold text-blue-700" : "text-gray-700 border-gray-300 hover:bg-gray-50"}`}
+                  style={active ? { borderColor: "var(--c-blue, #2563eb)", boxShadow: "0 0 0 2px rgba(37,99,235,0.18)" } : undefined}>
+                  {Math.round(v * 100)}%
+                </button>
+              );
+            })}
+          </div>
+          <div className="text-[10px] text-gray-400 mb-1">
+            100% — обычный размер. Выбор запоминается и применяется сразу.
           </div>
 
           {/* ── Порог загрязнения струи ───────────────────────────────────── */}

@@ -129,7 +129,8 @@ import {
 import CadTitleBar from "./cad/CadTitleBar";
 import CadStatusBar from "./cad/CadStatusBar";
 import { useCadHotkeys } from "./cad/useCadHotkeys";
-import { useCadSchemaCheck, useCadLeftPanelResize, type CheckTab } from "./cad/useCadSchemaCheck";
+import { useCadSchemaCheck, type CheckTab } from "./cad/useCadSchemaCheck";
+import { useCadPanelsLayout } from "./cad/useCadPanelsLayout";
 import { useCadHeaters } from "./cad/useCadHeaters";
 import { buildVentPipeLine as buildVentPipeLineImpl } from "./cad/buildVentPipeLine";
 import { collectVentPipeLine, removeVentPipeLine } from "./cad/ventPipeLineOps";
@@ -2280,9 +2281,14 @@ export default function CadPage() {
   const cancelSymbolStable = useCallback(() => { setTool("select"); setActiveSymbolTypeId(null); }, []);
 
   // ─── ПРАВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ ────────────────────────────────────────
-  const [rightPanelOpen, setRightPanelOpen] = useState<boolean>(true);
-  // ─── ЛЕВАЯ ВЫДВИЖНАЯ ПАНЕЛЬ (свойства/параметры) ────────────────────
-  const [leftPanelOpen, setLeftPanelOpen] = useState<boolean>(true);
+  // Ширины и открытость боковых панелей подстраиваются под размер окна
+  // (см. useCadPanelsLayout): на маленьких экранах схема не сжимается в полосу.
+  const {
+    leftPanelWidth, rightPanelWidth,
+    leftPanelOpen, setLeftPanelOpen,
+    rightPanelOpen, setRightPanelOpen, rightAutoCollapsed,
+    startLeftDrag, startRightDrag, resetLeftWidth, resetRightWidth,
+  } = useCadPanelsLayout();
   // ─── ДИАЛОГ ПЕЧАТИ ──────────────────────────────────────────────────
   const [showPrintDialog, setShowPrintDialog] = useState<boolean>(false);
   const [printDialogOpenExport, setPrintDialogOpenExport] = useState<boolean>(false);
@@ -4224,8 +4230,6 @@ export default function CadPage() {
   // (автопереключение правого таба при выборе объекта убрано — пользователь выбирает вкладку вручную)
 
   // ─── РЕСАЙЗ ЛЕВОЙ ПАНЕЛИ ────────────────────────────────────────────
-  // Вынесено в useCadLeftPanelResize без изменений: те же границы 220…640 px.
-  const { leftPanelWidth, startLeftDrag } = useCadLeftPanelResize();
 
   // ─────────────────────────────────────────────────────────────────────────
   // Формирует payload ветвей для запроса к backend/airflow.
@@ -5836,7 +5840,7 @@ export default function CadPage() {
   return (
     <>
     <div className="w-full flex flex-col"
-      style={{ background: "var(--c-s3, #f0f0f0)", fontFamily: "var(--font-ui)", fontSize: "12px", color: "var(--c-t1, #1f1f1f)", height: "100dvh" }}>
+      style={{ background: "var(--c-s3, #f0f0f0)", fontFamily: "var(--font-ui)", fontSize: "12px", color: "var(--c-t1, #1f1f1f)", height: "calc(100dvh / var(--ui-zoom, 1))" }}>
 
       {/* ═══ TITLE BAR ════════════════════════════════════════════════════ */}
       <CadTitleBar
@@ -6473,7 +6477,7 @@ export default function CadPage() {
 
       {/* ═══ RIBBON CONTENT: АВАРИИ ════════════════════════════════════════ */}
       {activeRibbon === "involve" && !ribbonCollapsed && (
-      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
+      <div className="ribbon-body h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
         style={{ background: "linear-gradient(180deg,var(--c-tint-red, #fff5f5),#fce8e8)", borderBottom: "1px solid #fca5a5" }}>
 
         {/* ── Группа: Пожар ── */}
@@ -6953,7 +6957,7 @@ export default function CadPage() {
 
       {/* ═══ RIBBON CONTENT ═══════════════════════════════════════════════ */}
       {activeRibbon !== "general" && activeRibbon !== "involve" && !ribbonCollapsed && (
-      <div className="h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
+      <div className="ribbon-body h-[80px] flex items-stretch px-2 py-1.5 gap-0 overflow-x-auto"
         style={{ background: "linear-gradient(180deg,var(--c-s2, #f5f5f5),var(--c-s4, #e8e8e8))", borderBottom: "1px solid #b0b0b0" }}>
 
         {/* ── Группа: Объекты ── */}
@@ -10787,10 +10791,10 @@ export default function CadPage() {
         </div>
 
         {/* ── РАЗДЕЛИТЕЛЬ ШИРИНЫ ЛЕВОЙ ПАНЕЛИ (drag) ───────────────── */}
-        <div onMouseDown={startLeftDrag}
+        <div onMouseDown={startLeftDrag} onDoubleClick={resetLeftWidth}
           className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
           style={{ background: "#d0d0d0" }}
-          title="Перетащите, чтобы изменить ширину панели" />
+          title="Перетащите, чтобы изменить ширину панели. Двойной клик — ширина по размеру окна" />
         </>)}
 
         {/* ── РАБОЧАЯ ОБЛАСТЬ (CANVAS + ИНСТРУМЕНТЫ) ────────────────── */}
@@ -13296,15 +13300,25 @@ export default function CadPage() {
         {/* ── ПРАВАЯ ПАНЕЛЬ — «Панель информации» ─────────────── */}
         {!rightPanelOpen && (
           <button onClick={() => setRightPanelOpen(true)}
-            className="flex-shrink-0 flex items-center justify-center w-6 h-full border-l"
+            className="flex-shrink-0 flex flex-col items-center justify-start gap-2 pt-2 w-6 h-full border-l"
             style={{ background: "var(--c-s2, #f5f5f5)", borderColor: "var(--c-b3, #b8b8b8)", color: "var(--c-t2, #374151)", cursor: "pointer" }}
-            title="Показать панель свойств">
+            title={rightAutoCollapsed
+              ? "Панель «Отображение» свёрнута, чтобы схеме хватило места на этом экране. Нажмите, чтобы показать"
+              : "Показать панель «Отображение»"}>
             <Icon name="PanelRightOpen" size={14} />
+            <span className="text-[10px] font-semibold uppercase tracking-wider"
+              style={{ writingMode: "vertical-rl", color: "var(--c-t3, #6b7280)" }}>Отображение</span>
           </button>
         )}
         {rightPanelOpen && (
-          <div className="w-[280px] flex-shrink-0 flex flex-col"
-            style={{ background: "var(--c-s2, #f8f7f4)", borderLeft: "1px solid var(--c-b2, #d5d1c8)" }}>
+          <div onMouseDown={startRightDrag} onDoubleClick={resetRightWidth}
+            className="w-1 flex-shrink-0 cursor-col-resize hover:bg-blue-400 active:bg-blue-500 transition-colors"
+            style={{ background: "#d0d0d0" }}
+            title="Перетащите, чтобы изменить ширину панели. Двойной клик — ширина по размеру окна" />
+        )}
+        {rightPanelOpen && (
+          <div className="flex-shrink-0 flex flex-col"
+            style={{ width: rightPanelWidth, background: "var(--c-s2, #f8f7f4)", borderLeft: "1px solid var(--c-b2, #d5d1c8)" }}>
             {/* Заголовок */}
             <div className="flex items-center gap-2 px-2.5 h-9 flex-shrink-0"
               style={{ background: "var(--c-s1, #fff)", borderBottom: "1px solid var(--c-b1, #e7e4dd)" }}>

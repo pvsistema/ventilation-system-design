@@ -1541,3 +1541,14 @@ select, input[type="text"], input[type="number"], input[type="search"], textarea
 .help-body thead tr { background: var(--c-s3, #f1efea) !important; }
 .help-body th { color: var(--c-t1, #1f2328); font-weight: 600; }
 .help-empty { color: var(--c-t3, #6b7280); }
+
+/* ─── Компактный режим (окна уже ~1400 px, см. lib/uiScale.ts) ───────────
+   Лента и панели чуть плотнее: на ноутбуке 1366×768 под схему остаётся
+   больше места, а подписи при этом читаются. */
+html.ui-compact .ribbon-body { height: 68px !important; padding-top: 3px !important; padding-bottom: 3px !important; }
+html.ui-compact .rb-btn { height: 54px !important; min-width: 48px !important; gap: 2px !important; }
+html.ui-compact .rb-tile { width: 26px; height: 26px; }
+html.ui-compact .rb-label { font-size: 9px !important; }
+html.ui-compact .tab-btn,
+html.ui-compact .tab-file { width: 80px !important; }
+html.ui-compact .tool-btn { padding-left: 6px; padding-right: 6px; }

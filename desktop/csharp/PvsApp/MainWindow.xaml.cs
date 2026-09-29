@@ -557,6 +557,9 @@ public partial class MainWindow : Window
     // говорит веб-части не показывать своё — иначе на новых сборках человек
     // увидел бы два одинаковых требования подряд.
     window.__PVS_SECURITY_GATE__ = 1;
+    // Оболочка умеет менять масштаб интерфейса (ZoomFactor WebView2) по
+    // команде 'set-zoom'. Без флага веб-часть масштабирует себя через CSS.
+    window.__PVS_ZOOM_API__ = 1;
 
     function sendCs(cmd, params) {
         try { window.chrome.webview.postMessage(JSON.stringify(Object.assign({ cmd: cmd }, params || {}))); }
@@ -858,6 +861,17 @@ public partial class MainWindow : Window
                 break;
             case "print-html":
                 _ = HandlePrintHtml(doc.RootElement);
+                break;
+            case "set-zoom":
+                // Масштаб интерфейса из «Настроек программы» (0,7…1,5).
+                // ZoomFactor масштабирует страницу целиком, включая шрифты и
+                // холсты, и при этом сохраняет чёткость на экранах высокой
+                // плотности — в отличие от CSS-масштаба.
+                if (doc.RootElement.TryGetProperty("zoom", out var z) && z.TryGetDouble(out var zv))
+                {
+                    double zoom = Math.Clamp(zv, 0.7, 1.5);
+                    Dispatcher.Invoke(() => { if (WebView?.CoreWebView2 != null) WebView.ZoomFactor = zoom; });
+                }
                 break;
             case "win-minimize":
                 Dispatcher.Invoke(() => WindowState = WindowState.Minimized);
