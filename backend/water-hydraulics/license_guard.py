@@ -40,6 +40,7 @@
 вызовами, а режим и список отозванных ключей держатся в памяти 5 минут.
 """
 import base64
+import hashlib
 import json
 import os
 import time
@@ -108,13 +109,111 @@ def _b64url_decode(s: str) -> bytes:
     return base64.b64decode(s + pad)
 
 
+# ── Запасная проверка подписи Ed25519 без внешних библиотек ─────────────────
+# В облаке подпись проверяет библиотека cryptography. В настольное ядро
+# (server.exe) она НЕ попадала: её нет в зависимостях сборки. Импорт падал,
+# ошибка глоталась, и ЛЮБОЙ ключ — в том числе действительный аварийный —
+# считался «неверная подпись». Итог: после обновления десктопа расчёт
+# отказывал с «Расчёт доступен только в полной версии», хотя окно лицензии
+# показывало действующий ключ. Чистая реализация по RFC 8032 работает везде.
+_ED_P = 2 ** 255 - 19
+_ED_L = 2 ** 252 + 27742317777372353535851937790883648493
+_ED_D = -121665 * pow(121666, _ED_P - 2, _ED_P) % _ED_P
+_ED_SQRT_M1 = pow(2, (_ED_P - 1) // 4, _ED_P)
+
+
+def _ed_add(P, Q):
+    p = _ED_P
+    A = (P[1] - P[0]) * (Q[1] - Q[0]) % p
+    B = (P[1] + P[0]) * (Q[1] + Q[0]) % p
+    C = 2 * P[3] * Q[3] * _ED_D % p
+    D = 2 * P[2] * Q[2] % p
+    E, F, G, H = B - A, D - C, D + C, B + A
+    return (E * F % p, G * H % p, F * G % p, E * H % p)
+
+
+def _ed_mul(s, P):
+    Q = (0, 1, 1, 0)
+    while s > 0:
+        if s & 1:
+            Q = _ed_add(Q, P)
+        P = _ed_add(P, P)
+        s >>= 1
+    return Q
+
+
+def _ed_recover_x(y, sign):
+    p = _ED_P
+    if y >= p:
+        return None
+    x2 = (y * y - 1) * pow(_ED_D * y * y + 1, p - 2, p) % p
+    if x2 == 0:
+        return None if sign else 0
+    x = pow(x2, (p + 3) // 8, p)
+    if (x * x - x2) % p != 0:
+        x = x * _ED_SQRT_M1 % p
+    if (x * x - x2) % p != 0:
+        return None
+    if (x & 1) != sign:
+        x = p - x
+    return x
+
+
+def _ed_decompress(b):
+    if len(b) != 32:
+        return None
+    y = int.from_bytes(b, "little")
+    sign = y >> 255
+    y &= (1 << 255) - 1
+    x = _ed_recover_x(y, sign)
+    if x is None:
+        return None
+    return (x, y, 1, x * y % _ED_P)
+
+
+_ED_GY = 4 * pow(5, _ED_P - 2, _ED_P) % _ED_P
+_ED_GX = _ed_recover_x(_ED_GY, 0)
+_ED_G = (_ED_GX, _ED_GY, 1, _ED_GX * _ED_GY % _ED_P)
+
+
+def _ed25519_verify_py(public: bytes, msg: bytes, sig: bytes) -> bool:
+    """Проверка подписи Ed25519 по RFC 8032 на чистом Python (запасной путь)."""
+    if len(public) != 32 or len(sig) != 64:
+        return False
+    A = _ed_decompress(public)
+    R = _ed_decompress(sig[:32])
+    if A is None or R is None:
+        return False
+    s = int.from_bytes(sig[32:], "little")
+    if s >= _ED_L:
+        return False
+    h = int.from_bytes(hashlib.sha512(sig[:32] + public + msg).digest(), "little") % _ED_L
+    p = _ED_P
+    left = _ed_mul(s, _ED_G)
+    right = _ed_add(R, _ed_mul(h, A))
+    return ((left[0] * right[2] - right[0] * left[2]) % p == 0
+            and (left[1] * right[2] - right[1] * left[2]) % p == 0)
+
+
+def _ed25519_verify(public: bytes, msg: bytes, sig: bytes) -> bool:
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+    except Exception:
+        return _ed25519_verify_py(public, msg, sig)
+    try:
+        Ed25519PublicKey.from_public_bytes(public).verify(sig, msg)
+        return True
+    except Exception:
+        return False
+
+
 def _verify_sig(payload_b64: str, sig_b64: str) -> Optional[dict]:
     """Проверяет подпись Ed25519 и возвращает содержимое документа."""
     try:
-        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
-        pub = Ed25519PublicKey.from_public_bytes(_b64url_decode(PUBLIC_KEY_B64))
         payload_bytes = _b64url_decode(payload_b64)
-        pub.verify(_b64url_decode(sig_b64), payload_bytes)
+        if not _ed25519_verify(_b64url_decode(PUBLIC_KEY_B64), payload_bytes,
+                               _b64url_decode(sig_b64)):
+            return None
         return json.loads(payload_bytes.decode("utf-8"))
     except Exception:
         return None
