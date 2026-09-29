@@ -173,9 +173,17 @@ void main() {
 
 // ── Горящая техника ─────────────────────────────────────────────────────────
 
+/** Материал машины: glow — насколько светится от огня, charK — насколько обугливается. */
+interface VehicleMat {
+  m: THREE.MeshLambertMaterial;
+  glow: number;
+  base: THREE.Color;
+  charK: number;
+}
+
 interface VehicleParts {
   group: THREE.Group;
-  bodyMats: THREE.MeshLambertMaterial[];
+  parts: VehicleMat[];
   /** Длина, ширина, высота машины в метрах (после вписывания в сечение). */
   L: number; W: number; H: number;
 }
@@ -191,10 +199,22 @@ function buildVehicle(maxW: number, maxH: number, geoms: THREE.BufferGeometry[])
   const L = L0 * s, W = W0 * s, H = H0 * s;
 
   const g = new THREE.Group();
-  const yellow = new THREE.MeshLambertMaterial({ color: 0xe8a317, emissive: 0xff4a00, emissiveIntensity: 0 });
-  const dark = new THREE.MeshLambertMaterial({ color: 0x2b2f33, emissive: 0xff3a00, emissiveIntensity: 0 });
-  const glass = new THREE.MeshLambertMaterial({ color: 0x9ec3d0, emissive: 0xff5a00, emissiveIntensity: 0 });
-  const bodyMats = [yellow, glass];
+  const parts: VehicleMat[] = [];
+  const mk = (color: number, glow: number, charK: number) => {
+    const m = new THREE.MeshLambertMaterial({ color, emissive: 0xff5a10, emissiveIntensity: 0 });
+    parts.push({ m, glow, base: new THREE.Color(color), charK });
+    return m;
+  };
+  // Окраска ПДМ: жёлтый корпус, чёрные шины, серые диски/ковш, тёмная рама.
+  const yellow = mk(0xf2b31b, 0.06, 0.55);
+  const engine = mk(0xe8a317, 0.35, 0.8);     // моторный отсек — очаг, сильнее светится
+  const frame = mk(0x2a2d31, 0.02, 0.2);
+  const steel = mk(0x6b7076, 0.03, 0.4);      // ковш, стрела
+  const tire = mk(0x111111, 0, 0);            // шины — чёрные, не светятся
+  const rim = mk(0x9aa0a6, 0.02, 0.5);
+  const glass = mk(0x86b6c8, 0.12, 0.6);
+  const lamp = mk(0xfff3c0, 0.05, 0.3);
+  const stripe = mk(0x1b1b1b, 0, 0);          // чёрно-жёлтые полосы на бампере
 
   const add = (geo: THREE.BufferGeometry, mat: THREE.Material, x: number, y: number, z = 0) => {
     const m = new THREE.Mesh(geo, mat);
@@ -205,29 +225,62 @@ function buildVehicle(maxW: number, maxH: number, geoms: THREE.BufferGeometry[])
   };
 
   const wheelR = 0.62 * s;
-  // Рама и кузов
-  add(new THREE.BoxGeometry(L * 0.8, H * 0.28, W * 0.86), yellow, -L * 0.02, wheelR + H * 0.1);
+  const tireW = W * 0.22;
+  const bodyY = wheelR * 0.95;
+  // Рама (тёмная), видна между колёсами
+  add(new THREE.BoxGeometry(L * 0.84, H * 0.12, W * 0.5), frame, -L * 0.02, bodyY);
+  // Задняя полурама — корпус над задним мостом
+  add(new THREE.BoxGeometry(L * 0.4, H * 0.2, W * 0.9), yellow, -L * 0.27, bodyY + H * 0.14);
   // Моторный отсек (корма, -X) — здесь начинается возгорание
-  add(new THREE.BoxGeometry(L * 0.32, H * 0.36, W * 0.8), yellow, -L * 0.32, wheelR + H * 0.38);
-  // Кабина
-  add(new THREE.BoxGeometry(L * 0.14, H * 0.32, W * 0.34), glass, -L * 0.02, wheelR + H * 0.48, W * 0.22);
-  add(new THREE.BoxGeometry(L * 0.16, H * 0.04, W * 0.4), dark, -L * 0.02, wheelR + H * 0.66, W * 0.22);
-  // Стрела и ковш (нос, +X)
-  add(new THREE.BoxGeometry(L * 0.22, H * 0.1, W * 0.5), yellow, L * 0.3, wheelR + H * 0.22);
-  add(new THREE.BoxGeometry(L * 0.14, H * 0.34, W * 0.96), yellow, L * 0.43, H * 0.2);
-  // Колёса
-  const wg = new THREE.CylinderGeometry(wheelR, wheelR, W * 0.22, 16);
+  add(new THREE.BoxGeometry(L * 0.3, H * 0.3, W * 0.78), engine, -L * 0.3, bodyY + H * 0.39);
+  // Решётка радиатора на корме
+  add(new THREE.BoxGeometry(L * 0.015, H * 0.24, W * 0.6), frame, -L * 0.455, bodyY + H * 0.37);
+  // Задний бампер с полосами
+  add(new THREE.BoxGeometry(L * 0.03, H * 0.1, W * 0.92), stripe, -L * 0.47, bodyY + H * 0.1);
+  // Шарнир сочленения
+  add(new THREE.BoxGeometry(L * 0.06, H * 0.14, W * 0.3), frame, -L * 0.04, bodyY + H * 0.08);
+  // Передняя полурама
+  add(new THREE.BoxGeometry(L * 0.34, H * 0.18, W * 0.86), yellow, L * 0.16, bodyY + H * 0.12);
+  // Кабина оператора (сбоку, посередине машины)
+  add(new THREE.BoxGeometry(L * 0.14, H * 0.3, W * 0.36), yellow, -L * 0.05, bodyY + H * 0.36, W * 0.24);
+  add(new THREE.BoxGeometry(L * 0.145, H * 0.14, W * 0.365), glass, -L * 0.05, bodyY + H * 0.44, W * 0.24);
+  // Защитная крыша кабины (ROPS)
+  add(new THREE.BoxGeometry(L * 0.18, H * 0.04, W * 0.42), frame, -L * 0.05, bodyY + H * 0.54, W * 0.24);
+  for (const dx of [-L * 0.08, L * 0.02]) {
+    add(new THREE.BoxGeometry(L * 0.012, H * 0.2, W * 0.02), frame, dx - L * 0.01, bodyY + H * 0.44, W * 0.43);
+  }
+  // Фары
+  for (const z of [-W * 0.3, W * 0.3]) {
+    add(new THREE.BoxGeometry(L * 0.01, H * 0.05, W * 0.08), lamp, L * 0.335, bodyY + H * 0.2, z);
+  }
+  // Стрела и ковш (нос, +X) — сталь
+  for (const z of [-W * 0.28, W * 0.28]) {
+    add(new THREE.BoxGeometry(L * 0.2, H * 0.07, W * 0.08), steel, L * 0.36, bodyY + H * 0.16, z);
+  }
+  add(new THREE.BoxGeometry(L * 0.13, H * 0.05, W * 0.98), steel, L * 0.45, H * 0.04);        // днище ковша
+  add(new THREE.BoxGeometry(L * 0.02, H * 0.32, W * 0.98), steel, L * 0.39, H * 0.2);         // задняя стенка
+  for (const z of [-W * 0.48, W * 0.48]) {
+    add(new THREE.BoxGeometry(L * 0.13, H * 0.26, W * 0.02), steel, L * 0.45, H * 0.16, z);   // щёки
+  }
+  add(new THREE.BoxGeometry(L * 0.02, H * 0.03, W * 0.98), frame, L * 0.515, H * 0.03);       // режущая кромка
+  // Колёса: чёрная шина + серый диск + ступица
+  const wg = new THREE.CylinderGeometry(wheelR, wheelR, tireW, 20);
   wg.rotateX(Math.PI / 2);
-  geoms.push(wg);
-  for (const x of [-L * 0.3, L * 0.22]) {
+  const rg = new THREE.CylinderGeometry(wheelR * 0.55, wheelR * 0.55, tireW * 1.04, 16);
+  rg.rotateX(Math.PI / 2);
+  const hg = new THREE.CylinderGeometry(wheelR * 0.2, wheelR * 0.2, tireW * 1.12, 10);
+  hg.rotateX(Math.PI / 2);
+  geoms.push(wg, rg, hg);
+  for (const x of [-L * 0.3, L * 0.2]) {
     for (const z of [-W * 0.4, W * 0.4]) {
-      const m = new THREE.Mesh(wg, dark);
-      m.position.set(x, wheelR, z);
-      g.add(m);
+      for (const [geo, mat] of [[wg, tire], [rg, rim], [hg, frame]] as const) {
+        const m = new THREE.Mesh(geo, mat);
+        m.position.set(x, wheelR, z);
+        g.add(m);
+      }
     }
   }
-  bodyMats.push(dark);
-  return { group: g, bodyMats, L, W, H };
+  return { group: g, parts, L, W, H };
 }
 
 // ── Сборка слоя ──────────────────────────────────────────────────────────────
@@ -270,7 +323,7 @@ export function buildMineFire(input: FireInput): MineFire | null {
   interface FireObj {
     flameU: Record<string, THREE.IUniform>;
     light: THREE.PointLight;
-    bodyMats: THREE.MeshLambertMaterial[];
+    parts: VehicleMat[];
     hasVehicle: boolean;
   }
   const fires: FireObj[] = [];
@@ -299,7 +352,7 @@ export function buildMineFire(input: FireInput): MineFire | null {
     const flowSign = (b.flow ?? 0) < 0 ? -1 : 1;
     const v = Math.abs(b.velocity ?? 0);
 
-    let bodyMats: THREE.MeshLambertMaterial[] = [];
+    let parts: VehicleMat[] = [];
     let flameFloor = box.u0 + 0.1;
     let flameW = Math.min(box.w * 0.6, 2.5);
     let baseX = 0;
@@ -309,8 +362,8 @@ export function buildMineFire(input: FireInput): MineFire | null {
       // Нос машины — по струе: так ПДМ обычно и стоит в выработке.
       if (flowSign < 0) veh.group.rotation.y = Math.PI;
       fg.add(veh.group);
-      bodyMats = veh.bodyMats;
-      mats.push(...new Set(veh.bodyMats));
+      parts = veh.parts;
+      mats.push(...veh.parts.map(p => p.m));
       flameFloor = box.u0 + veh.H * 0.55;
       flameW = veh.W * 0.95;
       // Возгорание — в моторном отсеке (корма, против струи).
@@ -355,7 +408,7 @@ export function buildMineFire(input: FireInput): MineFire | null {
     light.position.set(0, flameFloor + roomH * 0.4, 0);
     fg.add(light);
 
-    fires.push({ flameU, light, bodyMats, hasVehicle: isVehicle });
+    fires.push({ flameU, light, parts, hasVehicle: isVehicle });
 
     // Шлейф дыма у очага: подъём под кровлю и уход по струе на 10 высот.
     const plumeLen = Math.min(1, (box.h * 10 * kx) / e.len);
@@ -443,7 +496,6 @@ export function buildMineFire(input: FireInput): MineFire | null {
   }
 
   const charColor = new THREE.Color(0x1d1d1d);
-  const baseYellow = new THREE.Color(0xe8a317);
 
   const setTime = (seconds: number, pxPerUnit: number) => {
     const I = intensityNow();
@@ -454,10 +506,10 @@ export function buildMineFire(input: FireInput): MineFire | null {
       f.flameU.uPx.value = pxPerUnit;
       f.light.intensity = (0.6 + 2.6 * I) * flicker;
       // Корпус обугливается по мере развития пожара и светится изнутри.
-      f.bodyMats.forEach((m, i) => {
-        m.emissiveIntensity = (0.15 + 0.55 * I) * flicker;
-        if (i === 0) m.color.copy(baseYellow).lerp(charColor, Math.min(1, I * 1.1));
-      });
+      for (const p of f.parts) {
+        p.m.emissiveIntensity = p.glow * (0.3 + 0.7 * I) * flicker;
+        p.m.color.copy(p.base).lerp(charColor, Math.min(1, I * p.charK));
+      }
     }
     smokeU.uTime.value = seconds;
     smokeU.uPx.value = pxPerUnit;
