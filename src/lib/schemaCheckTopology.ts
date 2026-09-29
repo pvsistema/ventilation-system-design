@@ -12,7 +12,7 @@
 // из общих ячеек — это O(n) вместо O(n²) на схемах в тысячи выработок.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { TopoNode, TopoBranch } from "./topology";
-import { type BranchNote, type NodeNote, type GroupNote, pushCapped, fmtNum } from "./schemaCheckTypes";
+import { type BranchNote, type GroupNote, pushCapped, fmtNum } from "./schemaCheckTypes";
 
 export interface TopologyCheckResult {
   /** Ветвь начинается и заканчивается в одном узле. */
@@ -23,8 +23,8 @@ export interface TopologyCheckResult {
   noActiveFan: boolean;
   /** Вентилятор стоит в тупике / в отрыве от сети. */
   deadFans: BranchNote[];
-  /** Тупиковые узлы без проветривания. */
-  deadEnds: NodeNote[];
+  /** Тупики без проветривания длиннее порога (весь тупик до сопряжения). */
+  deadEnds: GroupNote[];
   /** Узел лежит на оси чужой ветви, но не соединён с ней. */
   tJunctions: GroupNote[];
   /** Ветви пересекаются в плане на одной отметке без общего узла. */
@@ -37,6 +37,8 @@ export interface TopologyCheckOptions {
   onAxisTolerance?: number;
   /** м — разница отметок, при которой пересечение считается «на одном уровне» */
   crossingZTolerance?: number;
+  /** м — тупики не длиннее этого проветриваются диффузией (ФНИП № 505: 10 м) */
+  deadEndMinLength?: number;
 }
 
 const CELL = 50; // м — шаг сетки для геометрического поиска
@@ -127,17 +129,63 @@ export function checkTopology(
   // ── Тупики без проветривания ─────────────────────────────────────────────
   // Узел с одной ветвью — забой или недостроенная выработка. Воздух в такой
   // тупик в модели не пойдёт (расход = 0), если его не проветривает ВМП.
-  const deadEnds: NodeNote[] = [];
+  // Тупик может состоять из нескольких ветвей, соединённых промежуточными
+  // узлами (узел с двумя ветвями) — идём от забоя до первого сопряжения
+  // (узел с 3+ ветвями) и суммируем длину всего тупика.
+  // По ФНИП (приказ Ростехнадзора № 505) тупики длиной до 10 м
+  // проветриваются за счёт диффузии — в проверку их не включаем.
+  const minLen = opts.deadEndMinLength ?? 10;
+  const deadEnds: GroupNote[] = [];
+  // Нити вентрубопровода в топологию тупика не входят, но если труба
+  // заходит в тупик — он проветривается.
   const branchesOf = new Map<string, TopoBranch[]>();
+  const pipeNodes = new Set<string>();
   for (const b of valid) {
+    if (b.fromId === b.toId) continue;
+    if (isAuxLine(b)) { pipeNodes.add(b.fromId); pipeNodes.add(b.toId); continue; }
     (branchesOf.get(b.fromId) ?? branchesOf.set(b.fromId, []).get(b.fromId)!).push(b);
-    if (b.toId !== b.fromId) (branchesOf.get(b.toId) ?? branchesOf.set(b.toId, []).get(b.toId)!).push(b);
+    (branchesOf.get(b.toId) ?? branchesOf.set(b.toId, []).get(b.toId)!).push(b);
   }
+  const branchLen = (b: TopoBranch) => {
+    if (b.length > 0) return b.length;
+    const a = nodeById.get(b.fromId)!, c = nodeById.get(b.toId)!;
+    return Math.hypot(c.x - a.x, c.y - a.y, c.z - a.z);
+  };
+  const walked = new Set<string>();
   for (const n of nodes) {
-    if (degree.get(n.id) !== 1 || n.atmosphereLink) continue;
-    const b = branchesOf.get(n.id)?.[0];
-    if (!b || b.isDead || b.hasVentPipe || b.isVentPipeBranch || b.hasFan) continue;
-    push(deadEnds, { node: n, note: `Тупик выработки «${b.type || `ветвь ${b.id}`}» — расход в нём будет 0` });
+    const own = branchesOf.get(n.id);
+    if (!own || own.length !== 1 || n.atmosphereLink) continue;
+    if (walked.has(own[0].id)) continue; // изолированная цепочка уже учтена с другого конца
+    const chainB: TopoBranch[] = [];
+    const chainN: string[] = [n.id];
+    let cur = n.id, prev: TopoBranch | null = null, total = 0, endNode = n.id;
+    let ventilated = pipeNodes.has(n.id);
+    for (;;) {
+      const next = (branchesOf.get(cur) ?? []).find((b) => b !== prev);
+      if (!next || walked.has(next.id)) break;
+      walked.add(next.id);
+      chainB.push(next);
+      total += branchLen(next);
+      if (next.isDead || next.hasVentPipe || next.hasFan) ventilated = true;
+      const other = next.fromId === cur ? next.toId : next.fromId;
+      endNode = other;
+      if (pipeNodes.has(other)) ventilated = true;
+      const otherN = nodeById.get(other);
+      if (otherN?.atmosphereLink || (branchesOf.get(other)?.length ?? 0) !== 2) break;
+      chainN.push(other);
+      prev = next; cur = other;
+      if (chainB.length > 10000) break;
+    }
+    if (ventilated || chainB.length === 0 || total <= minLen) continue;
+    const endN = nodeById.get(endNode);
+    const type = chainB[0].type || `ветвь ${chainB[0].id}`;
+    push(deadEnds, {
+      title: `Узел ${n.number || n.id}${n.name ? ` (${n.name})` : ""}`,
+      note: `Тупик выработки «${type}» длиной ${fmtNum(total, 1)} м` +
+        (chainB.length > 1 ? ` (${chainB.length} ветвей)` : "") +
+        ` до сопряжения в узле ${endN?.number || endNode} — расход в нём будет 0`,
+      nodeIds: chainN, branchIds: chainB.map((b) => b.id),
+    });
   }
 
   // ── Геометрия: сетка ветвей ──────────────────────────────────────────────
