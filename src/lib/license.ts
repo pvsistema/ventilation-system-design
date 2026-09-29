@@ -523,8 +523,12 @@ function getLegacyHwComponents(): string[] {
 // ── Настоящий аппаратный ID машины (только десктоп) ──────────────────────────
 // server.exe отдаёт реальный machine-id ОС (MachineGuid/UUID платы,
 // /etc/machine-id) и имя компьютера. В браузере эндпоинта нет — вернём пусто.
+// Успешный ответ ядра запоминаем на время сеанса: номер ОС не меняется, а
+// отпечаток теперь считается из него при каждом обращении (см. getMachineInfo).
+let _desktopMachine: { machineId: string; hostname: string } | null = null;
 async function getDesktopMachine(): Promise<{ machineId: string; hostname: string }> {
   if (!IS_DESKTOP) return { machineId: "", hostname: "" };
+  if (_desktopMachine) return _desktopMachine;
   // Локальное ядро (server.exe) может ещё догружаться после старта окна.
   // Один неудачный запрос раньше означал machineId = "" → отпечаток считался
   // по браузерным характеристикам и НЕ совпадал с уже занятым местом: программа
@@ -535,7 +539,8 @@ async function getDesktopMachine(): Promise<{ machineId: string; hostname: strin
       const data = await res.json();
       const machineId = data?.machineId ? String(data.machineId) : "";
       if (machineId) {
-        return { machineId, hostname: data?.hostname ? String(data.hostname) : "" };
+        _desktopMachine = { machineId, hostname: data?.hostname ? String(data.hostname) : "" };
+        return _desktopMachine;
       }
     } catch { /* ядро ещё не поднялось — пробуем снова */ }
     await new Promise((r) => setTimeout(r, 500));
@@ -548,6 +553,17 @@ async function getDesktopMachine(): Promise<{ machineId: string; hostname: strin
 //   Веб:     железо = браузерные характеристики (screen/CPU/ОС/таймзона).
 //   Десктоп: железо = настоящий machine-id ОС (стабильнее, привязка к ПК).
 export async function getMachineInfo(): Promise<MachineInfo> {
+  // ДЕСКТОП: отпечаток ВСЕГДА считаем заново из настоящего machine-id ОС.
+  // Кэш отпечатка лежит в том же файле, что и лицензия (license_store.json),
+  // и при копировании файла на другой ПК чужой компьютер получал отпечаток
+  // исходного — подпись лицензии сходилась, и лицензия переносилась без
+  // места в лимите. machine-id ядро отдаёт мгновенно, кэш здесь не нужен.
+  // Кэш используем только если ядро не ответило (временный сбой при старте).
+  if (IS_DESKTOP) {
+    const { machineId } = await getDesktopMachine();
+    if (machineId) return computeMachineInfo(machineId);
+  }
+
   // Кэш на 30 дней
   try {
     const cached = storage.get(HW_FP_KEY);
@@ -578,7 +594,13 @@ export async function getMachineInfo(): Promise<MachineInfo> {
     }
   } catch { /* ignore */ }
 
-  const { machineId, hostname: pcName } = await getDesktopMachine();
+  // В десктопе ядро уже опрошено выше (и не ответило) — повторно не ждём.
+  return computeMachineInfo("");
+}
+
+// Полный расчёт отпечатка. machineId — настоящий номер ОС (десктоп) или "".
+async function computeMachineInfo(machineId: string): Promise<MachineInfo> {
+  const pcName = machineId ? (_desktopMachine?.hostname ?? "") : "";
 
   // Основа отпечатка: в десктопе — настоящий machine-id ОС; иначе — браузерное железо.
   // В десктопе отпечаток строим ТОЛЬКО из machine-id ОС. Раньше к нему
@@ -968,7 +990,30 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
   } finally {
     clearTimeout(timer);
   }
-  const data = await res.json();
+
+  // НЕТ СВЯЗИ ≠ НЕТ ЛИЦЕНЗИИ.
+  // В десктопе запрос идёт через локальное ядро: без интернета оно не рвёт
+  // соединение, а отвечает 503 {offline:true}. Раньше такой ответ читался как
+  // «лицензии нет», сохранённая лицензия затиралась, и программа на руднике
+  // уходила в демо при каждой плановой проверке. Теперь это ошибка связи —
+  // вызывающий код остаётся на сохранённой лицензии (14 суток без сети).
+  // То же для любых 5xx: сбой сервера не повод отбирать лицензию.
+  if (!res.ok && (res.status >= 500 || res.status === 0)) {
+    throw new Error("network: license server unavailable");
+  }
+  let data: Record<string, unknown> & {
+    licensed?: boolean; key?: string; owner?: string; seats?: LicenseInfo["seats"];
+    offline?: boolean; days_left?: number; expires_at?: string; reason?: string;
+    fingerprint_updated?: boolean; signed?: { payload?: string; sig?: string };
+  };
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error("network: bad response");
+  }
+  if (data && (data as { offline?: boolean }).offline && !data.licensed) {
+    throw new Error("network: offline");
+  }
 
   // Сервер ответил — значит есть связь, и это единственный надёжный источник
   // времени. Переставляем отметку часов на текущий момент: так снимается
@@ -995,7 +1040,8 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
     offline:   !!data.offline,
     daysLeft:  data.days_left,
     expiresAt: data.expires_at ?? undefined,
-    signed:    data.signed && data.signed.payload && data.signed.sig ? data.signed : undefined,
+    signed:    data.signed?.payload && data.signed?.sig
+      ? { payload: data.signed.payload, sig: data.signed.sig } : undefined,
     // Планируем следующее обращение к серверу по реальному сроку ключа:
     // годовой ключ — раз в неделю, истекающий — каждый запуск.
     nextCheckAt: data.licensed ? calcNextCheckAt(data.expires_at) : undefined,
