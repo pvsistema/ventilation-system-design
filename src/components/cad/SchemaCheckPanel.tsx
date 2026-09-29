@@ -705,6 +705,36 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       ),
     },
     {
+      id: "bulkheadFailure", group: "Ветви", icon: "Bomb", level: "warn", count: method.bulkheadFailure.length,
+      title: "Не задано давление разрушения перемычки",
+      body: () => (
+        <>
+          <Hint>Давление разрушения нужно для расчёта взрыва и выбора взрывоустойчивых перемычек. Если оно не задано, расчёт берёт типовое значение по материалу (бетон 0,08, кирпич 0,04, металл 0,02, дерево 0,01 МПа) — перемычка может оказаться прочнее или слабее фактической. Задайте значение в свойствах перемычки или выберите её из справочника.</Hint>
+          {branchNotes(method.bulkheadFailure, "Давление разрушения задано у всех перемычек")}
+        </>
+      ),
+    },
+    {
+      id: "positionDupes", group: "План ликвидации аварий", icon: "ListOrdered", level: "warn", count: method.positionDupes.length,
+      title: "Повторяющиеся номера позиций ПЛА",
+      body: () => (
+        <>
+          <Hint>Разные позиции (другое название или вид аварии) имеют один номер — в оперативной части ПЛА ссылки на позицию станут неоднозначными. Копии одной позиции с тем же названием допустимы и не считаются ошибкой. Перенумеруйте позиции во вкладке «Позиции».</Hint>
+          {method.positionsTotal === 0 ? <Empty text="На схеме нет позиций ПЛА" /> : groupNotes(method.positionDupes, "Номера позиций не повторяются")}
+        </>
+      ),
+    },
+    {
+      id: "branchNoPosition", group: "План ликвидации аварий", icon: "MapPinOff", level: "info", count: method.branchNoPosition.length,
+      title: "Выработки без позиции ПЛА",
+      body: () => (
+        <>
+          <Hint>Каждая выработка должна входить хотя бы в одну позицию плана ликвидации аварий — иначе для аварии в ней не определены действия. Привяжите выработки к позициям во вкладке «Позиции» (кнопка привязки ветвей). Нити вентрубопроводов и ветви утечек не проверяются.</Hint>
+          {method.positionsTotal === 0 ? <Empty text="На схеме нет позиций ПЛА — проверка не выполнялась" /> : branchNotes(method.branchNoPosition, "Все выработки входят в позиции")}
+        </>
+      ),
+    },
+    {
       id: "brokenBranch", group: "Ветви", icon: "Unlink", level: "error", count: r.brokenBranches.length,
       title: "Ветвь ссылается на удалённый узел",
       body: () => (
@@ -891,7 +921,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
   const found = checks.filter((c) => c.count > 0).length;
   // Раскрытую проверку показываем всегда — даже пустую: её мог открыть расчёт.
   const isVisible = (c: Check) => showAll || c.count > 0 || c.id === openCheck;
-  const GROUP_ORDER = ["Расчёт сети", "Связность сети", "Ветви", "Параметры ветвей", "Узлы", "Результаты расчёта"];
+  const GROUP_ORDER = ["Расчёт сети", "Связность сети", "Ветви", "Параметры ветвей", "Узлы", "Результаты расчёта", "План ликвидации аварий"];
   const LEVEL_ORDER: Record<Level, number> = { error: 0, warn: 1, info: 2 };
   const buildSection = (list: Check[]) => {
     const vis = list.filter(isVisible);

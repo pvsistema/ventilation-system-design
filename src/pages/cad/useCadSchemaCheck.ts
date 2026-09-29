@@ -20,6 +20,7 @@ import type { TopoNode, TopoBranch } from "@/lib/topology";
 import type { VentNorms, VentSection } from "@/lib/ventSections";
 import type { SchemaSymbol } from "./cadTypes";
 import type { BulkheadRef } from "@/lib/bulkheadResistance";
+import type { Position } from "@/lib/positions";
 import { buildBulkheadInfoMap } from "@/lib/branchBulkheadInfo";
 import type { SideTab } from "./cadTypes";
 
@@ -36,6 +37,7 @@ export type CheckTab =
   | "highV" | "lowV" | "fanAgainst" | "fanRange" | "recirc" | "faceDeficit" | "leakage" | "leakNorm"
   // По методике проверки моделей ВГСЧ
   | "measureMismatch" | "controlAlpha" | "alphaJump" | "areaJump" | "surfaceMulti" | "bulkheadNorm"
+  | "bulkheadFailure" | "positionDupes" | "branchNoPosition"
   // "solveBlock" — участки, о которые споткнулся расчёт сети. В отличие от
   // остальных вкладок, они не находятся статической проверкой схемы, а
   // приходят в диагностике от самого расчёта.
@@ -62,6 +64,8 @@ export function useCadSchemaCheck(
   symbols: SchemaSymbol[] = [],
   /** Справочник перемычек рудника — для R «по проекту». */
   bulkheadRefs: BulkheadRef[] = [],
+  /** Позиции ПЛА — для проверки нумерации и охвата выработок. */
+  positions: Position[] = [],
 ) {
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [searchScope, setSearchScope] = useState<SearchScope>("all");
@@ -125,9 +129,10 @@ export function useCadSchemaCheck(
         isolMaxR: s.isolMaxR,
         bulkheads,
         symbols,
+        positions,
       }),
     };
-  }, [activeSide, nodes, branches, checkSettings, solved, norms, sections, symbols, bulkheadRefs]);
+  }, [activeSide, nodes, branches, checkSettings, solved, norms, sections, symbols, bulkheadRefs, positions]);
 
   return {
     searchQuery, setSearchQuery,

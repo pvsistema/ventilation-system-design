@@ -2264,7 +2264,7 @@ export function useCadPage() {
     checkBulkRThreshold, setCheckBulkRThreshold,
     checkSettings, setCheckSettings,
     schemaCheckResult,
-  } = useCadSchemaCheck(activeSide, nodes, branches, solveResult != null, ventNorms, ventSections, schemaSymbols, mineBulkheads);
+  } = useCadSchemaCheck(activeSide, nodes, branches, solveResult != null, ventNorms, ventSections, schemaSymbols, mineBulkheads, positions);
 
   // ─── ПРОВЕРКА СХЕМЫ ПОСЛЕ ИМПОРТА ───────────────────────────────────
   // Импорт из АэроСети, Вентиляции 2.0, Ventsim, DXF и Excel чаще всего и

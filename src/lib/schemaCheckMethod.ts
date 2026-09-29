@@ -12,13 +12,17 @@
 //     местное сопротивление или ошибка R; сечения соседних ветвей,
 //     отличающиеся более чем на 10 %, — сверить с документацией;
 //   • поверхностный узел соединён более чем с одной ветвью (п. 4.1.1);
-//   • сопротивление вентсооружений по видам (п. 4.1.6).
+//   • сопротивление вентсооружений по видам (п. 4.1.6);
+//   • давление разрушения перемычек — задано ли оно (нужно для расчёта взрыва);
+//   • позиции ПЛА: повторяющиеся номера и выработки, не вошедшие ни в одну позицию.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch } from "./topology";
 import { type BranchNote, type NodeNote, type GroupNote, pushCapped, fmtNum } from "./schemaCheckTypes";
 import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
-import { BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS } from "./schemaSymbols";
+import { BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, LEGEND_TYPES } from "./schemaSymbols";
+import { defaultFailureMPa } from "./blastBarriers";
+import type { Position } from "./positions";
 
 /** g: перевод кгс·с²/м⁸ (кМюрг) в Н·с²/м⁸ и кгс·с²/м⁴ в Н·с²/м⁴. */
 const G = 9.81;
@@ -44,6 +48,14 @@ export interface MethodCheckResult {
   surfaceMulti: NodeNote[];
   /** Сопротивление вентсооружения вне нормы для своего вида. */
   bulkheadNorm: BranchNote[];
+  /** Перемычки без заданного давления разрушения (или с неправдоподобным). */
+  bulkheadFailure: BranchNote[];
+  /** Всего позиций ПЛА на схеме. */
+  positionsTotal: number;
+  /** Разные позиции ПЛА с одинаковым номером. */
+  positionDupes: GroupNote[];
+  /** Выработки, не вошедшие ни в одну позицию ПЛА. */
+  branchNoPosition: BranchNote[];
   truncated: boolean;
 }
 
@@ -63,6 +75,8 @@ export interface MethodCheckOptions {
   isolMaxR?: number;
   bulkheads?: Map<string, BranchBulkheadInfo>;
   symbols?: SchemaSymbol[];
+  /** Позиции плана ликвидации аварий. */
+  positions?: Position[];
 }
 
 /**
@@ -228,8 +242,79 @@ export function checkMethod(
     }
   }
 
+  // ── Давление разрушения перемычек ───────────────────────────────────────
+  // Без него расчёт взрыва подставляет значение «по материалу» — перемычка
+  // может оказаться прочнее или слабее фактической. Открытые проёмы и окна
+  // во всё сечение волну не держат — их не проверяем.
+  const bulkheadFailure: BranchNote[] = [];
+  const symName = (typeId: string) => LEGEND_TYPES.find((l) => l.id === typeId)?.name ?? "Перемычка";
+  const symsByBranch = new Map<string, SchemaSymbol[]>();
+  for (const s of symbols) {
+    if (!s.branchId || !BULKHEAD_SYMBOL_IDS.has(s.typeId)) continue;
+    (symsByBranch.get(s.branchId) ?? symsByBranch.set(s.branchId, []).get(s.branchId)!).push(s);
+  }
+  for (const b of branches) {
+    const syms = symsByBranch.get(b.id) ?? [];
+    const area = b.area ?? 0;
+    const branchFp = b.bulkheadFailurePressure ?? 0;
+    const probs: string[] = [];
+    for (const s of syms) {
+      const win = s.bkWindowArea ?? 0;
+      if (OPEN_DOOR_IDS.has(s.typeId) && win <= 0.001) continue;
+      if (win > 0.001 && area > 0 && win >= area * 0.999) continue;
+      const fp = (s.bkFailurePressure ?? 0) > 0 ? (s.bkFailurePressure as number) : branchFp;
+      const name = s.bkBulkheadName || symName(s.typeId);
+      if (!(fp > 0)) probs.push(`${name}: не задано — в расчёте взрыва ${fmtNum(defaultFailureMPa(s.typeId), 3)} МПа по материалу`);
+      else if (fp > 5) probs.push(`${name}: ${fmtNum(fp, 2)} МПа — неправдоподобно много (проверьте единицы: МПа, не кПа)`);
+    }
+    if (syms.length === 0 && b.hasBulkhead && !(branchFp > 0)) {
+      probs.push("Перемычка ветви: не задано — в расчёте взрыва 0,16 МПа");
+    }
+    if (probs.length > 0) push(bulkheadFailure, { branch: b, note: probs.join("; ") });
+  }
+
+  // ── Позиции ПЛА ─────────────────────────────────────────────────────────
+  const positions = opts.positions ?? [];
+  const positionDupes: GroupNote[] = [];
+  const branchNoPosition: BranchNote[] = [];
+  if (positions.length > 0) {
+    // Копии одной позиции (тот же номер и то же название) допустимы —
+    // это одна позиция, показанная в нескольких местах схемы.
+    const byNum = new Map<number, Position[]>();
+    for (const p of positions) (byNum.get(p.number) ?? byNum.set(p.number, []).get(p.number)!).push(p);
+    const key = (p: Position) => `${(p.name || "").trim().toLowerCase()}|${p.accidentType}`;
+    for (const [num, list] of [...byNum].sort((a, b) => a[0] - b[0])) {
+      const distinct = new Set(list.map(key));
+      if (distinct.size < 2) continue;
+      const withBr = list.find((p) => p.branchIds.length > 0 || p.leaderBranchId);
+      const brIds = withBr ? (withBr.branchIds.length > 0 ? withBr.branchIds : [withBr.leaderBranchId as string]) : [];
+      push(positionDupes, {
+        title: `Позиция № ${num}`,
+        nodeIds: [], branchIds: brIds,
+        focus: withBr && withBr.placed ? { x: withBr.x, y: withBr.y, z: withBr.z } : undefined,
+        note: `${distinct.size} разных позиций: ${list.map((p) => `«${p.name || "без названия"}» (${p.accidentType.toLowerCase()})`).filter((v, i, a) => a.indexOf(v) === i).join(", ")}`,
+      });
+    }
+    // Выработки без позиции — не попали ни в одну позицию ПЛА.
+    const covered = new Set<string>();
+    for (const p of positions) {
+      for (const id of p.branchIds) covered.add(id);
+      if (p.leaderBranchId) covered.add(p.leaderBranchId);
+      for (const l of p.extraLeaders ?? []) if (l.branchId) covered.add(l.branchId);
+    }
+    for (const b of branches) {
+      if (isAux(b) || b.fromId === b.toId || covered.has(b.id)) continue;
+      const fn = nodeById.get(b.fromId), tn = nodeById.get(b.toId);
+      // Ветвь-выход на поверхность (атмосфера на обоих концах) — не выработка шахты.
+      if (fn?.atmosphereLink && tn?.atmosphereLink) continue;
+      push(branchNoPosition, { branch: b, note: `L ${fmtNum(b.length ?? 0, 0)} м — не входит ни в одну позицию ПЛА` });
+    }
+  }
+
   return {
     solved, measureMismatch, measureNoData, measureTotal,
-    controlAlpha, alphaJump, areaJump, surfaceMulti, bulkheadNorm, truncated,
+    controlAlpha, alphaJump, areaJump, surfaceMulti, bulkheadNorm,
+    bulkheadFailure, positionsTotal: positions.length, positionDupes, branchNoPosition,
+    truncated,
   };
 }
