@@ -38,6 +38,48 @@ function Stepper({ value, onChange, min, max, step, unit }: {
   );
 }
 
+/** Флажок-плашка: компактная альтернатива Switch для пары взаимосвязанных признаков. */
+function ToggleChip({ checked, onChange, icon, label, title }: {
+  checked: boolean; onChange: (v: boolean) => void; icon: string; label: string; title?: string;
+}) {
+  return (
+    <button type="button" onClick={() => onChange(!checked)} title={title}
+      role="switch" aria-checked={checked}
+      className="flex-1 min-w-0 h-8 px-2 rounded-md flex items-center gap-1.5 text-[11px] transition-colors"
+      style={{
+        cursor: "pointer",
+        background: checked ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 12%, transparent)" : "var(--c-s1, #fff)",
+        border: `1px solid ${checked ? "var(--c-accent, #1e5a7a)" : "var(--c-b2, #d5d1c8)"}`,
+        color: checked ? "var(--c-accent, #1e5a7a)" : "var(--c-t2, #3a3f45)",
+        fontWeight: checked ? 600 : 400,
+      }}>
+      <Icon name={checked ? "SquareCheck" : "Square"} size={13} className="flex-shrink-0" />
+      <Icon name={icon} size={12} className="flex-shrink-0 opacity-70" />
+      <span className="truncate">{label}</span>
+    </button>
+  );
+}
+
+/** Живой образец линии ветви: толщина + тёмный контур, пунктир для проектируемой. */
+function LinePreview({ width, border, dashed }: { width: number; border: number; dashed: boolean }) {
+  const w = Math.max(0.5, Math.min(width, 20));
+  const b = Math.max(0, Math.min(border, 8));
+  const dash = dashed ? `${w * 2.5} ${w * 1.5}` : undefined;
+  return (
+    <div className="rounded-md flex items-center justify-center"
+      style={{ height: 36, background: "var(--c-s3, #f1efea)" }} title="Так ветвь выглядит на схеме">
+      <svg width="100%" height="36" viewBox="0 0 200 36" preserveAspectRatio="none">
+        {b > 0 && (
+          <line x1="14" y1="18" x2="186" y2="18" stroke="#1f2328" strokeWidth={w + b * 2}
+            strokeLinecap="round" strokeDasharray={dash} />
+        )}
+        <line x1="14" y1="18" x2="186" y2="18" stroke="var(--c-signal, #e8a317)" strokeWidth={w}
+          strokeLinecap="round" strokeDasharray={dash} />
+      </svg>
+    </div>
+  );
+}
+
 function MultiNote({ count, verb }: { count: number; verb: string }) {
   if (count <= 1) return null;
   return (
@@ -134,6 +176,8 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
         </div>
       )}
 
+      {branch && <MultiNote count={p.editCount} verb="Правки применятся" />}
+
       {/* ── Идентификация ── */}
       {hasSel && (
         <Card icon="Tag" title="Идентификация">
@@ -143,61 +187,79 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
               placeholder={branch ? "Например, Штрек вент. гор. +30" : "Имя узла"}
               onChange={(e) => branch ? p.onBranchPatch({ type: e.target.value }) : p.onNodePatch({ name: e.target.value })} />
           </Field>
-          <Field label="Номер" hint={branch ? "Применяется по Enter или при уходе с поля" : undefined}>
-            <input type="text" className={inputCls}
-              style={{ ...inputStyle, fontFamily: "var(--font-num)", borderColor: numError ? "var(--c-red, #dc2626)" : inputStyle.border as string }}
-              value={numDraft}
-              onChange={(e) => { setNumDraft(e.target.value); setNumError(null); }}
-              onBlur={commitNumber}
-              onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setNumDraft(branch ? branch.id : node!.number || node!.id); (e.target as HTMLInputElement).blur(); } }} />
-          </Field>
+          <div className={branch ? "grid gap-2" : undefined}
+            style={branch ? { gridTemplateColumns: "84px minmax(0,1fr)" } : undefined}>
+            <Field label="Номер">
+              <input type="text" className={inputCls}
+                title="Применяется по Enter или при уходе с поля; Esc — отмена"
+                style={{ ...inputStyle, fontFamily: "var(--font-num)", borderColor: numError ? "var(--c-red, #dc2626)" : inputStyle.border as string }}
+                value={numDraft}
+                onChange={(e) => { setNumDraft(e.target.value); setNumError(null); }}
+                onBlur={commitNumber}
+                onKeyDown={(e) => { if (e.key === "Enter") (e.target as HTMLInputElement).blur(); if (e.key === "Escape") { setNumDraft(branch ? branch.id : node!.number || node!.id); (e.target as HTMLInputElement).blur(); } }} />
+            </Field>
+            {branch && (
+              <Field label="Горизонт">
+                <select className={inputCls} style={{ ...inputStyle, cursor: "pointer" }}
+                  value={p.multiHorizonMixed ? "__mixed__" : branch.horizonId}
+                  onChange={(e) => p.onBranchPatch({ horizonId: e.target.value })}>
+                  {p.multiHorizonMixed && <option value="__mixed__" disabled>— разные горизонты —</option>}
+                  <option value="">— без привязки —</option>
+                  {p.horizons.map((h) => <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>)}
+                </select>
+              </Field>
+            )}
+          </div>
           {numError && (
             <div className="text-[10px] -mt-1" style={{ color: "var(--c-red, #dc2626)" }}>{numError}</div>
           )}
           {branch && (
-            <Field label="Горизонт">
-              <select className={inputCls} style={{ ...inputStyle, cursor: "pointer" }}
-                value={p.multiHorizonMixed ? "__mixed__" : branch.horizonId}
-                onChange={(e) => p.onBranchPatch({ horizonId: e.target.value })}>
-                {p.multiHorizonMixed && <option value="__mixed__" disabled>— разные горизонты —</option>}
-                <option value="">— без привязки —</option>
-                {p.horizons.map((h) => <option key={h.id} value={h.id}>{h.name} ({h.z} м)</option>)}
-              </select>
+            <Field label="Статус">
+              <div className="flex gap-1.5">
+                <ToggleChip checked={branch.capital ?? false} onChange={(v) => p.onBranchPatch({ capital: v })}
+                  icon="HardHat" label="Капитальная" title="Капитальная выработка" />
+                <ToggleChip checked={branch.designed ?? false} onChange={(v) => p.onBranchPatch({ designed: v })}
+                  icon="PencilRuler" label="Проектная" title="Проектируемая: контур выработки рисуется пунктиром" />
+              </div>
             </Field>
           )}
-          {branch && <MultiNote count={p.editCount} verb="Применится" />}
-        </Card>
-      )}
-
-      {/* ── Статус выработки ── */}
-      {branch && (
-        <Card icon="HardHat" title="Статус" tone="signal">
-          <Switch checked={branch.capital ?? false} onChange={(v) => p.onBranchPatch({ capital: v })}
-            label="Капитальная выработка" />
-          <Switch checked={branch.designed ?? false} onChange={(v) => p.onBranchPatch({ designed: v })}
-            label="Проектируемая" hint="Контур выработки рисуется пунктиром" />
         </Card>
       )}
 
       {/* ── Линия на схеме ── */}
-      {branch && (
-        <Card icon="PenLine" title="Линия на схеме">
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Толщина">
-              <Stepper value={branch.lineWidth ?? p.defaultWidth} min={0.5} max={20} step={0.5} unit="px"
-                onChange={(v) => p.onBranchPatch({ lineWidth: v })} />
-            </Field>
-            <Field label="Контур">
-              <Stepper value={branch.lineBorder ?? p.defaultBorder} min={0} max={8} step={0.2} unit="px"
-                onChange={(v) => p.onBranchPatch({ lineBorder: v })} />
-            </Field>
-          </div>
-          <div className="text-[10px]" style={{ color: "var(--c-t4, #767f8c)" }}>
-            Контур — тёмная окантовка линии, 0 — без неё.
-          </div>
-          <MultiNote count={p.editCount} verb="Применится" />
-        </Card>
-      )}
+      {branch && (() => {
+        const w = branch.lineWidth ?? p.defaultWidth;
+        const b = branch.lineBorder ?? p.defaultBorder;
+        const custom = w !== p.defaultWidth || b !== p.defaultBorder;
+        return (
+          <Card icon="PenLine" title="Линия на схеме"
+            aside={custom ? (
+              <button type="button"
+                onClick={() => p.onBranchPatch({ lineWidth: p.defaultWidth, lineBorder: p.defaultBorder })}
+                className="flex items-center gap-1 px-1.5 h-5 rounded text-[10px]"
+                title="Вернуть толщину и контур по умолчанию"
+                style={{ background: "var(--c-s3, #f1efea)", border: "none", color: "var(--c-t3, #6b7280)", cursor: "pointer" }}>
+                <Icon name="RotateCcw" size={10} /> Сброс
+              </button>
+            ) : undefined}>
+            <LinePreview width={w} border={b} dashed={branch.designed ?? false} />
+            <div className="grid grid-cols-2 gap-2">
+              <Field label="Толщина">
+                <Stepper value={w} min={0.5} max={20} step={0.5} unit="px"
+                  onChange={(v) => p.onBranchPatch({ lineWidth: v })} />
+              </Field>
+              <Field label="Контур" aside={
+                <span title="Тёмная окантовка линии, 0 — без неё" style={{ color: "var(--c-t4, #767f8c)", display: "inline-flex" }}>
+                  <Icon name="Info" size={10} />
+                </span>
+              }>
+                <Stepper value={b} min={0} max={8} step={0.2} unit="px"
+                  onChange={(v) => p.onBranchPatch({ lineBorder: v })} />
+              </Field>
+            </div>
+          </Card>
+        );
+      })()}
 
       {/* ── Примечание ── */}
       {branch && (
