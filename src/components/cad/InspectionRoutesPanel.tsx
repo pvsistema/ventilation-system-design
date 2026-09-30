@@ -12,11 +12,9 @@ import {
   type InspectionRoute, type InspectionSpeedMode, makeInspectionRoute, calcInspectionRoute,
   INSPECTION_SPEED_MODES, ROUTE_COLORS, fmtMinutes, fmtLength, normalizeSpeedMode,
 } from "@/lib/inspectionRoutes";
-import type { SmokeZone } from "@/lib/smokeVisibility";
 
 interface BranchLite {
   id: string; fromId: string; toId: string; length: number; angle: number; type?: string; name?: string;
-  fireComputedSmokeDens?: number;
 }
 interface NodeLite {
   id: string; name?: string; number?: string; x?: number; y?: number; z?: number;
@@ -38,16 +36,8 @@ interface Props {
   onToggleBind: () => void;
   onFocusBranch?: (branchId: string) => void;
   projectName?: string;
-  /** Выполнен расчёт пожара — скорость в задымлённых выработках снижается */
-  fireCalcDone?: boolean;
 }
 
-function zoneLabel(z: SmokeZone) {
-  if (z === "clean") return { label: "Чистая", color: "#14532d", bg: "#f0fdf4" };
-  if (z === "smoky_low") return { label: "Задым. (5-10м)", color: "var(--c-amber-ink, #92400e)", bg: "#fffbeb" };
-  return { label: "Задым. (<5м)", color: "var(--c-red-ink, #991b1b)", bg: "#fef2f2" };
-}
-const zoneText = (z: SmokeZone) => z === "clean" ? "Чистая" : z === "smoky_low" ? "Задым. 5-10м" : "Задым. <5м";
 const methodLabel = (m: string) => normalizeSpeedMode(m) === "fnip" ? "ФНиП №467" : "РД 15-11-2007";
 
 const inputCls = "w-full h-7 px-2 text-[11.5px] outline-none";
@@ -198,13 +188,13 @@ export default function InspectionRoutesPanel(p: Props) {
       const rows: (string | number)[][] = [
         [`Маршрут профилактического обследования № ${r.number}${r.name ? " — " + r.name : ""}`],
         [`Расчёт времени хода горнорабочего (${methodLabel(r.speedMode)})`], [],
-        ["№", "Выработка", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "Σt, мин", "Пожарных кранов"],
+        ["№", "Выработка", "Длина, м", "Угол, °", "V, м/мин", "t, мин", "Σt, мин", "Пожарных кранов"],
       ];
       res.segments.forEach(sg => rows.push([
-        sg.segmentNumber, sg.label, Math.round(sg.length), +sg.angle.toFixed(0), zoneText(sg.zone),
+        sg.segmentNumber, sg.label, Math.round(sg.length), +sg.angle.toFixed(0),
         sg.speed, +sg.time.toFixed(2), +sg.cumulTime.toFixed(2), sg.hydrants,
       ]));
-      rows.push(["ИТОГО", "", Math.round(res.length), "", "", "", +res.travelTime.toFixed(2), "", res.hydrantsAuto]);
+      rows.push(["ИТОГО", "", Math.round(res.length), "", "", +res.travelTime.toFixed(2), "", res.hydrantsAuto]);
       rows.push([], ["", "Время хода (в одну сторону), мин", +res.travelTime.toFixed(2)]);
       if (r.includeReturn) rows.push(["", "Обратный путь, мин", +res.returnTime.toFixed(2)]);
       if (r.countHydrants) rows.push(["", `Обследование пожарных кранов (${res.hydrants} × ${r.hydrantMinutes} мин)`, +res.hydrantTime.toFixed(2)]);
@@ -222,12 +212,12 @@ export default function InspectionRoutesPanel(p: Props) {
     rows.push([`Расчёт времени хода горнорабочего (${methodLabel(r.speedMode)})`]);
     rows.push(["Время хода (в одну сторону), мин", res.travelTime.toFixed(1)]);
     rows.push([]);
-    rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "Σt, мин"]);
+    rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "V, м/мин", "t, мин", "Σt, мин"]);
     for (const sg of res.segments) {
       rows.push([sg.label, String(sg.segmentNumber), String(Math.round(sg.length)), sg.angle.toFixed(0),
-        zoneText(sg.zone), String(sg.speed), sg.time.toFixed(2), sg.cumulTime.toFixed(2)]);
+        String(sg.speed), sg.time.toFixed(2), sg.cumulTime.toFixed(2)]);
     }
-    rows.push(["ИТОГО", "", String(Math.round(res.length)), "", "", "", res.travelTime.toFixed(2), ""]);
+    rows.push(["ИТОГО", "", String(Math.round(res.length)), "", "", res.travelTime.toFixed(2), ""]);
     if (r.includeReturn) rows.push(["Обратный путь, мин", res.returnTime.toFixed(2)]);
     if (r.countHydrants) rows.push([`Пожарные краны (${res.hydrants} × ${r.hydrantMinutes} мин)`, res.hydrantTime.toFixed(2)]);
     if (res.extraTime > 0) rows.push(["Прочие затраты, мин", res.extraTime.toFixed(2)]);
@@ -253,13 +243,6 @@ export default function InspectionRoutesPanel(p: Props) {
             <Icon name="Route" size={12} className="flex-shrink-0" />
             <span className="flex-1 leading-snug">Кликайте по выработкам на схеме по ходу маршрута. Повторный клик — убрать.</span>
             <button type="button" onClick={onToggleBind} className="font-semibold underline flex-shrink-0">Готово</button>
-          </div>
-        )}
-        {p.fireCalcDone && (
-          <div className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px]"
-            style={{ background: "var(--c-tint-amber, #fff7ed)", color: "var(--c-amber-ink, #9a3412)", border: "1px solid #fed7aa" }}>
-            <Icon name="Flame" size={11} className="flex-shrink-0" />
-            Учёт задымления активен — скорость снижена в задымлённых зонах
           </div>
         )}
         {routes.length > 0 && (
@@ -457,11 +440,6 @@ export default function InspectionRoutesPanel(p: Props) {
                     <Stat label="Длина маршрута" value={fmtLength(res.length)} />
                     <Stat label="Время хода (в одну сторону)" value={`${res.travelTime.toFixed(1)} мин`} />
                     {r.includeReturn && <Stat label="Обратный путь" value={`${res.returnTime.toFixed(1)} мин`} />}
-                    {res.hasSmoke && (
-                      <div className="text-[10px] pt-0.5" style={{ color: "var(--c-amber-ink, #9a3412)" }}>
-                        ⚠ Маршрут проходит через задымлённые выработки — скорость снижена по нормативу
-                      </div>
-                    )}
                     {r.countHydrants && <Stat label={`Пожарные краны (${res.hydrants} × ${r.hydrantMinutes})`} value={`${res.hydrantTime.toFixed(1)} мин`} />}
                     {res.extraTime > 0 && <Stat label="Прочее" value={`${res.extraTime.toFixed(1)} мин`} />}
                     <div style={{ borderTop: "1px solid var(--c-b1)", marginTop: 3, paddingTop: 3 }}>
@@ -483,7 +461,6 @@ export default function InspectionRoutesPanel(p: Props) {
                             <th className="px-1 py-0.5 text-left font-medium">Выработка</th>
                             <th className="px-1 py-0.5 text-right font-medium">L, м</th>
                             <th className="px-1 py-0.5 text-right font-medium">Угол</th>
-                            <th className="px-1 py-0.5 text-left font-medium">Зона</th>
                             <th className="px-1 py-0.5 text-right font-medium">V</th>
                             <th className="px-1 py-0.5 text-right font-medium">t</th>
                             <th className="px-1 py-0.5 text-right font-medium">Σt</th>
@@ -491,16 +468,14 @@ export default function InspectionRoutesPanel(p: Props) {
                         </thead>
                         <tbody className="font-num">
                           {res.segments.map((sg, i) => {
-                            const z = zoneLabel(sg.zone);
-                            const bg = sg.zone === "smoky_high" ? "#fff1f2" : sg.zone === "smoky_low" ? "#fffbeb" : (i % 2 === 0 ? "var(--c-s1)" : "var(--c-s2)");
+                            const bg = i % 2 === 0 ? "var(--c-s1)" : "var(--c-s2)";
                             return (
                               <tr key={sg.branchId + i} style={{ background: bg, color: "var(--c-t2)" }}>
                                 <td className="px-1 py-0.5" style={{ color: "var(--c-t4)" }}>{sg.segmentNumber}</td>
                                 <td className="px-1 py-0.5 truncate max-w-[110px]" title={sg.label}>{sg.branchLabel || sg.branchId}</td>
                                 <td className="px-1 py-0.5 text-right">{Math.round(sg.length)}</td>
                                 <td className="px-1 py-0.5 text-right">{sg.angle.toFixed(0)}°</td>
-                                <td className="px-1 py-0.5"><span className="px-1 rounded" style={{ background: z.bg, color: z.color }}>{z.label}</span></td>
-                                <td className="px-1 py-0.5 text-right" style={{ color: sg.zone !== "clean" ? "var(--c-amber, #b45309)" : "var(--c-blue, #1d4ed8)" }}>{sg.speed}</td>
+                                <td className="px-1 py-0.5 text-right" style={{ color: "var(--c-blue, #1d4ed8)" }}>{sg.speed}</td>
                                 <td className="px-1 py-0.5 text-right">{sg.time.toFixed(2)}</td>
                                 <td className="px-1 py-0.5 text-right font-semibold" style={{ color: "var(--c-t1)" }}>{sg.cumulTime.toFixed(2)}</td>
                               </tr>
@@ -511,7 +486,7 @@ export default function InspectionRoutesPanel(p: Props) {
                           <tr style={{ background: "var(--c-tint-blue, #e0f2fe)", color: "var(--c-t1)" }}>
                             <td className="px-1 py-0.5 font-bold" colSpan={2}>ИТОГО</td>
                             <td className="px-1 py-0.5 text-right font-bold">{Math.round(res.length)}</td>
-                            <td colSpan={4}></td>
+                            <td colSpan={3}></td>
                             <td className="px-1 py-0.5 text-right font-bold">{res.travelTime.toFixed(2)}</td>
                           </tr>
                         </tfoot>

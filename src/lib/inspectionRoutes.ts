@@ -8,13 +8,12 @@
 // и — по галочке — время на обследование пожарных кранов на маршруте.
 // ─────────────────────────────────────────────────────────────────────────────
 import { workerSpeedFor } from "./rescueCalculator";
-import { zoneFromDensity, type SmokeZone } from "./smokeVisibility";
 
 /**
  * Методика расчёта времени — ТА ЖЕ, что в «Время хода горнорабочего»:
  * РД 15-11-2007 или ФНиП № 467, скорость по углу наклона с учётом
- * направления движения (подъём/спуск), в задымлённых выработках (после
- * расчёта пожара) скорость снижается: ×0,75 при Рв 5–10 м, ×0,55 при Рв < 5 м.
+ * направления движения (подъём/спуск). Задымление при профилактическом
+ * обследовании не учитывается — выработки считаются чистыми.
  */
 export type InspectionSpeedMode = "rd" | "fnip";
 
@@ -23,14 +22,9 @@ export const INSPECTION_SPEED_MODES: { value: InspectionSpeedMode; label: string
   { value: "fnip", label: "ФНиП №467 (Инструкция, угольные шахты)",     hint: "Скорость горнорабочего по ФНиП № 467" },
 ];
 
-/** Коэффициент снижения скорости в дыму — как в расчёте горнорабочего. */
-export function smokeSpeedK(zone: SmokeZone): number {
-  return zone === "clean" ? 1.0 : zone === "smoky_low" ? 0.75 : 0.55;
-}
-
 /** Скорость горнорабочего, м/мин (округлённая, как в расчёте горнорабочего). */
-export function inspectionSpeed(mode: InspectionSpeedMode, signedAngle: number, zone: SmokeZone): number {
-  return Math.max(1, Math.round(workerSpeedFor(mode, signedAngle) * smokeSpeedK(zone)));
+export function inspectionSpeed(mode: InspectionSpeedMode, signedAngle: number): number {
+  return Math.max(1, Math.round(workerSpeedFor(mode, signedAngle)));
 }
 
 /** Старые проекты хранили «rescuer»/«selfrescuer» — приводим к РД. */
@@ -95,7 +89,6 @@ export const HYDRANT_SYMBOL_IDS = new Set(["fire_crane", "fire_crane_conn"]);
 
 interface BranchLike {
   id: string; fromId: string; toId: string; length: number; angle: number; type?: string; name?: string;
-  fireComputedSmokeDens?: number;
 }
 interface NodeLike {
   id: string; name?: string; number?: string; x?: number; y?: number; z?: number;
@@ -115,8 +108,6 @@ export interface InspectionSegment {
   toNodeId: string;
   length: number;
   angle: number;       // знаковый угол по ходу движения, °
-  zone: SmokeZone;
-  smokeDensity: number;
   speed: number;       // м/мин туда
   speedBack: number;   // м/мин обратно
   time: number;        // мин туда
@@ -138,7 +129,6 @@ export interface InspectionRouteResult {
   totalTime: number;       // мин
   gaps: number;            // разрывы в цепочке выработок
   missing: number;         // удалённые из схемы выработки
-  hasSmoke: boolean;       // маршрут проходит через задымлённые выработки
   warnings: string[];
 }
 
@@ -205,10 +195,8 @@ export function calcInspectionRoute(
 
     const rawAngle = Number.isFinite(b.angle) ? b.angle : 0;
     const angle = forward ? rawAngle : -rawAngle;
-    const smokeDensity = b.fireComputedSmokeDens ?? 0;
-    const zone = zoneFromDensity(smokeDensity);
-    const speed = inspectionSpeed(mode, angle, zone);
-    const speedBack = inspectionSpeed(mode, -angle, zone);
+    const speed = inspectionSpeed(mode, angle);
+    const speedBack = inspectionSpeed(mode, -angle);
     const length = effLength(b);
     const time = length > 0 ? length / speed : 0;
     const timeBack = length > 0 ? length / speedBack : 0;
@@ -222,7 +210,7 @@ export function calcInspectionRoute(
       branchId: b.id, branchLabel,
       label: branchLabel ? `${branchLabel} (${route2})` : route2,
       segmentNumber: i + 1, forward, fromNodeId, toNodeId,
-      length, angle, zone, smokeDensity, speed, speedBack, time, timeBack, cumulTime: cum,
+      length, angle, speed, speedBack, time, timeBack, cumulTime: cum,
       hydrants: hyd, gapBefore,
     });
     cur = toNodeId;
@@ -236,13 +224,12 @@ export function calcInspectionRoute(
   const hydrantTime = route.countHydrants ? hydrants * Math.max(0, route.hydrantMinutes || 0) : 0;
   const extraTime = Math.max(0, route.extraMinutes || 0);
   const totalTime = travelTime + returnTime + hydrantTime + extraTime;
-  const hasSmoke = segments.some(s => s.zone !== "clean");
   const warnings: string[] = [];
   if (gaps > 0) warnings.push(`Разрывов в цепочке выработок: ${gaps} — проверьте порядок выработок маршрута`);
   if (missing > 0) warnings.push(`Выработок, удалённых из схемы: ${missing}`);
   return {
     segments, length, travelTime, returnTime, hydrantsAuto, hydrants, hydrantTime, extraTime, totalTime,
-    gaps, missing, hasSmoke, warnings,
+    gaps, missing, warnings,
   };
 }
 
