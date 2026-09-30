@@ -328,6 +328,21 @@ export default function InspectionRoutesPanel(p: Props) {
                     </label>
                   </div>
                   <Check checked={r.showLabel} onChange={(v) => upd({ showLabel: v })} label="Подпись длины и времени на схеме" />
+                  {r.showLabel && (r.labelX != null) && (
+                    <button type="button" className="text-[10px] hover:underline ml-5"
+                      style={{ color: "var(--c-accent)" }}
+                      title="Табличка перемещена вручную — вернуть к середине маршрута"
+                      onClick={() => upd({ labelX: null, labelY: null, labelZ: null })}>
+                      ↺ Вернуть табличку на маршрут
+                    </button>
+                  )}
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px]" style={{ color: "var(--c-t3)" }}>Окраска ветвей:</span>
+                    <Check checked={!!r.colorInner} onChange={(v) => upd({ colorInner: v })} label="внутри"
+                      title="Заливать выработки маршрута его цветом" />
+                    <Check checked={r.colorOuter !== false} onChange={(v) => upd({ colorOuter: v })} label="снаружи"
+                      title="Цветной контур вокруг выработок маршрута" />
+                  </div>
                   <div className="flex gap-1">
                     <Btn grow icon="Route" active={bindMode}
                       title="Клик по выработке на схеме добавляет её в конец маршрута или убирает"

@@ -57,6 +57,14 @@ export interface InspectionRoute {
   /** Прочие затраты времени на маршруте, мин */
   extraMinutes: number;
   comment: string;
+  /** Окраска маршрута внутри ветвей (заливка тела выработки) */
+  colorInner?: boolean;
+  /** Окраска маршрута снаружи ветвей (контур вокруг выработки) */
+  colorOuter?: boolean;
+  /** Положение таблички на схеме (мировые координаты). null — авто, у середины маршрута */
+  labelX?: number | null;
+  labelY?: number | null;
+  labelZ?: number | null;
 }
 
 export const ROUTE_COLORS = [
@@ -80,6 +88,11 @@ export function makeInspectionRoute(partial?: Partial<InspectionRoute>): Inspect
     hydrantCountOverride: null,
     extraMinutes: 0,
     comment: "",
+    colorInner: false,
+    colorOuter: true,
+    labelX: null,
+    labelY: null,
+    labelZ: null,
     ...partial,
   };
 }

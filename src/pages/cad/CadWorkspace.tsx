@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import TopoCanvas from "@/components/cad/TopoCanvas";
 import { type TopoNode, type TopoBranch, project3D, unprojectToPlane } from "@/lib/topology";
@@ -209,6 +209,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     inspectionRoutes,
     setInspectionRoutes,
     selectedInspectionRouteId,
+    setSelectedInspectionRouteId,
     inspectionBindMode,
     showPositions,
     posColorInner,
@@ -298,14 +299,23 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
       const a = br ? nodeById.get(br.fromId) : undefined;
       const b = br ? nodeById.get(br.toId) : undefined;
       if (!a || !b) return null;
+      const ax = (a.x + b.x) / 2, ay = (a.y + b.y) / 2, az = ((a.z ?? 0) + (b.z ?? 0)) / 2;
+      const moved = r.labelX != null && r.labelY != null;
       return {
         id: r.id, color: r.color,
         title: r.name ? `МПО № ${r.number} · ${r.name}` : `МПО № ${r.number}`,
         text: `${fmtLength(res.length)} · ${fmtMinutes(res.totalTime)}`,
-        x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: ((a.z ?? 0) + (b.z ?? 0)) / 2,
+        // Якорь — точка маршрута; x/y/z — где стоит табличка (перетащенная или авто)
+        ax, ay, az,
+        moved,
+        x: moved ? r.labelX! : ax, y: moved ? r.labelY! : ay, z: moved ? (r.labelZ ?? az) : az,
       };
     }).filter((x): x is NonNullable<typeof x> => x != null);
   }, [inspectionRoutes, branches, nodes, schemaSymbols]);
+
+  // Перетаскивание таблички МПО — как маркер позиции ПЛА: в плоскости z таблички
+  const mpoLabelDragRef = useRef<{ id: string; startSx: number; startSy: number; startWx: number; startWy: number; wz: number; moved: boolean } | null>(null);
+  const [draggingMpoLabelId, setDraggingMpoLabelId] = useState<string | null>(null);
 
   return (
     <>
@@ -624,6 +634,22 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 ));
                 return;
               }
+              // Drag таблички маршрута МПО
+              if (mpoLabelDragRef.current) {
+                const d = mpoLabelDragRef.current;
+                if (!d.moved && Math.hypot(sx - d.startSx, sy - d.startSy) < 4) return;
+                const pz = d.wz * (zScale ?? 1);
+                const wStart = unprojectToPlane(d.startSx, d.startSy, vs, { axis: "z", value: pz });
+                const wCur   = unprojectToPlane(sx, sy, vs, { axis: "z", value: pz });
+                if (!wStart || !wCur) return;
+                if (!d.moved) { d.moved = true; pushHistory(); }
+                const xy = xyScale ?? 1;
+                const dx = (wCur.x - wStart.x) / xy;
+                const dy = (wCur.y - wStart.y) / xy;
+                setInspectionRoutes(prev => prev.map(r => r.id === d.id
+                  ? { ...r, labelX: d.startWx + dx, labelY: d.startWy + dy, labelZ: d.wz } : r));
+                return;
+              }
               // Drag текстового блока
               if (textDragRef.current) {
                 const { id, startSx, startSy, startWx, startWy } = textDragRef.current;
@@ -745,11 +771,13 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               setLeaderSnapBranch(null);
             }}
             onMouseUp={() => {
+              mpoLabelDragRef.current = null; setDraggingMpoLabelId(null);
               posDragRef.current = null; setDraggingPosId(null);
               leaderDragRef.current = null; setDraggingLeaderPosId(null);
               textDragRef.current = null; setDraggingTextId(null);
             }}
             onMouseLeave={() => {
+              mpoLabelDragRef.current = null; setDraggingMpoLabelId(null);
               posDragRef.current = null; setDraggingPosId(null);
               leaderDragRef.current = null; setDraggingLeaderPosId(null);
               textDragRef.current = null; setDraggingTextId(null);
@@ -1592,18 +1620,26 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 return map;
               })()}
               posInnerColors={(() => {
-                if (!posColorInner || positions.length === 0) return undefined;
                 const map = new Map<string, string>();
-                positions.forEach(pos => {
+                // Маршруты МПО с окраской «внутри ветвей» — приоритетнее позиций ПЛА
+                inspectionRoutes.forEach(r => {
+                  if (!r.visible || !r.colorInner) return;
+                  r.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, r.color); });
+                });
+                if (posColorInner) positions.forEach(pos => {
                   if (pos.branchesVisible === false) return;
                   pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
                 });
                 return map.size > 0 ? map : undefined;
               })()}
               posOuterColors={(() => {
-                if (!posColorOuter || positions.length === 0) return undefined;
                 const map = new Map<string, string>();
-                positions.forEach(pos => {
+                // Маршруты МПО с окраской «снаружи ветвей» (по умолчанию включена)
+                inspectionRoutes.forEach(r => {
+                  if (!r.visible || r.colorOuter === false) return;
+                  r.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, r.color); });
+                });
+                if (posColorOuter) positions.forEach(pos => {
                   if (pos.branchesVisible === false) return;
                   pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
                 });
@@ -1617,13 +1653,9 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 // в окне, а на схеме не видно, КАКОЙ участок вышел за норму.
                 if (showRampDialog && rampSlopeColors) return rampSlopeColors;
 
-                // Маршруты профилактического обследования (МПО): каждый
-                // видимый маршрут окрашивается своим цветом.
+                // Маршруты МПО окрашиваются через posInnerColors/posOuterColors
+                // (внутри / снаружи ветвей — настраивается в маршруте).
                 const map = new Map<string, string>();
-                inspectionRoutes.forEach(r => {
-                  if (!r.visible) return;
-                  r.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, r.color); });
-                });
                 if (!compareResult || compareResult.branches.length === 0) return map.size > 0 ? map : undefined;
                 compareResult.branches.forEach(diff => {
                   if (diff.status === "added")   map.set(diff.id, "#22c55e"); // зелёный
@@ -2020,19 +2052,75 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               void viewStateTick;
               const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
               const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
+              const xyS = xyScale ?? 1, zS = zScale ?? 1;
+              // Масштаб таблички — ТОТ ЖЕ, что у маркеров позиций ПЛА:
+              // «Пределы масштаба» ВКЛ — размер не зависит от зума и зажат в
+              // диапазон posMin%..posMax%; ВЫКЛ — табличка растёт/уменьшается
+              // вместе со схемой (0.25…8).
+              const _xySF = Math.max(1, xyS);
+              const _raw = scaleLimitsEnabled ? 1 : (vs.scale / (_xySF * 0.4));
+              const sf = scaleLimitsEnabled
+                ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _raw))
+                : Math.min(8, Math.max(0.25, _raw));
+              const items = inspectionLabels.map(l => ({
+                l,
+                p: project3D({ x: l.x * xyS, y: l.y * xyS, z: l.z * zS }, projOpts),
+                a: project3D({ x: l.ax * xyS, y: l.ay * xyS, z: l.az * zS }, projOpts),
+              }));
               return (
                 <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 2 }}>
-                  {inspectionLabels.map(l => {
-                    const p = project3D({ x: l.x * (xyScale ?? 1), y: l.y * (xyScale ?? 1), z: l.z * (zScale ?? 1) }, projOpts);
+                  {/* Выноски от перемещённых табличек к маршруту */}
+                  <svg style={{ position: "absolute", inset: 0, width: "100%", height: "100%", pointerEvents: "none" }}>
+                    {items.filter(it => it.l.moved).map(({ l, p, a }) => (
+                      <g key={l.id}>
+                        <line x1={a.sx} y1={a.sy} x2={p.sx} y2={p.sy}
+                          stroke={l.color} strokeWidth={Math.max(1, 1.5 * sf)} strokeDasharray={`${4 * sf} ${3 * sf}`} />
+                        <circle cx={a.sx} cy={a.sy} r={Math.max(2, 3 * sf)} fill={l.color} />
+                      </g>
+                    ))}
+                  </svg>
+                  {items.map(({ l, p }) => {
                     const sel = l.id === selectedInspectionRouteId;
+                    const dragging = draggingMpoLabelId === l.id;
                     return (
-                      <div key={l.id} style={{
-                        position: "absolute", left: p.sx, top: p.sy, transform: "translate(-50%, calc(-100% - 10px))",
-                        background: "rgba(255,255,255,0.95)", border: `2px solid ${l.color}`, borderRadius: 6,
-                        padding: "2px 7px", fontSize: 11, lineHeight: 1.25, whiteSpace: "nowrap",
-                        boxShadow: sel ? `0 0 0 3px ${l.color}55, 0 2px 8px rgba(0,0,0,.2)` : "0 1px 4px rgba(0,0,0,.18)",
-                        color: "#111827",
-                      }}>
+                      <div key={l.id}
+                        title="Перетащите, чтобы переместить табличку. Двойной клик — вернуть на маршрут"
+                        onMouseDown={(e) => {
+                          if (e.button !== 0) return;
+                          e.stopPropagation();
+                          const cr = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
+                          if (!cr) return;
+                          const el = e.currentTarget as HTMLDivElement & { _lastClick?: number };
+                          const now = Date.now();
+                          const isDbl = now - (el._lastClick ?? 0) < 350;
+                          el._lastClick = now;
+                          if (isDbl) {
+                            // Двойной клик — вернуть табличку к маршруту
+                            pushHistory();
+                            setInspectionRoutes(prev => prev.map(r => r.id === l.id ? { ...r, labelX: null, labelY: null, labelZ: null } : r));
+                            return;
+                          }
+                          setSelectedInspectionRouteId(l.id);
+                          setDraggingMpoLabelId(l.id);
+                          mpoLabelDragRef.current = {
+                            id: l.id, startSx: e.clientX - cr.left, startSy: e.clientY - cr.top,
+                            startWx: l.x, startWy: l.y, wz: l.z, moved: false,
+                          };
+                        }}
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                          position: "absolute", left: p.sx, top: p.sy,
+                          // Авто-положение — над маршрутом; перемещённая — центром в точке
+                          transform: l.moved
+                            ? `translate(-50%, -50%) scale(${sf})`
+                            : `translate(-50%, -100%) scale(${sf}) translateY(-10px)`,
+                          transformOrigin: l.moved ? "center center" : "center bottom",
+                          background: "rgba(255,255,255,0.95)", border: `2px solid ${l.color}`, borderRadius: 6,
+                          padding: "2px 7px", fontSize: 11, lineHeight: 1.25, whiteSpace: "nowrap",
+                          boxShadow: sel ? `0 0 0 3px ${l.color}55, 0 2px 8px rgba(0,0,0,.2)` : "0 1px 4px rgba(0,0,0,.18)",
+                          color: "#111827", userSelect: "none",
+                          pointerEvents: "auto", cursor: dragging ? "grabbing" : "grab",
+                        }}>
                         <div style={{ fontWeight: 700, color: l.color, fontSize: 10 }}>{l.title}</div>
                         <div className="font-num" style={{ fontWeight: 600 }}>{l.text}</div>
                       </div>
