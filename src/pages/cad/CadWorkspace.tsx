@@ -1,9 +1,11 @@
+import { useMemo } from "react";
 import Icon from "@/components/ui/icon";
 import TopoCanvas from "@/components/cad/TopoCanvas";
 import { type TopoNode, type TopoBranch, project3D, unprojectToPlane } from "@/lib/topology";
 import InfoPanel from "@/components/cad/InfoPanel";
 import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 import { type Position } from "@/lib/positions";
+import { calcInspectionRoute, fmtLength, fmtMinutes } from "@/lib/inspectionRoutes";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { EXPLOSION_HAZARD_COLORS, explosionZoneColor, channelDecay, LAMBDA_DEFAULT, junctionTransmission } from "@/lib/explosionCalculator";
@@ -204,6 +206,10 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     leaderCursorScreen,
     setLeaderCursorScreen,
     posBranchBindMode,
+    inspectionRoutes,
+    setInspectionRoutes,
+    selectedInspectionRouteId,
+    inspectionBindMode,
     showPositions,
     posColorInner,
     posColorOuter,
@@ -276,6 +282,30 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     handleSolve,
     handleDeleteSelected,
   } = c;
+
+  // Подписи маршрутов МПО на схеме: длина и время обследования.
+  // Считаются только при изменении маршрутов/схемы, а не на каждый кадр камеры.
+  const inspectionLabels = useMemo(() => {
+    const visible = inspectionRoutes.filter(r => r.visible && r.showLabel && r.branchIds.length > 0);
+    if (visible.length === 0) return [];
+    const branchById = new Map(branches.map(b => [b.id, b]));
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    return visible.map(r => {
+      const res = calcInspectionRoute(r, branchById, nodeById, schemaSymbols);
+      // Якорь подписи — середина выработки из середины маршрута
+      const mid = res.segments[Math.floor((res.segments.length - 1) / 2)];
+      const br = mid ? branchById.get(mid.branchId) : undefined;
+      const a = br ? nodeById.get(br.fromId) : undefined;
+      const b = br ? nodeById.get(br.toId) : undefined;
+      if (!a || !b) return null;
+      return {
+        id: r.id, color: r.color,
+        title: r.name ? `МПО № ${r.number} · ${r.name}` : `МПО № ${r.number}`,
+        text: `${fmtLength(res.length)} · ${fmtMinutes(res.totalTime)}`,
+        x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, z: ((a.z ?? 0) + (b.z ?? 0)) / 2,
+      };
+    }).filter((x): x is NonNullable<typeof x> => x != null);
+  }, [inspectionRoutes, branches, nodes, schemaSymbols]);
 
   return (
     <>
@@ -642,7 +672,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               }
               // Клик на пустое место — снять выбор позиции и текстового блока
               if (!leaderDrawMode) {
-                if (posBranchBindMode) return;
+                if (posBranchBindMode || inspectionBindMode) return;
                 setSelectedPositionId(null);
                 setSelectedTextBlockId(null);
                 return;
@@ -845,6 +875,16 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 setSelectedNodeId(id); setSelectedNodeIds(new Set()); setSelectedSymbolId(null); setSelectedSymbolIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); }
               }}
               onSelectBranch={(id) => {
+                if (inspectionBindMode && selectedInspectionRouteId && id) {
+                  // Режим МПО: клик добавляет выработку в конец маршрута или убирает её
+                  setInspectionRoutes(prev => prev.map(r => {
+                    if (r.id !== selectedInspectionRouteId) return r;
+                    return r.branchIds.includes(id)
+                      ? { ...r, branchIds: r.branchIds.filter(x => x !== id) }
+                      : { ...r, branchIds: [...r.branchIds, id], visible: true };
+                  }));
+                  return;
+                }
                 if (posBranchBindMode && selectedPositionId && id) {
                   // Режим F3: привязываем/отвязываем ветвь к позиции
                   // Вычисляем авто-координаты ДО setPositions (избегаем stale closure)
@@ -1532,8 +1572,16 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 : fireCalcDone && fireResult && showSmoke ? fireResult.reversedBranches
                 : undefined
               }
-              branchBindMode={posBranchBindMode}
+              branchBindMode={posBranchBindMode || (inspectionBindMode && !!selectedInspectionRouteId)}
               branchPositionColors={(() => {
+                if (inspectionBindMode && selectedInspectionRouteId) {
+                  const route = inspectionRoutes.find(r => r.id === selectedInspectionRouteId);
+                  if (!route) return undefined;
+                  const set = new Set(route.branchIds);
+                  const map = new Map<string, { color: string; bound: boolean }>();
+                  branches.forEach(b => map.set(b.id, { color: route.color, bound: set.has(b.id) }));
+                  return map;
+                }
                 if (!posBranchBindMode || !selectedPositionId) return undefined;
                 const pos = positions.find(p => p.id === selectedPositionId);
                 if (!pos) return undefined;
@@ -1569,8 +1617,14 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 // в окне, а на схеме не видно, КАКОЙ участок вышел за норму.
                 if (showRampDialog && rampSlopeColors) return rampSlopeColors;
 
-                if (!compareResult || compareResult.branches.length === 0) return undefined;
+                // Маршруты профилактического обследования (МПО): каждый
+                // видимый маршрут окрашивается своим цветом.
                 const map = new Map<string, string>();
+                inspectionRoutes.forEach(r => {
+                  if (!r.visible) return;
+                  r.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, r.color); });
+                });
+                if (!compareResult || compareResult.branches.length === 0) return map.size > 0 ? map : undefined;
                 compareResult.branches.forEach(diff => {
                   if (diff.status === "added")   map.set(diff.id, "#22c55e"); // зелёный
                   if (diff.status === "removed")  map.set(diff.id, "#ef4444"); // красный
@@ -1960,6 +2014,33 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 </div>
               </div>
             )}
+
+            {/* ── Подписи маршрутов МПО (длина · время) ─────────────────── */}
+            {inspectionLabels.length > 0 && (() => {
+              void viewStateTick;
+              const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
+              const projOpts = { scale: vs.scale, offsetX: vs.offsetX, offsetY: vs.offsetY, azimuth: vs.azimuth, elevation: vs.elevation };
+              return (
+                <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none", zIndex: 2 }}>
+                  {inspectionLabels.map(l => {
+                    const p = project3D({ x: l.x * (xyScale ?? 1), y: l.y * (xyScale ?? 1), z: l.z * (zScale ?? 1) }, projOpts);
+                    const sel = l.id === selectedInspectionRouteId;
+                    return (
+                      <div key={l.id} style={{
+                        position: "absolute", left: p.sx, top: p.sy, transform: "translate(-50%, calc(-100% - 10px))",
+                        background: "rgba(255,255,255,0.95)", border: `2px solid ${l.color}`, borderRadius: 6,
+                        padding: "2px 7px", fontSize: 11, lineHeight: 1.25, whiteSpace: "nowrap",
+                        boxShadow: sel ? `0 0 0 3px ${l.color}55, 0 2px 8px rgba(0,0,0,.2)` : "0 1px 4px rgba(0,0,0,.18)",
+                        color: "#111827",
+                      }}>
+                        <div style={{ fontWeight: 700, color: l.color, fontSize: 10 }}>{l.title}</div>
+                        <div className="font-num" style={{ fontWeight: 600 }}>{l.text}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
 
             {/* ── Маркеры позиций (SVG-оверлей) ──────────────────────── */}
             {positions.length > 0 && showPositions && (() => {

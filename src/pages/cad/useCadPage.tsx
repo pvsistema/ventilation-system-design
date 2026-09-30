@@ -16,6 +16,7 @@ import { type InfoDisplayConfig, DEFAULT_INFO_CONFIG } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type DxfImportResult } from "@/lib/dxfImport";
 import { type Position, type AccidentType, makePosition, matchPositionColor, ACCIDENT_TYPES } from "@/lib/positions";
+import { type InspectionRoute } from "@/lib/inspectionRoutes";
 import { type ExcelImportResult } from "@/lib/excelImport";
 import { type CombinedImportResult } from "@/lib/combinedImport";
 import { type CsvImportResult } from "@/lib/import/importCommon";
@@ -1584,6 +1585,11 @@ export function useCadPage() {
   const [leaderCursorScreen, setLeaderCursorScreen] = useState<{ sx: number; sy: number } | null>(null);
   // Режим привязки ветвей к позиции (F3)
   const [posBranchBindMode, setPosBranchBindMode] = useState(false);
+  // ─── Маршруты профилактического обследования (МПО) ──────────────────────
+  const [inspectionRoutes, setInspectionRoutes] = useState<InspectionRoute[]>([]);
+  const [selectedInspectionRouteId, setSelectedInspectionRouteId] = useState<string | null>(null);
+  // Режим выбора выработок маршрута кликом по схеме
+  const [inspectionBindMode, setInspectionBindMode] = useState(false);
   // ПЛА: видимость позиций на схеме
   const [showPositions, setShowPositions] = useState(true);
   // ПЛА: окраска ветвей цветом позиции (внутри/снаружи)
@@ -3359,6 +3365,7 @@ export function useCadPage() {
     xyScale,
     view: savedViewStateRef.current ?? undefined,
     positions,
+    inspectionRoutes,
     textBlocks,
     scaleLimitsEnabled,
     widthBySectionOn,
@@ -3398,7 +3405,7 @@ export function useCadPage() {
   }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, mineBulkheads, mineTypes,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
-      showFlowArrows, pollutionThreshold, flowDisplay, zScale, xyScale, projectFileName]);
+      showFlowArrows, pollutionThreshold, flowDisplay, zScale, xyScale, projectFileName, inspectionRoutes]);
 
   // Предупреждение при закрытии/обновлении вкладки
   // В десктопном режиме (WebView2) beforeunload отключён — закрытие обрабатывается через C#
@@ -3985,6 +3992,9 @@ export function useCadPage() {
     if (data.smokeVisThreshold !== undefined) setSmokeVisThreshold(data.smokeVisThreshold as number);
     if (data.positions) setPositions(data.positions as Position[]);
     else setPositions([]);
+    setInspectionRoutes(Array.isArray(data.inspectionRoutes) ? (data.inspectionRoutes as InspectionRoute[]) : []);
+    setSelectedInspectionRouteId(null);
+    setInspectionBindMode(false);
     if (data.textBlocks) setTextBlocks(data.textBlocks as TextBlock[]);
     else setTextBlocks([]);
     const resolvedName = fromDisk
@@ -4030,6 +4040,9 @@ export function useCadPage() {
     setBranches([]);
     setSchemaSymbols([]);
     setPositions([]);
+    setInspectionRoutes([]);
+    setSelectedInspectionRouteId(null);
+    setInspectionBindMode(false);
     setTextBlocks([]);
 
     // ── Горизонты — сброс к одному «Общий вид» ──
@@ -6149,6 +6162,12 @@ export function useCadPage() {
     setLeaderCursorScreen,
     posBranchBindMode,
     setPosBranchBindMode,
+    inspectionRoutes,
+    setInspectionRoutes,
+    selectedInspectionRouteId,
+    setSelectedInspectionRouteId,
+    inspectionBindMode,
+    setInspectionBindMode,
     showPositions,
     setShowPositions,
     posColorInner,

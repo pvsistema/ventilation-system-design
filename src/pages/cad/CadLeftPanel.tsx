@@ -10,6 +10,7 @@ import BranchPropsPanel from "@/components/cad/BranchPropsPanel";
 import VentSectionsPanel from "@/components/cad/VentSectionsPanel";
 import SchemaCheckPanel from "@/components/cad/SchemaCheckPanel";
 import PositionsPanel from "@/components/cad/PositionsPanel";
+import InspectionRoutesPanel from "@/components/cad/InspectionRoutesPanel";
 import { solidBulkheadRkMurg, windowBulkheadRkMurg, G_ACCEL } from "@/lib/bulkheads";
 import { toast } from "sonner";
 import GeneralPropsPanel from "@/components/cad/GeneralPropsPanel";
@@ -166,6 +167,13 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
     setLeaderCursorScreen,
     posBranchBindMode,
     setPosBranchBindMode,
+    inspectionRoutes,
+    setInspectionRoutes,
+    selectedInspectionRouteId,
+    setSelectedInspectionRouteId,
+    inspectionBindMode,
+    setInspectionBindMode,
+    projectFileName,
     branchWidth,
     branchBorder,
     thinLines,
@@ -391,6 +399,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
               {activeSide === "positions" && "Позиции"}
               {activeSide === "flowQ" && "Расход воздуха"}
               {activeSide === "rescue" && "Расчёт горноспасателей"}
+              {activeSide === "inspection" && "Маршруты МПО"}
               {activeSide === "check" && "Проверка схемы"}
               {activeSide === "ventsections" && "Участки рудника"}
             </span>
@@ -3403,6 +3412,30 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 onWaypointsChange={setRescueWaypointIds}
                 onAltRoutesChange={setRescueAltRouteColors}
                 onRegisterBranchPickHandler={(fn) => { rescueBranchPickHandlerRef.current = fn; }}
+              />
+              </PanelErrorBoundary>
+            )}
+
+            {/* ═══ МАРШРУТЫ ПРОФИЛАКТИЧЕСКОГО ОБСЛЕДОВАНИЯ (МПО) ═════════ */}
+            {activeSide === "inspection" && (
+              <PanelErrorBoundary title="маршруты МПО">
+              <InspectionRoutesPanel
+                routes={inspectionRoutes}
+                branches={branches}
+                nodes={nodes}
+                symbols={schemaSymbols}
+                selectedRouteId={selectedInspectionRouteId}
+                onSelect={(id) => {
+                  setSelectedInspectionRouteId(id);
+                  if (!id) setInspectionBindMode(false);
+                }}
+                onAdd={(r) => { setInspectionRoutes(prev => [...prev, r]); setInspectionBindMode(true); }}
+                onUpdate={(id, patch) => setInspectionRoutes(prev => prev.map(r => r.id === id ? { ...r, ...patch } : r))}
+                onDelete={(id) => { setInspectionRoutes(prev => prev.filter(r => r.id !== id)); setInspectionBindMode(false); }}
+                bindMode={inspectionBindMode}
+                onToggleBind={() => { if (selectedInspectionRouteId) setInspectionBindMode(v => !v); }}
+                onFocusBranch={(id) => { setFocusBranchId(id); setFocusNodeId(null); setFocusPos(null); setFocusNonce(Date.now()); }}
+                projectName={projectFileName}
               />
               </PanelErrorBoundary>
             )}

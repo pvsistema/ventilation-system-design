@@ -192,6 +192,8 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
     cancelSymbolStable,
     leftPanelOpen,
     setLeftPanelOpen,
+    setInspectionBindMode,
+    selectedInspectionRouteId,
     setShowPrintDialog,
     setPrintDialogOpenExport,
     handlePrintVentPipeReport,
@@ -1705,6 +1707,27 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                  высоту кнопки вровень с соседними. */
               title="Взрывоопасность рудничной атмосферы по составу пробы: Приложение № 11 к ФНП (приказ Ростехнадзора от 11.12.2020 № 520) — формулы (1)–(5), треугольники взрываемости рис. 1–6, протокол расчёта"
               onClick={() => setShowExplosibility(true)}
+            />
+          </RibbonGroup>
+        )}
+
+        {/* ── Группа: Маршруты профилактического обследования (МПО) ── */}
+        {activeRibbon === "thermo" && (
+          <RibbonGroup label="Обследование">
+            <RibbonBigBtn
+              icon="Route"
+              label="Маршрут"
+              sublabel="МПО"
+              active={activeSide === "inspection"}
+              title="Маршруты профилактического обследования: выбор выработок на схеме, длина и время обхода, время на обследование пожарных кранов"
+              onClick={() => {
+                setLeftPanelOpen(true);
+                if (activeSide === "inspection") {
+                  setInspectionBindMode(v => !v && !!selectedInspectionRouteId);
+                  return;
+                }
+                setActiveSide("inspection");
+              }}
             />
           </RibbonGroup>
         )}

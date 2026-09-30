@@ -1292,3 +1292,17 @@ export function calcWorkerPath(
 ): WorkerPathResult {
   return createWorkerRouter(nodes, branches, method).route(startNodeId, targetNodeId, waypointNodeIds);
 }
+
+/**
+ * Нормативная скорость горноспасателя в чистом воздухе (м/мин) по углу
+ * наклона с учётом направления (+ подъём, − спуск). Используется в расчёте
+ * маршрутов профилактического обследования (МПО).
+ */
+export function rescuerCleanSpeed(signedAngleDeg: number): number {
+  return getSpeed("clean", signedAngleDeg);
+}
+
+/** Нормативная скорость горнорабочего (м/мин) — экспорт для расчёта МПО. */
+export function workerSpeedFor(method: WorkerSpeedMethod, signedAngleDeg: number): number {
+  return getWorkerSpeed(method, signedAngleDeg);
+}
