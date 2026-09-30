@@ -3436,6 +3436,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 onToggleBind={() => { if (selectedInspectionRouteId) setInspectionBindMode(v => !v); }}
                 onFocusBranch={(id) => { setFocusBranchId(id); setFocusNodeId(null); setFocusPos(null); setFocusNonce(Date.now()); }}
                 projectName={projectFileName}
+                fireCalcDone={fireCalcDone}
               />
               </PanelErrorBoundary>
             )}

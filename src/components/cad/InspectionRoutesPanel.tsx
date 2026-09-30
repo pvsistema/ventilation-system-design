@@ -10,11 +10,18 @@ import * as XLSX from "xlsx";
 import Icon from "@/components/ui/icon";
 import {
   type InspectionRoute, type InspectionSpeedMode, makeInspectionRoute, calcInspectionRoute,
-  INSPECTION_SPEED_MODES, ROUTE_COLORS, fmtMinutes, fmtLength,
+  INSPECTION_SPEED_MODES, ROUTE_COLORS, fmtMinutes, fmtLength, normalizeSpeedMode,
 } from "@/lib/inspectionRoutes";
+import type { SmokeZone } from "@/lib/smokeVisibility";
 
-interface BranchLite { id: string; fromId: string; toId: string; length: number; angle: number; type?: string }
-interface NodeLite { id: string; fireNodeType?: string; fireConsumerType?: string }
+interface BranchLite {
+  id: string; fromId: string; toId: string; length: number; angle: number; type?: string; name?: string;
+  fireComputedSmokeDens?: number;
+}
+interface NodeLite {
+  id: string; name?: string; number?: string; x?: number; y?: number; z?: number;
+  fireNodeType?: string; fireConsumerType?: string;
+}
 interface SymbolLite { typeId: string; branchId: string | null }
 
 interface Props {
@@ -31,7 +38,17 @@ interface Props {
   onToggleBind: () => void;
   onFocusBranch?: (branchId: string) => void;
   projectName?: string;
+  /** Выполнен расчёт пожара — скорость в задымлённых выработках снижается */
+  fireCalcDone?: boolean;
 }
+
+function zoneLabel(z: SmokeZone) {
+  if (z === "clean") return { label: "Чистая", color: "#14532d", bg: "#f0fdf4" };
+  if (z === "smoky_low") return { label: "Задым. (5-10м)", color: "var(--c-amber-ink, #92400e)", bg: "#fffbeb" };
+  return { label: "Задым. (<5м)", color: "var(--c-red-ink, #991b1b)", bg: "#fef2f2" };
+}
+const zoneText = (z: SmokeZone) => z === "clean" ? "Чистая" : z === "smoky_low" ? "Задым. 5-10м" : "Задым. <5м";
+const methodLabel = (m: string) => normalizeSpeedMode(m) === "fnip" ? "ФНиП №467" : "РД 15-11-2007";
 
 const inputCls = "w-full h-7 px-2 text-[11.5px] outline-none";
 const inputStyle: React.CSSProperties = {
@@ -75,15 +92,6 @@ function Check({ checked, onChange, label, title }: { checked: boolean; onChange
         className="w-3.5 h-3.5 cursor-pointer" style={{ accentColor: "var(--c-accent)" }} />
       {label}
     </label>
-  );
-}
-
-function Field({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="text-[10px] font-medium mb-0.5" style={{ color: "var(--c-t3)" }}>{label}</div>
-      {children}
-    </div>
   );
 }
 
@@ -172,36 +180,64 @@ export default function InspectionRoutesPanel(p: Props) {
   function exportExcel() {
     const wb = XLSX.utils.book_new();
     const sum: (string | number)[][] = [[
-      "№", "Маршрут", "Выработок", "Длина, м", "Скорость", "Время хода, мин", "Обратный путь, мин",
+      "№", "Маршрут", "Методика", "Выработок", "Длина, м", "Время хода, мин", "Обратный путь, мин",
       "Пожарных кранов", "Время на краны, мин", "Прочее, мин", "Итого, мин",
     ]];
     for (const r of sorted) {
       const res = results.get(r.id)!;
       sum.push([
-        r.number, r.name || `МПО ${r.number}`, res.segments.length, Math.round(res.length),
-        INSPECTION_SPEED_MODES.find(m => m.value === r.speedMode)?.label ?? "",
-        +res.travelTime.toFixed(1), +res.returnTime.toFixed(1),
-        r.countHydrants ? res.hydrants : "—", +res.hydrantTime.toFixed(1), +res.extraTime.toFixed(1), +res.totalTime.toFixed(1),
+        r.number, r.name || `МПО ${r.number}`, methodLabel(r.speedMode), res.segments.length, Math.round(res.length),
+        +res.travelTime.toFixed(2), +res.returnTime.toFixed(2),
+        r.countHydrants ? res.hydrants : "—", +res.hydrantTime.toFixed(2), +res.extraTime.toFixed(2), +res.totalTime.toFixed(2),
       ]);
     }
-    sum.push([], ["", "ИТОГО", "", Math.round(totals.len), "", "", "", "", "", "", +totals.time.toFixed(1)]);
+    sum.push([], ["", "ИТОГО", "", "", Math.round(totals.len), "", "", "", "", "", +totals.time.toFixed(2)]);
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sum), "Сводка МПО");
     for (const r of sorted) {
       const res = results.get(r.id)!;
       const rows: (string | number)[][] = [
-        [`Маршрут профилактического обследования № ${r.number}${r.name ? " — " + r.name : ""}`], [],
-        ["№ п/п", "Выработка", "Длина, м", "Угол по ходу, °", "Скорость, м/мин", "Время, мин", "Пожарных кранов"],
+        [`Маршрут профилактического обследования № ${r.number}${r.name ? " — " + r.name : ""}`],
+        [`Расчёт времени хода горнорабочего (${methodLabel(r.speedMode)})`], [],
+        ["№", "Выработка", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "Σt, мин", "Пожарных кранов"],
       ];
-      res.segments.forEach((s, i) => rows.push([i + 1, s.label, +s.length.toFixed(1), +s.angle.toFixed(1), +s.speed.toFixed(1), +s.time.toFixed(2), s.hydrants]));
-      rows.push([], ["", "Длина маршрута, м", Math.round(res.length)], ["", "Время хода, мин", +res.travelTime.toFixed(1)]);
-      if (r.includeReturn) rows.push(["", "Обратный путь, мин", +res.returnTime.toFixed(1)]);
-      if (r.countHydrants) rows.push(["", `Обследование кранов (${res.hydrants} × ${r.hydrantMinutes} мин)`, +res.hydrantTime.toFixed(1)]);
-      if (res.extraTime > 0) rows.push(["", "Прочие затраты, мин", +res.extraTime.toFixed(1)]);
-      rows.push(["", "ИТОГО время обследования, мин", +res.totalTime.toFixed(1)]);
-      const name = `МПО ${r.number}`.slice(0, 31);
-      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), name);
+      res.segments.forEach(sg => rows.push([
+        sg.segmentNumber, sg.label, Math.round(sg.length), +sg.angle.toFixed(0), zoneText(sg.zone),
+        sg.speed, +sg.time.toFixed(2), +sg.cumulTime.toFixed(2), sg.hydrants,
+      ]));
+      rows.push(["ИТОГО", "", Math.round(res.length), "", "", "", +res.travelTime.toFixed(2), "", res.hydrantsAuto]);
+      rows.push([], ["", "Время хода (в одну сторону), мин", +res.travelTime.toFixed(2)]);
+      if (r.includeReturn) rows.push(["", "Обратный путь, мин", +res.returnTime.toFixed(2)]);
+      if (r.countHydrants) rows.push(["", `Обследование пожарных кранов (${res.hydrants} × ${r.hydrantMinutes} мин)`, +res.hydrantTime.toFixed(2)]);
+      if (res.extraTime > 0) rows.push(["", "Прочие затраты, мин", +res.extraTime.toFixed(2)]);
+      rows.push(["", "ИТОГО время обследования, мин", +res.totalTime.toFixed(2)]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), `МПО ${r.number}`.slice(0, 31));
     }
     XLSX.writeFile(wb, `${(p.projectName || "Схема").replace(/\.vproj$/, "")} — МПО.xlsx`);
+  }
+
+  function exportCsv(r: InspectionRoute) {
+    const res = results.get(r.id)!;
+    const rows: string[][] = [];
+    rows.push([`Маршрут профилактического обследования № ${r.number}${r.name ? " — " + r.name : ""}`]);
+    rows.push([`Расчёт времени хода горнорабочего (${methodLabel(r.speedMode)})`]);
+    rows.push(["Время хода (в одну сторону), мин", res.travelTime.toFixed(1)]);
+    rows.push([]);
+    rows.push(["Выработка", "Сегм.", "Длина, м", "Угол, °", "Зона", "V, м/мин", "t, мин", "Σt, мин"]);
+    for (const sg of res.segments) {
+      rows.push([sg.label, String(sg.segmentNumber), String(Math.round(sg.length)), sg.angle.toFixed(0),
+        zoneText(sg.zone), String(sg.speed), sg.time.toFixed(2), sg.cumulTime.toFixed(2)]);
+    }
+    rows.push(["ИТОГО", "", String(Math.round(res.length)), "", "", "", res.travelTime.toFixed(2), ""]);
+    if (r.includeReturn) rows.push(["Обратный путь, мин", res.returnTime.toFixed(2)]);
+    if (r.countHydrants) rows.push([`Пожарные краны (${res.hydrants} × ${r.hydrantMinutes} мин)`, res.hydrantTime.toFixed(2)]);
+    if (res.extraTime > 0) rows.push(["Прочие затраты, мин", res.extraTime.toFixed(2)]);
+    rows.push(["ИТОГО время обследования, мин", res.totalTime.toFixed(2)]);
+    const csv = rows.map(row => row.map(c => `"${String(c).replace(/"/g, '""')}"`).join(";")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = `mpo_${r.number}.csv`; a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -217,6 +253,13 @@ export default function InspectionRoutesPanel(p: Props) {
             <Icon name="Route" size={12} className="flex-shrink-0" />
             <span className="flex-1 leading-snug">Кликайте по выработкам на схеме по ходу маршрута. Повторный клик — убрать.</span>
             <button type="button" onClick={onToggleBind} className="font-semibold underline flex-shrink-0">Готово</button>
+          </div>
+        )}
+        {p.fireCalcDone && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px]"
+            style={{ background: "var(--c-tint-amber, #fff7ed)", color: "var(--c-amber-ink, #9a3412)", border: "1px solid #fed7aa" }}>
+            <Icon name="Flame" size={11} className="flex-shrink-0" />
+            Учёт задымления активен — скорость снижена в задымлённых зонах
           </div>
         )}
         {routes.length > 0 && (
@@ -354,12 +397,9 @@ export default function InspectionRoutesPanel(p: Props) {
                       <option key={b.id} value={b.id}>{b.id}. {b.type || "Ветвь"} ({Math.round(b.length)} м)</option>
                     ))}
                   </select>
-                  {(res.gaps > 0 || res.missing > 0) && (
-                    <div className="text-[10px] leading-snug" style={{ color: "var(--c-amber, #b45309)" }}>
-                      {res.gaps > 0 && <>Разрывов в цепочке: {res.gaps} — проверьте порядок выработок. </>}
-                      {res.missing > 0 && <>Удалённых выработок: {res.missing}.</>}
-                    </div>
-                  )}
+                  {res.warnings.map((w, k) => (
+                    <div key={k} className="text-[10px] leading-snug" style={{ color: "var(--c-red, #b91c1c)" }}>⚠ {w}</div>
+                  ))}
                   {r.branchIds.length > 0 && (
                     <div className="flex gap-1">
                       <Btn grow icon="ArrowUpDown" onClick={() => upd({ reversed: !r.reversed })} active={r.reversed}
@@ -373,13 +413,17 @@ export default function InspectionRoutesPanel(p: Props) {
 
                 <SubBlock icon="Timer" title="Расчёт времени обследования" open={isOpen("calc")} onToggle={() => toggle("calc")}
                   badge={<Pill color="var(--c-t2)">{fmtMinutes(res.totalTime)}</Pill>}>
-                  <Field label="Скорость передвижения">
-                    <select value={r.speedMode} onChange={(e) => upd({ speedMode: e.target.value as InspectionSpeedMode })}
-                      className={`${inputCls} cursor-pointer`} style={inputStyle}
-                      title={INSPECTION_SPEED_MODES.find(m => m.value === r.speedMode)?.hint}>
-                      {INSPECTION_SPEED_MODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
-                    </select>
-                  </Field>
+                  <div>
+                    <div className="text-[10px] font-medium mb-1" style={{ color: "var(--c-t3)" }}>Методика расчёта (как время хода горнорабочего)</div>
+                    {INSPECTION_SPEED_MODES.map(m => (
+                      <label key={m.value} title={m.hint} className="flex items-center gap-1.5 mb-0.5 cursor-pointer text-[11px]" style={{ color: "var(--c-t2)" }}>
+                        <input type="radio" name={`mpo_method_${r.id}`} checked={normalizeSpeedMode(r.speedMode) === m.value}
+                          onChange={() => upd({ speedMode: m.value as InspectionSpeedMode })}
+                          style={{ accentColor: "var(--c-accent)" }} />
+                        {m.label}
+                      </label>
+                    ))}
+                  </div>
                   <Check checked={r.includeReturn} onChange={(v) => upd({ includeReturn: v })} label="Учитывать обратный путь по маршруту" />
 
                   <div className="rounded p-1.5 space-y-1.5" style={{ border: "1px solid var(--c-b1)", background: "var(--c-s2)" }}>
@@ -411,8 +455,13 @@ export default function InspectionRoutesPanel(p: Props) {
 
                   <div className="rounded p-2 space-y-0.5" style={{ border: `1px solid ${r.color}`, background: `color-mix(in srgb, ${r.color} 6%, var(--c-s1))` }}>
                     <Stat label="Длина маршрута" value={fmtLength(res.length)} />
-                    <Stat label="Время хода" value={`${res.travelTime.toFixed(1)} мин`} />
+                    <Stat label="Время хода (в одну сторону)" value={`${res.travelTime.toFixed(1)} мин`} />
                     {r.includeReturn && <Stat label="Обратный путь" value={`${res.returnTime.toFixed(1)} мин`} />}
+                    {res.hasSmoke && (
+                      <div className="text-[10px] pt-0.5" style={{ color: "var(--c-amber-ink, #9a3412)" }}>
+                        ⚠ Маршрут проходит через задымлённые выработки — скорость снижена по нормативу
+                      </div>
+                    )}
                     {r.countHydrants && <Stat label={`Пожарные краны (${res.hydrants} × ${r.hydrantMinutes})`} value={`${res.hydrantTime.toFixed(1)} мин`} />}
                     {res.extraTime > 0 && <Stat label="Прочее" value={`${res.extraTime.toFixed(1)} мин`} />}
                     <div style={{ borderTop: "1px solid var(--c-b1)", marginTop: 3, paddingTop: 3 }}>
@@ -421,29 +470,55 @@ export default function InspectionRoutesPanel(p: Props) {
                   </div>
                 </SubBlock>
 
-                <SubBlock icon="Table" title="Расчёт по выработкам" open={isOpen("table")} onToggle={() => toggle("table")}>
+                <SubBlock icon="Table" title="Маршрут по выработкам" open={isOpen("table")} onToggle={() => toggle("table")}
+                  badge={<Pill color="var(--c-t3)">{res.segments.length} уч.</Pill>}>
                   {res.segments.length === 0 ? (
                     <div className="text-[10px]" style={{ color: "var(--c-t3)" }}>Нет выработок.</div>
-                  ) : (
-                    <div className="max-h-56 overflow-auto rounded" style={{ border: "1px solid var(--c-b1)" }}>
-                      <table className="w-full text-[10px] font-num">
-                        <thead style={{ background: "var(--c-s3)", color: "var(--c-t3)" }}>
-                          <tr><th className="text-left px-1">Выр.</th><th className="text-right px-1">L, м</th><th className="text-right px-1">α, °</th><th className="text-right px-1">V, м/мин</th><th className="text-right px-1">t, мин</th></tr>
+                  ) : (<>
+                    <div className="overflow-auto rounded" style={{ border: "1px solid var(--c-b1)", maxHeight: 320 }}>
+                      <table className="w-full text-[10px] border-separate border-spacing-0">
+                        <thead className="sticky top-0 z-10">
+                          <tr style={{ background: "var(--c-s3)", color: "var(--c-t3)" }}>
+                            <th className="px-1 py-0.5 text-left font-medium">№</th>
+                            <th className="px-1 py-0.5 text-left font-medium">Выработка</th>
+                            <th className="px-1 py-0.5 text-right font-medium">L, м</th>
+                            <th className="px-1 py-0.5 text-right font-medium">Угол</th>
+                            <th className="px-1 py-0.5 text-left font-medium">Зона</th>
+                            <th className="px-1 py-0.5 text-right font-medium">V</th>
+                            <th className="px-1 py-0.5 text-right font-medium">t</th>
+                            <th className="px-1 py-0.5 text-right font-medium">Σt</th>
+                          </tr>
                         </thead>
-                        <tbody>
-                          {res.segments.map((s, i) => (
-                            <tr key={i} style={{ borderTop: "1px solid var(--c-b1)", color: "var(--c-t2)" }}>
-                              <td className="px-1 truncate max-w-[90px]" title={s.label}>{s.branchId}</td>
-                              <td className="text-right px-1">{s.length.toFixed(0)}</td>
-                              <td className="text-right px-1">{s.angle.toFixed(1)}</td>
-                              <td className="text-right px-1">{s.speed.toFixed(1)}</td>
-                              <td className="text-right px-1">{s.time.toFixed(2)}</td>
-                            </tr>
-                          ))}
+                        <tbody className="font-num">
+                          {res.segments.map((sg, i) => {
+                            const z = zoneLabel(sg.zone);
+                            const bg = sg.zone === "smoky_high" ? "#fff1f2" : sg.zone === "smoky_low" ? "#fffbeb" : (i % 2 === 0 ? "var(--c-s1)" : "var(--c-s2)");
+                            return (
+                              <tr key={sg.branchId + i} style={{ background: bg, color: "var(--c-t2)" }}>
+                                <td className="px-1 py-0.5" style={{ color: "var(--c-t4)" }}>{sg.segmentNumber}</td>
+                                <td className="px-1 py-0.5 truncate max-w-[110px]" title={sg.label}>{sg.branchLabel || sg.branchId}</td>
+                                <td className="px-1 py-0.5 text-right">{Math.round(sg.length)}</td>
+                                <td className="px-1 py-0.5 text-right">{sg.angle.toFixed(0)}°</td>
+                                <td className="px-1 py-0.5"><span className="px-1 rounded" style={{ background: z.bg, color: z.color }}>{z.label}</span></td>
+                                <td className="px-1 py-0.5 text-right" style={{ color: sg.zone !== "clean" ? "var(--c-amber, #b45309)" : "var(--c-blue, #1d4ed8)" }}>{sg.speed}</td>
+                                <td className="px-1 py-0.5 text-right">{sg.time.toFixed(2)}</td>
+                                <td className="px-1 py-0.5 text-right font-semibold" style={{ color: "var(--c-t1)" }}>{sg.cumulTime.toFixed(2)}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
+                        <tfoot className="sticky bottom-0 z-10 font-num">
+                          <tr style={{ background: "var(--c-tint-blue, #e0f2fe)", color: "var(--c-t1)" }}>
+                            <td className="px-1 py-0.5 font-bold" colSpan={2}>ИТОГО</td>
+                            <td className="px-1 py-0.5 text-right font-bold">{Math.round(res.length)}</td>
+                            <td colSpan={4}></td>
+                            <td className="px-1 py-0.5 text-right font-bold">{res.travelTime.toFixed(2)}</td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
-                  )}
+                    <Btn grow icon="Download" onClick={() => exportCsv(r)}>Экспорт в CSV</Btn>
+                  </>)}
                 </SubBlock>
 
                 <SubBlock icon="MessageSquare" title="Примечание" open={isOpen("comment")} onToggle={() => toggle("comment")}>
