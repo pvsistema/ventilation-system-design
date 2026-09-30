@@ -368,7 +368,7 @@ export default function InspectionRoutesPanel(p: Props) {
                         return (
                           <div key={bid + i} className="flex items-center gap-1 pl-1.5 pr-0.5 h-6 text-[11px]"
                             style={{ borderBottom: "1px solid var(--c-b1)", background: seg?.gapBefore ? "color-mix(in srgb, var(--c-amber, #d97706) 10%, transparent)" : undefined }}
-                            title={seg?.gapBefore ? "Разрыв: выработка не примыкает к предыдущей" : undefined}>
+                            title={seg?.gapBefore ? "Разрыв: выработка не соединена с остальной частью маршрута — пропущена выработка на пути" : undefined}>
                             <span className="font-num w-5 text-right" style={{ color: "var(--c-t4)" }}>{i + 1}</span>
                             <button type="button" className="flex-1 truncate text-left hover:underline"
                               style={{ color: b ? "var(--c-t2)" : "var(--c-red)" }}

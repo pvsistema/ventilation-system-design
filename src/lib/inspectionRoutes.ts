@@ -190,21 +190,58 @@ export function calcInspectionRoute(
     return 0;
   };
 
+  // ── Разрывы маршрута ────────────────────────────────────────────────────
+  // Обследование захватывает выработки по пути: боковые ответвления, камеры,
+  // тупики — в них заходят и возвращаются к основной трассе. Такие выработки
+  // примыкают не к ПОСЛЕДНЕЙ пройденной, а к любому уже пройденному узлу, и
+  // разрывом не считаются. Разрыв — только когда выработки маршрута вообще не
+  // соединены между собой: при выборе пропущена выработка, лежащая на пути.
+  // Считаем связные группы выработок маршрута (общие узлы); каждая группа,
+  // кроме первой, — один разрыв. Отмечается первая выработка такой группы.
+  const parent = new Map<string, string>();
+  const find = (x: string): string => {
+    let r = x;
+    while (parent.get(r) !== r) r = parent.get(r)!;
+    let c = x;
+    while (parent.get(c) !== r) { const n = parent.get(c)!; parent.set(c, r); c = n; }
+    return r;
+  };
+  for (const b of list) {
+    if (!parent.has(b.fromId)) parent.set(b.fromId, b.fromId);
+    if (!parent.has(b.toId)) parent.set(b.toId, b.toId);
+    const ra = find(b.fromId), rb = find(b.toId);
+    if (ra !== rb) parent.set(ra, rb);
+  }
+  const seenGroups = new Set<string>();
+  const gapAt = new Set<number>();
+  list.forEach((b, i) => {
+    const g = find(b.fromId);
+    if (seenGroups.has(g)) return;
+    if (seenGroups.size > 0) gapAt.add(i);
+    seenGroups.add(g);
+  });
+  const gaps = gapAt.size;
+
   const segments: InspectionSegment[] = [];
+  const visited = new Set<string>();
   let cur: string | null = null;
-  let gaps = 0;
   let cum = 0;
   list.forEach((b, i) => {
     let forward = true;
-    let gapBefore = false;
-    if (cur == null) {
-      // Первая выработка: направление — к следующей выработке маршрута.
+    const gapBefore = gapAt.has(i);
+    if (cur === b.fromId) forward = true;
+    else if (cur === b.toId) forward = false;
+    // Ответвление от уже пройденного узла (заход в камеру/тупик и т.п.)
+    else if (visited.has(b.fromId)) forward = true;
+    else if (visited.has(b.toId)) forward = false;
+    else {
+      // Начало маршрута или новой группы: направление — к следующей выработке.
       const next = list[i + 1];
       if (next && (b.fromId === next.fromId || b.fromId === next.toId)
           && !(b.toId === next.fromId || b.toId === next.toId)) forward = false;
-    } else if (cur === b.fromId) forward = true;
-    else if (cur === b.toId) forward = false;
-    else { gapBefore = true; gaps++; }
+    }
+    visited.add(b.fromId);
+    visited.add(b.toId);
 
     const rawAngle = Number.isFinite(b.angle) ? b.angle : 0;
     const angle = forward ? rawAngle : -rawAngle;
@@ -238,7 +275,7 @@ export function calcInspectionRoute(
   const extraTime = Math.max(0, route.extraMinutes || 0);
   const totalTime = travelTime + returnTime + hydrantTime + extraTime;
   const warnings: string[] = [];
-  if (gaps > 0) warnings.push(`Разрывов в цепочке выработок: ${gaps} — проверьте порядок выработок маршрута`);
+  if (gaps > 0) warnings.push(`Разрывов маршрута: ${gaps} — выработки не соединены между собой, добавьте пропущенные выработки на пути`);
   if (missing > 0) warnings.push(`Выработок, удалённых из схемы: ${missing}`);
   return {
     segments, length, travelTime, returnTime, hydrantsAuto, hydrants, hydrantTime, extraTime, totalTime,
