@@ -5,7 +5,7 @@ import { type TopoNode, type TopoBranch, project3D, unprojectToPlane } from "@/l
 import InfoPanel from "@/components/cad/InfoPanel";
 import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 import { type Position } from "@/lib/positions";
-import { calcInspectionRoute, fmtLength, fmtMinutes } from "@/lib/inspectionRoutes";
+import { buildInspectionLabels, inspectionLabelScale, inspectionBranchColors } from "@/lib/inspectionRoutes";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { EXPLOSION_HAZARD_COLORS, explosionZoneColor, channelDecay, LAMBDA_DEFAULT, junctionTransmission } from "@/lib/explosionCalculator";
@@ -286,32 +286,10 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
 
   // Подписи маршрутов МПО на схеме: длина и время обследования.
   // Считаются только при изменении маршрутов/схемы, а не на каждый кадр камеры.
-  const inspectionLabels = useMemo(() => {
-    const visible = inspectionRoutes.filter(r => r.visible && r.showLabel && r.branchIds.length > 0);
-    if (visible.length === 0) return [];
-    const branchById = new Map(branches.map(b => [b.id, b]));
-    const nodeById = new Map(nodes.map(n => [n.id, n]));
-    return visible.map(r => {
-      const res = calcInspectionRoute(r, branchById, nodeById, schemaSymbols);
-      // Якорь подписи — середина выработки из середины маршрута
-      const mid = res.segments[Math.floor((res.segments.length - 1) / 2)];
-      const br = mid ? branchById.get(mid.branchId) : undefined;
-      const a = br ? nodeById.get(br.fromId) : undefined;
-      const b = br ? nodeById.get(br.toId) : undefined;
-      if (!a || !b) return null;
-      const ax = (a.x + b.x) / 2, ay = (a.y + b.y) / 2, az = ((a.z ?? 0) + (b.z ?? 0)) / 2;
-      const moved = r.labelX != null && r.labelY != null;
-      return {
-        id: r.id, color: r.color,
-        title: r.name ? `МПО № ${r.number} · ${r.name}` : `МПО № ${r.number}`,
-        text: `${fmtLength(res.length)} · ${fmtMinutes(res.totalTime)}`,
-        // Якорь — точка маршрута; x/y/z — где стоит табличка (перетащенная или авто)
-        ax, ay, az,
-        moved,
-        x: moved ? r.labelX! : ax, y: moved ? r.labelY! : ay, z: moved ? (r.labelZ ?? az) : az,
-      };
-    }).filter((x): x is NonNullable<typeof x> => x != null);
-  }, [inspectionRoutes, branches, nodes, schemaSymbols]);
+  const inspectionLabels = useMemo(
+    () => buildInspectionLabels(inspectionRoutes, branches, nodes, schemaSymbols),
+    [inspectionRoutes, branches, nodes, schemaSymbols],
+  );
 
   // Перетаскивание таблички МПО — как маркер позиции ПЛА: в плоскости z таблички
   const mpoLabelDragRef = useRef<{ id: string; startSx: number; startSy: number; startWx: number; startWy: number; wz: number; moved: boolean } | null>(null);
@@ -1620,12 +1598,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 return map;
               })()}
               posInnerColors={(() => {
-                const map = new Map<string, string>();
                 // Маршруты МПО с окраской «внутри ветвей» — приоритетнее позиций ПЛА
-                inspectionRoutes.forEach(r => {
-                  if (!r.visible || !r.colorInner) return;
-                  r.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, r.color); });
-                });
+                const map = new Map(inspectionBranchColors(inspectionRoutes).inner);
                 if (posColorInner) positions.forEach(pos => {
                   if (pos.branchesVisible === false) return;
                   pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
@@ -1633,12 +1607,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 return map.size > 0 ? map : undefined;
               })()}
               posOuterColors={(() => {
-                const map = new Map<string, string>();
                 // Маршруты МПО с окраской «снаружи ветвей» (по умолчанию включена)
-                inspectionRoutes.forEach(r => {
-                  if (!r.visible || r.colorOuter === false) return;
-                  r.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, r.color); });
-                });
+                const map = new Map(inspectionBranchColors(inspectionRoutes).outer);
                 if (posColorOuter) positions.forEach(pos => {
                   if (pos.branchesVisible === false) return;
                   pos.branchIds.forEach(bid => { if (!map.has(bid)) map.set(bid, pos.color); });
@@ -2057,11 +2027,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               // «Пределы масштаба» ВКЛ — размер не зависит от зума и зажат в
               // диапазон posMin%..posMax%; ВЫКЛ — табличка растёт/уменьшается
               // вместе со схемой (0.25…8).
-              const _xySF = Math.max(1, xyS);
-              const _raw = scaleLimitsEnabled ? 1 : (vs.scale / (_xySF * 0.4));
-              const sf = scaleLimitsEnabled
-                ? Math.min(scalePositionMax / 100, Math.max(scalePositionMin / 100, _raw))
-                : Math.min(8, Math.max(0.25, _raw));
+              const sf = inspectionLabelScale(vs.scale, xyS, scaleLimitsEnabled, scalePositionMin, scalePositionMax);
               const items = inspectionLabels.map(l => ({
                 l,
                 p: project3D({ x: l.x * xyS, y: l.y * xyS, z: l.z * zS }, projOpts),

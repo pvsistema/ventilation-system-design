@@ -45,6 +45,7 @@ import { type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { type UnitsConfig } from "@/lib/unitsConfig";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type Position } from "@/lib/positions";
+import { type InspectionRoute, inspectionBranchColors } from "@/lib/inspectionRoutes";
 import { type SolveResult } from "@/lib/networkSolver";
 type PrintProps = React.ComponentProps<typeof PrintDialog>;
 type SchemaSymbol = NonNullable<PrintProps["schemaSymbols"]>[number];
@@ -87,6 +88,8 @@ export interface CadToolDialogsProps {
   posColorOuter: boolean;
   positions: Position[];
   showPositions: boolean;
+  /** Маршруты профилактического обследования — окраска и таблички на листе */
+  inspectionRoutes: InspectionRoute[];
   scaleLimitsEnabled: boolean;
   /** Ширина ветви по площади сечения (режим из «Пределов масштабов»). */
   widthBySectionOn: boolean;
@@ -244,16 +247,24 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           zScale={p.zScale}
           colorMode={p.colorMode}
           sectionColors={p.sectionColors}
-          posInnerColors={p.posColorInner && p.positions.length > 0 ? (() => {
-            const m = new Map<string, string>();
-            p.positions.forEach(pos => pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); }));
+          // Окраска как в рабочей области: сначала маршруты МПО, затем позиции ПЛА
+          posInnerColors={(() => {
+            const m = new Map(inspectionBranchColors(p.inspectionRoutes).inner);
+            if (p.posColorInner) p.positions.forEach(pos => {
+              if (pos.branchesVisible === false) return;
+              pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); });
+            });
             return m.size > 0 ? m : undefined;
-          })() : undefined}
-          posOuterColors={p.posColorOuter && p.positions.length > 0 ? (() => {
-            const m = new Map<string, string>();
-            p.positions.forEach(pos => pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); }));
+          })()}
+          posOuterColors={(() => {
+            const m = new Map(inspectionBranchColors(p.inspectionRoutes).outer);
+            if (p.posColorOuter) p.positions.forEach(pos => {
+              if (pos.branchesVisible === false) return;
+              pos.branchIds.forEach(bid => { if (!m.has(bid)) m.set(bid, pos.color); });
+            });
             return m.size > 0 ? m : undefined;
-          })() : undefined}
+          })()}
+          inspectionRoutes={p.inspectionRoutes}
           positions={p.positions}
           showPositions={p.showPositions}
           fixedObjectScale={p.scaleLimitsEnabled}

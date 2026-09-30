@@ -8,6 +8,7 @@ import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
+import { type InspectionRoute, buildInspectionLabels, inspectionLabelScale, drawInspectionLabel } from "@/lib/inspectionRoutes";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 // jsPDF подключается по требованию (в момент экспорта в PDF), а не при старте
@@ -62,6 +63,8 @@ interface PrintDialogProps {
   posOuterColors?: Map<string, string>;
   positions?: Position[];
   showPositions?: boolean;
+  /** Маршруты профилактического обследования (таблички на листе) */
+  inspectionRoutes?: InspectionRoute[];
   fixedObjectScale?: boolean;
   /** Ширина ветви по площади сечения — чтобы лист совпадал с экраном. */
   widthBySection?: boolean;
@@ -100,6 +103,7 @@ export default function PrintDialog({
   posOuterColors,
   positions = [],
   showPositions = true,
+  inspectionRoutes = [],
   fixedObjectScale = false,
   widthBySection = false,
   widthLimits,
@@ -838,6 +842,29 @@ export default function PrintDialog({
   }, [showPositions, positions, nodes, branches, xyScale, fixedObjectScale,
       scalePositionMin, scalePositionMax, positionGostMm, viewState.scale, zScale]);
 
+  // Таблички маршрутов МПО — те же, что в рабочей области и предпросмотре.
+  const inspectionLabels = useMemo(
+    () => buildInspectionLabels(inspectionRoutes, branches, nodes, schemaSymbols),
+    [inspectionRoutes, branches, nodes, schemaSymbols],
+  );
+  const drawInspectionLabelsToCanvas = useCallback((
+    ctx: CanvasRenderingContext2D,
+    sv: { scale: number; offsetX: number; offsetY: number; azimuth: number; elevation: number; zScale: number },
+    fitScale: number,
+  ): void => {
+    if (inspectionLabels.length === 0) return;
+    const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
+    // Масштаб — как у позиций ПЛА: размер таблички на экране × коэффициент листа
+    const sf = inspectionLabelScale(viewState.scale, xyScale, fixedObjectScale, scalePositionMin, scalePositionMax);
+    const previewK = viewState.scale > 0 ? fitScale / viewState.scale : 1;
+    const k = sf * previewK;
+    for (const l of inspectionLabels) {
+      const p = project3D({ x: l.x * _xySF, y: l.y * _xySF, z: l.z * zScale }, sv);
+      const a = project3D({ x: l.ax * _xySF, y: l.ay * _xySF, z: l.az * zScale }, sv);
+      drawInspectionLabel(ctx, l, p.sx, p.sy, a.sx, a.sy, k);
+    }
+  }, [inspectionLabels, xyScale, viewState.scale, fixedObjectScale, scalePositionMin, scalePositionMax, zScale]);
+
   // Текстовые блоки — та же логика проекции/масштаба, что в рабочей области (Cad.tsx).
   const drawTextBlocksToCanvas = useCallback((
     ctx: CanvasRenderingContext2D,
@@ -1055,6 +1082,7 @@ export default function PrintDialog({
 
       // Позиции ПЛА — поверх схемы, но ПОД рамкой печати (как в предпросмотре).
       drawPositionsToCanvas(ctx, sv, scaledSc);
+      drawInspectionLabelsToCanvas(ctx, sv, scaledSc);
       // Текстовые блоки — поверх схемы.
       drawTextBlocksToCanvas(ctx, sv, scaledSc);
 
@@ -1131,6 +1159,7 @@ export default function PrintDialog({
       ctx.rect(marginLeftPx, marginTopPx, workW, workH);
       ctx.clip();
       drawPositionsToCanvas(ctx, sv, scaledSc);
+      drawInspectionLabelsToCanvas(ctx, sv, scaledSc);
       drawTextBlocksToCanvas(ctx, sv, scaledSc);
       ctx.restore();
     }
@@ -1139,7 +1168,7 @@ export default function PrintDialog({
       branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows, flowDisplay, infoConfig, unitsConfig,
       colorMode, sectionColors, posInnerColors, posOuterColors, fixedObjectScale, xyScale, widthBySection,
       hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect,
-      drawPositionsToCanvas, drawTextBlocksToCanvas, symSizingFor, pollutedBranchIds, widthLimits]);
+      drawPositionsToCanvas, drawInspectionLabelsToCanvas, drawTextBlocksToCanvas, symSizingFor, pollutedBranchIds, widthLimits]);
 
   // ─── Растровый лист (печать, PNG/JPG/растровый PDF) ──────────────────
   const renderTileToCanvas = useCallback(async (
@@ -1742,6 +1771,7 @@ body{background:white;font-family:Arial,sans-serif}
                         posOuterColors={posOuterColors}
                         positions={positions}
                         showPositions={showPositions}
+                        inspectionLabels={inspectionLabels}
                         fixedObjectScale={fixedObjectScale}
                         widthBySection={widthBySection}
                         scalePositionMin={scalePositionMin}

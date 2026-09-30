@@ -297,3 +297,138 @@ export function fmtLength(m: number): string {
   if (m >= 10000) return `${(m / 1000).toFixed(2).replace(".", ",")} км`;
   return `${Math.round(m).toLocaleString("ru-RU")} м`;
 }
+// ─── Таблички маршрутов МПО на схеме (рабочая область, печать, экспорт) ─────
+
+export interface InspectionLabel {
+  id: string;
+  color: string;
+  title: string;
+  text: string;
+  /** Точка маршрута (середина средней выработки), мировые координаты */
+  ax: number; ay: number; az: number;
+  /** Положение таблички (перемещённое или = якорь) */
+  x: number; y: number; z: number;
+  moved: boolean;
+}
+
+/**
+ * Таблички «МПО № N · длина · время» для видимых маршрутов. Одна функция для
+ * рабочей области, предпросмотра печати и экспорта — числа и положение
+ * таблички везде одинаковые.
+ */
+export function buildInspectionLabels(
+  routes: InspectionRoute[],
+  branches: BranchLike[],
+  nodes: (NodeLike & { x: number; y: number; z: number })[],
+  symbols: SymbolLike[],
+): InspectionLabel[] {
+  const visible = routes.filter(r => r.visible && r.showLabel && r.branchIds.length > 0);
+  if (visible.length === 0) return [];
+  const branchById = new Map(branches.map(b => [b.id, b]));
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  const out: InspectionLabel[] = [];
+  for (const r of visible) {
+    const res = calcInspectionRoute(r, branchById, nodeById, symbols);
+    const mid = res.segments[Math.floor((res.segments.length - 1) / 2)];
+    const br = mid ? branchById.get(mid.branchId) : undefined;
+    const a = br ? nodeById.get(br.fromId) : undefined;
+    const b = br ? nodeById.get(br.toId) : undefined;
+    if (!a || !b) continue;
+    const ax = (a.x + b.x) / 2, ay = (a.y + b.y) / 2, az = ((a.z ?? 0) + (b.z ?? 0)) / 2;
+    const moved = r.labelX != null && r.labelY != null;
+    out.push({
+      id: r.id, color: r.color,
+      title: r.name ? `МПО № ${r.number} · ${r.name}` : `МПО № ${r.number}`,
+      text: `${fmtLength(res.length)} · ${fmtMinutes(res.totalTime)}`,
+      ax, ay, az, moved,
+      x: moved ? (r.labelX as number) : ax,
+      y: moved ? (r.labelY as number) : ay,
+      z: moved ? (r.labelZ ?? az) : az,
+    });
+  }
+  return out;
+}
+
+/**
+ * Окраска ветвей маршрутами МПО: внутри (заливка) и снаружи (контур).
+ * Маршруты приоритетнее позиций ПЛА — их цвета кладутся первыми.
+ */
+export function inspectionBranchColors(routes: InspectionRoute[]): { inner: Map<string, string>; outer: Map<string, string> } {
+  const inner = new Map<string, string>();
+  const outer = new Map<string, string>();
+  for (const r of routes) {
+    if (!r.visible) continue;
+    for (const bid of r.branchIds) {
+      if (r.colorInner && !inner.has(bid)) inner.set(bid, r.color);
+      if (r.colorOuter !== false && !outer.has(bid)) outer.set(bid, r.color);
+    }
+  }
+  return { inner, outer };
+}
+
+/**
+ * Масштаб таблички — как у маркеров позиций ПЛА: при «Пределах масштаба»
+ * размер не зависит от зума и зажат в posMin%..posMax%, иначе 0.25…8.
+ */
+export function inspectionLabelScale(viewScale: number, xyScale: number | undefined, fixed: boolean, posMin: number, posMax: number): number {
+  const xy = Math.max(1, xyScale ?? 1);
+  const raw = fixed ? 1 : viewScale / (xy * 0.4);
+  return fixed ? Math.min(posMax / 100, Math.max(posMin / 100, raw)) : Math.min(8, Math.max(0.25, raw));
+}
+
+/**
+ * Рисует табличку МПО на 2D-контексте (печать, PNG/PDF, векторный экспорт).
+ * (sx, sy) — экранная точка таблички, (asx, asy) — точка маршрута, k — пикселей
+ * на «пиксель рабочей области» (масштаб таблички × коэффициент листа).
+ */
+export function drawInspectionLabel(
+  ctx: CanvasRenderingContext2D, l: InspectionLabel,
+  sx: number, sy: number, asx: number, asy: number, k: number,
+): void {
+  const fsTitle = 10 * k, fsText = 11 * k;
+  const padX = 7 * k, padY = 2 * k, lh = 1.25;
+  ctx.save();
+  ctx.font = `700 ${fsTitle}px Arial, sans-serif`;
+  const wTitle = ctx.measureText(l.title).width;
+  ctx.font = `600 ${fsText}px Arial, sans-serif`;
+  const wText = ctx.measureText(l.text).width;
+  const w = Math.max(wTitle, wText) + padX * 2 + 4 * k;
+  const h = fsTitle * lh + fsText * lh + padY * 2 + 4 * k;
+  // Прямоугольник таблички: перемещённая — центром в точке, иначе над маршрутом
+  const x0 = sx - w / 2;
+  const y0 = l.moved ? sy - h / 2 : sy - h - 10 * k;
+
+  if (l.moved) {
+    ctx.strokeStyle = l.color;
+    ctx.lineWidth = Math.max(1, 1.5 * k);
+    ctx.setLineDash([4 * k, 3 * k]);
+    ctx.beginPath(); ctx.moveTo(asx, asy); ctx.lineTo(sx, sy); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = l.color;
+    ctx.beginPath(); ctx.arc(asx, asy, Math.max(2, 3 * k), 0, Math.PI * 2); ctx.fill();
+  }
+
+  const r = 6 * k;
+  ctx.beginPath();
+  ctx.moveTo(x0 + r, y0);
+  ctx.lineTo(x0 + w - r, y0); ctx.quadraticCurveTo(x0 + w, y0, x0 + w, y0 + r);
+  ctx.lineTo(x0 + w, y0 + h - r); ctx.quadraticCurveTo(x0 + w, y0 + h, x0 + w - r, y0 + h);
+  ctx.lineTo(x0 + r, y0 + h); ctx.quadraticCurveTo(x0, y0 + h, x0, y0 + h - r);
+  ctx.lineTo(x0, y0 + r); ctx.quadraticCurveTo(x0, y0, x0 + r, y0);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(255,255,255,0.95)";
+  ctx.fill();
+  ctx.strokeStyle = l.color;
+  ctx.lineWidth = 2 * k;
+  ctx.stroke();
+
+  ctx.textAlign = "center";
+  ctx.textBaseline = "top";
+  ctx.fillStyle = l.color;
+  ctx.font = `700 ${fsTitle}px Arial, sans-serif`;
+  ctx.fillText(l.title, sx, y0 + 2 * k + padY);
+  ctx.fillStyle = "#111827";
+  ctx.font = `600 ${fsText}px Arial, sans-serif`;
+  ctx.fillText(l.text, sx, y0 + 2 * k + padY + fsTitle * lh);
+  ctx.restore();
+}

@@ -16,6 +16,8 @@ import { type TextBlock } from "@/pages/cad/cadTypes";
 import SchemaSymbolsOverlay from "./SchemaSymbolsOverlay";
 import { computeFrameRect } from "./printPreview/computeFrameRect";
 import PrintPositionsOverlay from "./printPreview/PrintPositionsOverlay";
+import PrintInspectionOverlay from "./printPreview/PrintInspectionOverlay";
+import { type InspectionLabel } from "@/lib/inspectionRoutes";
 import PrintTextBlocksOverlay from "./printPreview/PrintTextBlocksOverlay";
 import PrintLayerOverlay from "./printPreview/PrintLayerOverlay";
 
@@ -52,6 +54,8 @@ interface Props {
   posOuterColors?: Map<string, string>;
   positions?: Position[];
   showPositions?: boolean;
+  /** Таблички маршрутов МПО */
+  inspectionLabels?: InspectionLabel[];
   fixedObjectScale?: boolean;
   /** Ширина ветви по площади сечения — предпросмотр должен совпадать с экраном. */
   widthBySection?: boolean;
@@ -95,6 +99,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   posOuterColors,
   positions = [],
   showPositions = true,
+  inspectionLabels = [],
   fixedObjectScale = false,
   widthBySection = false,
   scalePositionMin = 80,
@@ -343,6 +348,21 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
             viewScale: activeView.scale,
             xyScale, bulkheadScale, fanScale, thinLines,
           })}
+        />
+      )}
+
+      {/* Таблички маршрутов МПО */}
+      {inspectionLabels.length > 0 && (
+        <PrintInspectionOverlay
+          labels={inspectionLabels}
+          proj={proj}
+          viewState={viewState}
+          activeView={activeView}
+          zScale={zScale}
+          xyScale={xyScale}
+          fixedObjectScale={fixedObjectScale}
+          scalePositionMin={scalePositionMin}
+          scalePositionMax={scalePositionMax}
         />
       )}
 
