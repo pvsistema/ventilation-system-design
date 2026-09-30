@@ -702,6 +702,25 @@ export default function PrintDialog({
     return set;
   }, [tiles.list.length, tiles.cols, tiles.rows, viewport, prevW, prevH, viewZoom]);
 
+  // ─── Видимая часть листа (для детального слоя при сильном зуме) ───────────
+  // Возвращает прямоугольник в координатах листа (px предпросмотра до scale).
+  // Пока зум невелик, базового холста хватает — возвращаем undefined, чтобы
+  // прокрутка не вызывала лишней работы в листах.
+  const tileVisibleRect = useCallback((idx: number) => {
+    const dpr = window.devicePixelRatio || 1;
+    if (dpr * viewZoom <= 4 || !viewport.w || !viewport.h) return undefined;
+    const col = idx % tiles.cols;
+    const row = Math.floor(idx / tiles.cols);
+    const left = (20 + col * (prevW + 16)) * viewZoom;
+    const top  = (20 + row * (prevH + 16)) * viewZoom;
+    const x0 = Math.max(0, (viewport.left - left) / viewZoom);
+    const y0 = Math.max(0, (viewport.top  - top)  / viewZoom);
+    const x1 = Math.min(prevW, (viewport.left + viewport.w - left) / viewZoom);
+    const y1 = Math.min(prevH, (viewport.top  + viewport.h - top)  / viewZoom);
+    if (x1 <= x0 || y1 <= y0) return undefined;
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }, [viewZoom, viewport, tiles.cols, prevW, prevH]);
+
   // ─── Рендер рамки слоя печати на canvas через SVG→Image ─────────────
   // Принимает готовые координаты рамки rx,ry,rw,rh (вычислены тем же алгоритмом что схема)
   const drawPrintLayerFrame = useCallback(async (
@@ -1782,6 +1801,7 @@ body{background:white;font-family:Arial,sans-serif}
                         fanScale={fanScale}
                         superSample={viewZoom}
                         tileView={tileView}
+                        visibleRect={tileVisibleRect(idx)}
                       />
                       )}
                     </div>
