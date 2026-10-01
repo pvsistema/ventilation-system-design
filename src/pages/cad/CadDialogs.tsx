@@ -130,6 +130,7 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
     savedViewStateRef,
     positions,
     inspectionRoutes,
+    inspectionIsolate,
     showPositions,
     posColorInner,
     posColorOuter,
@@ -490,6 +491,7 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
       positions={positions}
       showPositions={showPositions}
       inspectionRoutes={inspectionRoutes}
+      inspectionIsolate={inspectionIsolate}
       scaleLimitsEnabled={scaleLimitsEnabled}
       widthBySectionOn={widthBySectionOn}
       scaleBranchMin={scaleBranchMin}

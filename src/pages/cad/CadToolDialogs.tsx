@@ -5,7 +5,7 @@
 // редактирование ветвей, вентрубопровод, руководство пользователя.
 // Логика/состояние остаются в CadPage. Поведение 1:1 с исходником.
 // ─────────────────────────────────────────────────────────────────────────────
-import React, { lazy, Suspense } from "react";
+import React, { lazy, Suspense, useMemo } from "react";
 // ── Диалоги подгружаются в момент открытия ──────────────────────────────────
 // Раньше код ВСЕХ этих окон (печать, легенда, депрессограмма, настройки и
 // прочие — вместе больше 300 КБ исходников) лежал в основном файле программы и
@@ -90,6 +90,8 @@ export interface CadToolDialogsProps {
   showPositions: boolean;
   /** Маршруты профилактического обследования — окраска и таблички на листе */
   inspectionRoutes: InspectionRoute[];
+  /** Режим «только маршруты МПО»: печатаются только выработки видимых маршрутов */
+  inspectionIsolate?: boolean;
   scaleLimitsEnabled: boolean;
   /** Ширина ветви по площади сечения (режим из «Пределов масштабов»). */
   widthBySectionOn: boolean;
@@ -213,7 +215,35 @@ export interface CadToolDialogsProps {
   setShowHelpDialog: (v: boolean) => void;
 }
 
+/**
+ * Что уходит в печать. В режиме «только маршруты МПО» на схеме видны лишь
+ * выработки видимых маршрутов — печать и предпросмотр должны показывать
+ * то же самое: оставляем эти ветви, их узлы и значки на них. По этим же
+ * данным считаются габарит рамки слоя печати и «Вписать».
+ */
+function printScope(p: CadToolDialogsProps) {
+  if (!p.inspectionIsolate) return { nodes: p.nodes, branches: p.branches, schemaSymbols: p.schemaSymbols };
+  const ids = new Set<string>();
+  p.inspectionRoutes.forEach(r => { if (r.visible) r.branchIds.forEach(id => ids.add(id)); });
+  if (ids.size === 0) return { nodes: p.nodes, branches: p.branches, schemaSymbols: p.schemaSymbols };
+  const branches = p.branches.filter(b => ids.has(b.id));
+  const nodeIds = new Set<string>();
+  branches.forEach(b => { nodeIds.add(b.fromId); nodeIds.add(b.toId); });
+  return {
+    nodes: p.nodes.filter(n => nodeIds.has(n.id)),
+    branches,
+    schemaSymbols: p.schemaSymbols.filter(s => s.branchId && ids.has(s.branchId)),
+  };
+}
+
 export default function CadToolDialogs(p: CadToolDialogsProps) {
+  // Мемоизация: новые массивы на каждый рендер заставляли бы окно печати
+  // пересчитывать проекцию и перерисовывать все листы предпросмотра.
+  const ps = useMemo(
+    () => (p.showPrintDialog ? printScope(p) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [p.showPrintDialog, p.inspectionIsolate, p.inspectionRoutes, p.nodes, p.branches, p.schemaSymbols],
+  );
   return (
     // Suspense обязателен для подгружаемых окон. Запасной вид — пустой:
     // окна читаются с локального диска за доли секунды, и мелькающая
@@ -229,10 +259,10 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
         <PrintDialog
           onClose={() => p.setShowPrintDialog(false)}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
-          nodes={p.nodes}
-          branches={p.branches}
+          nodes={ps?.nodes ?? p.nodes}
+          branches={ps?.branches ?? p.branches}
           horizons={p.horizons}
-          schemaSymbols={p.schemaSymbols}
+          schemaSymbols={ps?.schemaSymbols ?? p.schemaSymbols}
           viewState={p.savedViewStateRef.current ?? { scale: 0.4, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 }}
           canvasSize={p.canvasSize}
           branchWidth={p.branchWidth}
