@@ -24,7 +24,10 @@ import {
 } from "@/lib/explosionCalculator";
 import { LEGEND_TYPES, guessBulkheadSymbolId, bulkheadLegendTypes } from "@/lib/schemaSymbols";
 import { useDraggableWindow } from "@/hooks/useDraggableWindow";
+import { useResizableWindow } from "@/hooks/useResizableWindow";
 import { PHeader } from "@/components/cad/printPreview/printUi";
+
+const FONT_MIN = 0.8, FONT_MAX = 1.4;
 
 type TabId = "fans" | "types" | "bulkheads" | "airnorms" | "blastzones" | "sensors" | "typical" | "pumps" | "consumers" | "pipes" | "transport" | "units";
 
@@ -136,6 +139,8 @@ const TABS: { id: TabId; label: string; icon: string; group: string; hint: strin
 const TAB_GROUPS = ["Вентиляция", "Аварии", "Трубопровод", "Общее"];
 
 // ─── Типы для справочника вентиляторов рудника ────────────────────────────
+/** Колонки таблицы характеристик: цвет · угол · реверс · об/мин · удалить */
+const FAN_ROW_COLS = "10px 58px 30px minmax(0,1fr) 16px";
 const CURVE_COLORS = ["#e91e63", "#ff5722", "#ff9800", "#4caf50", "#2196f3", "#9c27b0", "#00bcd4"];
 
 interface MineAngle {
@@ -563,13 +568,13 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
     <div className="flex h-full overflow-hidden">
       {zoomData && <FanOperatingPointDialog data={zoomData} onClose={() => setZoomData(null)} />}
       {/* Левая панель — список вентиляторов рудника */}
-      <div className="flex flex-col border-r border-[var(--c-b1)]" style={{ width: 220, flexShrink: 0 }}>
+      <div className="flex flex-col border-r border-[var(--c-b1)]" style={{ width: 190, flexShrink: 0 }}>
         {/* Шапка */}
-        <div className="flex items-center justify-between px-2 py-1.5 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s3, #f1efea)" }}>
-          <span className="text-[11px] font-semibold text-[var(--c-t2)]">Вентиляторы рудника</span>
-          <button onClick={() => setShowLibrary(true)}
-            className="flex items-center gap-1 text-[10px] text-[var(--c-blue)] hover:text-[var(--c-blue-ink)]">
-            <Icon name="Library" size={11} /> Из библиотеки
+        <div className="flex items-center justify-between gap-1 px-2 py-1.5 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s3, #f1efea)" }}>
+          <span className="text-[11px] font-semibold text-[var(--c-t2)] whitespace-nowrap">Вентиляторы рудника</span>
+          <button onClick={() => setShowLibrary(true)} title="Добавить из библиотеки"
+            className="w-6 h-6 flex-shrink-0 flex items-center justify-center rounded text-[var(--c-blue)] hover:bg-[var(--c-tint-blue)]">
+            <Icon name="Library" size={13} />
           </button>
         </div>
 
@@ -616,39 +621,44 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
       {selected && catalog ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Шапка */}
-          <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
-            <span className="text-[13px] font-bold text-[var(--c-t1)]">{selected.name}</span>
-            <span className="text-[11px] text-[var(--c-t3)]">Ø{selected.diameter} м</span>
-            <span className="text-[10px] text-[var(--c-t4)]">·</span>
-            <span className="text-[11px] text-[var(--c-t3)]">{selected.type}</span>
-            <span className="text-[10px] text-[var(--c-t4)] ml-1">{selected.rpmMin}–{selected.rpmMax} об/мин</span>
-            {catalog.reverseH0 !== undefined && (
-              <span className="ml-1 px-1.5 py-0.5 bg-[var(--c-tint-purple)] text-[var(--c-purple)] text-[10px] rounded-md font-medium">✓ Реверс</span>
-            )}
-            <button onClick={() => openZoom(selected)} className={BTN + " ml-auto"}
-              title="Увеличенный график с рабочими точками, PNG и выгрузка в Excel">
-              <Icon name="Maximize2" size={11} /> Увеличить
-            </button>
-            <button onClick={() => openZoom(selected)} className={BTN}
-              style={{ color: "#16794a", borderColor: "color-mix(in srgb, #16794a 40%, transparent)" }}
-              title="Выгрузка рабочей точки в Excel (диаграмма + табличные данные)">
-              <Icon name="Sheet" size={11} /> Рабочая точка в Excel
-            </button>
-            <button onClick={() => selected && setAddAngleFor(selected)}
-              className={BTN_PRIMARY}>
-              <Icon name="Plus" size={11} /> Характеристика
-            </button>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 px-3 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+            <div className="min-w-0 flex-1" style={{ minWidth: 160 }}>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="text-[13px] font-bold text-[var(--c-t1)] truncate" title={selected.name}>{selected.name}</span>
+                {catalog.reverseH0 !== undefined && (
+                  <span className="flex-shrink-0 px-1.5 py-px bg-[var(--c-tint-purple)] text-[var(--c-purple)] text-[10px] rounded-md font-medium">✓ Реверс</span>
+                )}
+              </div>
+              <div className="text-[11px] text-[var(--c-t3)] whitespace-nowrap truncate">
+                {selected.type} · Ø{selected.diameter} м · {selected.rpmMin}–{selected.rpmMax} об/мин
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 flex-shrink-0">
+              <button onClick={() => openZoom(selected)} className={BTN + " whitespace-nowrap"}
+                title="Увеличенный график с рабочими точками, PNG и выгрузка в Excel">
+                <Icon name="Maximize2" size={11} /> Увеличить
+              </button>
+              <button onClick={() => openZoom(selected)} className={BTN + " whitespace-nowrap"}
+                style={{ color: "#16794a", borderColor: "color-mix(in srgb, #16794a 40%, transparent)" }}
+                title="Выгрузка рабочей точки в Excel (диаграмма + табличные данные)">
+                <Icon name="Sheet" size={11} /> В Excel
+              </button>
+              <button onClick={() => selected && setAddAngleFor(selected)}
+                className={BTN_PRIMARY + " whitespace-nowrap"}>
+                <Icon name="Plus" size={11} /> Характеристика
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-1 overflow-hidden">
             {/* Таблица характеристик */}
-            <div className="flex flex-col border-r border-[var(--c-b1)] flex-shrink-0" style={{ width: 240 }}>
-              <div className="grid text-[10px] font-semibold text-[var(--c-t2)] border-b border-[var(--c-b1)] px-1 py-1.5 select-none"
-                style={{ background: "var(--c-s2, #f8f7f4)", gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
+            <div className="flex flex-col border-r border-[var(--c-b1)] flex-shrink-0" style={{ width: 250 }}>
+              <div className="grid gap-1 text-[10px] font-semibold text-[var(--c-t2)] border-b border-[var(--c-b1)] px-1.5 py-1.5 select-none"
+                style={{ background: "var(--c-s2, #f8f7f4)", gridTemplateColumns: FAN_ROW_COLS }}>
                 <div />
                 <div>Угол</div>
-                <div className="text-center">Реверс</div>
-                <div>Об/мин</div>
+                <div className="text-center" title="Реверсивная характеристика">Рев.</div>
+                <div className="text-right pr-1">Об/мин</div>
                 <div />
               </div>
               <div className="flex-1 overflow-y-auto">
@@ -658,14 +668,14 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
                   </div>
                 ) : selected.bladeAngles.map(a => (
                   <div key={a.id}
-                    className="grid items-center gap-0.5 px-1 py-1.5 border-b border-[var(--c-b1)] hover:bg-[var(--c-s2)]"
-                    style={{ gridTemplateColumns: "14px 42px 36px 64px 22px" }}>
+                    className="grid items-center gap-1 px-1.5 py-1.5 border-b border-[var(--c-b1)] hover:bg-[var(--c-s2)]"
+                    style={{ gridTemplateColumns: FAN_ROW_COLS }}>
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: a.color }} />
                     {/* Угол */}
                     {catalog.bladeAngles.length > 0 ? (
                       <select value={a.angle}
                         onChange={e => updateAngle(selected.id, a.id, { angle: +e.target.value })}
-                        className="text-[10px] border border-[var(--c-b2)] rounded-md px-0.5 py-0.5 w-full text-[var(--c-t1)] bg-[var(--c-s1)]">
+                        className="text-[11px] border border-[var(--c-b2)] rounded-md px-0.5 py-0.5 w-full text-[var(--c-t1)] bg-[var(--c-s1)]">
                         {catalog.bladeAngles.map(ba => <option key={ba} value={ba}>{ba > 0 ? "+" : ""}{ba}°</option>)}
                       </select>
                     ) : (
@@ -682,7 +692,7 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
                     {/* Об/мин */}
                     <input type="number" value={a.rpm} min={selected.rpmMin} max={selected.rpmMax} step={10}
                       onChange={e => updateAngle(selected.id, a.id, { rpm: +e.target.value })}
-                      className="text-[10px] border border-[var(--c-b2)] rounded-md px-1 py-0.5 w-full text-[var(--c-t1)] text-right" />
+                      className="text-[11px] border border-[var(--c-b2)] rounded-md px-1 py-0.5 w-full text-[var(--c-t1)] text-right" />
                     {/* Удалить */}
                     <button onClick={() => removeAngle(selected.id, a.id)}
                       className="text-[var(--c-b3)] hover:text-[var(--c-red)] flex justify-center">
@@ -725,7 +735,7 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
             </div>
 
             {/* Графики */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-3">
+            <div className="flex-1 min-w-0 overflow-y-auto p-3 space-y-3">
               {(() => {
                 const curves = buildCurves(selected);
                 const opPoints = buildOpPoints(selected).filter(p => !p.reverse);
@@ -741,7 +751,7 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
                       </div>
                       <div onClick={() => openZoom(selected)} title="Нажмите, чтобы открыть график в увеличенном виде"
                         style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden", cursor: "zoom-in" }}>
-                        <FanChart curves={curves} type="qh" operatingPoints={opPoints}
+                        <FanChart curves={curves} type="qh" operatingPoints={opPoints} fluid width={340} height={200}
                           networks={opPoints.filter(p => p.r).map(p => ({ r: p.r!, color: FAN_NETWORK_COLOR }))} />
                       </div>
                     </div>
@@ -749,7 +759,7 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
                       <div className="text-[11px] font-semibold text-[var(--c-t2)] mb-1">Мощность — Расход</div>
                       <div onClick={() => openZoom(selected)} title="Нажмите, чтобы открыть график в увеличенном виде"
                         style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden", cursor: "zoom-in" }}>
-                        <FanChart curves={curves} type="qp" />
+                        <FanChart curves={curves} type="qp" fluid width={340} height={200} />
                       </div>
                     </div>
                     {/* Легенда */}
@@ -2079,18 +2089,41 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
 
   // Окно перемещается за шапку (как «Печать» и «Данные ОПО»); положение
   // запоминается. Схема под окном остаётся видна и не затемняется.
-  const WIN_W = Math.min(960, window.innerWidth - 16);
-  const WIN_H = Math.min(620, window.innerHeight - 16);
-  const { pos, dragHandleProps } = useDraggableWindow({
-    width: WIN_W, height: WIN_H, storageKey: "pvs.refDialogPos",
+  // Размер окна меняется за правый/нижний край и угол (запоминается),
+  // окно можно развернуть на весь экран. Крупнее окно — больше места графикам.
+  const { size, maximized, toggleMaximized, resetSize, handle } = useResizableWindow({
+    defaultWidth: Math.min(1180, window.innerWidth - 16),
+    defaultHeight: Math.min(700, window.innerHeight - 16),
+    minWidth: 720, minHeight: 440,
+    storageKey: "pvs.refDialogSize",
   });
+  const { pos: dragPos, dragHandleProps } = useDraggableWindow({
+    width: size.w, height: size.h, storageKey: "pvs.refDialogPos",
+  });
+  const pos = maximized ? { x: 4, y: 4 } : dragPos;
+  const WIN_W = maximized ? window.innerWidth - 8 : size.w;
+  const WIN_H = maximized ? window.innerHeight - 8 : size.h;
+
+  // Размер шрифта содержимого справочника (80…140 %), запоминается.
+  const [fontScale, setFontScale] = useState<number>(() => {
+    try {
+      const v = Number(localStorage.getItem("pvs.refDialogFont"));
+      return Number.isFinite(v) && v >= FONT_MIN && v <= FONT_MAX ? v : 1;
+    } catch { return 1; }
+  });
+  const changeFont = (d: number) => setFontScale(f => {
+    const v = Math.round(Math.min(FONT_MAX, Math.max(FONT_MIN, f + d)) * 10) / 10;
+    try { localStorage.setItem("pvs.refDialogFont", String(v)); } catch { /* ignore */ }
+    return v;
+  });
+  const hdrBtn = "h-6 min-w-6 px-1 flex items-center justify-center rounded text-[11px] hover:bg-white/10 disabled:opacity-35";
 
   return (
     <div className="fixed inset-0 z-50" style={{ pointerEvents: "none" }}>
       <div className="flex flex-col overflow-hidden"
         style={{
           position: "absolute", left: pos.x, top: pos.y,
-          width: WIN_W, height: WIN_H, maxHeight: `calc(100vh - ${pos.y + 8}px)`,
+          width: WIN_W, height: WIN_H, maxHeight: `calc(100vh - ${pos.y + 4}px)`,
           background: "var(--c-s1)", border: "1px solid var(--c-b3)", borderRadius: 8,
           boxShadow: "0 16px 48px -12px rgba(0,0,0,.45)",
           fontFamily: "var(--font-ui)", pointerEvents: "auto",
@@ -2100,11 +2133,35 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
         <PHeader icon="BookOpen" title={`Справочники — ${currentTab.label}`}
           subtitle={currentTab.group}
           onClose={onClose}
-          dragProps={dragHandleProps} />
+          dragProps={maximized ? undefined : dragHandleProps}
+          right={
+            <div className="flex items-center gap-0.5 mr-1" style={{ color: "#c8cdd3" }}>
+              <button type="button" className={hdrBtn} onClick={() => changeFont(-0.1)} disabled={fontScale <= FONT_MIN}
+                title="Уменьшить шрифт">
+                <Icon name="AArrowDown" size={14} fallback="Minus" />
+              </button>
+              <button type="button" className={hdrBtn + " w-10 font-mono"} onClick={() => { setFontScale(1); try { localStorage.setItem("pvs.refDialogFont", "1"); } catch { /* ignore */ } }}
+                title="Размер шрифта — нажмите, чтобы вернуть 100 %">
+                {Math.round(fontScale * 100)}%
+              </button>
+              <button type="button" className={hdrBtn} onClick={() => changeFont(0.1)} disabled={fontScale >= FONT_MAX}
+                title="Увеличить шрифт">
+                <Icon name="AArrowUp" size={14} fallback="Plus" />
+              </button>
+              <span className="w-px h-4 mx-1" style={{ background: "rgba(255,255,255,.2)" }} />
+              <button type="button" className={hdrBtn} onClick={resetSize} title="Исходный размер окна">
+                <Icon name="RotateCcw" size={13} />
+              </button>
+              <button type="button" className={hdrBtn} onClick={toggleMaximized}
+                title={maximized ? "Вернуть прежний размер окна" : "Развернуть на весь экран"}>
+                <Icon name={maximized ? "Minimize2" : "Maximize2"} size={13} />
+              </button>
+            </div>
+          } />
 
-        <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-1 overflow-hidden min-h-0" style={{ zoom: fontScale } as React.CSSProperties}>
           {/* Навигация по разделам */}
-          <nav className="w-52 flex-shrink-0 overflow-y-auto py-2 px-2 border-r border-[var(--c-b1)]"
+          <nav className="w-48 flex-shrink-0 overflow-y-auto py-2 px-2 border-r border-[var(--c-b1)]"
             style={{ background: "var(--c-s2, #f8f7f4)" }}>
             {TAB_GROUPS.map(group => (
               <div key={group} className="mb-2">
@@ -2151,6 +2208,15 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
             </div>
           </div>
         </div>
+        {!maximized && <>
+          <div {...handle("e")} />
+          <div {...handle("s")} />
+          <div {...handle("se")}>
+            <svg width="16" height="16" viewBox="0 0 16 16" style={{ display: "block", opacity: 0.55 }}>
+              <path d="M15 6 L6 15 M15 10 L10 15 M15 14 L14 15" stroke="var(--c-t3, #6b7280)" strokeWidth="1.2" />
+            </svg>
+          </div>
+        </>}
       </div>
     </div>
   );
