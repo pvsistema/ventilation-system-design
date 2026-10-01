@@ -5,7 +5,14 @@
 
 import type { FanPt, FanIsoLine } from "@/lib/fanChartData";
 
-export interface FanChartCurve { pts: FanPt[]; color: string; dash?: boolean; label?: string }
+export interface FanChartCurve {
+  pts: FanPt[]; color: string; dash?: boolean; label?: string;
+  /** Выделенная кривая (выбранный угол ветви) — толще, остальные приглушены */
+  highlight?: boolean;
+  /** Подсказка при наведении и значение для onCurveClick */
+  title?: string;
+  key?: string | number;
+}
 export interface FanChartPoint { q: number; h: number; color: string; label?: string }
 
 interface Props {
@@ -17,6 +24,12 @@ interface Props {
   height?: number;
   /** Подписывать кривые и точки (в увеличенном виде) */
   labels?: boolean;
+  /** Характеристики сети H = R·Q² (через рабочие точки) */
+  networks?: { r: number; color: string }[];
+  /** Клик по кривой (выбор угла лопаток) */
+  onCurveClick?: (curve: FanChartCurve) => void;
+  /** Тянуться на ширину контейнера (width/height задают пропорции) */
+  fluid?: boolean;
 }
 
 /** «Красивый» шаг сетки: 1, 2, 2.5, 5 × 10ⁿ */
@@ -28,7 +41,7 @@ function niceStep(range: number, ticks: number): number {
   return k * p;
 }
 
-export default function FanChart({ curves, type, operatingPoints, isolines, width = 340, height = 190, labels = false }: Props) {
+export default function FanChart({ curves, type, operatingPoints, isolines, width = 340, height = 190, labels = false, networks, onCurveClick, fluid = false }: Props) {
   const W = width, H = height;
   const big = W > 500;
   const fs = big ? 11 : 8;
@@ -54,7 +67,7 @@ export default function FanChart({ curves, type, operatingPoints, isolines, widt
 
   const xTicks = Math.round(maxQ / xStep), yTicks = Math.round(maxV / yStep);
   return (
-    <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} xmlns="http://www.w3.org/2000/svg"
+    <svg width={fluid ? "100%" : W} height={fluid ? undefined : H} viewBox={`0 0 ${W} ${H}`} xmlns="http://www.w3.org/2000/svg"
       style={{ fontFamily: "var(--font-num, sans-serif)", display: "block", background: big ? "#fff" : undefined }}>
       <defs>
         <clipPath id={`fc-clip-${W}-${H}-${type}`}><rect x={PL} y={PT} width={cw} height={ch} /></clipPath>
@@ -81,11 +94,31 @@ export default function FanChart({ curves, type, operatingPoints, isolines, widt
           const d = l.pts.map((p, i) => `${i === 0 ? "M" : "L"}${toX(p.q).toFixed(1)},${toY(p.h).toFixed(1)}`).join(" ");
           return <path key={`iso${li}`} d={d} fill="none" stroke="#8a8f98" strokeWidth={big ? 1 : 0.8} strokeDasharray="5,3" />;
         })}
+        {/* Характеристики сети R·Q² */}
+        {type === "qh" && networks?.map((n, ni) => {
+          const N = 40;
+          const d = Array.from({ length: N + 1 }, (_, i) => {
+            const q = maxQ * i / N;
+            return `${i === 0 ? "M" : "L"}${toX(q).toFixed(1)},${toY(Math.min(maxV * 1.5, n.r * q * q)).toFixed(1)}`;
+          }).join(" ");
+          return <path key={`net${ni}`} d={d} fill="none" stroke={n.color} strokeWidth={big ? 1.4 : 1.1} strokeDasharray="6,3" />;
+        })}
         {curves.map((c, ci) => {
           if (c.pts.length === 0) return null;
+          const anyHl = curves.some(x => x.highlight);
+          const dim = anyHl && !c.highlight;
           const d = c.pts.map((p, i) => `${i === 0 ? "M" : "L"}${toX(p.q).toFixed(1)},${toY(val(p)).toFixed(1)}`).join(" ");
-          return <path key={ci} d={d} fill="none" stroke={c.color} strokeWidth={c.dash ? 1.4 : big ? 2.4 : 2}
-            strokeDasharray={c.dash ? "6,4" : undefined} strokeLinejoin="round" />;
+          const sw = c.highlight ? (big ? 3.2 : 2.6) : c.dash ? 1.4 : big ? 2.4 : dim ? 1.4 : 2;
+          return <g key={c.key ?? ci}>
+            <path d={d} fill="none" stroke={c.color} strokeWidth={sw} opacity={dim ? 0.55 : 1}
+              strokeDasharray={c.dash ? "6,4" : undefined} strokeLinejoin="round" />
+            {onCurveClick && (
+              <path d={d} fill="none" stroke="transparent" strokeWidth={10} style={{ cursor: "pointer" }}
+                onClick={() => onCurveClick(c)}>
+                {c.title && <title>{c.title}</title>}
+              </path>
+            )}
+          </g>;
         })}
       </g>
 
@@ -108,7 +141,8 @@ export default function FanChart({ curves, type, operatingPoints, isolines, widt
           </>}
           <circle cx={toX(op.q)} cy={toY(op.h)} r={big ? 6 : 4} fill={op.color} stroke="white" strokeWidth={1.5} />
           {labels && (
-            <text x={toX(op.q) + 9} y={toY(op.h) - 8} fontSize={fs} fontWeight={600} fill="#1f2937"
+            <text x={toX(op.q) > PL + cw * 0.6 ? toX(op.q) - 9 : toX(op.q) + 9}
+              textAnchor={toX(op.q) > PL + cw * 0.6 ? "end" : "start"} y={toY(op.h) - 10} fontSize={fs} fontWeight={600} fill="#1f2937"
               stroke="#fff" strokeWidth={3} paintOrder="stroke">
               {op.label ? `${op.label}: ` : ""}Q={op.q.toFixed(2)}, H={Math.round(op.h)}
             </text>

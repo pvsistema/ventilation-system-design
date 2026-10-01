@@ -5,43 +5,29 @@
 // отдельные листы для реверса. Сохранение картинки PNG.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import FanChart from "@/components/cad/FanChart";
-import type { FanCurve } from "@/lib/fanCurves";
-import {
-  fanCurvePoints, reverseCurvePoints, fanEfficiencyIsolines, angleLabel, type FanPt,
-} from "@/lib/fanChartData";
 import { exportFanOperatingPointToExcel, type FanXlsBlock } from "@/lib/fanOperatingPointExcel";
+import { useFanOpCurves, type BuiltCurve } from "@/components/cad/useFanOpCurves";
+import type { FanOperatingPointData } from "@/lib/fanOperatingPointData";
 
-export interface FanOpAngle { angle: number; reverse: boolean; rpm: number; color: string }
-export interface FanOpPoint { label: string; q: number; h: number; reverse: boolean; source: "manual" | "calc"; color: string }
+export type { FanOperatingPointData, FanOpAngle, FanOpPoint } from "@/lib/fanOperatingPointData";
 
-export interface FanOperatingPointData {
-  fanName: string;
-  catalog: FanCurve;
-  angles: FanOpAngle[];
-  points: FanOpPoint[];
+interface Props {
+  data: FanOperatingPointData;
+  onClose: () => void;
+  /** Выбор угла лопаток кликом по кривой (только в окне ветви) */
+  onPickAngle?: (angle: number) => void;
 }
 
-interface Props { data: FanOperatingPointData; onClose: () => void }
-
-interface BuiltCurve { pts: FanPt[]; color: string; dash?: boolean; label: string }
-
-function buildBlock(c: FanCurve, angles: FanOpAngle[], reverse: boolean): BuiltCurve[] {
-  return angles.filter(a => a.reverse === reverse).map(a => ({
-    pts: reverse ? reverseCurvePoints(c, 40, a.rpm) : fanCurvePoints(c, a.angle, 40, a.rpm),
-    color: a.color,
-    dash: reverse,
-    label: reverse ? `${angleLabel(a.angle)} рев.` : angleLabel(a.angle),
-  })).filter(x => x.pts.length > 0);
-}
-
-export default function FanOperatingPointDialog({ data, onClose }: Props) {
-  const { catalog, angles, points, fanName } = data;
+export default function FanOperatingPointDialog({ data, onClose, onPickAngle }: Props) {
+  const { catalog, angles, points, fanName, selected, subtitle } = data;
   const wrapRef = useRef<HTMLDivElement>(null);
   const hasReverse = angles.some(a => a.reverse) || points.some(p => p.reverse);
-  const [mode, setMode] = useState<"forward" | "reverse">("forward");
+  const [mode, setMode] = useState<"forward" | "reverse">(selected?.reverse ? "reverse" : "forward");
+  // Режим ветви сменили в панели (прямой ↔ реверс) — окно переключается вслед
+  useEffect(() => { if (selected) setMode(selected.reverse ? "reverse" : "forward"); }, [selected?.reverse]); // eslint-disable-line react-hooks/exhaustive-deps
   const [chart, setChart] = useState<"qh" | "qp">("qh");
   const [showIso, setShowIso] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -55,20 +41,7 @@ export default function FanOperatingPointDialog({ data, onClose }: Props) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
-  // Реверсные кривые: если углы с реверсом не заданы, а точки в реверсе есть —
-  // показываем реверсную характеристику каталога на номинальных оборотах.
-  const reverseAngles = useMemo<FanOpAngle[]>(() => {
-    const r = angles.filter(a => a.reverse);
-    if (r.length > 0 || !points.some(p => p.reverse)) return r;
-    return [{ angle: 0, reverse: true, rpm: catalog.rpmNominal, color: "#9c27b0" }];
-  }, [angles, points, catalog]);
-
-  const fwdCurves = useMemo(() => buildBlock(catalog, angles, false), [catalog, angles]);
-  const revCurves = useMemo(() => buildBlock(catalog, reverseAngles, true), [catalog, reverseAngles]);
-  const fwdIso = useMemo(() => {
-    const fa = angles.filter(a => !a.reverse);
-    return fanEfficiencyIsolines(catalog, fa.map(a => a.angle), fa[0]?.rpm);
-  }, [catalog, angles]);
+  const { fwdCurves, revCurves, fwdIso, networks } = useFanOpCurves(data);
 
   const isRev = mode === "reverse";
   const curves = isRev ? revCurves : fwdCurves;
@@ -140,6 +113,7 @@ export default function FanOperatingPointDialog({ data, onClose }: Props) {
             <div className="text-[13px] font-semibold text-[var(--c-t1)] truncate">Рабочая точка — {fanName}</div>
             <div className="text-[11px] text-[var(--c-t3)]">
               {catalog.type === "axial" ? "Осевой" : catalog.type === "vmp" ? "ВМП" : "Центробежный"} · Ø{catalog.diameter} м
+              {subtitle ? ` · ${subtitle}` : ""}
             </div>
           </div>
           <div className="ml-auto flex items-center gap-2">
@@ -184,13 +158,16 @@ export default function FanOperatingPointDialog({ data, onClose }: Props) {
         <div className="flex-1 overflow-auto">
           <div ref={wrapRef} className="flex justify-center p-4 bg-white">
             <FanChart curves={curves} type={chart} operatingPoints={opPts}
-              isolines={showIso ? iso : []} width={W} height={H} labels />
+              isolines={showIso ? iso : []} width={W} height={H} labels
+              networks={networks(isRev)}
+              onCurveClick={onPickAngle ? (c => { const bc = c as BuiltCurve; if (!bc.reverse) onPickAngle(bc.angle); }) : undefined} />
           </div>
 
           {/* Рабочие точки */}
           <div className="px-4 pb-3 pt-2 border-t border-[var(--c-b1)]">
             <div className="text-[11px] font-semibold text-[var(--c-t2)] mb-1.5">
               Рабочие точки{isRev ? " (реверс)" : ""}
+              {onPickAngle && !isRev && <span className="ml-2 font-normal text-[var(--c-t4)]">Клик по кривой — выбрать угол лопаток ветви</span>}
             </div>
             {opPts.length === 0 ? (
               <div className="text-[11px] text-[var(--c-t4)]">

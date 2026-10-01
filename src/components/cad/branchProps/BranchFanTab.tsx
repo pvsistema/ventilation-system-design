@@ -19,7 +19,13 @@
 //     теперь одно поле ввода, расчётное значение в результатах.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
-import { FAN_CATALOG, getFanById, fanQMax, fanHAngle } from "@/lib/fanCurves";
+import { useMemo, useState } from "react";
+import { FAN_CATALOG, getFanById, fanQMax } from "@/lib/fanCurves";
+import FanChart from "@/components/cad/FanChart";
+import FanOperatingPointDialog from "@/components/cad/FanOperatingPointDialog";
+import { useFanOpCurves, type BuiltCurve } from "@/components/cad/useFanOpCurves";
+import { branchFanOpData, type FanOperatingPointData } from "@/lib/fanOperatingPointData";
+import { FAN_OP_COLOR, FAN_NETWORK_COLOR, FAN_REVERSE_COLOR } from "@/lib/fanChartData";
 import { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
 import { fanWindowRkMurg } from "@/lib/bulkheads";
 import Icon from "@/components/ui/icon";
@@ -313,6 +319,10 @@ function CurveMode({ branch: b, onUpdate, mineFans, onOpenFanLibrary }: {
   mineFans?: MineFanExport[]; onOpenFanLibrary?: () => void;
 }) {
   const curve = getFanById(b.fanCurveId);
+  const [zoom, setZoom] = useState(false);
+  const zoomData = useMemo(() => (zoom && curve ? branchFanOpData(b, curve) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [zoom, curve, b.id, b.fanRpm, b.fanBladeAngle, b.fanReverse, b.fanType, b.flow, b.fanPressure, b.fanParallel, b.fanStopped, b.fanName]);
   const rpm = b.fanRpm || (curve?.rpmNominal ?? 0);
   const bladeAngle = b.fanBladeAngle ?? (curve?.bladeAngles?.length ? curve.bladeAngles[Math.floor(curve.bladeAngles.length / 2)] : 45);
 
@@ -381,112 +391,63 @@ function CurveMode({ branch: b, onUpdate, mineFans, onOpenFanLibrary }: {
               <span>{curve.rpmMin}</span><span>{curve.rpmMax}</span>
             </div>
           </div>
-          <div className="rounded-md overflow-hidden" style={{ border: "1px solid var(--c-b1, #e7e4dd)", background: "var(--c-s2, #f8f7f4)" }}>
-            <FanQHChart branch={b} rpm={rpm} bladeAngle={bladeAngle} onPickAngle={(a) => onUpdate({ fanBladeAngle: a })} />
-            <div className="px-2 pb-1.5 flex gap-3 text-[9px] justify-center flex-wrap" style={{ color: "var(--c-t3, #6b7280)" }}>
-              <span style={{ color: "var(--c-accent, #1e5a7a)" }}>━ выбранный угол</span>
-              <span>┅ другие (клик — выбрать)</span>
-              {Math.abs(b.flow) > 0.01 && <span style={{ color: "var(--c-red, #dc2626)" }}>● рабочая точка</span>}
+          <div className="rounded-md overflow-hidden" style={{ border: "1px solid var(--c-b1, #e7e4dd)", background: "var(--c-s1, #fff)" }}>
+            <FanOpMiniChart branch={b} onPickAngle={(a) => onUpdate({ fanBladeAngle: a })} onZoom={() => setZoom(true)} />
+            <div className="px-2 pb-1.5 flex gap-x-3 gap-y-0.5 text-[9px] justify-center flex-wrap" style={{ color: "var(--c-t3, #6b7280)" }}>
+              <span style={{ color: "var(--c-t1, #1f2328)" }}>━ выбранный угол {bladeAngle}°</span>
+              <span>━ другие (клик — выбрать)</span>
+              {curve.reverseH0 !== undefined && b.fanType !== "ВМП" && <span style={{ color: FAN_REVERSE_COLOR }}>┅ реверс</span>}
+              {Math.abs(b.flow) > 0.01 && !b.fanStopped && <>
+                <span style={{ color: FAN_NETWORK_COLOR }}>┅ сеть R·Q²</span>
+                <span style={{ color: FAN_OP_COLOR }}>● рабочая точка</span>
+              </>}
             </div>
           </div>
+          {zoomData && (
+            <FanOperatingPointDialog data={zoomData} onClose={() => setZoom(false)}
+              onPickAngle={curve.bladeAngles.length > 1 ? (a) => onUpdate({ fanBladeAngle: a }) : undefined} />
+          )}
         </>
       )}
     </>
   );
 }
 
-/** График Q–H: кривые по углам лопаток (закон подобия по оборотам), реверс, рабочая точка. */
-function FanQHChart({ branch: b, rpm, bladeAngle, onPickAngle }: {
-  branch: TopoBranch; rpm: number; bladeAngle: number; onPickAngle: (a: number) => void;
+/**
+ * График рабочей точки ветви — тот же график, что в справочнике вентиляторов
+ * и в окне увеличенного просмотра (общие данные branchFanOpData): все углы
+ * лопаток на оборотах ветви, выбранный угол выделен, реверс, характеристика
+ * сети R·Q² и рабочая точка из расчёта. Клик по кривой — выбрать угол.
+ */
+function FanOpMiniChart({ branch: b, onPickAngle, onZoom }: {
+  branch: TopoBranch; onPickAngle: (a: number) => void; onZoom: () => void;
 }) {
   const curve = getFanById(b.fanCurveId);
-  if (!curve) return null;
-  const W = 260, H = 130, padL = 36, padR = 8, padT = 8, padB = 24;
-  const gW = W - padL - padR, gH = H - padT - padB;
-  // Закон подобия: Q ~ n/n0, H ~ (n/n0)²
-  const k = rpm > 0 && curve.rpmNominal > 0 ? rpm / curve.rpmNominal : 1;
-  const qMin = curve.qMin * k, qMax = curve.qMax * k;
-  const angles = curve.bladeAngles.length > 0 ? curve.bladeAngles : [bladeAngle];
+  const data = useMemo(() => (curve ? branchFanOpData(b, curve) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [curve, b.id, b.fanRpm, b.fanBladeAngle, b.fanReverse, b.fanType, b.flow, b.fanPressure, b.fanParallel, b.fanStopped, b.fanName]);
+  if (!curve || !data) return null;
+  return <FanOpMiniChartInner data={data} onPickAngle={onPickAngle} onZoom={onZoom} />;
+}
 
-  // Напор — общей функцией fanHAngle, как у расчёта сети
-  let hMax = 0;
-  angles.forEach(a => {
-    for (let i = 0; i <= 20; i++) {
-      const h = fanHAngle(curve, curve.qMin + (curve.qMax - curve.qMin) * i / 20, a) * k * k;
-      if (h > hMax) hMax = h;
-    }
-  });
-  hMax = Math.ceil(hMax / 500) * 500 || 2000;
-  const tx = (q: number) => padL + (q - qMin) / (qMax - qMin) * gW;
-  const ty = (h: number) => padT + gH - Math.max(0, Math.min(1, h / hMax)) * gH;
-  const qWork = Math.abs(b.flow);
-  const R = qWork > 0.01 ? b.fanPressure / (qWork * qWork) : 0;
-  const axis = { fill: "var(--c-t3, #6b7280)" };
-  const grid = { stroke: "var(--c-b1, #e7e4dd)" };
-
+function FanOpMiniChartInner({ data, onPickAngle, onZoom }: {
+  data: FanOperatingPointData; onPickAngle: (a: number) => void; onZoom: () => void;
+}) {
+  const { fwdCurves, revCurves, networks } = useFanOpCurves(data);
+  const rev = !!data.selected?.reverse;
+  // В прямом режиме реверсная кривая — бледным пунктиром для сравнения
+  const curves = rev ? [...revCurves, ...fwdCurves.map(c => ({ ...c, highlight: false }))] : [...fwdCurves, ...revCurves.map(c => ({ ...c, highlight: false }))];
+  const pts = data.points.filter(p => p.reverse === rev);
   return (
-    <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{ display: "block", fontFamily: "var(--font-num)" }}>
-      <rect x={padL} y={padT} width={gW} height={gH} style={{ fill: "var(--c-s1, #fff)", stroke: "var(--c-b2, #d5d1c8)" }} strokeWidth={0.5} />
-      {Array.from({ length: 5 }, (_, i) => Math.round(hMax * i / 4)).map(h => (
-        <g key={h}>
-          <line x1={padL} y1={ty(h)} x2={padL + gW} y2={ty(h)} style={grid} strokeWidth={0.5} />
-          <text x={padL - 3} y={ty(h) + 3} textAnchor="end" fontSize={8} style={axis}>{h}</text>
-        </g>
-      ))}
-      {Array.from({ length: 5 }, (_, i) => Math.round(qMin + (qMax - qMin) * i / 4)).map(q => (
-        <g key={q}>
-          <line x1={tx(q)} y1={padT} x2={tx(q)} y2={padT + gH} style={grid} strokeWidth={0.5} />
-          <text x={tx(q)} y={padT + gH + 10} textAnchor="middle" fontSize={8} style={axis}>{q}</text>
-        </g>
-      ))}
-      <g opacity={b.fanReverse ? 0.35 : 1}>
-        {angles.map(a => {
-          // Кривая — до паспортного предела ДЛЯ ЭТОГО угла
-          const qMaxA = fanQMax(curve, a);
-          const pts = Array.from({ length: 31 }, (_, i) => {
-            const qn = curve.qMin + (qMaxA - curve.qMin) * i / 30;
-            return `${tx(qn * k).toFixed(1)},${ty(fanHAngle(curve, qn, a) * k * k).toFixed(1)}`;
-          });
-          const sel = a === bladeAngle;
-          return (
-            <polyline key={a} points={pts.join(" ")} fill="none"
-              style={{ stroke: sel ? "var(--c-accent, #1e5a7a)" : "var(--c-blue-lt, #81b0c4)", cursor: "pointer" }}
-              strokeWidth={sel ? 2 : 1} strokeDasharray={sel ? undefined : "3,2"} opacity={sel ? 1 : 0.7}
-              onClick={() => onPickAngle(a)}>
-              <title>Угол {a}°</title>
-            </polyline>
-          );
-        })}
-      </g>
-      {curve.reverseH0 !== undefined && curve.reverseH1 !== undefined && curve.reverseH2 !== undefined && (() => {
-        const revQMax = (curve.reverseQMax ?? curve.qMax) * k;
-        const pts: string[] = [];
-        for (let i = 0; i <= 30; i++) {
-          const qn = curve.qMin + (curve.qMax - curve.qMin) * i / 30;
-          if (qn * k > revQMax) break;
-          const hr = Math.max(0, curve.reverseH0! + curve.reverseH1! * qn + curve.reverseH2! * qn * qn) * k * k;
-          pts.push(`${tx(qn * k).toFixed(1)},${ty(hr).toFixed(1)}`);
-        }
-        return (
-          <polyline points={pts.join(" ")} fill="none" style={{ stroke: "var(--c-red, #dc2626)" }}
-            strokeWidth={b.fanReverse ? 2 : 1} strokeDasharray={b.fanReverse ? undefined : "5,3"} opacity={b.fanReverse ? 1 : 0.4}>
-            <title>Реверс</title>
-          </polyline>
-        );
-      })()}
-      {qWork > 0.01 && (
-        <>
-          <polyline fill="none" style={{ stroke: "var(--c-signal, #e8a317)" }} strokeWidth={1} strokeDasharray="4,2"
-            points={Array.from({ length: 20 }, (_, i) => {
-              const q = qMin + (qMax - qMin) * i / 19;
-              return `${tx(q).toFixed(1)},${ty(R * q * q).toFixed(1)}`;
-            }).join(" ")} />
-          <circle cx={tx(qWork)} cy={ty(Math.abs(b.fanPressure))} r={4} style={{ fill: "var(--c-red, #dc2626)", stroke: "var(--c-s1, #fff)" }} strokeWidth={1} />
-        </>
-      )}
-      <text x={padL + gW / 2} y={H - 2} textAnchor="middle" fontSize={8} style={axis}>Q, м³/с</text>
-      <text x={6} y={padT + gH / 2} textAnchor="middle" fontSize={8} style={axis}
-        transform={`rotate(-90,6,${padT + gH / 2})`}>H, Па</text>
-    </svg>
+    <div className="relative">
+      <FanChart curves={curves} type="qh" operatingPoints={pts} networks={networks(rev)}
+        width={300} height={170} fluid
+        onCurveClick={c => { const bc = c as BuiltCurve; if (!bc.reverse) onPickAngle(bc.angle); }} />
+      <button type="button" onClick={onZoom} title="Увеличить график, PNG и выгрузка рабочей точки в Excel"
+        className="absolute top-1 right-1 h-6 px-1.5 rounded flex items-center gap-1 text-[10px]"
+        style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
+        <Icon name="Maximize2" size={11} /> Увеличить
+      </button>
+    </div>
   );
 }

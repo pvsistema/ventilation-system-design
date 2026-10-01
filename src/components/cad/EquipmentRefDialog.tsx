@@ -4,7 +4,9 @@ import Icon from "@/components/ui/icon";
 import { FAN_CATALOG, fanHAngle, fanQMax, type FanCurve } from "@/lib/fanCurves";
 import { fanCurvePoints, reverseCurvePoints } from "@/lib/fanChartData";
 import FanChart from "@/components/cad/FanChart";
-import FanOperatingPointDialog, { type FanOperatingPointData } from "@/components/cad/FanOperatingPointDialog";
+import FanOperatingPointDialog from "@/components/cad/FanOperatingPointDialog";
+import { branchesOpPoints, type FanOperatingPointData } from "@/lib/fanOperatingPointData";
+import { FAN_NETWORK_COLOR } from "@/lib/fanChartData";
 import type { TopoBranch } from "@/lib/topology";
 import {
   BULKHEAD_CATALOG, BULKHEAD_TYPE_LABELS, BULKHEAD_TYPE_COLORS,
@@ -525,8 +527,8 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
     if (!c) return [];
     return fan.bladeAngles.map(a => ({
       pts: a.reverse && c.reverseH0 !== undefined
-        ? reverseCurvePoints(c)
-        : fanCurvePoints(c, a.angle),
+        ? reverseCurvePoints(c, 40, a.rpm)
+        : fanCurvePoints(c, a.angle, 40, a.rpm),
       color: a.color,
       dash: a.reverse,
     }));
@@ -541,19 +543,8 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
       label: `${a.angle > 0 ? "+" : ""}${a.angle}°${a.reverse ? " рев." : ""}`,
       q: a.operatingQ!, h: a.operatingH ?? 0, reverse: a.reverse, source: "manual" as const, color: a.color,
     }));
-    const calc = (branches ?? [])
-      .filter(b => b.hasFan && b.fanMode === "curve" && b.fanCurveId === fan.catalogId && !b.fanStopped && Math.abs(b.flow ?? 0) > 0.01)
-      .map(b => {
-        const par = Math.max(1, b.fanParallel ?? 1);
-        return {
-          label: `Рабочая точка${b.fanName ? ` ${b.fanName}` : ""} (ветвь ${b.id}${b.fanBladeAngle !== undefined && fan.bladeAngles.length > 1 ? `, ${b.fanBladeAngle}°` : ""})`,
-          q: Math.abs(b.flow) / par,
-          h: Math.abs(b.fanPressure),
-          reverse: !!b.fanReverse,
-          source: "calc" as const,
-          color: "#e11d48",
-        };
-      });
+    // Расчётные точки — той же функцией, что и в панели свойств ветви
+    const calc = branchesOpPoints(branches ?? [], fan.catalogId, fan.bladeAngles.length > 1);
     return [...calc, ...manual];
   };
 
@@ -750,7 +741,8 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
                       </div>
                       <div onClick={() => openZoom(selected)} title="Нажмите, чтобы открыть график в увеличенном виде"
                         style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden", cursor: "zoom-in" }}>
-                        <FanChart curves={curves} type="qh" operatingPoints={opPoints} />
+                        <FanChart curves={curves} type="qh" operatingPoints={opPoints}
+                          networks={opPoints.filter(p => p.r).map(p => ({ r: p.r!, color: FAN_NETWORK_COLOR }))} />
                       </div>
                     </div>
                     <div>

@@ -105,3 +105,40 @@ export function fanEfficiencyIsolines(c: FanCurve, angles: number[], rpm?: numbe
 }
 
 export const angleLabel = (a: number) => `${a > 0 ? "+" : ""}${a}°`;
+
+// ─── Общие правила для графиков справочника и панели свойств ветви ─────────
+// Один источник цветов и рабочей точки — иначе график в справочнике и график
+// в левой панели показывали бы одну и ту же точку по-разному.
+
+export const FAN_CURVE_COLORS = ["#e91e63", "#ff5722", "#ff9800", "#4caf50", "#2196f3", "#9c27b0", "#00bcd4"];
+export const FAN_REVERSE_COLOR = "#9c27b0";
+export const FAN_OP_COLOR = "#e11d48";
+export const FAN_NETWORK_COLOR = "#e8a317";
+
+/** Цвет кривой угла лопаток — по его месту в паспортном списке углов. */
+export function fanAngleColor(c: FanCurve, angle: number): string {
+  const i = c.bladeAngles.indexOf(angle);
+  return FAN_CURVE_COLORS[(i < 0 ? 0 : i) % FAN_CURVE_COLORS.length];
+}
+
+/** Рабочая точка вентилятора ветви по результату расчёта сети. */
+export interface BranchFanOp {
+  /** Расход через ОДИН вентилятор (при параллельной работе делится), м³/с */
+  q: number;
+  /** Напор, Па */
+  h: number;
+  reverse: boolean;
+  /** Сопротивление сети, приведённое к одному вентилятору: H = R·Q² */
+  r: number;
+}
+
+export function branchFanOperatingPoint(b: {
+  flow?: number; fanPressure?: number; fanParallel?: number; fanReverse?: boolean;
+  fanStopped?: boolean; fanType?: string;
+}): BranchFanOp | null {
+  const flow = Math.abs(b.flow ?? 0);
+  if (b.fanStopped || flow <= 0.01) return null;
+  const q = flow / Math.max(1, b.fanParallel ?? 1);
+  const h = Math.abs(b.fanPressure ?? 0);
+  return { q, h, reverse: !!b.fanReverse && b.fanType !== "ВМП", r: q > 0 ? h / (q * q) : 0 };
+}
