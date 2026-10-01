@@ -1,5 +1,6 @@
 import { type PaperFormat, PAPER_SIZES_MM } from "@/lib/topology";
 import { type Props } from "@/components/cad/topoCanvas/topoCanvasTypes";
+import { computeTitleLayout, wrapTitleLines, TITLE_FONT_MIN, TITLE_FONT_MAX } from "@/lib/printTitle";
 import type {
   PrintHorizon, PrintLayerCfg, UnprojFrame, FrameWorldBounds, FrameCorner,
 } from "./printLayersScene";
@@ -40,7 +41,7 @@ export interface PrintFrameBaseProps {
 /** Подложка, рамки и заголовок листа. */
 export function PrintFrameBase(props: PrintFrameBaseProps) {
   const {
-    h, pl, rx, ry, rw, rh, wb, pxPerMm, inset, titleFontSize, isEditing,
+    h, pl, rx, ry, rw, rh, wb, pxPerMm, inset, isEditing,
     xyScale, unprojFrame, onPrintLayerBoundsChange, onPrintLayerChange,
     editingTitleId, setEditingTitleId, editingTitleDraft, setEditingTitleDraft,
     setDraggingPrintCorner, draggingPrintTitle, setDraggingPrintTitle,
@@ -105,34 +106,37 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
         width={rw - inset * 2} height={rh - inset * 2}
         fill="none" stroke="#1a1a1a" strokeWidth={0.8}
         style={{ pointerEvents: "none" }} />
-      {/* Заголовок — редактируемый и перетаскиваемый */}
+      {/* Заголовок — редактируемый, перетаскиваемый, с переносом строк и изменением размера */}
       {(() => {
-        const titleX = rx + rw / 2 + (pl.titleOffsetX ?? 0) * pxPerMm;
-        const titleY = ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0) * pxPerMm;
+        const tl = computeTitleLayout(pl, rx, ry, rw, inset, pxPerMm);
+        const titleX = tl.x;
+        const titleY = tl.y;
+        const fs = tl.fs;
         const canEdit = !!onPrintLayerChange;
         const isEditingTitle = editingTitleId === h.id;
+        const commit = () => { onPrintLayerChange?.(h.id, { title: editingTitleDraft }); setEditingTitleId(null); };
         if (isEditingTitle) {
+          const rows = Math.max(1, wrapTitleLines(editingTitleDraft, tl.wrapW, fs).length);
           return (
-            <foreignObject x={titleX - rw * 0.4} y={titleY - titleFontSize - 2} width={rw * 0.8} height={titleFontSize * 3}>
-              <input
+            <foreignObject x={titleX - tl.wrapW / 2 - 6} y={titleY - 4} width={tl.wrapW + 12} height={tl.lineH * rows + 12}>
+              <textarea
                 // @ts-expect-error xmlns
                 xmlns="http://www.w3.org/1999/xhtml"
                 autoFocus
                 value={editingTitleDraft}
                 onChange={e => setEditingTitleDraft(e.target.value)}
-                onBlur={() => {
-                  onPrintLayerChange?.(h.id, { title: editingTitleDraft });
-                  setEditingTitleId(null);
-                }}
+                onBlur={commit}
                 onKeyDown={e => {
-                  if (e.key === "Enter") { onPrintLayerChange?.(h.id, { title: editingTitleDraft }); setEditingTitleId(null); }
+                  // Enter — сохранить, Shift+Enter — новая строка
+                  if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); commit(); }
                   if (e.key === "Escape") setEditingTitleId(null);
                   e.stopPropagation();
                 }}
                 onMouseDown={e => e.stopPropagation()}
                 style={{
-                  width: "100%", textAlign: "center",
-                  fontSize: titleFontSize, fontFamily: "Arial, sans-serif", fontWeight: "bold",
+                  width: "100%", height: "100%", resize: "none", overflow: "hidden",
+                  textAlign: "center", lineHeight: 1.2,
+                  fontSize: fs, fontFamily: "Arial, sans-serif", fontWeight: "bold",
                   border: "1.5px solid #7c3aed", borderRadius: "var(--radius-ui)", outline: "none",
                   background: "rgba(255,253,230,0.97)", padding: "1px 4px", boxSizing: "border-box" as const,
                 }}
@@ -140,11 +144,33 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
             </foreignObject>
           );
         }
-        return pl.title ? (
+        if (!pl.title) return null;
+        const blockH = tl.lineH * tl.lines.length;
+        const maxLen = Math.max(...tl.lines.map(l => l.length), 1);
+        const textW = Math.min(tl.wrapW, maxLen * fs * 0.6);
+        // Изменение размера шрифта за уголок справа снизу
+        const startResize = (e: React.MouseEvent) => {
+          if (e.button !== 0) return;
+          e.stopPropagation(); e.preventDefault();
+          const sx0 = e.clientX, sy0 = e.clientY;
+          const s0 = pl.titleFontScale ?? 1;
+          const h0 = Math.max(4, blockH);
+          const onMove = (me: MouseEvent) => {
+            const d = Math.max(me.clientY - sy0, (me.clientX - sx0) * (h0 / Math.max(4, textW)));
+            const s = Math.min(TITLE_FONT_MAX, Math.max(TITLE_FONT_MIN, s0 * (h0 + d) / h0));
+            onPrintLayerChange?.(h.id, { titleFontScale: Math.round(s * 100) / 100 });
+          };
+          const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+          window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+        };
+        const hs = Math.max(6, Math.min(14, pxPerMm * 3));
+        const bx = titleX + textW / 2 + 2, by = titleY + blockH;
+        return (
+          <g>
           <text
             x={titleX} y={titleY}
             textAnchor="middle" dominantBaseline="hanging"
-            fontSize={titleFontSize}
+            fontSize={fs}
             fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111"
             style={{ cursor: canEdit ? (draggingPrintTitle?.horizonId === h.id ? "grabbing" : "grab") : "default", userSelect: "none" }}
             onDoubleClick={canEdit ? (e) => {
@@ -177,9 +203,21 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
               window.addEventListener("mouseup", onUp);
             } : undefined}
           >
-            {pl.title}
+            {tl.lines.map((ln, i) => (
+              <tspan key={i} x={titleX} y={titleY + i * tl.lineH}>{ln || "\u00a0"}</tspan>
+            ))}
+            {canEdit && <title>Перетащите, чтобы переместить. Двойной щелчок — правка текста (Shift+Enter — новая строка).</title>}
           </text>
-        ) : null;
+          {canEdit && (
+            <g style={{ cursor: "nwse-resize" }} onMouseDown={startResize}>
+              <rect x={bx - hs} y={by - hs} width={hs} height={hs} fill="transparent" />
+              <path d={`M ${bx - hs * 0.9} ${by - 1} L ${bx - 1} ${by - hs * 0.9} M ${bx - hs * 0.5} ${by - 1} L ${bx - 1} ${by - hs * 0.5}`}
+                stroke="#7c3aed" strokeWidth={1.2} fill="none" />
+              <title>Потяните, чтобы изменить размер заголовка</title>
+            </g>
+          )}
+          </g>
+        );
       })()}
     </>
   );

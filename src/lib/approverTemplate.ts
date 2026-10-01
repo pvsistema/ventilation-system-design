@@ -145,8 +145,14 @@ export function computeApproverBox(
   const h = APPROVER_H_MM * pxPerMm;
   const offX = num(rec[k.offX], 0) * sheetPxPerMm;
   const offY = num(rec[k.offY], 0) * sheetPxPerMm;
-  const ax = (kind === "approve" ? rx + rw - inset - w : rx + inset) + offX;
-  const ay = ry + inset + offY;
+  // Отступ от внутренней рамки, чтобы белая подложка блока не закрывала линию рамки
+  const gap = Math.max(2, 3 * sheetPxPerMm);
+  const innerL = rx + inset + gap, innerR = rx + rw - inset - gap, innerT = ry + inset + gap;
+  let ax = (kind === "approve" ? innerR - w : innerL) + offX;
+  let ay = innerT + offY;
+  // Блок не выходит за левую/правую/верхнюю границу внутренней рамки
+  if (innerR - innerL >= w) ax = Math.min(innerR - w, Math.max(innerL, ax));
+  ay = Math.max(innerT, ay);
   return {
     pxPerMm, sheetPxPerMm, w, h, ax, ay,
     baseFs: Math.max(6 * scale, pxPerMm * 2.6) * font,

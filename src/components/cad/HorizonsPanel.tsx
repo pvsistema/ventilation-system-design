@@ -16,6 +16,9 @@ import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonSh
 import {
   signBlockKeys, SIGN_SCALE_MIN, SIGN_SCALE_MAX, SIGN_FONT_MIN, SIGN_FONT_MAX, type SignBlockKind,
 } from "@/lib/approverTemplate";
+import {
+  TITLE_FONT_MIN, TITLE_FONT_MAX, TITLE_WIDTH_MIN, TITLE_WIDTH_MAX, TITLE_WIDTH_DEFAULT,
+} from "@/lib/printTitle";
 
 type Bounds = { x1: number; y1: number; x2: number; y2: number };
 
@@ -187,6 +190,36 @@ function SignBlockSettings({ kind, pl, updatePl }: {
       <PctSlider label="Шрифт" value={num(k.font) ?? 1} min={SIGN_FONT_MIN} max={SIGN_FONT_MAX}
         onChange={v => set(k.font, v)} />
       <Hint>Блок перетаскивается мышью прямо на схеме, размер — за уголок справа снизу. Двойной щелчок по строке — правка текста.</Hint>
+    </div>
+  );
+}
+
+/** Заголовок листа: текст (с ручным переносом), размер шрифта и ширина строки. */
+function TitleSettings({ pl, updatePl }: {
+  pl: HorizonPrintLayer; updatePl: (patch: Partial<HorizonPrintLayer>) => void;
+}) {
+  const moved = !!(pl.titleOffsetX || pl.titleOffsetY);
+  return (
+    <div className="rounded p-1.5 space-y-1.5" style={{ border: "1px solid var(--c-b1)", background: "var(--c-s2)" }}>
+      <div className="flex items-center gap-1">
+        <Icon name="Heading" size={12} fallback="Type" style={{ color: "var(--c-purple)" }} />
+        <span className="flex-1 text-[10.5px] font-semibold" style={{ color: "var(--c-t2)" }}>Заголовок листа</span>
+        {moved && (
+          <button type="button" className="text-[10px] hover:underline" style={{ color: "var(--c-accent)" }}
+            title="Вернуть заголовок по центру сверху" onClick={() => updatePl({ titleOffsetX: 0, titleOffsetY: 0 })}>
+            ↺ на место
+          </button>
+        )}
+      </div>
+      <textarea value={pl.title ?? ""} rows={2} placeholder="Текст заголовка"
+        onChange={e => updatePl({ title: e.target.value })}
+        className="w-full px-1.5 py-1 text-[11px] outline-none rounded resize-y leading-snug"
+        style={{ color: "var(--c-t1)", border: "1px solid var(--c-b2)", background: "var(--c-s1)" }} />
+      <PctSlider label="Шрифт" value={pl.titleFontScale ?? 1} min={TITLE_FONT_MIN} max={TITLE_FONT_MAX}
+        onChange={v => updatePl({ titleFontScale: v })} />
+      <PctSlider label="Ширина" value={pl.titleWidth ?? TITLE_WIDTH_DEFAULT} min={TITLE_WIDTH_MIN} max={TITLE_WIDTH_MAX}
+        onChange={v => updatePl({ titleWidth: v })} />
+      <Hint>Длинный текст переносится по словам в пределах ширины. Enter в поле — новая строка. На схеме: перетаскивание, двойной щелчок — правка, уголок справа снизу — размер.</Hint>
     </div>
   );
 }
@@ -569,6 +602,7 @@ export default function HorizonsPanel(p: Props) {
                       <Check checked={pl.showAgree ?? false} onChange={(v) => updatePl({ showAgree: v })} label="«Согласовано»" />
                       <Check checked={pl.showApprover ?? false} onChange={(v) => updatePl({ showApprover: v })} label="«Утверждаю»" />
                     </div>
+                    <TitleSettings pl={pl} updatePl={updatePl} />
                     {pl.showAgree && <SignBlockSettings kind="agree" pl={pl} updatePl={updatePl} />}
                     {pl.showApprover && <SignBlockSettings kind="approve" pl={pl} updatePl={updatePl} />}
                     <div className="flex gap-1">

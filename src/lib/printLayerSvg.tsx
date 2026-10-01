@@ -14,6 +14,7 @@ import {
 } from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 import type { RouteLegendItem } from "@/lib/inspectionRoutes";
+import { computeTitleLayout } from "@/lib/printTitle";
 import { computeRoutesBlockLayout, buildRoutesBlockElements } from "@/lib/printRoutesBlock";
 
 export interface PrintLayerSvgOptions {
@@ -36,7 +37,6 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
   const _mmT = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
   const _paperWmmT = (pl.orientation ?? "landscape") === "landscape" ? Math.max(_mmT.w, _mmT.h) : Math.min(_mmT.w, _mmT.h);
   const _pxPerMmT = rw / _paperWmmT;
-  const titleFontSize = Math.max(6, _pxPerMmT * 5.5);
 
   // ── Блоки «СОГЛАСОВАНО» / «УТВЕРЖДАЮ» — размер, шрифт и положение из слоя ──
   const _paperWmmA = (() => {
@@ -221,15 +221,15 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
       {/* Внутренняя рамка */}
       <rect x={rx + inset} y={ry + inset} width={rw - inset * 2} height={rh - inset * 2} fill="none" stroke="#1a1a1a" strokeWidth={0.8} />
       {/* Заголовок */}
-      {pl.title && (
-        <text
-          x={rx + rw / 2 + (pl.titleOffsetX ?? 0) * _pxPerMmT}
-          y={ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0) * _pxPerMmT}
-          textAnchor="middle" dominantBaseline="hanging"
-          fontSize={titleFontSize} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
-          {pl.title}
-        </text>
-      )}
+      {pl.title && (() => {
+        const tl = computeTitleLayout(pl, rx, ry, rw, inset, _pxPerMmT);
+        return (
+          <text x={tl.x} y={tl.y} textAnchor="middle" dominantBaseline="hanging"
+            fontSize={tl.fs} fontFamily="Arial, sans-serif" fontWeight="bold" fill="#111">
+            {tl.lines.map((ln, i) => <tspan key={i} x={tl.x} y={tl.y + i * tl.lineH}>{ln}</tspan>)}
+          </text>
+        );
+      })()}
       {approverBlock}
       {legendBlock}
       {routesBlock}

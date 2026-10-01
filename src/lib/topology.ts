@@ -594,6 +594,10 @@ export interface HorizonPrintLayer {
   /** Смещение заголовка относительно центра рамки (в ММ листа — масштабируется вместе с листом) */
   titleOffsetX?: number;
   titleOffsetY?: number;
+  /** Размер шрифта заголовка (1 = 100 %) */
+  titleFontScale?: number;
+  /** Ширина строки заголовка — доля ширины листа; длиннее переносится */
+  titleWidth?: number;
   /** Смещение блока УО от нижнего-левого угла рамки (в ММ листа — масштабируется вместе с листом) */
   legendOffsetX?: number;
   legendOffsetY?: number;

@@ -7,6 +7,7 @@ import { computeStampBox, buildStampSvgString } from "@/lib/stampTemplate";
 import { computeApproverBox, buildApproverSvgString, enabledSignBlocks } from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 import type { RouteLegendItem } from "@/lib/inspectionRoutes";
+import { computeTitleLayout } from "@/lib/printTitle";
 import { computeRoutesBlockLayout, buildRoutesBlockSvgString } from "@/lib/printRoutesBlock";
 
 function e(s: string | number): string {
@@ -32,7 +33,6 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
   const _mmT = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
   const _paperWmmT = (pl.orientation ?? "landscape") === "landscape" ? Math.max(_mmT.w, _mmT.h) : Math.min(_mmT.w, _mmT.h);
   const _pxPerMmT = rw / _paperWmmT;
-  const titleFontSize = Math.max(6, _pxPerMmT * 5.5);
   let body = "";
 
   // Рамки (без белой подложки — схема видна из canvas под SVG)
@@ -41,9 +41,9 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
 
   // Заголовок
   if (pl.title) {
-    const tx = rx + rw / 2 + (pl.titleOffsetX ?? 0) * _pxPerMmT;
-    const ty = ry + inset + titleFontSize + 4 + (pl.titleOffsetY ?? 0) * _pxPerMmT;
-    body += `<text x="${n(tx)}" y="${n(ty)}" text-anchor="middle" dominant-baseline="hanging" font-size="${n(titleFontSize)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">${e(pl.title)}</text>`;
+    const tl = computeTitleLayout(pl, rx, ry, rw, inset, _pxPerMmT);
+    const spans = tl.lines.map((ln, i) => `<tspan x="${n(tl.x)}" y="${n(tl.y + i * tl.lineH)}">${e(ln)}</tspan>`).join("");
+    body += `<text text-anchor="middle" dominant-baseline="hanging" font-size="${n(tl.fs)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">${spans}</text>`;
   }
 
   // Блоки «СОГЛАСОВАНО» / «УТВЕРЖДАЮ» — положение, размер и шрифт из слоя
