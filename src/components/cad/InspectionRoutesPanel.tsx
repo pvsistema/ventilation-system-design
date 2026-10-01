@@ -36,6 +36,10 @@ interface Props {
   onToggleBind: () => void;
   onFocusBranch?: (branchId: string) => void;
   projectName?: string;
+  /** Режим «только маршруты»: на схеме видны лишь выработки видимых маршрутов */
+  isolate?: boolean;
+  /** ids — показать на схеме только эти маршруты; null — показать всю схему */
+  onShowRoutes?: (ids: string[] | null) => void;
 }
 
 const methodLabel = (m: string) => normalizeSpeedMode(m) === "fnip" ? "ФНиП №467" : "РД 15-11-2007";
@@ -140,6 +144,10 @@ function Stat({ label, value, strong }: { label: string; value: string; strong?:
 
 export default function InspectionRoutesPanel(p: Props) {
   const { routes, branches, nodes, symbols, selectedRouteId, onSelect, onAdd, onUpdate, onDelete, bindMode, onToggleBind } = p;
+  const isolate = !!p.isolate && !bindMode;
+  const visibleRoutes = routes.filter(r => r.visible && r.branchIds.length > 0);
+  const showOnly = (ids: string[]) => p.onShowRoutes?.(ids);
+  const showAll = () => p.onShowRoutes?.(null);
   const [open, setOpen] = useState<Set<string>>(new Set(["branches", "calc"]));
   const isOpen = (k: string) => open.has(k);
   const toggle = (k: string) => setOpen(prev => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; });
@@ -245,6 +253,31 @@ export default function InspectionRoutesPanel(p: Props) {
             <button type="button" onClick={onToggleBind} className="font-semibold underline flex-shrink-0">Готово</button>
           </div>
         )}
+        {routes.length > 0 && p.onShowRoutes && (
+          <div className="space-y-1">
+            <div className="text-[10px] px-1" style={{ color: "var(--c-t4)" }}>Показ на схеме</div>
+            <div className="flex gap-1">
+              <Btn icon="Map" grow active={!isolate} onClick={showAll}
+                title="Показать всю схему (маршруты остаются окрашенными)">Вся схема</Btn>
+              <Btn icon="Route" grow active={isolate}
+                disabled={visibleRoutes.length === 0}
+                onClick={() => showOnly(visibleRoutes.map(r => r.id))}
+                title="Показать на схеме только маршруты, отмеченные глазом">
+                Только маршруты{visibleRoutes.length > 0 ? ` (${visibleRoutes.length})` : ""}
+              </Btn>
+            </div>
+            {isolate && (
+              <div className="flex items-center gap-1.5 px-2 py-1 rounded text-[10.5px]"
+                style={{ background: "color-mix(in srgb, var(--c-accent) 10%, transparent)", color: "var(--c-t2)", border: "1px solid color-mix(in srgb, var(--c-accent) 30%, transparent)" }}>
+                <Icon name="Filter" size={12} className="flex-shrink-0" style={{ color: "var(--c-accent)" }} />
+                <span className="flex-1 leading-snug">
+                  Остальная схема скрыта. Глазом <Icon name="Eye" size={10} className="inline" /> добавьте или уберите маршрут.
+                </span>
+                <button type="button" onClick={showAll} className="font-semibold underline flex-shrink-0">Вся схема</button>
+              </div>
+            )}
+          </div>
+        )}
         {routes.length > 0 && (
           <div className="flex items-center justify-between text-[10.5px] px-1" style={{ color: "var(--c-t3)" }}>
             <span>Всего: <b className="font-num" style={{ color: "var(--c-t1)" }}>{fmtLength(totals.len)}</b></span>
@@ -300,6 +333,12 @@ export default function InspectionRoutesPanel(p: Props) {
                 </span>
                 <Pill color={r.color}>{fmtLength(res.length)}</Pill>
                 <Pill color="var(--c-t2)">{fmtMinutes(res.totalTime)}</Pill>
+                {p.onShowRoutes && (
+                  <IconBtn icon="Focus" disabled={r.branchIds.length === 0}
+                    active={isolate && r.visible && visibleRoutes.length === 1}
+                    title="Показать на схеме только этот маршрут"
+                    onClick={() => showOnly([r.id])} />
+                )}
                 <IconBtn icon={r.visible ? "Eye" : "EyeOff"} active={r.visible}
                   title={r.visible ? "Скрыть маршрут на схеме" : "Показать маршрут на схеме"}
                   onClick={() => upd({ visible: !r.visible })} />

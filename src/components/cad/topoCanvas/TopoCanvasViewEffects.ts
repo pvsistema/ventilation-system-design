@@ -28,6 +28,8 @@ export interface ViewEffectsDeps {
   focusScreen?: Props["focusScreen"];
   /** Счётчик восстановления сохранённого вида: пока идёт восстановление, внешние команды масштаба игнорируются */
   restoredViewNonce: React.MutableRefObject<number>;
+  /** Режим «только маршруты МПО»: «вписать в экран» — по выработкам маршрутов */
+  isolateBranchIds?: Set<string> | null;
 }
 
 /** Подключает эффекты вида. Вызывается из TopoCanvas — там же, где раньше жили эти useEffect. */
@@ -35,7 +37,7 @@ export function useViewEffects(deps: ViewEffectsDeps) {
   const {
     nodes, branches, xyScale, zScale, size, view, setView,
     scaleOverride, fitToScreenNonce, focusNonce, focusNodeId, focusBranchId, focusPos, focusScreen,
-    restoredViewNonce,
+    restoredViewNonce, isolateBranchIds,
   } = deps;
 
   // ─── СИНХРОНИЗАЦИЯ ВНЕШНЕГО МАСШТАБА ────────────────────────────────
@@ -143,7 +145,15 @@ export function useViewEffects(deps: ViewEffectsDeps) {
       azimuth: view.azimuth, elevation: view.elevation, zScale,
     };
     let minSx = Infinity, maxSx = -Infinity, minSy = Infinity, maxSy = -Infinity;
-    nodes.forEach((n) => {
+    // Изоляция маршрутов МПО: вписываем только узлы показанных выработок
+    let fitNodes = nodes;
+    if (isolateBranchIds && isolateBranchIds.size > 0) {
+      const ids = new Set<string>();
+      branches.forEach((b) => { if (isolateBranchIds.has(b.id)) { ids.add(b.fromId); ids.add(b.toId); } });
+      const sub = nodes.filter((n) => ids.has(n.id));
+      if (sub.length > 0) fitNodes = sub;
+    }
+    fitNodes.forEach((n) => {
       const p = project3D({ x: n.x * (xyScale ?? 1), y: n.y * (xyScale ?? 1), z: n.z * (zScale ?? 1) }, tmpProj);
       if (p.sx < minSx) minSx = p.sx;
       if (p.sx > maxSx) maxSx = p.sx;

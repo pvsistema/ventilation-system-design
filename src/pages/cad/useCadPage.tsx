@@ -1590,6 +1590,8 @@ export function useCadPage() {
   const [selectedInspectionRouteId, setSelectedInspectionRouteId] = useState<string | null>(null);
   // Режим выбора выработок маршрута кликом по схеме
   const [inspectionBindMode, setInspectionBindMode] = useState(false);
+  // Режим показа схемы: false — вся схема, true — только видимые (👁) маршруты МПО
+  const [inspectionIsolate, setInspectionIsolate] = useState(false);
   // ПЛА: видимость позиций на схеме
   const [showPositions, setShowPositions] = useState(true);
   // ПЛА: окраска ветвей цветом позиции (внутри/снаружи)
@@ -4000,6 +4002,7 @@ export function useCadPage() {
     setInspectionRoutes(Array.isArray(data.inspectionRoutes) ? (data.inspectionRoutes as InspectionRoute[]) : []);
     setSelectedInspectionRouteId(null);
     setInspectionBindMode(false);
+    setInspectionIsolate(false);
     if (data.textBlocks) setTextBlocks(data.textBlocks as TextBlock[]);
     else setTextBlocks([]);
     const resolvedName = fromDisk
@@ -4048,6 +4051,7 @@ export function useCadPage() {
     setInspectionRoutes([]);
     setSelectedInspectionRouteId(null);
     setInspectionBindMode(false);
+    setInspectionIsolate(false);
     setTextBlocks([]);
 
     // ── Горизонты — сброс к одному «Общий вид» ──
@@ -6174,6 +6178,8 @@ export function useCadPage() {
     setSelectedInspectionRouteId,
     inspectionBindMode,
     setInspectionBindMode,
+    inspectionIsolate,
+    setInspectionIsolate,
     showPositions,
     setShowPositions,
     posColorInner,

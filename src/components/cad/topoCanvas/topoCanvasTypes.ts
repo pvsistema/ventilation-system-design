@@ -237,6 +237,11 @@ export interface Props {
     color: string; hazardLevel: string;
     segments?: Array<{ color: string; fromT: number; toT: number }>;
   }>;
+  /**
+   * Показать на схеме ТОЛЬКО эти ветви (режим «только маршруты МПО»).
+   * null/undefined — показывается вся схема.
+   */
+  isolateBranchIds?: Set<string> | null;
   /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
   reversedBranchIds?: Set<string>;
   /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */

@@ -173,6 +173,9 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
     setSelectedInspectionRouteId,
     inspectionBindMode,
     setInspectionBindMode,
+    inspectionIsolate,
+    setInspectionIsolate,
+    setFitToScreenNonce,
     projectFileName,
     branchWidth,
     branchBorder,
@@ -3436,6 +3439,17 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 onToggleBind={() => { if (selectedInspectionRouteId) setInspectionBindMode(v => !v); }}
                 onFocusBranch={(id) => { setFocusBranchId(id); setFocusNodeId(null); setFocusPos(null); setFocusNonce(Date.now()); }}
                 projectName={projectFileName}
+                isolate={inspectionIsolate}
+                onShowRoutes={(ids) => {
+                  // ids = null — показать всю схему; иначе — только эти маршруты
+                  if (ids === null) setInspectionIsolate(false);
+                  else {
+                    setInspectionRoutes(prev => prev.map(r => ({ ...r, visible: ids.includes(r.id) })));
+                    setInspectionIsolate(true);
+                    setInspectionBindMode(false);
+                  }
+                  setTimeout(() => setFitToScreenNonce(Date.now()), 50);
+                }}
               />
               </PanelErrorBoundary>
             )}

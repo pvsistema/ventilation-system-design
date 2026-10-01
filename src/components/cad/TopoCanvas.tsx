@@ -112,6 +112,7 @@ export default function TopoCanvas(props: Props) {
     velColorMax = 15,
     velColorHue = "blue",
     compareBranchColors,
+    isolateBranchIds = null,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -199,22 +200,25 @@ export default function TopoCanvas(props: Props) {
   );
 
   // Видимые ветви: если горизонт привязан и скрыт — фильтруем
+  // + режим «только выбранные маршруты МПО»: остальные выработки скрываются
   const visibleBranches = useMemo(() => branches.filter((b) => {
+    if (isolateBranchIds && !isolateBranchIds.has(b.id)) return false;
     if (!b.horizonId) return true;
     const h = horizonMap.get(b.horizonId);
     return !h || h.visible;
-  }), [branches, horizonMap]);
+  }), [branches, horizonMap, isolateBranchIds]);
 
   // Множество ID скрытых ветвей (по горизонту) — для фильтрации узлов и УО
   const hiddenBranchIds = useMemo(() => new Set(
     branches
       .filter((b) => {
+        if (isolateBranchIds && !isolateBranchIds.has(b.id)) return true;
         if (!b.horizonId) return false;
         const h = horizonMap.get(b.horizonId);
         return h && !h.visible;
       })
       .map((b) => b.id)
-  ), [branches, horizonMap]);
+  ), [branches, horizonMap, isolateBranchIds]);
 
   // Карта узел→ветви: строим один раз при изменении branches (O(M)), а не при каждой фильтрации (O(N×M))
   const nodeBranchesMap = useMemo(() => {
@@ -233,11 +237,12 @@ export default function TopoCanvas(props: Props) {
     nodes
       .filter((n) => {
         const nb = nodeBranchesMap.get(n.id);
-        if (!nb || nb.length === 0) return false;
+        // В режиме изоляции маршрутов висячие узлы (без ветвей) тоже прячем
+        if (!nb || nb.length === 0) return !!isolateBranchIds;
         return nb.every((b) => hiddenBranchIds.has(b.id));
       })
       .map((n) => n.id)
-  ), [nodes, nodeBranchesMap, hiddenBranchIds]);
+  ), [nodes, nodeBranchesMap, hiddenBranchIds, isolateBranchIds]);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -425,7 +430,7 @@ export default function TopoCanvas(props: Props) {
   const { nodesRef, prevScaleOverride } = useViewEffects({
     nodes, branches, xyScale, zScale, size, view, setView,
     scaleOverride, fitToScreenNonce, focusNonce, focusNodeId, focusBranchId, focusPos, focusScreen,
-    restoredViewNonce,
+    restoredViewNonce, isolateBranchIds,
   });
 
   useEffect(() => {

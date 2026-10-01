@@ -211,6 +211,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     selectedInspectionRouteId,
     setSelectedInspectionRouteId,
     inspectionBindMode,
+    inspectionIsolate,
     showPositions,
     posColorInner,
     posColorOuter,
@@ -290,6 +291,16 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     () => buildInspectionLabels(inspectionRoutes, branches, nodes, schemaSymbols),
     [inspectionRoutes, branches, nodes, schemaSymbols],
   );
+
+  // Режим «только маршруты МПО»: на схеме остаются выработки видимых (👁)
+  // маршрутов. Пока идёт выбор выработок кликом — схема показывается целиком,
+  // иначе нельзя добавить в маршрут новую выработку.
+  const inspectionIsolateIds = useMemo(() => {
+    if (!inspectionIsolate || inspectionBindMode) return null;
+    const ids = new Set<string>();
+    inspectionRoutes.forEach(r => { if (r.visible) r.branchIds.forEach(id => ids.add(id)); });
+    return ids.size > 0 ? ids : null;
+  }, [inspectionIsolate, inspectionBindMode, inspectionRoutes]);
 
   // Перетаскивание таблички МПО — как маркер позиции ПЛА: в плоскости z таблички
   const mpoLabelDragRef = useRef<{ id: string; startSx: number; startSy: number; startWx: number; startWy: number; wz: number; moved: boolean } | null>(null);
@@ -836,6 +847,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               scaleOverride={viewScale}
               onScaleChange={setViewScale}
               fitToScreenNonce={fitToScreenNonce}
+              isolateBranchIds={inspectionIsolateIds}
               focusNonce={focusNonce}
               focusNodeId={focusNodeId}
               focusBranchId={focusBranchId}
