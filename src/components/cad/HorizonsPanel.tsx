@@ -13,6 +13,9 @@ import {
   type Horizon, type HorizonPrintLayer, type PaperFormat, OVERVIEW_HORIZON_ID,
 } from "@/lib/topology";
 import HorizonShiftBlock, { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
+import {
+  signBlockKeys, SIGN_SCALE_MIN, SIGN_SCALE_MAX, SIGN_FONT_MIN, SIGN_FONT_MAX, type SignBlockKind,
+} from "@/lib/approverTemplate";
 
 type Bounds = { x1: number; y1: number; x2: number; y2: number };
 
@@ -105,6 +108,86 @@ function Check({ checked, onChange, label }: { checked: boolean; onChange: (v: b
         className="w-3.5 h-3.5 cursor-pointer" style={{ accentColor: "var(--c-accent)" }} />
       {label}
     </label>
+  );
+}
+
+/** Поле ввода с подписью для блока подписи. */
+function TxtField({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-[9.5px] mb-0.5" style={{ color: "var(--c-t4)" }}>{label}</span>
+      <input type="text" value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)}
+        className="w-full h-6 px-1.5 text-[11px] outline-none rounded"
+        style={{ color: "var(--c-t1)", border: "1px solid var(--c-b2)", background: "var(--c-s1)" }} />
+    </label>
+  );
+}
+
+/** Ползунок «размер / шрифт» в процентах с кнопками −/+. */
+function PctSlider({ label, value, min, max, onChange }: {
+  label: string; value: number; min: number; max: number; onChange: (v: number) => void;
+}) {
+  const set = (v: number) => onChange(Math.round(Math.min(max, Math.max(min, v)) * 100) / 100);
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-[10px] w-12 flex-shrink-0" style={{ color: "var(--c-t3)" }}>{label}</span>
+      <button type="button" className="w-5 h-5 rounded text-[11px] hover:bg-[var(--c-s3)]" style={{ color: "var(--c-t2)", border: "1px solid var(--c-b2)" }}
+        onClick={() => set(value - 0.1)}>−</button>
+      <input type="range" min={min} max={max} step={0.05} value={value} onChange={e => set(Number(e.target.value))}
+        className="flex-1 min-w-0" style={{ accentColor: "var(--c-purple)" }} />
+      <button type="button" className="w-5 h-5 rounded text-[11px] hover:bg-[var(--c-s3)]" style={{ color: "var(--c-t2)", border: "1px solid var(--c-b2)" }}
+        onClick={() => set(value + 0.1)}>+</button>
+      <span className="font-num text-[10px] w-9 text-right" style={{ color: "var(--c-t2)" }}>{Math.round(value * 100)}%</span>
+    </div>
+  );
+}
+
+/**
+ * Настройки блока подписи «УТВЕРЖДАЮ» / «СОГЛАСОВАНО»: текст полей, размер
+ * блока, размер шрифта и возврат на место. Перемещается блок мышью на схеме.
+ */
+function SignBlockSettings({ kind, pl, updatePl }: {
+  kind: SignBlockKind; pl: HorizonPrintLayer; updatePl: (patch: Partial<HorizonPrintLayer>) => void;
+}) {
+  const k = signBlockKeys(kind);
+  const rec = pl as unknown as Record<string, string | number | undefined>;
+  const str = (key: string) => (typeof rec[key] === "string" ? (rec[key] as string) : "");
+  const num = (key: string) => (typeof rec[key] === "number" ? (rec[key] as number) : undefined);
+  const f = kind === "approve"
+    ? { title: "approverTitle", org: "orgName", name: "approverName", day: "day", month: "month", year: "year" }
+    : { title: "agreeTitle", org: "agreeOrg", name: "agreeName", day: "agreeDay", month: "agreeMonth", year: "agreeYear" };
+  const set = (key: string, v: string | number | undefined) => updatePl({ [key]: v } as Partial<HorizonPrintLayer>);
+  const moved = !!(num(k.offX) || num(k.offY));
+  return (
+    <div className="rounded p-1.5 space-y-1.5" style={{ border: "1px solid var(--c-b1)", background: "var(--c-s2)" }}>
+      <div className="flex items-center gap-1">
+        <Icon name={kind === "approve" ? "Stamp" : "Handshake"} size={12} fallback="FileSignature" style={{ color: "var(--c-purple)" }} />
+        <span className="flex-1 text-[10.5px] font-semibold" style={{ color: "var(--c-t2)" }}>
+          {kind === "approve" ? "«УТВЕРЖДАЮ» — справа" : "«СОГЛАСОВАНО» — слева"}
+        </span>
+        {moved && (
+          <button type="button" className="text-[10px] hover:underline" style={{ color: "var(--c-accent)" }}
+            title="Вернуть блок в угол рамки" onClick={() => updatePl({ [k.offX]: 0, [k.offY]: 0 } as Partial<HorizonPrintLayer>)}>
+            ↺ на место
+          </button>
+        )}
+      </div>
+      <TxtField label="Должность" value={str(f.title)} onChange={v => set(f.title, v)} placeholder="Главный инженер" />
+      <TxtField label="Организация" value={str(f.org)} onChange={v => set(f.org, v)} />
+      <TxtField label="И.О. Фамилия" value={str(f.name)} onChange={v => set(f.name, v)} />
+      <div className="grid gap-1" style={{ gridTemplateColumns: "44px 1fr 56px" }}>
+        <TxtField label="Число" value={str(f.day)} onChange={v => set(f.day, v)} />
+        <TxtField label="Месяц" value={str(f.month)} onChange={v => set(f.month, v)} />
+        <TxtField label="Год" value={str(f.year)} onChange={v => set(f.year, v)} placeholder={String(new Date().getFullYear())} />
+      </div>
+      <PctSlider label="Размер" value={num(k.scale) ?? 1} min={SIGN_SCALE_MIN} max={SIGN_SCALE_MAX}
+        onChange={v => set(k.scale, v)} />
+      <PctSlider label="Шрифт" value={num(k.font) ?? 1} min={SIGN_FONT_MIN} max={SIGN_FONT_MAX}
+        onChange={v => set(k.font, v)} />
+      <Hint>Блок перетаскивается мышью прямо на схеме, размер — за уголок справа снизу. Двойной щелчок по строке — правка текста.</Hint>
+    </div>
   );
 }
 
@@ -482,8 +565,11 @@ export default function HorizonsPanel(p: Props) {
                     <div className="flex items-center gap-3 flex-wrap pt-0.5">
                       <Check checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="Условные обозн." />
                       <Check checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
+                      <Check checked={pl.showAgree ?? false} onChange={(v) => updatePl({ showAgree: v })} label="«Согласовано»" />
                       <Check checked={pl.showApprover ?? false} onChange={(v) => updatePl({ showApprover: v })} label="«Утверждаю»" />
                     </div>
+                    {pl.showAgree && <SignBlockSettings kind="agree" pl={pl} updatePl={updatePl} />}
+                    {pl.showApprover && <SignBlockSettings kind="approve" pl={pl} updatePl={updatePl} />}
                     <div className="flex gap-1">
                       <Btn grow icon={editingPrintLayerId === h.id ? "Check" : "Scan"} active={editingPrintLayerId === h.id}
                         title="Двигать и растягивать рамку прямо на схеме"

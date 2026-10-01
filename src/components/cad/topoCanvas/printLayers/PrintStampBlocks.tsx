@@ -5,7 +5,8 @@ import {
 } from "@/lib/stampTemplate";
 import {
   buildApproverElements, buildApproverLines, getApproverFieldValue, computeApproverBox,
-  type ApproverFieldKey,
+  signBlockKeys, isYearField, SIGN_SCALE_MIN, SIGN_SCALE_MAX,
+  type ApproverFieldKey, type SignBlockKind,
 } from "@/lib/approverTemplate";
 import { type Props } from "@/components/cad/topoCanvas/topoCanvasTypes";
 import type { PrintHorizon, PrintLayerCfg } from "./printLayersScene";
@@ -29,29 +30,73 @@ export interface ApproverBlockProps {
   onPrintLayerChange?: Props["onPrintLayerChange"];
   editingApproverCell: EditingCell;
   setEditingApproverCell: React.Dispatch<React.SetStateAction<EditingCell>>;
+  /** «УТВЕРЖДАЮ» (справа) или «СОГЛАСОВАНО» (слева) */
+  kind?: SignBlockKind;
 }
 
-/** Блок УТВЕРЖДАЮ — правый верхний угол рамки. */
+/**
+ * Блок подписи «УТВЕРЖДАЮ» / «СОГЛАСОВАНО».
+ *   • перетаскивание за рамку блока (позиция — в мм листа);
+ *   • уголок справа снизу — изменение размера (весь блок пропорционально);
+ *   • двойной щелчок по полю — правка текста.
+ */
 export function ApproverBlock(props: ApproverBlockProps) {
   const {
     h, pl, rx, ry, rw, inset,
     onPrintLayerChange, editingApproverCell, setEditingApproverCell,
+    kind = "approve",
   } = props;
+  const keys = signBlockKeys(kind);
 
   // Фиксированный размер блока по формату листа (как штамп)
   const fmtA = (pl.paperFormat ?? "A3") as PaperFormat;
   const oriA = pl.orientation ?? "landscape";
   const mmA = PAPER_SIZES_MM[fmtA];
   const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
-  const box = computeApproverBox(rx, ry, rw, inset, paperWmmA);
-  const { pxPerMm, w: apW, h: apH, ax, ay } = box;
+  const box = computeApproverBox(rx, ry, rw, inset, paperWmmA, pl, kind);
+  const { pxPerMm, w: apW, h: apH, ax, ay, sheetPxPerMm } = box;
   const mx = (m: number) => ax + m * pxPerMm;
   const my = (m: number) => ay + m * pxPerMm;
-  const baseFs = Math.max(6, pxPerMm * 2.6);
-  const lw2 = Math.max(0.4, pxPerMm * 0.15);
+  const baseFs = box.baseFs;
+  const lw2 = box.lw;
   const canEdit = !!onPrintLayerChange;
   const yearNow = String(new Date().getFullYear());
-  const els = buildApproverElements();
+  const els = buildApproverElements(kind);
+  const rec = pl as unknown as Record<string, number | undefined>;
+
+  // Перетаскивание блока (смещение копится в мм листа)
+  const startDrag = (e: React.MouseEvent) => {
+    if (!canEdit || e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    const sx0 = e.clientX, sy0 = e.clientY;
+    const ox = rec[keys.offX] ?? 0, oy = rec[keys.offY] ?? 0;
+    const pxmm = sheetPxPerMm || 1;
+    const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, {
+      [keys.offX]: ox + (me.clientX - sx0) / pxmm,
+      [keys.offY]: oy + (me.clientY - sy0) / pxmm,
+    } as Partial<import("@/lib/topology").HorizonPrintLayer>);
+    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+  };
+  // Изменение размера за уголок. У «УТВЕРЖДАЮ» правый край привязан к рамке,
+  // поэтому при росте блока сдвигаем смещение влево — уголок идёт за мышью.
+  const startResize = (e: React.MouseEvent) => {
+    if (!canEdit || e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    const sx0 = e.clientX, sy0 = e.clientY;
+    const s0 = rec[keys.scale] ?? 1;
+    const ox = rec[keys.offX] ?? 0;
+    const w0 = apW;
+    const onMove = (me: MouseEvent) => {
+      const d = Math.max(me.clientX - sx0, (me.clientY - sy0) * (apW / apH));
+      const s = Math.min(SIGN_SCALE_MAX, Math.max(SIGN_SCALE_MIN, s0 * (w0 + d) / w0));
+      const patch: Record<string, number> = { [keys.scale]: Math.round(s * 100) / 100 };
+      if (kind === "approve") patch[keys.offX] = ox + (75 * (s - s0));
+      onPrintLayerChange?.(h.id, patch as Partial<import("@/lib/topology").HorizonPrintLayer>);
+    };
+    const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
+  };
   const lines = buildApproverLines();
 
   const startEdit = (field: ApproverFieldKey) => {
@@ -65,8 +110,12 @@ export function ApproverBlock(props: ApproverBlockProps) {
   };
 
   return (
-    <g key="approver-block">
-      <rect x={ax} y={ay} width={apW} height={apH} fill="white" style={{ pointerEvents: "none" }} />
+    <g key={`sign-block-${kind}`}>
+      <rect x={ax} y={ay} width={apW} height={apH} fill="white"
+        style={{ cursor: canEdit ? "move" : "default", pointerEvents: canEdit ? "all" : "none" }}
+        onMouseDown={startDrag}>
+        {canEdit && <title>Перетащите, чтобы переместить блок. Двойной щелчок по тексту — правка.</title>}
+      </rect>
       {lines.map((ln, i) => (
         <line key={`al-${i}`} x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)} stroke="#111" strokeWidth={lw2} style={{ pointerEvents: "none" }} />
       ))}
@@ -119,11 +168,12 @@ export function ApproverBlock(props: ApproverBlockProps) {
           }
           // Отображение значения (с плейсхолдером и суффиксом «г.» для года)
           let shown = val || (canEdit ? (el.placeholder || "") : "");
-          if (el.field === "year") shown = (val || yearNow) + " г.";
+          if (isYearField(el.field)) shown = (val || yearNow) + " г.";
           return (
             <text key={`val-${i}`} x={mx(el.x)} y={my(el.y)} textAnchor={anchor} dominantBaseline="central"
               fontSize={fs} fontFamily="Arial, sans-serif" fill={val ? color : "#bbb"}
-              style={{ cursor: canEdit ? "text" : "default", userSelect: "none" }}
+              style={{ cursor: canEdit ? "move" : "default", userSelect: "none" }}
+              onMouseDown={startDrag}
               onDoubleClick={canEdit ? (e) => { e.stopPropagation(); startEdit(el.field!); } : undefined}>
               {shown}
             </text>
@@ -131,6 +181,17 @@ export function ApproverBlock(props: ApproverBlockProps) {
         }
         return null;
       })}
+      {canEdit && (() => {
+        const hs = Math.max(6, Math.min(14, pxPerMm * 3));
+        return (
+          <g style={{ cursor: "nwse-resize" }} onMouseDown={startResize}>
+            <rect x={ax + apW - hs} y={ay + apH - hs} width={hs} height={hs} fill="transparent" />
+            <path d={`M ${ax + apW - hs * 0.9} ${ay + apH - 1} L ${ax + apW - 1} ${ay + apH - hs * 0.9} M ${ax + apW - hs * 0.5} ${ay + apH - 1} L ${ax + apW - 1} ${ay + apH - hs * 0.5}`}
+              stroke="#7c3aed" strokeWidth={1.2} fill="none" />
+            <title>Потяните, чтобы изменить размер блока</title>
+          </g>
+        );
+      })()}
     </g>
   );
 }

@@ -10,6 +10,7 @@ import {
 } from "@/lib/stampTemplate";
 import {
   computeApproverBox, buildApproverElements, buildApproverLines, getApproverFieldValue,
+  enabledSignBlocks, isYearField,
 } from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 
@@ -33,34 +34,32 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
   const _pxPerMmT = rw / _paperWmmT;
   const titleFontSize = Math.max(6, _pxPerMmT * 5.5);
 
-  // ── Блок УТВЕРЖДАЮ — фиксированный размер по формату листа ───────────────
-  const approverBlock = pl.showApprover ? (() => {
-    const fmtA = (pl.paperFormat ?? "A3") as PaperFormat;
-    const oriA = pl.orientation ?? "landscape";
-    const mmA = PAPER_SIZES_MM[fmtA];
-    const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
-    const box = computeApproverBox(rx, ry, rw, inset, paperWmmA);
+  // ── Блоки «СОГЛАСОВАНО» / «УТВЕРЖДАЮ» — размер, шрифт и положение из слоя ──
+  const _paperWmmA = (() => {
+    const mmA = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
+    return (pl.orientation ?? "landscape") === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
+  })();
+  const approverBlock = enabledSignBlocks(pl).map(kind => {
+    const box = computeApproverBox(rx, ry, rw, inset, _paperWmmA, pl, kind);
     const { pxPerMm, w: apW, h: apH, ax, ay } = box;
     const mx = (m: number) => ax + m * pxPerMm;
     const my = (m: number) => ay + m * pxPerMm;
-    const baseFs = Math.max(6, pxPerMm * 2.6);
-    const lw2 = Math.max(0.4, pxPerMm * 0.15);
     const yearNow = String(new Date().getFullYear());
     return (
-      <g key="approver-block">
+      <g key={`sign-block-${kind}`}>
         <rect x={ax} y={ay} width={apW} height={apH} fill="white" style={{ pointerEvents: "none" }} />
         {buildApproverLines().map((ln, i) => (
-          <line key={`al-${i}`} x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)} stroke="#111" strokeWidth={lw2} />
+          <line key={`al-${i}`} x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)} stroke="#111" strokeWidth={box.lw} />
         ))}
-        {buildApproverElements().map((el, i) => {
-          const fs = baseFs * (el.fontScale ?? 1);
+        {buildApproverElements(kind).map((el, i) => {
+          const fs = box.baseFs * (el.fontScale ?? 1);
           const anchor = el.align === "left" ? "start" : el.align === "right" ? "end" : "middle";
           const color = el.color ?? "#111";
           let txt = el.label ?? "";
           if (el.field) {
             const v = getApproverFieldValue(pl, el.field);
-            txt = v || (el.field === "year" ? yearNow : "");
-            if (el.field === "year" && txt) txt += " г.";
+            txt = v || (isYearField(el.field) ? yearNow : "");
+            if (isYearField(el.field) && txt) txt += " г.";
           }
           if (!txt) return null;
           return <text key={`ap-${i}`} x={mx(el.x)} y={my(el.y)} textAnchor={anchor} dominantBaseline="central"
@@ -68,7 +67,7 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
         })}
       </g>
     );
-  })() : null;
+  });
 
   // ── Блок УО — из реально установленных символов на схеме ────────────────
   const legendBlock = (pl.showLegend && schemaSymbols.length > 0) ? (() => {

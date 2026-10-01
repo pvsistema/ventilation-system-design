@@ -116,9 +116,18 @@ export function usePrintLayers(deps: PrintLayersDeps) {
           setDraggingPrintCorner={setDraggingPrintCorner}
           draggingPrintTitle={draggingPrintTitle} setDraggingPrintTitle={setDraggingPrintTitle}
         />
-        {/* Блок УТВЕРЖДАЮ — правый верхний угол рамки */}
+        {/* Блоки «СОГЛАСОВАНО» (слева) и «УТВЕРЖДАЮ» (справа) — верх рамки */}
+        {pl.showAgree && (
+          <ApproverBlock kind="agree"
+            h={h} pl={pl}
+            rx={rx} ry={ry} rw={rw} inset={inset}
+            onPrintLayerChange={onPrintLayerChange}
+            editingApproverCell={editingApproverCell}
+            setEditingApproverCell={setEditingApproverCell}
+          />
+        )}
         {pl.showApprover && (
-          <ApproverBlock
+          <ApproverBlock kind="approve"
             h={h} pl={pl}
             rx={rx} ry={ry} rw={rw} inset={inset}
             onPrintLayerChange={onPrintLayerChange}

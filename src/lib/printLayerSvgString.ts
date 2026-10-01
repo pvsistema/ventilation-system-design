@@ -4,7 +4,7 @@ import type { HorizonPrintLayer, PaperFormat, TopoBranch } from "@/lib/topology"
 import { PAPER_SIZES_MM } from "@/lib/topology";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import { computeStampBox, buildStampSvgString } from "@/lib/stampTemplate";
-import { computeApproverBox, buildApproverSvgString } from "@/lib/approverTemplate";
+import { computeApproverBox, buildApproverSvgString, enabledSignBlocks } from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
 
 function e(s: string | number): string {
@@ -42,14 +42,14 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
     body += `<text x="${n(tx)}" y="${n(ty)}" text-anchor="middle" dominant-baseline="hanging" font-size="${n(titleFontSize)}" font-family="Arial, sans-serif" font-weight="bold" fill="#111">${e(pl.title)}</text>`;
   }
 
-  // Блок УТВЕРЖДАЮ — фиксированный размер по формату листа
-  if (pl.showApprover) {
+  // Блоки «СОГЛАСОВАНО» / «УТВЕРЖДАЮ» — положение, размер и шрифт из слоя
+  for (const kind of enabledSignBlocks(pl)) {
     const fmtA = (pl.paperFormat ?? "A3") as PaperFormat;
     const oriA = pl.orientation ?? "landscape";
     const mmA = PAPER_SIZES_MM[fmtA];
     const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
-    const boxA = computeApproverBox(rx, ry, rw, inset, paperWmmA);
-    body += buildApproverSvgString(pl, boxA);
+    const boxA = computeApproverBox(rx, ry, rw, inset, paperWmmA, pl, kind);
+    body += buildApproverSvgString(pl, boxA, kind);
   }
 
   // Блок УО — из реально установленных символов на схеме

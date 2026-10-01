@@ -566,6 +566,25 @@ export interface HorizonPrintLayer {
   showStamp: boolean;
   /** Показывать блок «УТВЕРЖДАЮ» в правом верхнем углу */
   showApprover?: boolean;
+  /** Блок «УТВЕРЖДАЮ»: смещение от правого верхнего угла (мм листа), размер и шрифт (1 = 100 %) */
+  approverOffsetX?: number;
+  approverOffsetY?: number;
+  approverScale?: number;
+  approverFontScale?: number;
+  /** Показывать блок «СОГЛАСОВАНО» в левом верхнем углу */
+  showAgree?: boolean;
+  /** Поля блока «СОГЛАСОВАНО» */
+  agreeTitle?: string;
+  agreeOrg?: string;
+  agreeName?: string;
+  agreeDay?: string;
+  agreeMonth?: string;
+  agreeYear?: string;
+  /** Блок «СОГЛАСОВАНО»: смещение от левого верхнего угла (мм листа), размер и шрифт */
+  agreeOffsetX?: number;
+  agreeOffsetY?: number;
+  agreeScale?: number;
+  agreeFontScale?: number;
   /** Формат бумаги */
   paperFormat: PaperFormat;
   /** Ориентация: landscape = альбом, portrait = книжная */
