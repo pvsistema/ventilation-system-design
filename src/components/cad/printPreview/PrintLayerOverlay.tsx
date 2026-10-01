@@ -3,11 +3,13 @@
 import { type TopoBranch, type Horizon } from "@/lib/topology";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { renderPrintLayerSvgContent } from "@/lib/printLayerSvg";
+import type { RouteLegendItem } from "@/lib/inspectionRoutes";
 
 interface Props {
   printLayerRects: Array<{ h: Horizon; pl: NonNullable<Horizon["printLayer"]>; rx: number; ry: number; rw: number; rh: number }>;
   schemaSymbols: SchemaSymbol[];
   branches: TopoBranch[];
+  routeLegendItems?: RouteLegendItem[];
   width: number;
   height: number;
 }
@@ -16,6 +18,7 @@ export default function PrintLayerOverlay({
   printLayerRects,
   schemaSymbols,
   branches,
+  routeLegendItems,
   width,
   height,
 }: Props) {
@@ -26,7 +29,7 @@ export default function PrintLayerOverlay({
     >
       {printLayerRects.map(({ h, pl, rx, ry, rw, rh }) => (
         <g key={h.id}>
-          {renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols, branches })}
+          {renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols, branches, routeLegendItems })}
         </g>
       ))}
     </svg>

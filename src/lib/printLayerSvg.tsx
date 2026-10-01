@@ -13,6 +13,8 @@ import {
   enabledSignBlocks, isYearField,
 } from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
+import type { RouteLegendItem } from "@/lib/inspectionRoutes";
+import { computeRoutesBlockLayout, buildRoutesBlockElements } from "@/lib/printRoutesBlock";
 
 export interface PrintLayerSvgOptions {
   pl: HorizonPrintLayer;
@@ -24,9 +26,11 @@ export interface PrintLayerSvgOptions {
   schemaSymbols?: SchemaSymbol[];
   /** Ветви — для определения назначения вентиляторов (ГВУ/ВВУ/ВМП) в легенде */
   branches?: TopoBranch[];
+  /** Строки блока маршрутов МПО */
+  routeLegendItems?: RouteLegendItem[];
 }
 
-export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols = [], branches = [] }: PrintLayerSvgOptions): React.ReactNode {
+export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols = [], branches = [], routeLegendItems = [] }: PrintLayerSvgOptions): React.ReactNode {
   const inset = Math.max(4, Math.min(rw, rh) * 0.015);
   // Размер заголовка пропорционален формату листа (как штамп/Утв), а не rh.
   const _mmT = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
@@ -146,6 +150,27 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
     );
   })() : null;
 
+  // ── Блок маршрутов профилактического обследования (МПО) ─────────────────
+  const routesBlock = (pl.showRoutes && routeLegendItems.length > 0) ? (() => {
+    const L = computeRoutesBlockLayout(pl, routeLegendItems, rx, ry, rw, rh, inset);
+    const { lines, texts, swatches, lw, lwThin } = buildRoutesBlockElements(routeLegendItems, L);
+    return (
+      <g key="routes-block">
+        <rect x={L.x} y={L.y + L.titleH} width={L.w} height={L.h - L.titleH} fill="white" />
+        {lines.map((ln, i) => (
+          <line key={`rl-${i}`} x1={ln.x1} y1={ln.y1} x2={ln.x2} y2={ln.y2} stroke="#1a1a1a" strokeWidth={ln.thick ? lw : lwThin} />
+        ))}
+        {swatches.map((sw, i) => (
+          <line key={`rs-${i}`} x1={sw.x1} y1={sw.y} x2={sw.x2} y2={sw.y} stroke={sw.color} strokeWidth={sw.width} strokeLinecap="round" />
+        ))}
+        {texts.map((t, i) => (
+          <text key={`rt-${i}`} x={t.x} y={t.y} textAnchor={t.anchor} dominantBaseline="central"
+            fontSize={t.size} fontFamily="Arial, sans-serif" fontWeight={t.bold ? "bold" : undefined} fill={t.color ?? "#222"}>{t.text}</text>
+        ))}
+      </g>
+    );
+  })() : null;
+
   // ── Штамп ГОСТ 185×55мм — фиксированный размер по формату листа ──────────
   const stampBlock = pl.showStamp ? (() => {
     const fmt = (pl.paperFormat ?? "A3") as PaperFormat;
@@ -207,6 +232,7 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
       )}
       {approverBlock}
       {legendBlock}
+      {routesBlock}
       {stampBlock}
     </>
   );

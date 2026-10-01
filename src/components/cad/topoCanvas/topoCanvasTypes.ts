@@ -242,6 +242,8 @@ export interface Props {
    * null/undefined — показывается вся схема.
    */
   isolateBranchIds?: Set<string> | null;
+  /** Строки блока «Маршруты профилактического обследования» для слоя печати */
+  routeLegendItems?: import("@/lib/inspectionRoutes").RouteLegendItem[];
   /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
   reversedBranchIds?: Set<string>;
   /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */

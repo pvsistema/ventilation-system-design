@@ -113,6 +113,7 @@ export default function TopoCanvas(props: Props) {
     velColorHue = "blue",
     compareBranchColors,
     isolateBranchIds = null,
+    routeLegendItems,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -1626,7 +1627,7 @@ export default function TopoCanvas(props: Props) {
   // (рамка листа, заголовок, штамп, блок «УТВЕРЖДАЮ», легенда).
   const { renderGroundGrid, renderWorkPlane, unprojFrame, renderPrintLayers } = usePrintLayers({
     nodes, branches, horizons, visibleBranches, projNodes, proj, is3D, effPlane,
-    xyScale, zScale, schemaSymbols, editingPrintLayerId,
+    xyScale, zScale, schemaSymbols, editingPrintLayerId, routeLegendItems,
     onPrintLayerBoundsChange, onPrintLayerChange,
     editingTitleId, setEditingTitleId, editingTitleDraft, setEditingTitleDraft,
     editingStampCell, setEditingStampCell,

@@ -349,6 +349,40 @@ export function buildInspectionLabels(
   return out;
 }
 
+/** Строка блока «Маршруты профилактического обследования» на листе печати. */
+export interface RouteLegendItem {
+  id: string;
+  color: string;
+  title: string;
+  length: string;
+  time: string;
+}
+
+/**
+ * Строки блока маршрутов на листе печати: видимые маршруты с выработками,
+ * числа — тем же расчётом, что и в табличках на схеме.
+ */
+export function buildRouteLegendItems(
+  routes: InspectionRoute[],
+  branches: BranchLike[],
+  nodes: NodeLike[],
+  symbols: SymbolLike[],
+): RouteLegendItem[] {
+  const list = routes.filter(r => r.visible && r.branchIds.length > 0);
+  if (list.length === 0) return [];
+  const branchById = new Map(branches.map(b => [b.id, b]));
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  return [...list].sort((a, b) => a.number - b.number).map(r => {
+    const res = calcInspectionRoute(r, branchById, nodeById, symbols);
+    return {
+      id: r.id, color: r.color,
+      title: r.name ? `МПО № ${r.number} — ${r.name}` : `МПО № ${r.number}`,
+      length: fmtLength(res.length),
+      time: fmtMinutes(res.totalTime),
+    };
+  });
+}
+
 /**
  * Окраска ветвей маршрутами МПО: внутри (заливка) и снаружи (контур).
  * Маршруты приоритетнее позиций ПЛА — их цвета кладутся первыми.

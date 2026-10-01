@@ -12,6 +12,8 @@ import {
 import { PrintFrameBase, PrintFrameHandles } from "@/components/cad/topoCanvas/printLayers/PrintFrame";
 import { ApproverBlock, StampBlock } from "@/components/cad/topoCanvas/printLayers/PrintStampBlocks";
 import { LegendBlock } from "@/components/cad/topoCanvas/printLayers/PrintLegendBlock";
+import { RoutesBlock } from "@/components/cad/topoCanvas/printLayers/PrintRoutesBlock";
+import type { RouteLegendItem } from "@/lib/inspectionRoutes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Слой ПЕЧАТИ и вспомогательная геометрия холста (вынесено из TopoCanvas.tsx).
@@ -44,6 +46,8 @@ export interface PrintLayersDeps {
   zScale: number;
   schemaSymbols?: Props["schemaSymbols"];
   editingPrintLayerId?: string | null;
+  /** Строки блока маршрутов МПО */
+  routeLegendItems?: RouteLegendItem[];
   onPrintLayerBoundsChange?: Props["onPrintLayerBoundsChange"];
   onPrintLayerChange?: Props["onPrintLayerChange"];
   editingTitleId: string | null;
@@ -66,7 +70,7 @@ export interface PrintLayersDeps {
 export function usePrintLayers(deps: PrintLayersDeps) {
   const {
     nodes, branches, horizons, visibleBranches, projNodes, proj, is3D, effPlane,
-    xyScale, zScale, schemaSymbols, editingPrintLayerId,
+    xyScale, zScale, schemaSymbols, editingPrintLayerId, routeLegendItems,
     onPrintLayerBoundsChange, onPrintLayerChange,
     editingTitleId, setEditingTitleId, editingTitleDraft, setEditingTitleDraft,
     editingStampCell, setEditingStampCell,
@@ -153,6 +157,15 @@ export function usePrintLayers(deps: PrintLayersDeps) {
             h={h} pl={pl}
             rx={rx} ry={ry} rw={rw} rh={rh} inset={inset}
             branches={branches} schemaSymbols={schemaSymbols}
+            onPrintLayerChange={onPrintLayerChange}
+          />
+        )}
+
+        {/* ── Блок маршрутов профилактического обследования (МПО) ─────────── */}
+        {pl.showRoutes && routeLegendItems && routeLegendItems.length > 0 && (
+          <RoutesBlock
+            horizonId={h.id} pl={pl} items={routeLegendItems}
+            rx={rx} ry={ry} rw={rw} rh={rh} inset={inset}
             onPrintLayerChange={onPrintLayerChange}
           />
         )}

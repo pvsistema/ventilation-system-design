@@ -8,7 +8,7 @@ import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type SchemaSymbol } from "@/pages/Cad";
 import { type Position } from "@/lib/positions";
-import { type InspectionRoute, buildInspectionLabels, inspectionLabelScale, drawInspectionLabel } from "@/lib/inspectionRoutes";
+import { type InspectionRoute, buildRouteLegendItems, buildInspectionLabels, inspectionLabelScale, drawInspectionLabel } from "@/lib/inspectionRoutes";
 import { type TextBlock } from "@/pages/cad/cadTypes";
 import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 // jsPDF подключается по требованию (в момент экспорта в PDF), а не при старте
@@ -721,6 +721,12 @@ export default function PrintDialog({
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
   }, [viewZoom, viewport, tiles.cols, prevW, prevH]);
 
+  // Строки блока «Маршруты профилактического обследования» на листе.
+  const routeLegendItems = useMemo(
+    () => buildRouteLegendItems(inspectionRoutes, branches, nodes, schemaSymbols),
+    [inspectionRoutes, branches, nodes, schemaSymbols],
+  );
+
   // ─── Рендер рамки слоя печати на canvas через SVG→Image ─────────────
   // Принимает готовые координаты рамки rx,ry,rw,rh (вычислены тем же алгоритмом что схема)
   const drawPrintLayerFrame = useCallback(async (
@@ -729,7 +735,7 @@ export default function PrintDialog({
     layer: NonNullable<Horizon["printLayer"]>,
     rect: { rx: number; ry: number; rw: number; rh: number },
   ): Promise<void> => {
-    const svgStr = buildPrintLayerSvgString({ pl: layer, ...rect, totalW: canvasW, totalH: canvasH, schemaSymbols, branches });
+    const svgStr = buildPrintLayerSvgString({ pl: layer, ...rect, totalW: canvasW, totalH: canvasH, schemaSymbols, branches, routeLegendItems });
     const blob = new Blob([svgStr], { type: "image/svg+xml;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     await new Promise<void>((resolve) => {
@@ -738,7 +744,7 @@ export default function PrintDialog({
       img.onerror = () => { URL.revokeObjectURL(url); resolve(); };
       img.src = url;
     });
-  }, [schemaSymbols]);
+  }, [schemaSymbols, branches, routeLegendItems]);
 
   // Рисует маркеры позиций ПЛА (кружки с номерами) на 2D-canvas.
   // Нужно для растрового экспорта (PNG/JPG/PDF), чтобы он совпадал с
@@ -1113,7 +1119,7 @@ export default function PrintDialog({
         if (vec) {
           // В векторный файл рамку и штамп вставляем исходной SVG-разметкой.
           vec.appendRawSvg(buildPrintLayerSvgString({
-            pl, ...frameRect, totalW: oc.width, totalH: oc.height, schemaSymbols, branches,
+            pl, ...frameRect, totalW: oc.width, totalH: oc.height, schemaSymbols, branches, routeLegendItems,
           }));
         } else {
           await drawPrintLayerFrame(ctx, oc.width, oc.height, pl, frameRect);
@@ -1186,7 +1192,7 @@ export default function PrintDialog({
       nodes, branches, horizons, schemaSymbols, viewState, zScale,
       branchWidth, branchBorder, thinLines, colorByHorizon, showFlowArrows, flowDisplay, infoConfig, unitsConfig,
       colorMode, sectionColors, posInnerColors, posOuterColors, fixedObjectScale, xyScale, widthBySection,
-      hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect,
+      hasPrintLayer, activePrintHorizon, drawPrintLayerFrame, computeFrameRect, routeLegendItems,
       drawPositionsToCanvas, drawInspectionLabelsToCanvas, drawTextBlocksToCanvas, symSizingFor, pollutedBranchIds, widthLimits]);
 
   // ─── Растровый лист (печать, PNG/JPG/растровый PDF) ──────────────────
@@ -1791,6 +1797,7 @@ body{background:white;font-family:Arial,sans-serif}
                         positions={positions}
                         showPositions={showPositions}
                         inspectionLabels={inspectionLabels}
+                        routeLegendItems={routeLegendItems}
                         fixedObjectScale={fixedObjectScale}
                         widthBySection={widthBySection}
                         scalePositionMin={scalePositionMin}

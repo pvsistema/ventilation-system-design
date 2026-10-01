@@ -597,6 +597,11 @@ export interface HorizonPrintLayer {
   /** Смещение блока УО от нижнего-левого угла рамки (в ММ листа — масштабируется вместе с листом) */
   legendOffsetX?: number;
   legendOffsetY?: number;
+  /** Показывать блок «Маршруты профилактического обследования» (МПО: цвет, длина, время) */
+  showRoutes?: boolean;
+  /** Смещение блока маршрутов от нижнего-левого угла рамки (в ММ листа) */
+  routesOffsetX?: number;
+  routesOffsetY?: number;
   /** Смещение штампа от нижнего-правого угла рамки (экранные px) */
   stampOffsetX?: number;
   stampOffsetY?: number;

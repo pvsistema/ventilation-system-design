@@ -6,6 +6,8 @@ import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, FAN_SVG_STATION, FAN_SVG_PROPELLER }
 import { computeStampBox, buildStampSvgString } from "@/lib/stampTemplate";
 import { computeApproverBox, buildApproverSvgString, enabledSignBlocks } from "@/lib/approverTemplate";
 import type { SchemaSymbol } from "@/pages/Cad";
+import type { RouteLegendItem } from "@/lib/inspectionRoutes";
+import { computeRoutesBlockLayout, buildRoutesBlockSvgString } from "@/lib/printRoutesBlock";
 
 function e(s: string | number): string {
   return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
@@ -20,9 +22,11 @@ export interface BuildSvgOpts {
   schemaSymbols?: SchemaSymbol[];
   /** Ветви — для определения назначения вентиляторов (ГВУ/ВВУ/ВМП) в легенде */
   branches?: TopoBranch[];
+  /** Строки блока маршрутов МПО */
+  routeLegendItems?: RouteLegendItem[];
 }
 
-export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, schemaSymbols = [], branches = [] }: BuildSvgOpts): string {
+export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, schemaSymbols = [], branches = [], routeLegendItems = [] }: BuildSvgOpts): string {
   const inset = Math.max(4, Math.min(rw, rh) * 0.015);
   // Размер заголовка пропорционален формату листа (как штамп/Утв), а не rh.
   const _mmT = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
@@ -116,6 +120,12 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
         body += `<text x="${n(lx+legIconSZ+legPad*0.8)}" y="${n(iy+legLineH*0.6)}" font-size="${n(legFs*0.88)}" font-family="Arial, sans-serif" fill="#333">${e(item.name)}</text>`;
       });
     }
+  }
+
+  // Блок маршрутов профилактического обследования (МПО)
+  if (pl.showRoutes && routeLegendItems.length > 0) {
+    const L = computeRoutesBlockLayout(pl, routeLegendItems, rx, ry, rw, rh, inset);
+    body += buildRoutesBlockSvgString(routeLegendItems, L);
   }
 
   // Штамп ГОСТ 185×55мм — фиксированный размер по формату листа

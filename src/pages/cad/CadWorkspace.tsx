@@ -5,7 +5,7 @@ import { type TopoNode, type TopoBranch, project3D, unprojectToPlane } from "@/l
 import InfoPanel from "@/components/cad/InfoPanel";
 import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 import { type Position } from "@/lib/positions";
-import { buildInspectionLabels, inspectionLabelScale, inspectionBranchColors } from "@/lib/inspectionRoutes";
+import { buildInspectionLabels, inspectionLabelScale, inspectionBranchColors, buildRouteLegendItems } from "@/lib/inspectionRoutes";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { PRESSURE_REDUCING_VALVES } from "@/lib/pressureReducingValves";
 import { EXPLOSION_HAZARD_COLORS, explosionZoneColor, channelDecay, LAMBDA_DEFAULT, junctionTransmission } from "@/lib/explosionCalculator";
@@ -289,6 +289,11 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
   // Считаются только при изменении маршрутов/схемы, а не на каждый кадр камеры.
   const inspectionLabels = useMemo(
     () => buildInspectionLabels(inspectionRoutes, branches, nodes, schemaSymbols),
+    [inspectionRoutes, branches, nodes, schemaSymbols],
+  );
+  // Строки блока «Маршруты профилактического обследования» для слоя печати.
+  const routeLegendItems = useMemo(
+    () => buildRouteLegendItems(inspectionRoutes, branches, nodes, schemaSymbols),
     [inspectionRoutes, branches, nodes, schemaSymbols],
   );
 
@@ -848,6 +853,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               onScaleChange={setViewScale}
               fitToScreenNonce={fitToScreenNonce}
               isolateBranchIds={inspectionIsolateIds}
+              routeLegendItems={routeLegendItems}
               focusNonce={focusNonce}
               focusNodeId={focusNodeId}
               focusBranchId={focusBranchId}

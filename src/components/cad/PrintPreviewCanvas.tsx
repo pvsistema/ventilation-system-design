@@ -18,7 +18,7 @@ import SchemaSymbolsOverlay from "./SchemaSymbolsOverlay";
 import { computeFrameRect } from "./printPreview/computeFrameRect";
 import PrintPositionsOverlay from "./printPreview/PrintPositionsOverlay";
 import PrintInspectionOverlay from "./printPreview/PrintInspectionOverlay";
-import { type InspectionLabel } from "@/lib/inspectionRoutes";
+import { type InspectionLabel, type RouteLegendItem } from "@/lib/inspectionRoutes";
 import PrintTextBlocksOverlay from "./printPreview/PrintTextBlocksOverlay";
 import PrintLayerOverlay from "./printPreview/PrintLayerOverlay";
 
@@ -57,6 +57,8 @@ interface Props {
   showPositions?: boolean;
   /** Таблички маршрутов МПО */
   inspectionLabels?: InspectionLabel[];
+  /** Строки блока маршрутов МПО на листе */
+  routeLegendItems?: RouteLegendItem[];
   fixedObjectScale?: boolean;
   /** Ширина ветви по площади сечения — предпросмотр должен совпадать с экраном. */
   widthBySection?: boolean;
@@ -111,6 +113,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
   positions = [],
   showPositions = true,
   inspectionLabels = [],
+  routeLegendItems,
   fixedObjectScale = false,
   widthBySection = false,
   scalePositionMin = 80,
@@ -513,6 +516,7 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
           printLayerRects={printLayerRects}
           schemaSymbols={schemaSymbols}
           branches={branches}
+          routeLegendItems={routeLegendItems}
           width={width}
           height={height}
         />

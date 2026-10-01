@@ -564,6 +564,7 @@ export default function HorizonsPanel(p: Props) {
                       ]} />
                     <div className="flex items-center gap-3 flex-wrap pt-0.5">
                       <Check checked={pl.showLegend} onChange={(v) => updatePl({ showLegend: v })} label="Условные обозн." />
+                      <Check checked={pl.showRoutes ?? false} onChange={(v) => updatePl({ showRoutes: v })} label="Маршрут" />
                       <Check checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
                       <Check checked={pl.showAgree ?? false} onChange={(v) => updatePl({ showAgree: v })} label="«Согласовано»" />
                       <Check checked={pl.showApprover ?? false} onChange={(v) => updatePl({ showApprover: v })} label="«Утверждаю»" />
