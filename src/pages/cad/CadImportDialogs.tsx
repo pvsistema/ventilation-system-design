@@ -236,6 +236,7 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           onVentNormsChange={p.setVentNorms}
           blastThresholds={p.blastThresholds}
           onBlastThresholdsChange={p.setBlastThresholds}
+          branches={p.branches}
         />
       )}
 

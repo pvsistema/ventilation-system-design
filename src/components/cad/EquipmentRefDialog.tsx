@@ -2,6 +2,10 @@
 import { useState, useCallback, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import { FAN_CATALOG, fanHAngle, fanQMax, type FanCurve } from "@/lib/fanCurves";
+import { fanCurvePoints, reverseCurvePoints } from "@/lib/fanChartData";
+import FanChart from "@/components/cad/FanChart";
+import FanOperatingPointDialog, { type FanOperatingPointData } from "@/components/cad/FanOperatingPointDialog";
+import type { TopoBranch } from "@/lib/topology";
 import {
   BULKHEAD_CATALOG, BULKHEAD_TYPE_LABELS, BULKHEAD_TYPE_COLORS,
   type BulkheadCatalogItem, type BulkheadType, airPermToR,
@@ -80,6 +84,8 @@ interface Props {
   /** Пороги зон поражения взрывом */
   blastThresholds?: ExplosionThresholds;
   onBlastThresholdsChange?: (t: ExplosionThresholds) => void;
+  /** Ветви схемы — для рабочих точек вентиляторов из расчёта сети */
+  branches?: TopoBranch[];
 }
 
 // ─── Оформление в палитре темы (--c-accent / --c-s* / --c-b* / --c-t*) ────
@@ -149,107 +155,6 @@ interface MineFan {
   rpmMax: number;
   bladeAngles: MineAngle[];
   note?: string;
-}
-
-/**
- * Точки кривой Q-H для графика.
- *
- * Считаются ТОЙ ЖЕ функцией, что и расчёт сети (fanHAngle), иначе картинка в
- * справочнике расходилась бы с рабочей точкой: раньше здесь была своя формула
- * угла лопаток (0.6 + 0.4·t), а в расчёте — другая, и график показывал одно,
- * а сеть считала другое.
- *
- * Кривая рисуется до паспортного предела для выбранного угла: при малом угле
- * вентилятор физически не выдаёт полный номинальный расход.
- */
-function fanCurvePoints(c: FanCurve, angle?: number, n = 40): { q: number; h: number; p: number }[] {
-  const pts = [];
-  const qMaxA = fanQMax(c, angle);
-  const qMinA = Math.min(c.qMin, qMaxA * 0.9);
-  for (let i = 0; i <= n; i++) {
-    const q = qMinA + (qMaxA - qMinA) * (i / n);
-    const h = fanHAngle(c, q, angle);
-    const eta = Math.min(0.85, Math.max(0.05, c.e0 + c.e1 * q + c.e2 * q * q));
-    const p = eta > 0 ? (h * q) / eta / 1000 : 0;
-    pts.push({ q: +q.toFixed(2), h: +h.toFixed(0), p: +Math.max(0, p).toFixed(1) });
-  }
-  return pts;
-}
-
-function reverseCurvePoints(c: FanCurve, n = 40): { q: number; h: number; p: number }[] {
-  if (c.reverseH0 === undefined) return [];
-  const pts = [];
-  const qMin = c.reverseQMin ?? c.qMin;
-  const qMax = c.reverseQMax ?? c.qMax;
-  for (let i = 0; i <= n; i++) {
-    const q = qMin + (qMax - qMin) * (i / n);
-    const h = Math.max(0, c.reverseH0! + (c.reverseH1 ?? 0) * q + (c.reverseH2 ?? 0) * q * q);
-    const eta = Math.min(0.85, Math.max(0.05, c.e0 + c.e1 * q + c.e2 * q * q)) * (c.reverseEfficiencyFactor ?? 0.82);
-    const p = eta > 0 ? (h * q) / eta / 1000 : 0;
-    pts.push({ q: +q.toFixed(2), h: +h.toFixed(0), p: +Math.max(0, p).toFixed(1) });
-  }
-  return pts;
-}
-
-// ─── График Q-H / Q-P ─────────────────────────────────────────────────────
-function FanChart({ curves, type, operatingPoints }: {
-  curves: { pts: { q: number; h: number; p: number }[]; color: string; dash?: boolean }[];
-  type: "qh" | "qp";
-  operatingPoints?: { q: number; h: number; color: string }[];
-}) {
-  const W = 340, H = 190, PL = 46, PR = 12, PT = 10, PB = 30;
-  const cw = W - PL - PR, ch = H - PT - PB;
-
-  const allPts = curves.flatMap(c => c.pts);
-  if (allPts.length === 0) return <svg width={W} height={H}><text x={W/2} y={H/2} textAnchor="middle" fontSize="11" style={{ fill: "var(--c-t4, #999)" }}>Нет данных</text></svg>;
-
-  const maxQ = Math.max(...allPts.map(p => p.q)) * 1.05 || 100;
-  const maxV = type === "qh"
-    ? Math.max(...allPts.map(p => p.h)) * 1.15 || 1000
-    : Math.max(...allPts.map(p => p.p)) * 1.15 || 100;
-
-  const toX = (q: number) => PL + (q / maxQ) * cw;
-  const toY = (v: number) => PT + ch - (v / maxV) * ch;
-
-  const yTicks = 4, xTicks = 5;
-  return (
-    <svg width={W} height={H} style={{ fontFamily: "var(--font-num)", display: "block" }}>
-      {Array.from({ length: yTicks + 1 }).map((_, i) => {
-        const y = PT + (i / yTicks) * ch;
-        const val = maxV * (1 - i / yTicks);
-        return <g key={i}>
-          <line x1={PL} y1={y} x2={W - PR} y2={y} style={{ stroke: "var(--c-b1, #e5e7eb)" }} strokeWidth="0.7" />
-          <text x={PL - 4} y={y + 3} fontSize="8" textAnchor="end" style={{ fill: "var(--c-t3, #888)" }}>
-            {val >= 1000 ? `${(val / 1000).toFixed(1)}k` : Math.round(val)}
-          </text>
-        </g>;
-      })}
-      {Array.from({ length: xTicks + 1 }).map((_, i) => {
-        const x = PL + (i / xTicks) * cw;
-        const val = maxQ * (i / xTicks);
-        return <g key={i}>
-          <line x1={x} y1={PT} x2={x} y2={PT + ch} style={{ stroke: "var(--c-b1, #e5e7eb)" }} strokeWidth="0.7" />
-          <text x={x} y={H - 8} fontSize="8" textAnchor="middle" style={{ fill: "var(--c-t3, #888)" }}>{val.toFixed(0)}</text>
-        </g>;
-      })}
-      <rect x={PL} y={PT} width={cw} height={ch} fill="none" style={{ stroke: "var(--c-b2, #ccc)" }} strokeWidth="0.8" />
-      {curves.map((c, ci) => {
-        if (c.pts.length === 0) return null;
-        const d = c.pts.map((p, i) => `${i === 0 ? "M" : "L"}${toX(p.q).toFixed(1)},${toY(type === "qh" ? p.h : p.p).toFixed(1)}`).join(" ");
-        return <path key={ci} d={d} fill="none" stroke={c.color} strokeWidth={c.dash ? 1.2 : 2}
-          strokeDasharray={c.dash ? "4,3" : undefined} strokeLinejoin="round" />;
-      })}
-      {operatingPoints?.map((op, i) => (
-        <g key={i}>
-          <circle cx={toX(op.q)} cy={toY(op.h)} r={4} fill={op.color} stroke="white" strokeWidth={1.5} />
-        </g>
-      ))}
-      <text x={PL + cw / 2} y={H - 1} fontSize="8" textAnchor="middle" style={{ fill: "var(--c-t3, #666)" }}>Расход, м³/с</text>
-      <text transform={`translate(9,${PT + ch / 2}) rotate(-90)`} fontSize="8" textAnchor="middle" style={{ fill: "var(--c-t3, #666)" }}>
-        {type === "qh" ? "Напор, Па" : "Мощность, кВт"}
-      </text>
-    </svg>
-  );
 }
 
 // ─── Диалог выбора из библиотеки ──────────────────────────────────────────
@@ -560,7 +465,7 @@ function exportToMineFan(exp: MineFanExport): MineFan {
 }
 
 // ─── Секция вентиляторов ──────────────────────────────────────────────────
-function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?: (fans: MineFanExport[]) => void; initialMineFans?: MineFanExport[] }) {
+function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFansChange?: (fans: MineFanExport[]) => void; initialMineFans?: MineFanExport[]; branches?: TopoBranch[] }) {
   const [fans, setFans] = useState<MineFan[]>(() =>
     initialMineFans && initialMineFans.length > 0
       ? initialMineFans.map(exportToMineFan)
@@ -570,6 +475,7 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
   const [showLibrary, setShowLibrary] = useState(false);
   const [addAngleFor, setAddAngleFor] = useState<MineFan | null>(null);
   const [editNote, setEditNote] = useState(false);
+  const [zoomData, setZoomData] = useState<FanOperatingPointData | null>(null);
 
   const selected = fans.find(f => f.id === selectedId) ?? null;
   const catalog = selected ? FAN_CATALOG.find(c => c.id === selected.catalogId) : null;
@@ -626,8 +532,45 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
     }));
   };
 
+  /**
+   * Рабочие точки вентилятора: заданные вручную (в характеристике) и
+   * полученные расчётом сети — по ветвям, где стоит эта модель.
+   */
+  const buildOpPoints = (fan: MineFan): FanOperatingPointData["points"] => {
+    const manual = fan.bladeAngles.filter(a => a.operatingQ).map(a => ({
+      label: `${a.angle > 0 ? "+" : ""}${a.angle}°${a.reverse ? " рев." : ""}`,
+      q: a.operatingQ!, h: a.operatingH ?? 0, reverse: a.reverse, source: "manual" as const, color: a.color,
+    }));
+    const calc = (branches ?? [])
+      .filter(b => b.hasFan && b.fanMode === "curve" && b.fanCurveId === fan.catalogId && !b.fanStopped && Math.abs(b.flow ?? 0) > 0.01)
+      .map(b => {
+        const par = Math.max(1, b.fanParallel ?? 1);
+        return {
+          label: `Рабочая точка${b.fanName ? ` ${b.fanName}` : ""} (ветвь ${b.id}${b.fanBladeAngle !== undefined && fan.bladeAngles.length > 1 ? `, ${b.fanBladeAngle}°` : ""})`,
+          q: Math.abs(b.flow) / par,
+          h: Math.abs(b.fanPressure),
+          reverse: !!b.fanReverse,
+          source: "calc" as const,
+          color: "#e11d48",
+        };
+      });
+    return [...calc, ...manual];
+  };
+
+  const openZoom = (fan: MineFan) => {
+    const c = FAN_CATALOG.find(x => x.id === fan.catalogId);
+    if (!c) return;
+    setZoomData({
+      fanName: fan.name,
+      catalog: c,
+      angles: fan.bladeAngles.map(a => ({ angle: a.angle, reverse: a.reverse, rpm: a.rpm, color: a.color })),
+      points: buildOpPoints(fan),
+    });
+  };
+
   return (
     <div className="flex h-full overflow-hidden">
+      {zoomData && <FanOperatingPointDialog data={zoomData} onClose={() => setZoomData(null)} />}
       {/* Левая панель — список вентиляторов рудника */}
       <div className="flex flex-col border-r border-[var(--c-b1)]" style={{ width: 220, flexShrink: 0 }}>
         {/* Шапка */}
@@ -691,8 +634,17 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
             {catalog.reverseH0 !== undefined && (
               <span className="ml-1 px-1.5 py-0.5 bg-[var(--c-tint-purple)] text-[var(--c-purple)] text-[10px] rounded-md font-medium">✓ Реверс</span>
             )}
+            <button onClick={() => openZoom(selected)} className={BTN + " ml-auto"}
+              title="Увеличенный график с рабочими точками, PNG и выгрузка в Excel">
+              <Icon name="Maximize2" size={11} /> Увеличить
+            </button>
+            <button onClick={() => openZoom(selected)} className={BTN}
+              style={{ color: "#16794a", borderColor: "color-mix(in srgb, #16794a 40%, transparent)" }}
+              title="Выгрузка рабочей точки в Excel (диаграмма + табличные данные)">
+              <Icon name="Sheet" size={11} /> Рабочая точка в Excel
+            </button>
             <button onClick={() => selected && setAddAngleFor(selected)}
-              className={BTN_PRIMARY + " ml-auto"}>
+              className={BTN_PRIMARY}>
               <Icon name="Plus" size={11} /> Характеристика
             </button>
           </div>
@@ -749,14 +701,14 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
                 ))}
               </div>
               {/* Рабочие точки */}
-              {selected.bladeAngles.some(a => a.operatingQ) && (
+              {buildOpPoints(selected).length > 0 && (
                 <div className="border-t border-[var(--c-b1)] px-2 py-1.5 flex-shrink-0" style={{ background: "var(--c-tint-amber, #fefce8)" }}>
                   <div className="text-[10px] font-semibold text-[var(--c-amber-ink)] mb-1">Рабочие точки</div>
-                  {selected.bladeAngles.filter(a => a.operatingQ).map(a => (
-                    <div key={a.id} className="flex items-center gap-1.5 mb-0.5">
-                      <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: a.color }} />
-                      <span className="text-[10px] text-[var(--c-t2)]">
-                        {a.angle > 0 ? "+" : ""}{a.angle}°: Q={a.operatingQ} м³/с, H={a.operatingH} Па
+                  {buildOpPoints(selected).map((p, i) => (
+                    <div key={i} className="flex items-start gap-1.5 mb-0.5">
+                      <div className="w-2 h-2 rounded-full flex-shrink-0 mt-1" style={{ background: p.color }} />
+                      <span className="text-[10px] text-[var(--c-t2)] leading-snug">
+                        {p.label}: Q={p.q.toFixed(2)} м³/с, H={Math.round(p.h)} Па
                       </span>
                     </div>
                   ))}
@@ -785,20 +737,26 @@ function FansSection({ onMineFansChange, initialMineFans }: { onMineFansChange?:
             <div className="flex-1 overflow-y-auto p-3 space-y-3">
               {(() => {
                 const curves = buildCurves(selected);
-                const opPoints = selected.bladeAngles.filter(a => a.operatingQ).map(a => ({
-                  q: a.operatingQ!, h: a.operatingH ?? 0, color: a.color,
-                }));
+                const opPoints = buildOpPoints(selected).filter(p => !p.reverse);
                 return (
                   <>
                     <div>
-                      <div className="text-[11px] font-semibold text-[var(--c-t2)] mb-1">Напор — Расход</div>
-                      <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden" }}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="text-[11px] font-semibold text-[var(--c-t2)]">Напор — Расход</div>
+                        <button onClick={() => openZoom(selected)} className="flex items-center gap-0.5 text-[10px] text-[var(--c-blue)] hover:text-[var(--c-blue-ink)]"
+                          title="Увеличить график и выгрузить рабочую точку в Excel">
+                          <Icon name="Maximize2" size={10} /> Увеличить
+                        </button>
+                      </div>
+                      <div onClick={() => openZoom(selected)} title="Нажмите, чтобы открыть график в увеличенном виде"
+                        style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden", cursor: "zoom-in" }}>
                         <FanChart curves={curves} type="qh" operatingPoints={opPoints} />
                       </div>
                     </div>
                     <div>
                       <div className="text-[11px] font-semibold text-[var(--c-t2)] mb-1">Мощность — Расход</div>
-                      <div style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden" }}>
+                      <div onClick={() => openZoom(selected)} title="Нажмите, чтобы открыть график в увеличенном виде"
+                        style={{ border: "1px solid var(--c-b1, #e5e7eb)", borderRadius: 6, overflow: "hidden", cursor: "zoom-in" }}>
                         <FanChart curves={curves} type="qp" />
                       </div>
                     </div>
@@ -2067,8 +2025,9 @@ function AirNormsSection({ norms, onChange }: {
   );
 }
 
-function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange }: {
+function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange }: {
   tab: TabId;
+  branches?: TopoBranch[];
   onMineFansChange?: (fans: MineFanExport[]) => void;
   onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
   onBranchTypesChange?: (types: BranchType[]) => void;
@@ -2085,7 +2044,7 @@ function TabContent({ tab, onMineFansChange, onMineBulkheadsChange, onBranchType
   if (tab === "blastzones") return <BlastZonesSection
     thresholds={blastThresholds ?? DEFAULT_EXPLOSION_THRESHOLDS}
     onChange={onBlastThresholdsChange ?? (() => {})} />;
-  if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} initialMineFans={initialMineFans} />;
+  if (tab === "fans") return <FansSection onMineFansChange={onMineFansChange} initialMineFans={initialMineFans} branches={branches} />;
   if (tab === "airnorms") return <AirNormsSection
     norms={ventNorms ?? DEFAULT_VENT_NORMS}
     onChange={onVentNormsChange ?? (() => {})} />;
@@ -2115,7 +2074,7 @@ function IconBadge({ icon, size = 24 }: { icon: string; size?: number }) {
   );
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
   // Esc закрывает окно (вложенные окна библиотеки/каталога перехватывают клик,
@@ -2196,7 +2155,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} />
+              <TabContent tab={activeTab} branches={branches} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} />
             </div>
           </div>
         </div>
