@@ -44,6 +44,31 @@ export interface FanCurve {
   reverseQMax?: number;
   // КПД в реверсном режиме (обычно 0.80–0.85 от прямого)
   reverseEfficiencyFactor?: number;
+  /**
+   * Отдельная характеристика для КАЖДОГО угла лопаток (пользовательские
+   * вентиляторы — по паспортным точкам). Если задано, напор, КПД и паспортная
+   * зона берутся отсюда, а не из общей формулы угла (bladeAngleFactor).
+   */
+  angleCurves?: FanAngleCurve[];
+  /** Вентилятор создан пользователем (не из заводского каталога) */
+  isUser?: boolean;
+  /** Исходные паспортные точки — чтобы открыть вентилятор на правку */
+  source?: UserFanSource;
+}
+
+/** Характеристика одного угла лопаток при номинальных оборотах. */
+export interface FanAngleCurve {
+  angle: number;
+  h0: number; h1: number; h2: number;
+  e0: number; e1: number; e2: number;
+  qMin: number; qMax: number;
+}
+
+/** Точки паспортной характеристики, введённые пользователем. */
+export interface UserFanPoint { q: number; h: number; eta?: number }
+export interface UserFanSource {
+  angles: { angle: number; points: UserFanPoint[] }[];
+  reverse?: { points: UserFanPoint[] };
 }
 
 // Справочник типовых вентиляторов
@@ -646,6 +671,8 @@ export const FAN_CATALOG: FanCurve[] = [
  * средней. Крайний минусовой угол — 0,65, крайний плюсовой — 1,35.
  */
 export function bladeAngleFactor(c: FanCurve, angle?: number): number {
+  // У вентилятора со своими кривыми по углам угол уже учтён в самих кривых
+  if (c.angleCurves && c.angleCurves.length > 0) return 1;
   if (!c.bladeAngles || c.bladeAngles.length < 2) return 1;
   const lo = c.bladeAngles[0];
   const hi = c.bladeAngles[c.bladeAngles.length - 1];
@@ -653,10 +680,56 @@ export function bladeAngleFactor(c: FanCurve, angle?: number): number {
   return 0.65 + ((a - lo) / Math.max(1, hi - lo)) * 0.70;
 }
 
+/**
+ * Действующая характеристика при заданном угле (номинальные обороты):
+ *   H(Q) = h0 + h1·Q + h2·Q²,  паспортная зона qMin…qMax.
+ *
+ * ЕДИНСТВЕННОЕ место, где угол превращается в коэффициенты, — им пользуются
+ * график, расчёт сети (передача на сервер) и проверка схемы.
+ *   • Каталожный вентилятор — закон подобия: h0' = af·h0, h1' = h1,
+ *     h2' = h2/af, qMax' = af·qMax (раскрытие af·H_ном(Q/af)).
+ *   • Пользовательский — своя кривая угла; между заданными углами
+ *     коэффициенты интерполируются линейно, за краями — крайний угол.
+ */
+export interface FanEffCurve extends FanAngleCurve {
+  /** Крутизна завала за паспортным пределом (|h2| исходной кривой) */
+  hDrop: number;
+}
+export function fanCurveAtAngle(c: FanCurve, angle?: number): FanEffCurve {
+  const ac = c.angleCurves;
+  if (ac && ac.length > 0) {
+    const sorted = [...ac].sort((x, y) => x.angle - y.angle);
+    const a = angle ?? sorted[Math.floor(sorted.length / 2)].angle;
+    let lo = sorted[0], hi = sorted[sorted.length - 1];
+    if (a <= lo.angle) hi = lo;
+    else if (a >= hi.angle) lo = hi;
+    else {
+      for (let i = 1; i < sorted.length; i++) {
+        if (sorted[i].angle >= a) { lo = sorted[i - 1]; hi = sorted[i]; break; }
+      }
+    }
+    const t = hi.angle === lo.angle ? 0 : (a - lo.angle) / (hi.angle - lo.angle);
+    const m = (k: keyof FanAngleCurve) => (lo[k] as number) + ((hi[k] as number) - (lo[k] as number)) * t;
+    const h2 = m("h2");
+    return {
+      angle: a, h0: m("h0"), h1: m("h1"), h2, e0: m("e0"), e1: m("e1"), e2: m("e2"),
+      qMin: m("qMin"), qMax: m("qMax"), hDrop: Math.abs(h2),
+    };
+  }
+  const af = bladeAngleFactor(c, angle);
+  return {
+    angle: angle ?? 0,
+    h0: c.h0 * af, h1: c.h1, h2: c.h2 / af,
+    e0: c.e0, e1: c.e1, e2: c.e2,
+    qMin: c.qMin * af, qMax: c.qMax * af,
+    hDrop: Math.abs(c.h2),
+  };
+}
+
 /** Максимальный паспортный расход с учётом угла лопаток и оборотов, м³/с */
 export function fanQMax(c: FanCurve, angle?: number, rpm?: number): number {
   const k = (rpm && rpm > 0 && c.rpmNominal > 0) ? rpm / c.rpmNominal : 1;
-  return c.qMax * bladeAngleFactor(c, angle) * k;
+  return fanCurveAtAngle(c, angle).qMax * k;
 }
 
 /**
@@ -681,23 +754,34 @@ export function fanQMax(c: FanCurve, angle?: number, rpm?: number): number {
  * продавливала через вентилятор лишний воздух.
  */
 export function fanHAngle(c: FanCurve, Q: number, angle?: number, rpm?: number): number {
-  const af = bladeAngleFactor(c, angle);
+  const e = fanCurveAtAngle(c, angle);
   const k = (rpm && rpm > 0 && c.rpmNominal > 0) ? rpm / c.rpmNominal : 1;
   // Приводим расход к номинальным оборотам (закон подобия Q ~ n)
   const Qn = Math.abs(Q) / k;
-  const qMaxF = c.qMax * af;
+  const qMaxF = e.qMax;
 
-  // Напор по подобию угла лопаток
-  const Hraw = (q: number) => af * (c.h0 + c.h1 * (q / af) + c.h2 * (q / af) * (q / af));
+  const Hraw = (q: number) => e.h0 + e.h1 * q + e.h2 * q * q;
 
   if (Qn <= qMaxF) return Math.max(0, Hraw(Qn)) * k * k;
 
   // За паспортным пределом — квадратичный завал характеристики.
   const Hq = Hraw(qMaxF);
-  const slope = af * (c.h1 + 2 * c.h2 * (qMaxF / af)) / af;
+  const slope = e.h1 + 2 * e.h2 * qMaxF;
   const d = Qn - qMaxF;
-  const H = Hq + slope * d - Math.abs(c.h2) * 4 * d * d;
+  const H = Hq + slope * d - e.hDrop * 4 * d * d;
   return Math.max(0, H) * k * k;
+}
+
+/**
+ * КПД с учётом угла лопаток (Q — при номинальных оборотах).
+ * Каталожный вентилятор — общая кривая η(Q), как и раньше; пользовательский —
+ * кривая η своего угла.
+ */
+export function fanEfficiencyAngle(c: FanCurve, Q: number, angle?: number): number {
+  if (!c.angleCurves || c.angleCurves.length === 0) return fanEfficiency(c, Q);
+  const e = fanCurveAtAngle(c, angle);
+  const q = Math.abs(Q);
+  return Math.min(0.85, Math.max(0.05, e.e0 + e.e1 * q + e.e2 * q * q));
 }
 
 // Производная |dH/dQ| здесь не нужна: её использовал только удалённый
@@ -741,9 +825,51 @@ export function findOperatingPoint(curve: FanCurve, R: number): { Q: number; H: 
   return { Q, H: fanH(curve, Q) };
 }
 
-// Найти curve по id
+// ─── Пользовательские вентиляторы ─────────────────────────────────────────
+// Вентиляторы, которых нет в заводском каталоге: их характеристики вводит
+// пользователь. Хранятся в проекте (вместе со справочником рудника) и в личной
+// библиотеке браузера — чтобы использовать в других проектах. Здесь — общий
+// реестр, через который их находит вся программа (getFanById).
+
+export const USER_FAN_PREFIX = "user_";
+const USER_LIB_KEY = "pvs.userFanLibrary";
+const userFans = new Map<string, FanCurve>();
+
+export function isUserFanId(id?: string | null): boolean {
+  return !!id && id.startsWith(USER_FAN_PREFIX);
+}
+
+/** Зарегистрировать (или обновить) пользовательские вентиляторы. */
+export function registerUserFanCurves(list: (FanCurve | undefined | null)[]) {
+  for (const c of list) if (c && c.id) userFans.set(c.id, { ...c, isUser: true });
+}
+
+/** Личная библиотека пользовательских вентиляторов (браузер). */
+export function getUserFanLibrary(): FanCurve[] {
+  try {
+    const arr = JSON.parse(localStorage.getItem(USER_LIB_KEY) || "[]");
+    return Array.isArray(arr) ? (arr as FanCurve[]).filter(c => c && c.id) : [];
+  } catch { return []; }
+}
+
+export function saveToUserFanLibrary(c: FanCurve) {
+  const lib = getUserFanLibrary().filter(x => x.id !== c.id);
+  lib.push({ ...c, isUser: true });
+  try { localStorage.setItem(USER_LIB_KEY, JSON.stringify(lib)); } catch { /* ignore */ }
+  registerUserFanCurves([c]);
+}
+
+export function removeFromUserFanLibrary(id: string) {
+  const lib = getUserFanLibrary().filter(x => x.id !== id);
+  try { localStorage.setItem(USER_LIB_KEY, JSON.stringify(lib)); } catch { /* ignore */ }
+}
+
+// Личная библиотека доступна сразу после запуска
+try { registerUserFanCurves(getUserFanLibrary()); } catch { /* нет localStorage */ }
+
+// Найти curve по id (заводской каталог + пользовательские)
 export function getFanById(id: string): FanCurve | undefined {
-  return FAN_CATALOG.find((f) => f.id === id);
+  return FAN_CATALOG.find((f) => f.id === id) ?? userFans.get(id);
 }
 
 // Поиск модели в каталоге по названию (нечёткое сопоставление).

@@ -6,7 +6,7 @@
 // картинка совпадала с рабочей точкой из расчёта.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { bladeAngleFactor, fanHAngle, fanQMax, type FanCurve } from "@/lib/fanCurves";
+import { fanCurveAtAngle, fanEfficiencyAngle, fanHAngle, fanQMax, type FanCurve } from "@/lib/fanCurves";
 
 export interface FanPt { q: number; h: number; p: number }
 export interface FanIsoLine { level: number; label: string; pts: { q: number; h: number }[] }
@@ -19,12 +19,15 @@ export function fanCurvePoints(c: FanCurve, angle?: number, n = 40, rpm?: number
   const pts: FanPt[] = [];
   const k = rpmK(c, rpm);
   const qMaxA = fanQMax(c, angle, rpm);
-  const qMinA = Math.min(c.qMin * k, qMaxA * 0.9);
+  const ac = fanCurveAtAngle(c, angle);
+  // Каталожная кривая начинается с общего qMin (как раньше), своя — со своего
+  const qMinBase = c.angleCurves?.length ? ac.qMin : c.qMin;
+  const qMinA = Math.min(qMinBase * k, qMaxA * 0.9);
   for (let i = 0; i <= n; i++) {
     const q = qMinA + (qMaxA - qMinA) * (i / n);
     const h = fanHAngle(c, q, angle, rpm);
-    const qn = q / k;
-    const eta = Math.min(0.85, Math.max(0.05, c.e0 + c.e1 * qn + c.e2 * qn * qn));
+    // Мощность — тем же КПД, что считает расчёт сети после решения
+    const eta = fanEfficiencyAngle(c, q / k, angle);
     const p = eta > 0 ? (h * q) / eta / 1000 : 0;
     pts.push({ q: +q.toFixed(2), h: +h.toFixed(0), p: +Math.max(0, p).toFixed(1) });
   }
@@ -49,9 +52,15 @@ export function reverseCurvePoints(c: FanCurve, n = 40, rpm?: number): FanPt[] {
   return pts;
 }
 
-/** КПД на кривой угла по закону подобия: η(Q / (af·k)). */
-function etaAt(c: FanCurve, q: number, angle: number, rpm?: number): number {
-  const x = q / (bladeAngleFactor(c, angle) * rpmK(c, rpm));
+/**
+ * КПД на кривой угла. Каталожный — по закону подобия η(Q / (af·k)),
+ * пользовательский — по кривой КПД своего угла η(Q / k).
+ */
+function etaAt(c: FanCurve, q: number, angle: number | undefined, rpm?: number): number {
+  if (c.angleCurves?.length) return fanEfficiencyAngle(c, q / rpmK(c, rpm), angle);
+  const ac = fanCurveAtAngle(c, angle);
+  const af = c.qMax > 0 ? ac.qMax / c.qMax : 1;
+  const x = q / (af * rpmK(c, rpm));
   return Math.min(0.85, Math.max(0.05, c.e0 + c.e1 * x + c.e2 * x * x));
 }
 

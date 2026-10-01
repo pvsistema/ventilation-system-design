@@ -7,7 +7,7 @@
 // «Velocity / Fan operating point warnings» Ventsim.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { TopoBranch } from "./topology";
-import { getFanById, bladeAngleFactor } from "./fanCurves";
+import { getFanById, fanCurveAtAngle } from "./fanCurves";
 import { calcFaceDemand } from "./airDemand";
 import type { VentNorms, VentSection } from "./ventSections";
 import { type BranchNote, pushCapped, fmtNum } from "./schemaCheckTypes";
@@ -187,9 +187,9 @@ export function checkSolve(
       if (curve && aq > zeroQ) {
         const n = Math.max(1, b.fanParallel || 1);
         const k = curve.rpmNominal > 0 && b.fanRpm > 0 ? b.fanRpm / curve.rpmNominal : 1;
-        const af = bladeAngleFactor(curve, b.fanBladeAngle);
+        const eff = fanCurveAtAngle(curve, b.fanBladeAngle);
         const qOne = aq / n;
-        const qMin = curve.qMin * af * k, qMax = curve.qMax * af * k;
+        const qMin = eff.qMin * k, qMax = eff.qMax * k;
         if (qOne > qMax * 1.02) {
           push(r.fanOutOfRange, { branch: b, note: `${curve.name}: ${fmtNum(qOne, 1)} м³/с — правее паспортной зоны (до ${fmtNum(qMax, 1)})` });
         } else if (qOne < qMin * 0.98) {

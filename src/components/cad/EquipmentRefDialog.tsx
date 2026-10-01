@@ -1,7 +1,12 @@
 // Справочник оборудования — аналог справочников в АэроСети
 import { useState, useCallback, useEffect } from "react";
 import Icon from "@/components/ui/icon";
-import { FAN_CATALOG, fanHAngle, fanQMax, type FanCurve } from "@/lib/fanCurves";
+import {
+  FAN_CATALOG, fanHAngle, fanQMax, getFanById, isUserFanId, getUserFanLibrary,
+  saveToUserFanLibrary, removeFromUserFanLibrary, registerUserFanCurves, fanCurveAtAngle,
+  type FanCurve,
+} from "@/lib/fanCurves";
+import UserFanEditorDialog from "@/components/cad/UserFanEditorDialog";
 import { fanCurvePoints, reverseCurvePoints } from "@/lib/fanChartData";
 import FanChart from "@/components/cad/FanChart";
 import FanOperatingPointDialog from "@/components/cad/FanOperatingPointDialog";
@@ -37,6 +42,8 @@ export interface MineFanExport {
   diameter: number;
   rpmMin: number;
   rpmMax: number;
+  /** Характеристика СВОЕГО вентилятора — сохраняется в проекте вместе с ним */
+  userCurve?: FanCurve;
 }
 
 export interface MineBulkheadExport {
@@ -165,16 +172,26 @@ interface MineFan {
 }
 
 // ─── Диалог выбора из библиотеки ──────────────────────────────────────────
-function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void; onClose: () => void }) {
+function LibraryDialog({ onSelect, onClose, onCreate, projectUserFans = [] }: {
+  onSelect: (c: FanCurve) => void; onClose: () => void;
+  /** Создать свой вентилятор */
+  onCreate: () => void;
+  /** Свои вентиляторы из текущего проекта (могут отсутствовать в библиотеке браузера) */
+  projectUserFans?: FanCurve[];
+}) {
   const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState<"all" | "axial" | "centrifugal" | "vmp">("all");
+  const [filter, setFilter] = useState<"all" | "axial" | "centrifugal" | "vmp" | "user">("all");
   const [previewId, setPreviewId] = useState<string | null>(null);
+  const [userLib, setUserLib] = useState<FanCurve[]>(() => getUserFanLibrary());
+  const [editing, setEditing] = useState<FanCurve | null>(null);
 
-  const list = FAN_CATALOG.filter(c =>
-    (filter === "all" || c.type === filter) &&
+  const userAll = [...userLib, ...projectUserFans.filter(p => !userLib.some(u => u.id === p.id))];
+  const all = [...userAll, ...FAN_CATALOG];
+  const list = all.filter(c =>
+    (filter === "all" || (filter === "user" ? isUserFanId(c.id) : c.type === filter)) &&
     c.name.toLowerCase().includes(search.toLowerCase())
   );
-  const preview = previewId ? FAN_CATALOG.find(c => c.id === previewId) : null;
+  const preview = previewId ? all.find(c => c.id === previewId) ?? null : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(15,20,25,0.45)" }}>
@@ -196,7 +213,7 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                   placeholder="Поиск..." className="flex-1 text-[12px] py-1 outline-none bg-transparent text-[var(--c-t1)]" />
               </div>
               <div className="flex gap-1">
-                {([["all", "Все"], ["axial", "Осевые"], ["centrifugal", "Центробежные"], ["vmp", "ВМП"]] as const).map(([v, l]) => (
+                {([["all", "Все"], ["axial", "Осевые"], ["centrifugal", "Центроб."], ["vmp", "ВМП"], ["user", "Свои"]] as const).map(([v, l]) => (
                   <button key={v} onClick={() => setFilter(v)}
                     className="flex-1 py-0.5 text-[10px] rounded-md border"
                     style={{ background: filter === v ? "var(--c-blue-bg, #1e5a7a)" : "var(--c-s1, #fff)", color: filter === v ? "white" : "var(--c-t3, #555)", borderColor: filter === v ? "var(--c-blue-bg, #1e5a7a)" : "var(--c-b2, #d1d5db)" }}>
@@ -212,8 +229,11 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                   onClick={() => setPreviewId(c.id)}
                   className="flex items-center justify-between px-3 py-2 cursor-pointer border-b border-[var(--c-b1)] select-none hover:bg-[var(--c-tint-blue)]"
                   style={{ background: previewId === c.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
-                  <div>
-                    <div className="text-[12px] font-semibold text-[var(--c-blue-ink)]">{c.name}</div>
+                  <div className="min-w-0">
+                    <div className="text-[12px] font-semibold text-[var(--c-blue-ink)] truncate">
+                      {c.name}
+                      {isUserFanId(c.id) && <span className="ml-1.5 px-1 py-px rounded text-[9px] font-medium align-middle" style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #865412)" }}>свой</span>}
+                    </div>
                     <div className="text-[10px] text-[var(--c-t3)]">{c.type === "axial" ? "Осевой" : c.type === "vmp" ? "ВМП" : "Центробежный"}</div>
                   </div>
                   <span className="text-[10px] text-[var(--c-t4)]">Ø{c.diameter} м</span>
@@ -223,6 +243,11 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                 <div className="flex items-center justify-center h-24 text-[12px] text-[var(--c-t4)]">Не найдено</div>
               )}
             </div>
+            <button onClick={onCreate}
+              className="flex-shrink-0 flex items-center justify-center gap-1 py-2 text-[11px] font-medium text-[var(--c-accent)] hover:bg-[var(--c-tint-blue)] border-t border-[var(--c-b1)]"
+              title="Вентилятора нет в каталоге — задать свою характеристику по паспортным точкам">
+              <Icon name="Plus" size={12} /> Создать свой вентилятор
+            </button>
           </div>
 
           {/* Правая панель — предпросмотр */}
@@ -239,19 +264,36 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
                         минимум по самому закрытому, максимум по самому открытому */}
                     <span>Q: {(() => {
                       const a = preview.bladeAngles;
-                      const lo = a.length > 1 ? fanQMax(preview, a[0]) / preview.qMax * preview.qMin : preview.qMin;
+                      const lo = a.length > 1 ? fanCurveAtAngle(preview, a[0]).qMin : preview.qMin;
                       const hi = a.length > 1 ? fanQMax(preview, a[a.length - 1]) : preview.qMax;
                       const f = (v: number) => v >= 10 ? Math.round(v) : Math.round(v * 10) / 10;
                       return `${f(lo)}–${f(hi)}`;
                     })()} м³/с</span>
                     <span>H: {Math.round(
                       preview.bladeAngles.length > 1
-                        ? fanHAngle(preview, preview.qMin, preview.bladeAngles[preview.bladeAngles.length - 1])
+                        ? fanHAngle(preview, fanCurveAtAngle(preview, preview.bladeAngles[preview.bladeAngles.length - 1]).qMin, preview.bladeAngles[preview.bladeAngles.length - 1])
                         : preview.h0
                     )} Па (max)</span>
                     {preview.bladeAngles.length > 0 && <span>Углы: {preview.bladeAngles.join(", ")}°</span>}
                     {preview.reverseH0 !== undefined && <span className="text-[var(--c-green)] font-medium">✓ Реверс</span>}
                   </div>
+                  {isUserFanId(preview.id) && (
+                    <div className="flex gap-1.5 mt-2">
+                      <button className={BTN} onClick={() => setEditing(preview)}><Icon name="Pencil" size={11} /> Изменить</button>
+                      {userLib.some(u => u.id === preview.id) ? (
+                        <button className={BTN_DANGER} onClick={() => {
+                          if (!confirm(`Удалить «${preview.name}» из вашей библиотеки? В проектах, где он уже добавлен, он останется.`)) return;
+                          removeFromUserFanLibrary(preview.id);
+                          setUserLib(getUserFanLibrary());
+                          setPreviewId(null);
+                        }}><Icon name="Trash2" size={11} /> Удалить из библиотеки</button>
+                      ) : (
+                        <button className={BTN} onClick={() => { saveToUserFanLibrary(preview); setUserLib(getUserFanLibrary()); }}>
+                          <Icon name="Save" size={11} /> В мою библиотеку
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-3 space-y-2">
                   {/* Q-H кривые для всех углов */}
@@ -315,6 +357,10 @@ function LibraryDialog({ onSelect, onClose }: { onSelect: (c: FanCurve) => void;
           </button>
         </div>
       </div>
+      {editing && (
+        <UserFanEditorDialog initial={editing} onClose={() => setEditing(null)}
+          onSave={c => { saveToUserFanLibrary(c); setUserLib(getUserFanLibrary()); setEditing(null); setPreviewId(c.id); }} />
+      )}
     </div>
   );
 }
@@ -325,7 +371,7 @@ function AddAngleDialog({ fan, onAdd, onClose }: {
   onAdd: (a: MineAngle) => void;
   onClose: () => void;
 }) {
-  const catalog = FAN_CATALOG.find(c => c.id === fan.catalogId);
+  const catalog = getFanById(fan.catalogId);
   const availAngles = catalog?.bladeAngles ?? [];
   const [angle, setAngle] = useState(availAngles[0] ?? 0);
   const [reverse, setReverse] = useState(false);
@@ -430,7 +476,7 @@ function catalogToMineFan(c: FanCurve): MineFan {
     id: `mf_${c.id}_${Date.now()}`,
     catalogId: c.id,
     name: c.name,
-    type: c.type === "axial" ? "Осевой" : "Центробежный",
+    type: c.type === "axial" ? "Осевой" : c.type === "vmp" ? "ВМП" : "Центробежный",
     diameter: c.diameter,
     rpmMin: c.rpmMin,
     rpmMax: c.rpmMax,
@@ -450,13 +496,14 @@ function catalogToMineFan(c: FanCurve): MineFan {
 
 
 function exportToMineFan(exp: MineFanExport): MineFan {
-  const catalog = FAN_CATALOG.find(c => c.id === exp.catalogId);
+  if (exp.userCurve) registerUserFanCurves([exp.userCurve]);
+  const catalog = getFanById(exp.catalogId);
   const defaultAngles = catalog && catalog.bladeAngles.length > 0 ? catalog.bladeAngles : [0];
   return {
     id: `mf_${exp.catalogId}_restored`,
     catalogId: exp.catalogId,
     name: exp.name,
-    type: catalog ? (catalog.type === "axial" ? "Осевой" : "Центробежный") : "Осевой",
+    type: catalog ? (catalog.type === "axial" ? "Осевой" : catalog.type === "vmp" ? "ВМП" : "Центробежный") : "Осевой",
     diameter: exp.diameter,
     rpmMin: exp.rpmMin,
     rpmMax: exp.rpmMax,
@@ -483,19 +530,49 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
   const [addAngleFor, setAddAngleFor] = useState<MineFan | null>(null);
   const [editNote, setEditNote] = useState(false);
   const [zoomData, setZoomData] = useState<FanOperatingPointData | null>(null);
+  /** Редактор своего вентилятора: null — закрыт, "new" — новый, иначе правка */
+  const [userEdit, setUserEdit] = useState<FanCurve | "new" | null>(null);
 
   const selected = fans.find(f => f.id === selectedId) ?? null;
-  const catalog = selected ? FAN_CATALOG.find(c => c.id === selected.catalogId) : null;
+  const catalog = selected ? getFanById(selected.catalogId) : null;
 
   const updateFans = (next: MineFan[]) => {
     setFans(next);
-    onMineFansChange?.(next.map(f => ({ catalogId: f.catalogId, name: f.name, diameter: f.diameter, rpmMin: f.rpmMin, rpmMax: f.rpmMax })));
+    onMineFansChange?.(next.map(f => {
+      const uc = isUserFanId(f.catalogId) ? getFanById(f.catalogId) : undefined;
+      return { catalogId: f.catalogId, name: f.name, diameter: f.diameter, rpmMin: f.rpmMin, rpmMax: f.rpmMax, ...(uc ? { userCurve: uc } : {}) };
+    }));
   };
 
   const importFromLibrary = (c: FanCurve) => {
+    if (isUserFanId(c.id)) registerUserFanCurves([c]);
     const mf = catalogToMineFan(c);
     updateFans([...fans, mf]);
     setSelectedId(mf.id);
+    setShowLibrary(false);
+  };
+
+  /** Свой вентилятор создан / изменён */
+  const saveUserFan = (c: FanCurve) => {
+    saveToUserFanLibrary(c);
+    const existing = fans.find(f => f.catalogId === c.id);
+    if (existing) {
+      // Правка: обновляем паспорт и характеристики (углы — по новым кривым)
+      const fresh = catalogToMineFan(c);
+      updateFans(fans.map(f => f.catalogId === c.id
+        ? { ...fresh, id: f.id, note: f.note,
+            bladeAngles: fresh.bladeAngles.map(a => {
+              const old = f.bladeAngles.find(o => o.angle === a.angle && !o.reverse);
+              return old ? { ...a, rpm: old.rpm, operatingQ: old.operatingQ, operatingH: old.operatingH } : a;
+            }) }
+        : f));
+      setSelectedId(existing.id);
+    } else {
+      const mf = catalogToMineFan(c);
+      updateFans([...fans, mf]);
+      setSelectedId(mf.id);
+    }
+    setUserEdit(null);
     setShowLibrary(false);
   };
 
@@ -528,7 +605,7 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
 
   // Кривые для текущего вентилятора
   const buildCurves = (fan: MineFan) => {
-    const c = FAN_CATALOG.find(x => x.id === fan.catalogId);
+    const c = getFanById(fan.catalogId);
     if (!c) return [];
     return fan.bladeAngles.map(a => ({
       pts: a.reverse && c.reverseH0 !== undefined
@@ -554,7 +631,7 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
   };
 
   const openZoom = (fan: MineFan) => {
-    const c = FAN_CATALOG.find(x => x.id === fan.catalogId);
+    const c = getFanById(fan.catalogId);
     if (!c) return;
     setZoomData({
       fanName: fan.name,
@@ -589,6 +666,9 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
                 className={BTN_PRIMARY + " mt-1"}>
                 <Icon name="Library" size={11} /> Открыть библиотеку
               </button>
+              <button onClick={() => setUserEdit("new")} className={BTN}>
+                <Icon name="Plus" size={11} /> Свой вентилятор
+              </button>
             </div>
           ) : fans.map(f => (
             <div key={f.id}
@@ -610,10 +690,17 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
 
         {/* Кнопка добавить */}
         {fans.length > 0 && (
-          <button onClick={() => setShowLibrary(true)}
-            className="flex-shrink-0 flex items-center justify-center gap-1 py-2 text-[11px] text-[var(--c-blue)] hover:bg-[var(--c-tint-blue)] border-t border-[var(--c-b1)]">
-            <Icon name="Plus" size={11} /> Добавить из библиотеки
-          </button>
+          <div className="flex-shrink-0 flex flex-col border-t border-[var(--c-b1)]">
+            <button onClick={() => setShowLibrary(true)}
+              className="flex items-center justify-center gap-1 py-1.5 text-[11px] text-[var(--c-blue)] hover:bg-[var(--c-tint-blue)]">
+              <Icon name="Library" size={11} /> Из библиотеки
+            </button>
+            <button onClick={() => setUserEdit("new")}
+              title="Вентилятора нет в каталоге — задать свою характеристику по паспортным точкам"
+              className="flex items-center justify-center gap-1 py-1.5 text-[11px] text-[var(--c-accent)] hover:bg-[var(--c-tint-blue)] border-t border-[var(--c-b1)]">
+              <Icon name="Plus" size={11} /> Свой вентилятор
+            </button>
+          </div>
         )}
       </div>
 
@@ -627,6 +714,15 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
                 <span className="text-[13px] font-bold text-[var(--c-t1)] truncate" title={selected.name}>{selected.name}</span>
                 {catalog.reverseH0 !== undefined && (
                   <span className="flex-shrink-0 px-1.5 py-px bg-[var(--c-tint-purple)] text-[var(--c-purple)] text-[10px] rounded-md font-medium">✓ Реверс</span>
+                )}
+                {isUserFanId(catalog.id) && (
+                  <>
+                    <span className="flex-shrink-0 px-1.5 py-px text-[10px] rounded-md font-medium" style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #865412)" }}>свой</span>
+                    <button onClick={() => setUserEdit(catalog)} title="Изменить паспорт и характеристики своего вентилятора"
+                      className="flex-shrink-0 w-6 h-6 inline-flex items-center justify-center rounded text-[var(--c-t3)] hover:bg-[var(--c-s3)] hover:text-[var(--c-t1)]">
+                      <Icon name="Pencil" size={12} />
+                    </button>
+                  </>
                 )}
               </div>
               <div className="text-[11px] text-[var(--c-t3)] whitespace-nowrap truncate">
@@ -805,7 +901,13 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
         <LibraryDialog
           onSelect={importFromLibrary}
           onClose={() => setShowLibrary(false)}
+          onCreate={() => setUserEdit("new")}
+          projectUserFans={fans.filter(f => isUserFanId(f.catalogId)).map(f => getFanById(f.catalogId)).filter((c): c is FanCurve => !!c)}
         />
+      )}
+      {userEdit && (
+        <UserFanEditorDialog initial={userEdit === "new" ? undefined : userEdit}
+          onSave={saveUserFan} onClose={() => setUserEdit(null)} />
       )}
 
       {/* Диалог добавления характеристики */}

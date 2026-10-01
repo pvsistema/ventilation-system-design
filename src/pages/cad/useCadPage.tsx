@@ -7,7 +7,7 @@ import { RAMP_WORK_ANGLE, RAMP_LIMIT_ANGLE } from "@/lib/rampBuilder";
 import { CANVAS_THRESHOLD } from "@/lib/canvasRenderer";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { type SolveResult } from "@/lib/networkSolver";
-import { getFanById, findFanByName, fanEfficiency, fanShaftPower, bladeAngleFactor } from "@/lib/fanCurves";
+import { getFanById, findFanByName, fanEfficiencyAngle, fanShaftPower, fanCurveAtAngle, registerUserFanCurves, type FanCurve } from "@/lib/fanCurves";
 import type { HQDiagramData } from "@/lib/hqDiagramExcel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import { withWaterPumps, waterInputsFingerprint } from "@/lib/waterHydraulics";
@@ -3873,7 +3873,12 @@ export function useCadPage() {
       if (!branchesWithMeasureStation.has(br.id)) return br;
       return { ...br, hasBulkhead: false };
     }));
-    if (data.mineFans) setMineFans(data.mineFans as MineFanExport[]);
+    if (data.mineFans) {
+      // Пользовательские вентиляторы проекта — в общий реестр до расчёта
+      const mf = data.mineFans as MineFanExport[];
+      registerUserFanCurves(mf.map(f => f.userCurve as FanCurve | undefined));
+      setMineFans(mf);
+    }
     setUserPumps(Array.isArray(data.userPumps) ? (data.userPumps as PumpModel[]) : []);
     {
       const loaded = data.mineBulkheads as MineBulkheadExport[] | undefined;
@@ -4190,14 +4195,15 @@ export function useCadPage() {
     const curve_map = new Map(branchesList.map(b => {
       const curve = (b.hasFan && b.fanMode === "curve") ? getFanById(b.fanCurveId) : undefined;
       const k = (curve && curve.rpmNominal > 0 && b.fanRpm > 0) ? b.fanRpm / curve.rpmNominal : 1;
-      // Коэффициент угла лопаток берём общей функцией — той же, что использует
-      // расчёт в программе. Раньше здесь была своя копия формулы.
-      const af = curve ? bladeAngleFactor(curve, b.fanBladeAngle) : 1.0;
-      return [b.id, { curve, k, af }];
+      // Характеристика при угле лопаток — общей функцией (fanCurveAtAngle),
+      // той же, что рисует график: для каталожных — закон подобия, для
+      // пользовательских — своя кривая угла по паспортным точкам.
+      const eff = curve ? fanCurveAtAngle(curve, b.fanBladeAngle) : undefined;
+      return [b.id, { curve, k, eff }];
     }));
 
     return branchesList.map(b => {
-      const { curve, k, af } = curve_map.get(b.id) ?? { curve: undefined, k: 1, af: 1 };
+      const { curve, k, eff } = curve_map.get(b.id) ?? { curve: undefined, k: 1, eff: undefined };
       // Сопротивление вентсооружений ветви — общей функцией (см.
       // lib/bulkheadResistance.ts), той же, что считает карту для панели
       // свойств и аварийных расчётов.
@@ -4239,7 +4245,7 @@ export function useCadPage() {
         fanStopped:  b.fanStopped ?? false,
         fanParallel: Math.max(1, b.fanParallel ?? 1),
         fireThermalDepression: b.fireThermalDepression ?? 0,
-        ...(curve ? {
+        ...(curve && eff ? {
           // Угол лопаток масштабирует характеристику по ОБЕИМ осям (закон
           // подобия): H(Q) = af·H_ном(Q/af). Раскрыв скобки, получаем
           // коэффициенты, которые понимает расчётный сервер:
@@ -4248,11 +4254,11 @@ export function useCadPage() {
           // выходила слишком пологой, и вентилятор при 26 м³/с всё ещё выдавал
           // 2049 Па вместо почти нуля. Именно поэтому расчёт возвращал расход
           // выше паспортного предела.
-          h0: curve.h0 * af * k * k,
-          h1: curve.h1 * k,
-          h2: curve.h2 / af,
-          qMax: curve.qMax * af * k,
-          qMin: curve.qMin * af * k,
+          h0: eff.h0 * k * k,
+          h1: eff.h1 * k,
+          h2: eff.h2,
+          qMax: eff.qMax * k,
+          qMin: eff.qMin * k,
           ...(curve.reverseH0 !== undefined ? {
             reverseH0:  curve.reverseH0 * k * k,
             reverseH1:  curve.reverseH1! * k,
@@ -5039,7 +5045,7 @@ export function useCadPage() {
               const k = (b.fanRpm > 0 && curve.rpmNominal > 0) ? b.fanRpm / curve.rpmNominal : 1;
               // Q через один вентилятор, в координатах номинальных оборотов
               const Q_one_nominal = Math.abs(rb.Q) / N / k;
-              const etaBase = fanEfficiency(curve, Q_one_nominal);
+              const etaBase = fanEfficiencyAngle(curve, Q_one_nominal, b.fanBladeAngle);
               const effFactor = b.fanReverse ? (curve.reverseEfficiencyFactor ?? 0.82) : 1;
               newFanEfficiency = Math.max(0.05, etaBase * effFactor);
               // Мощность установки: Hfan суммарный (N·H(Q/N)) → мощность = H(Q/N)·Q_total/η

@@ -20,7 +20,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
 import { useMemo, useState } from "react";
-import { FAN_CATALOG, getFanById, fanQMax } from "@/lib/fanCurves";
+import { getFanById, fanQMax } from "@/lib/fanCurves";
 import FanChart from "@/components/cad/FanChart";
 import FanOperatingPointDialog from "@/components/cad/FanOperatingPointDialog";
 import { useFanOpCurves, type BuiltCurve } from "@/components/cad/useFanOpCurves";
@@ -355,9 +355,11 @@ function CurveMode({ branch: b, onUpdate, mineFans, onOpenFanLibrary }: {
               });
             }}>
             <option value="">— выберите модель —</option>
-            {FAN_CATALOG.filter(f => mineFans.some(mf => mf.catalogId === f.id)).map((f) => (
-              <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м)</option>
-            ))}
+            {mineFans.map(mf => getFanById(mf.catalogId)).filter((f): f is NonNullable<typeof f> => !!f)
+              .filter((f, i, arr) => arr.findIndex(x => x.id === f.id) === i)
+              .map((f) => (
+                <option key={f.id} value={f.id}>{f.name} (Ø{f.diameter} м){f.isUser ? " — свой" : ""}</option>
+              ))}
           </select>
           {onOpenFanLibrary && (
             <button type="button" onClick={onOpenFanLibrary} title="Справочник вентиляторов рудника"
