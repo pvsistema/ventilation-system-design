@@ -5,7 +5,8 @@
 // Кривые строятся по точкам сразу, на графике видно, насколько они совпали.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { importUserFanFromExcel } from "@/lib/userFanExcelImport";
 import Icon from "@/components/ui/icon";
 import FanChart from "@/components/cad/FanChart";
 import type { FanCurve, UserFanPoint } from "@/lib/fanCurves";
@@ -66,6 +67,30 @@ export default function UserFanEditorDialog({ initial, onSave, onClose }: Props)
   const [revEff, setRevEff] = useState(String(Math.round((initial?.reverseEfficiencyFactor ?? 0.82) * 100)));
   const [activeKey, setActiveKey] = useState<string>(() => angles[0]?.key ?? "");
   const [showErr, setShowErr] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<{ ok: boolean; lines: string[] } | null>(null);
+
+  // Импорт из Excel в формате «рабочая точка ГВУ»: углы, точки Q/H, КПД, реверс
+  const onImportFile = async (file: File) => {
+    try {
+      const r = await importUserFanFromExcel(file);
+      if (!name.trim()) setName(r.name);
+      if (r.type) setType(r.type);
+      if (r.diameter && !num(diameter)) setDiameter(String(r.diameter));
+      if (r.rpmNominal) { setRpmNominal(String(r.rpmNominal)); setRpmMax(String(r.rpmNominal)); }
+      const next = r.angles.map(a => ({ key: nk(), angle: String(a.angle), rows: toRows(a.points) }));
+      setAngles(next);
+      setActiveKey(next[0].key);
+      if (r.reverse && r.reverse.length) { setHasRev(true); setRevRows(toRows(r.reverse)); }
+      else { setHasRev(false); setRevRows(emptyRows()); }
+      setImportMsg({ ok: true, lines: [
+        ...r.notes,
+        "Проверьте паспорт: номинальные обороты, при которых сняты характеристики, и диаметр колеса.",
+      ] });
+    } catch (e) {
+      setImportMsg({ ok: false, lines: [e instanceof Error ? e.message : "Не удалось прочитать файл"] });
+    }
+  };
 
   const active = angles.find(a => a.key === activeKey) ?? angles[0];
   const editingRev = activeKey === "rev";
@@ -164,7 +189,15 @@ export default function UserFanEditorDialog({ initial, onSave, onClose }: Props)
           <span className="text-[13px] font-semibold text-[var(--c-t1)]">
             {initial ? `Свой вентилятор — ${initial.name}` : "Новый вентилятор"}
           </span>
-          <button onClick={onClose} className="ml-auto w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--c-t3)] hover:bg-[var(--c-s3)]">
+          <button onClick={() => fileRef.current?.click()}
+            className="ml-auto h-7 px-2.5 inline-flex items-center gap-1 text-[11px] rounded-md text-white"
+            style={{ background: "#16794a" }}
+            title="Загрузить характеристики из Excel в формате «рабочая точка ГВУ»: листы «Табличные данные» (Q/H по углам, значения КПД) и «Табличные данные (реверс)»">
+            <Icon name="FileSpreadsheet" size={13} /> Импорт из Excel
+          </button>
+          <input ref={fileRef} type="file" accept=".xlsx,.xls" className="hidden"
+            onChange={e => { const f = e.target.files?.[0]; if (f) void onImportFile(f); e.target.value = ""; }} />
+          <button onClick={onClose} className="w-7 h-7 inline-flex items-center justify-center rounded-md text-[var(--c-t3)] hover:bg-[var(--c-s3)]">
             <Icon name="X" size={16} />
           </button>
         </div>
@@ -283,13 +316,25 @@ export default function UserFanEditorDialog({ initial, onSave, onClose }: Props)
               </button>
               <div className="text-[10px] leading-snug text-[var(--c-t4)]">
                 Снимите с паспортного графика 4–8 точек по каждому углу — от левого края зоны до правого.
-                Можно вставить столбцы Q / H / КПД из Excel (Ctrl+V в первую ячейку).
+                Можно вставить столбцы Q / H / КПД из Excel (Ctrl+V в первую ячейку) или загрузить
+                весь файл кнопкой «Импорт из Excel» — формат как у выгрузки «Рабочая точка в Excel».
               </div>
             </div>
           </div>
 
           {/* Правая колонка — предпросмотр */}
           <div className="flex-1 min-w-0 flex flex-col overflow-y-auto p-3 gap-2">
+            {importMsg && (
+              <div className="text-[11px] px-2 py-1.5 rounded-md leading-snug relative pr-6"
+                style={{ background: importMsg.ok ? "var(--c-tint-blue, #eff6ff)" : "var(--c-tint-red, #fef2f2)",
+                  color: importMsg.ok ? "var(--c-t2, #3a3f45)" : "var(--c-red-ink, #991b1b)" }}>
+                <div className="font-semibold mb-0.5">{importMsg.ok ? "Загружено из Excel" : "Импорт не выполнен"}</div>
+                {importMsg.lines.map((l, i) => <div key={i}>• {l}</div>)}
+                <button className="absolute top-1 right-1 text-[var(--c-t4)] hover:text-[var(--c-t1)]" onClick={() => setImportMsg(null)}>
+                  <Icon name="X" size={12} />
+                </button>
+              </div>
+            )}
             <div className="text-[11px] font-semibold text-[var(--c-t2)]">Предпросмотр характеристики</div>
             <div className="rounded-md border border-[var(--c-b1)] overflow-hidden bg-white">
               {preview.curves.length > 0 ? (
