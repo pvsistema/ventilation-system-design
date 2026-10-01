@@ -55,6 +55,10 @@ export default function FanOperatingPointDialog({ data, onClose, onPickAngle }: 
         curves: cs.map(c => ({ label: c.label, color: c.color, pts: c.pts })),
         points: points.filter(p => p.reverse === rev).map(p => ({ label: p.label, q: p.q, h: p.h })),
         isolines: isoL,
+        networks: networks(rev).map((n, i) => {
+          const pt = points.filter(p => p.reverse === rev && p.r !== undefined && p.r > 0)[i];
+          return { label: `Сеть R·Q²${pt ? ` (${pt.label})` : ""}`, r: n.r, color: n.color };
+        }),
       });
       await exportFanOperatingPointToExcel({
         fanName,

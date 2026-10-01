@@ -18,10 +18,14 @@ import type { FanPt, FanIsoLine } from "@/lib/fanChartData";
 export interface FanXlsCurve { label: string; color: string; pts: FanPt[] }
 export interface FanXlsPoint { label: string; q: number; h: number }
 
+/** Характеристика сети H = R·Q² (как пунктир на графике в программе) */
+export interface FanXlsNetwork { label: string; r: number; color: string }
+
 export interface FanXlsBlock {
   curves: FanXlsCurve[];
   points: FanXlsPoint[];
   isolines: FanIsoLine[];
+  networks?: FanXlsNetwork[];
 }
 
 export interface FanOperatingPointXls {
@@ -85,7 +89,7 @@ ${colsXml}<sheetData>${rows}</sheetData>${merges}${drawing ? `<drawing r:id="rId
 }
 
 /** Ссылки диапазонов рядов для диаграммы */
-interface SeriesRef { name: string; nameRef: string; x: string; y: string; color: string; kind: "curve" | "iso" | "point" }
+interface SeriesRef { name: string; nameRef: string; x: string; y: string; color: string; kind: "curve" | "iso" | "point" | "net" }
 
 const S_TITLE = 1, S_HEAD = 2, S_CELL = 3, S_NUM = 4;
 
@@ -141,7 +145,36 @@ function buildDataSheet(sheetName: string, b: FanXlsBlock): { xml: string; serie
     series.push({ name: l.label, nameRef: ref(c0, isoRow + 1), x: rng(c0, isoRow + 3, isoRow + 2 + l.pts.length), y: rng(c0 + 1, isoRow + 3, isoRow + 2 + l.pts.length), color: "6B7280", kind: "iso" });
   });
 
-  const cols = Math.max(nCurveCols, b.points.length * 2, b.isolines.length * 2, 2);
+  // ── Характеристики сети R·Q² ──────────────────────────────────────────
+  // Диапазон — как на графике в программе: Q от 0 до края оси, линия
+  // обрезается по верхней границе напора, чтобы не растягивать шкалу Excel.
+  const nets = (b.networks ?? []).filter(n => n.r > 0);
+  if (nets.length > 0) {
+    const isoLen = Math.max(0, ...b.isolines.map(l => l.pts.length));
+    const netRow = b.isolines.length > 0 ? isoRow + 3 + isoLen + 1 : isoRow + 3;
+    const allQ = [...b.curves.flatMap(c => c.pts.map(p => p.q)), ...b.points.map(p => p.q)];
+    const allH = [...b.curves.flatMap(c => c.pts.map(p => p.h)), ...b.points.map(p => p.h)];
+    const maxQ = (Math.max(0, ...allQ) || 100) * 1.05;
+    const maxH = (Math.max(0, ...allH) || 1000) * 1.1;
+    const NP = 21;
+    g.set(netRow, 1, "Характеристика сети H = R·Q²", S_TITLE);
+    g.merge(netRow, 1, netRow, Math.max(2, nets.length * 2));
+    nets.forEach((n, i) => {
+      const c0 = i * 2 + 1;
+      const qEnd = Math.min(maxQ, Math.sqrt(maxH / n.r));
+      g.set(netRow + 1, c0, n.label, S_HEAD); g.set(netRow + 1, c0 + 1, "", S_HEAD); g.merge(netRow + 1, c0, netRow + 1, c0 + 1);
+      g.set(netRow + 2, c0, `R = ${+n.r.toPrecision(4)} Н·с²/м⁸`, S_CELL); g.merge(netRow + 2, c0, netRow + 2, c0 + 1);
+      g.set(netRow + 3, c0, "Q", S_HEAD); g.set(netRow + 3, c0 + 1, "H", S_HEAD);
+      for (let k = 0; k < NP; k++) {
+        const q = qEnd * k / (NP - 1);
+        g.set(netRow + 4 + k, c0, r2(q), S_NUM);
+        g.set(netRow + 4 + k, c0 + 1, r1(n.r * q * q), S_NUM);
+      }
+      series.push({ name: n.label, nameRef: ref(c0, netRow + 1), x: rng(c0, netRow + 4, netRow + 3 + NP), y: rng(c0 + 1, netRow + 4, netRow + 3 + NP), color: n.color, kind: "net" });
+    });
+  }
+
+  const cols = Math.max(nCurveCols, b.points.length * 2, b.isolines.length * 2, nets.length * 2, 2);
   return { xml: g.xml(cols), series, cols };
 }
 
@@ -151,6 +184,8 @@ function serXml(i: number, s: SeriesRef): string {
   const hex = s.color.replace("#", "").toUpperCase();
   const line = s.kind === "point"
     ? `<c:spPr><a:ln w="19050"><a:noFill/></a:ln></c:spPr>`
+    : s.kind === "net"
+    ? `<c:spPr><a:ln w="19050" cap="rnd"><a:solidFill><a:srgbClr val="${hex}"/></a:solidFill><a:prstDash val="dash"/><a:round/></a:ln></c:spPr>`
     : `<c:spPr><a:ln w="${s.kind === "iso" ? 12700 : 25400}" cap="rnd"><a:solidFill><a:srgbClr val="${hex}"/></a:solidFill>${s.kind === "iso" ? '<a:prstDash val="dash"/>' : ""}<a:round/></a:ln></c:spPr>`;
   const marker = s.kind === "point"
     ? `<c:marker><c:symbol val="circle"/><c:size val="9"/><c:spPr><a:solidFill><a:srgbClr val="${hex}"/></a:solidFill><a:ln w="9525"><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill></a:ln></c:spPr></c:marker>`
@@ -169,8 +204,8 @@ ${line}${marker}${lbl}
 }
 
 function chartXml(title: string, series: SeriesRef[]): string {
-  // Порядок как в образце: сначала изолинии КПД, затем кривые и рабочая точка
-  const ordered = [...series.filter(s => s.kind === "iso"), ...series.filter(s => s.kind === "curve"), ...series.filter(s => s.kind === "point")];
+  // Порядок как в программе: изолинии КПД, сеть R·Q², кривые, рабочие точки
+  const ordered = (["iso", "net", "curve", "point"] as const).flatMap(k => series.filter(s => s.kind === k));
   const axTitle = (t: string, rot = false) =>
     `<c:title><c:tx><c:rich><a:bodyPr${rot ? ' rot="-5400000" vert="horz"' : ""}/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="1000" b="0"/></a:pPr><a:r><a:rPr lang="ru-RU" sz="1000" b="0"/><a:t>${esc(t)}</a:t></a:r></a:p></c:rich></c:tx><c:overlay val="0"/></c:title>`;
   return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
