@@ -4,6 +4,7 @@
 import type { HorizonPrintLayer, PaperFormat } from "@/lib/topology";
 import { PAPER_SIZES_MM } from "@/lib/topology";
 import type { RouteLegendItem } from "@/lib/inspectionRoutes";
+import { DEVELOP_H_MM, SIGN_SCALE_MIN, SIGN_SCALE_MAX } from "@/lib/approverTemplate";
 
 export const ROUTES_BLOCK_TITLE = "Маршруты профилактического обследования";
 
@@ -48,7 +49,10 @@ export function computeRoutesBlockLayout(
   // По умолчанию — нижний левый угол; если включены УО, блок встаёт правее них.
   const baseX = rx + inset + pxPerMm * 4 + (pl.showLegend ? pxPerMm * 66 : 0);
   const x = baseX + (pl.routesOffsetX ?? 0) * pxPerMm;
-  const y = ry + rh - inset - pxPerMm * 4 - h + (pl.routesOffsetY ?? 0) * pxPerMm;
+  // Блок «Разработал» встаёт под таблицей — поднимаем таблицу на его высоту
+  const devScale = Math.min(SIGN_SCALE_MAX, Math.max(SIGN_SCALE_MIN, pl.developScale ?? 1));
+  const devLift = pl.showDeveloper ? (DEVELOP_H_MM * devScale + 2) * pxPerMm : 0;
+  const y = ry + rh - inset - pxPerMm * 4 - h - devLift + (pl.routesOffsetY ?? 0) * pxPerMm;
   const c0 = x, c1 = c0 + swatchW, c2 = c1 + nameW + extra, c3 = c2 + lenW, c4 = c3 + timeW;
   return { pxPerMm, x, y, w, h, fs, titleFs, pad, titleH, headH, rowH, cols: [c0, c1, c2, c3, c4] };
 }

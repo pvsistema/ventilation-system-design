@@ -26,6 +26,8 @@ export interface ApproverBlockProps {
   h: PrintHorizon;
   pl: PrintLayerCfg;
   rx: number; ry: number; rw: number;
+  /** Высота рамки — нужна блоку «Разработал» (у нижнего края) */
+  rh?: number;
   inset: number;
   onPrintLayerChange?: Props["onPrintLayerChange"];
   editingApproverCell: EditingCell;
@@ -42,7 +44,7 @@ export interface ApproverBlockProps {
  */
 export function ApproverBlock(props: ApproverBlockProps) {
   const {
-    h, pl, rx, ry, rw, inset,
+    h, pl, rx, ry, rw, rh, inset,
     onPrintLayerChange, editingApproverCell, setEditingApproverCell,
     kind = "approve",
   } = props;
@@ -53,7 +55,7 @@ export function ApproverBlock(props: ApproverBlockProps) {
   const oriA = pl.orientation ?? "landscape";
   const mmA = PAPER_SIZES_MM[fmtA];
   const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
-  const box = computeApproverBox(rx, ry, rw, inset, paperWmmA, pl, kind);
+  const box = computeApproverBox(rx, ry, rw, inset, paperWmmA, pl, kind, rh);
   const { pxPerMm, w: apW, h: apH, ax, ay, sheetPxPerMm } = box;
   const mx = (m: number) => ax + m * pxPerMm;
   const my = (m: number) => ay + m * pxPerMm;
@@ -97,7 +99,7 @@ export function ApproverBlock(props: ApproverBlockProps) {
     const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
   };
-  const lines = buildApproverLines();
+  const lines = buildApproverLines(kind);
 
   const startEdit = (field: ApproverFieldKey) => {
     setEditingApproverCell({ horizonId: h.id, field, draft: getApproverFieldValue(pl, field) });

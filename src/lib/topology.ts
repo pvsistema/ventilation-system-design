@@ -585,6 +585,15 @@ export interface HorizonPrintLayer {
   agreeOffsetY?: number;
   agreeScale?: number;
   agreeFontScale?: number;
+  /** Показывать блок «Разработал» (должность — ФИО — подпись) под таблицей маршрутов */
+  showDeveloper?: boolean;
+  developTitle?: string;
+  developName?: string;
+  /** Блок «Разработал»: смещение от нижнего-левого угла (мм листа), размер и шрифт */
+  developOffsetX?: number;
+  developOffsetY?: number;
+  developScale?: number;
+  developFontScale?: number;
   /** Формат бумаги */
   paperFormat: PaperFormat;
   /** Ориентация: landscape = альбом, portrait = книжная */

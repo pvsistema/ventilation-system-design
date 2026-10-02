@@ -52,7 +52,7 @@ export function buildPrintLayerSvgString({ pl, rx, ry, rw, rh, totalW, totalH, s
     const oriA = pl.orientation ?? "landscape";
     const mmA = PAPER_SIZES_MM[fmtA];
     const paperWmmA = oriA === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
-    const boxA = computeApproverBox(rx, ry, rw, inset, paperWmmA, pl, kind);
+    const boxA = computeApproverBox(rx, ry, rw, inset, paperWmmA, pl, kind, rh);
     body += buildApproverSvgString(pl, boxA, kind);
   }
 

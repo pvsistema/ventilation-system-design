@@ -44,7 +44,7 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
     return (pl.orientation ?? "landscape") === "landscape" ? Math.max(mmA.w, mmA.h) : Math.min(mmA.w, mmA.h);
   })();
   const approverBlock = enabledSignBlocks(pl).map(kind => {
-    const box = computeApproverBox(rx, ry, rw, inset, _paperWmmA, pl, kind);
+    const box = computeApproverBox(rx, ry, rw, inset, _paperWmmA, pl, kind, rh);
     const { pxPerMm, w: apW, h: apH, ax, ay } = box;
     const mx = (m: number) => ax + m * pxPerMm;
     const my = (m: number) => ay + m * pxPerMm;
@@ -52,7 +52,7 @@ export function renderPrintLayerSvgContent({ pl, rx, ry, rw, rh, schemaSymbols =
     return (
       <g key={`sign-block-${kind}`}>
         <rect x={ax} y={ay} width={apW} height={apH} fill="white" style={{ pointerEvents: "none" }} />
-        {buildApproverLines().map((ln, i) => (
+        {buildApproverLines(kind).map((ln, i) => (
           <line key={`al-${i}`} x1={mx(ln.x1)} y1={my(ln.y1)} x2={mx(ln.x2)} y2={my(ln.y2)} stroke="#111" strokeWidth={box.lw} />
         ))}
         {buildApproverElements(kind).map((el, i) => {

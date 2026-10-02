@@ -172,6 +172,17 @@ export function usePrintLayers(deps: PrintLayersDeps) {
           />
         )}
 
+        {/* ── Блок «Разработал» — под таблицей маршрутов ─────────────────── */}
+        {pl.showDeveloper && (
+          <ApproverBlock kind="develop"
+            h={h} pl={pl}
+            rx={rx} ry={ry} rw={rw} rh={rh} inset={inset}
+            onPrintLayerChange={onPrintLayerChange}
+            editingApproverCell={editingApproverCell}
+            setEditingApproverCell={setEditingApproverCell}
+          />
+        )}
+
         {/* ── Штамп ГОСТ 185×55мм на схеме (правый нижний угол) ───────────── */}
         {pl.showStamp && (
           <StampBlock

@@ -158,33 +158,38 @@ function SignBlockSettings({ kind, pl, updatePl }: {
   const rec = pl as unknown as Record<string, string | number | undefined>;
   const str = (key: string) => (typeof rec[key] === "string" ? (rec[key] as string) : "");
   const num = (key: string) => (typeof rec[key] === "number" ? (rec[key] as number) : undefined);
+  const isDev = kind === "develop";
   const f = kind === "approve"
     ? { title: "approverTitle", org: "orgName", name: "approverName", day: "day", month: "month", year: "year" }
-    : { title: "agreeTitle", org: "agreeOrg", name: "agreeName", day: "agreeDay", month: "agreeMonth", year: "agreeYear" };
+    : kind === "develop"
+      ? { title: "developTitle", org: "", name: "developName", day: "", month: "", year: "" }
+      : { title: "agreeTitle", org: "agreeOrg", name: "agreeName", day: "agreeDay", month: "agreeMonth", year: "agreeYear" };
   const set = (key: string, v: string | number | undefined) => updatePl({ [key]: v } as Partial<HorizonPrintLayer>);
   const moved = !!(num(k.offX) || num(k.offY));
   return (
     <div className="rounded p-1.5 space-y-1.5" style={{ border: "1px solid var(--c-b1)", background: "var(--c-s2)" }}>
       <div className="flex items-center gap-1">
-        <Icon name={kind === "approve" ? "Stamp" : "Handshake"} size={12} fallback="FileSignature" style={{ color: "var(--c-purple)" }} />
+        <Icon name={kind === "approve" ? "Stamp" : kind === "develop" ? "PenLine" : "Handshake"} size={12} fallback="FileSignature" style={{ color: "var(--c-purple)" }} />
         <span className="flex-1 text-[10.5px] font-semibold" style={{ color: "var(--c-t2)" }}>
-          {kind === "approve" ? "«УТВЕРЖДАЮ» — справа" : "«СОГЛАСОВАНО» — слева"}
+          {kind === "approve" ? "«УТВЕРЖДАЮ» — справа" : kind === "develop" ? "«Разработал» — под маршрутами" : "«СОГЛАСОВАНО» — слева"}
         </span>
         {moved && (
           <button type="button" className="text-[10px] hover:underline" style={{ color: "var(--c-accent)" }}
-            title="Вернуть блок в угол рамки" onClick={() => updatePl({ [k.offX]: 0, [k.offY]: 0 } as Partial<HorizonPrintLayer>)}>
+            title={isDev ? "Вернуть блок под таблицу маршрутов" : "Вернуть блок в угол рамки"} onClick={() => updatePl({ [k.offX]: 0, [k.offY]: 0 } as Partial<HorizonPrintLayer>)}>
             ↺ на место
           </button>
         )}
       </div>
-      <TxtField label="Должность" value={str(f.title)} onChange={v => set(f.title, v)} placeholder="Главный инженер" />
-      <TxtField label="Организация" value={str(f.org)} onChange={v => set(f.org, v)} />
+      <TxtField label="Должность" value={str(f.title)} onChange={v => set(f.title, v)} placeholder={isDev ? "Инженер ВТБ" : "Главный инженер"} />
+      {!isDev && <TxtField label="Организация" value={str(f.org)} onChange={v => set(f.org, v)} />}
       <TxtField label="И.О. Фамилия" value={str(f.name)} onChange={v => set(f.name, v)} />
-      <div className="grid gap-1" style={{ gridTemplateColumns: "44px 1fr 56px" }}>
-        <TxtField label="Число" value={str(f.day)} onChange={v => set(f.day, v)} />
-        <TxtField label="Месяц" value={str(f.month)} onChange={v => set(f.month, v)} />
-        <TxtField label="Год" value={str(f.year)} onChange={v => set(f.year, v)} placeholder={String(new Date().getFullYear())} />
-      </div>
+      {!isDev && (
+        <div className="grid gap-1" style={{ gridTemplateColumns: "44px 1fr 56px" }}>
+          <TxtField label="Число" value={str(f.day)} onChange={v => set(f.day, v)} />
+          <TxtField label="Месяц" value={str(f.month)} onChange={v => set(f.month, v)} />
+          <TxtField label="Год" value={str(f.year)} onChange={v => set(f.year, v)} placeholder={String(new Date().getFullYear())} />
+        </div>
+      )}
       <PctSlider label="Размер" value={num(k.scale) ?? 1} min={SIGN_SCALE_MIN} max={SIGN_SCALE_MAX}
         onChange={v => set(k.scale, v)} />
       <PctSlider label="Шрифт" value={num(k.font) ?? 1} min={SIGN_FONT_MIN} max={SIGN_FONT_MAX}
@@ -601,10 +606,12 @@ export default function HorizonsPanel(p: Props) {
                       <Check checked={pl.showStamp} onChange={(v) => updatePl({ showStamp: v })} label="Штамп" />
                       <Check checked={pl.showAgree ?? false} onChange={(v) => updatePl({ showAgree: v })} label="«Согласовано»" />
                       <Check checked={pl.showApprover ?? false} onChange={(v) => updatePl({ showApprover: v })} label="«Утверждаю»" />
+                      <Check checked={pl.showDeveloper ?? false} onChange={(v) => updatePl({ showDeveloper: v })} label="«Разработал»" />
                     </div>
                     <TitleSettings pl={pl} updatePl={updatePl} />
                     {pl.showAgree && <SignBlockSettings kind="agree" pl={pl} updatePl={updatePl} />}
                     {pl.showApprover && <SignBlockSettings kind="approve" pl={pl} updatePl={updatePl} />}
+                    {pl.showDeveloper && <SignBlockSettings kind="develop" pl={pl} updatePl={updatePl} />}
                     <div className="flex gap-1">
                       <Btn grow icon={editingPrintLayerId === h.id ? "Check" : "Scan"} active={editingPrintLayerId === h.id}
                         title="Двигать и растягивать рамку прямо на схеме"
