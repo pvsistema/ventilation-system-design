@@ -1718,7 +1718,10 @@ export default function TopoCanvas(props: Props) {
           SVG (2), чтобы ручки перетаскивания были доступны над схемой. */}
       {useCanvas && (
         <svg
-          style={{ position: "absolute", top: 0, left: 0, pointerEvents: editingPrintLayerId ? "auto" : "none", zIndex: editingPrintLayerId ? 2 : 0 }}
+          // При редактировании SVG поднимается над схемой, но сам корень сквозной:
+          // мышь ловят только лист и ручки (pointerEvents на дочерних элементах),
+          // а клики/колесо вне листа уходят на холст — панорама и зум работают.
+          style={{ position: "absolute", top: 0, left: 0, pointerEvents: "none", zIndex: editingPrintLayerId ? 2 : 0 }}
           width={size.w} height={size.h}>
           {renderPrintLayers()}
         </svg>
@@ -1885,12 +1888,16 @@ export default function TopoCanvas(props: Props) {
           редактирование подложки горизонта и ручки рамки печати. Вернуть
           прежнюю отрисовку схемы в SVG можно, подняв CANVAS_THRESHOLD. */}
       <svg ref={svgCallbackRef} width={size.w} height={size.h}
-        style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingPrintLayerId && !editingHorizonImageId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined,
+        // Рамка печати в canvas-режиме живёт в ОТДЕЛЬНОМ SVG (см. выше), поэтому
+        // этот контейнер поднимаем только для подложки. Раньше он поднимался и при
+        // редактировании рамки печати (zIndex 3) и прозрачно перекрывал её ручки —
+        // клики по углам до них не доходили, размер листа не менялся.
+        style={{ touchAction: "none", userSelect: "none", visibility: (useCanvas && !editingHorizonImageId) ? "hidden" : undefined, pointerEvents: (useCanvas && !editingHorizonImageId) ? "none" : undefined, position: useCanvas ? "absolute" : undefined,
           // ВАЖНО: без top/left абсолютный SVG встаёт на своё «место в потоке» —
           // то есть НИЖЕ холста (canvas занимает всю высоту). Слой уезжал за
           // пределы окна, и ручки подложки были недоступны в canvas-режиме.
           top: useCanvas ? 0 : undefined, left: useCanvas ? 0 : undefined,
-          zIndex: useCanvas ? ((editingPrintLayerId || editingHorizonImageId) ? 3 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
+          zIndex: useCanvas ? (editingHorizonImageId ? 3 : -1) : undefined, cursor: positionPlaceMode ? "crosshair" : branchBindMode ? "cell" : undefined }}
         onMouseDown={onMouseDown}
         onMouseMove={onMouseMove}
         onMouseUp={onMouseUp}

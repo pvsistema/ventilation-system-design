@@ -50,7 +50,11 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
   return (
     <>
       {/* Белая подложка */}
+      {/* В режиме редактирования лист поднят НАД холстом схемы — сплошная белая
+          заливка закрыла бы схему. Делаем её почти прозрачной: схема видна,
+          а прямоугольник по-прежнему ловит мышь для перетаскивания листа. */}
       <rect x={rx} y={ry} width={rw} height={rh} fill="white"
+        fillOpacity={isEditing ? 0.15 : 1}
         style={{ cursor: isEditing ? "move" : "default" }}
         onMouseDown={isEditing ? (e) => {
           e.stopPropagation();

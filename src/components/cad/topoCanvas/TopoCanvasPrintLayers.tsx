@@ -105,7 +105,8 @@ export function usePrintLayers(deps: PrintLayersDeps) {
     const { rx, ry, rw, rh, wb, pTL, pTR, pBL, pBR, pxPerMm, inset, titleFontSize } = layout;
 
     return (
-      <g key={`printlayer-${h.id}`} data-printlayer={h.id}>
+      <g key={`printlayer-${h.id}`} data-printlayer={h.id}
+        style={isEditing ? { pointerEvents: "auto" } : undefined}>
         {/* Подложка, внешняя и внутренняя рамки, заголовок */}
         <PrintFrameBase
           h={h} pl={pl}
