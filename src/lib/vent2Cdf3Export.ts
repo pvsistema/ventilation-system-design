@@ -7,7 +7,9 @@
 // │ Рядом живут:                                                              │
 // │   • erpExport.ts   — родной формат АэроСети (.erp), ZIP с XML;            │
 // │   • csvExport.ts   — табличная выгрузка для обеих программ;               │
-// │   • excelExport.ts — параметры выработок в Excel.                         │
+// │   • excelExport.ts — параметры выработок в Excel;                         │
+// │   • vent2HdrExport.ts — схема ВОДОСНАБЖЕНИЯ той же программы (.hdr),      │
+// │     берёт отсюда encodeCp1251 / cleanName / ByteWriter.                   │
 // │ Общий код с ними НЕ заводить: там текст и таблицы, здесь — двоичный       │
 // │ контейнер со своей раскладкой записей и своей кодировкой строк.           │
 // └───────────────────────────────────────────────────────────────────────────┘
@@ -81,7 +83,7 @@ const BULKHEAD_H = 2.5;
  * Готовой кодировки в браузере нет (TextEncoder умеет только UTF-8),
  * поэтому переводим сами: кириллица идёт сплошными диапазонами.
  */
-function encodeCp1251(text: string): Uint8Array {
+export function encodeCp1251(text: string): Uint8Array {
   const extra: Record<string, number> = {
     "Ё": 0xa8, "ё": 0xb8, "«": 0xab, "»": 0xbb, "№": 0xb9,
     "—": 0x97, "–": 0x96, "·": 0xb7, "…": 0x85, "’": 0x92, "°": 0xb0,
@@ -103,7 +105,7 @@ function encodeCp1251(text: string): Uint8Array {
  * управляющие символы внутри текста читатель схемы считает мусором и строку
  * пропускает. Длина ограничена полем формата (1 байт значащей длины).
  */
-function cleanName(s: string, limit = 120): string {
+export function cleanName(s: string, limit = 120): string {
   return String(s ?? "")
     // eslint-disable-next-line no-control-regex -- служебные байты формата
     .replace(/[\u0000-\u001f]+/g, " ")
@@ -113,7 +115,7 @@ function cleanName(s: string, limit = 120): string {
 }
 
 /** Простой растущий буфер: заранее размер записи посчитать нельзя. */
-class ByteWriter {
+export class ByteWriter {
   private buf = new Uint8Array(1 << 16);
   private dv = new DataView(this.buf.buffer);
   private len = 0;

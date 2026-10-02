@@ -26,6 +26,7 @@ import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
 import { type ErpImportResult } from "@/lib/erpImport";
 import { exportErp } from "@/lib/erpExport";
 import { exportVent2Cdf3 } from "@/lib/vent2Cdf3Export";
+import { exportVent2Hdr } from "@/lib/vent2HdrExport";
 import { type VentsimVsmResult } from "@/lib/import/ventsimVsmImport";
 import { type MineFanExport, type MineBulkheadExport, type BranchType } from "@/components/cad/EquipmentRefDialog";
 import { BULKHEAD_CATALOG, airPermToR, fanWindowRkMurg, G_ACCEL } from "@/lib/bulkheads";
@@ -3512,6 +3513,15 @@ export function useCadPage() {
         const fans = o.fans ? branches.filter(b => b.hasFan).length : 0;
         const bulks = o.bulkheads ? branches.filter(b => b.hasBulkhead).length : 0;
         addLog("info", `Экспорт в АэроСеть (.erp): узлов ${nodes.length}, выработок ${branches.length}, вентиляторов ${fans}, перемычек ${bulks}, позиций ПЛА ${o.positions ? positions.length : 0}`);
+      } else if (fmt === "hdr") {
+        const st = exportVent2Hdr({
+          nodes, branches, horizons,
+          projectName: name, fileName: name,
+          withHorizons: o.horizons, withEquipment: o.water,
+          onlyWaterPipes: o.onlyPipes, withAirFlow: o.results,
+        });
+        addLog("info", `Экспорт водоснабжения в Вентиляцию 2.0 (.hdr): узлов ${st.nodes}, выработок ${st.branches}, трубопроводов ${st.pipes}, задвижек ${st.gates}, клапанов ${st.reducers}, кранов ${st.consumers}, резервуаров ${st.reservoirs}`);
+        for (const wmsg of st.warnings) addLog("warn", wmsg);
       } else {
         const st = exportVent2Cdf3({
           nodes, branches, horizons,
@@ -3522,7 +3532,7 @@ export function useCadPage() {
         for (const wmsg of st.warnings) addLog("warn", wmsg);
       }
     } catch (e) {
-      const where = fmt === "erp" ? "АэроСеть" : "Вентиляцию 2.0";
+      const where = fmt === "erp" ? "АэроСеть" : fmt === "hdr" ? "Вентиляцию 2.0 (.hdr)" : "Вентиляцию 2.0";
       addLog("error", `Экспорт в ${where} не удался: ${e instanceof Error ? e.message : String(e)}`);
     }
   };

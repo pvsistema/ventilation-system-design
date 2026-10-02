@@ -588,6 +588,16 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                         <div className="text-[10px] text-gray-400">Схема, сечения, горизонты и перемычки — с выбором</div>
                       </div>
                     </button>
+                    <button onClick={() => { setActiveRibbon("home"); openSchemeExport("hdr"); }}
+                      className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-blue-50 border border-gray-200 group mb-1">
+                      <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-tint-blue, #eaf4fc)" }}>
+                        <Icon name="Droplets" size={16} className="text-sky-600" />
+                      </div>
+                      <div>
+                        <div className="text-[12px] font-medium text-gray-700">Экспорт водоснабжения в Вентиляцию 2.0 (.hdr)</div>
+                        <div className="text-[10px] text-gray-400">Трубопроводы ППЗ, задвижки, клапаны, краны и резервуары</div>
+                      </div>
+                    </button>
                     <button onClick={() => { setActiveRibbon("home"); setShowCsvExport(true); }}
                       className="w-full flex items-center gap-3 px-3 py-2 text-left rounded hover:bg-green-50 border border-gray-200 group mb-1">
                       <div className="w-8 h-8 flex items-center justify-center rounded border border-gray-300" style={{ background: "var(--c-tint-green, #f0fdf4)" }}>
