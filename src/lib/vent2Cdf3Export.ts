@@ -160,6 +160,12 @@ export interface Cdf3ExportOptions {
   withBulkheads?: boolean;
   /** Переносить названия горизонтов. По умолчанию да. */
   withHorizons?: boolean;
+  /**
+   * Привязка к исходной системе координат (смещение, вычтенное при импорте).
+   * Если задана — узлы пишутся в реальных координатах (внутренняя + origin),
+   * и схема возвращается в «Вентиляцию 2.0» на своё прежнее место.
+   */
+  origin?: { x: number; y: number } | null;
 }
 
 export interface Cdf3ExportStats {
@@ -186,7 +192,7 @@ export interface Cdf3ExportResult {
 export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
   const {
     nodes, branches, horizons, projectName = "ПВ-Система",
-    withBulkheads = true, withHorizons = true,
+    withBulkheads = true, withHorizons = true, origin,
   } = opts;
   const warnings: string[] = [];
 
@@ -204,6 +210,11 @@ export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
   // ── Начало координат ──────────────────────────────────────────────────────
   const minX = Math.min(...nodes.map(nd => nd.x));
   const minY = Math.min(...nodes.map(nd => nd.y));
+  // Схема пришла из файла с государственными координатами — возвращаем их
+  // как есть. Иначе (схема создана у нас) сдвигаем начало в COORD_BASE.
+  const hasOrigin = !!origin && (origin.x !== 0 || origin.y !== 0);
+  const outX = (x: number) => hasOrigin ? x + origin!.x : x - minX + COORD_BASE;
+  const outY = (y: number) => hasOrigin ? y + origin!.y : y - minY + COORD_BASE;
 
   // ── Список горизонтов ─────────────────────────────────────────────────────
   // Номер горизонта в записи выработки — это положение названия в списке.
@@ -265,8 +276,8 @@ export function buildVent2Cdf3(opts: Cdf3ExportOptions): Cdf3ExportResult {
     const base = coordStart + k * NODE_STEP;
     w.padTo(base - 4);
     w.i32(nodeNum.get(nd.id) ?? k + 1);
-    w.f64(nd.x - minX + COORD_BASE);
-    w.f64(nd.y - minY + COORD_BASE);
+    w.f64(outX(nd.x));
+    w.f64(outY(nd.y));
     w.f64(nd.z ?? 0);
     // Признак выхода на поверхность лежит на постоянном смещении в блоке.
     w.padTo(base + 80);

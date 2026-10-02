@@ -1343,6 +1343,10 @@ export function useCadPage() {
   // возникает только от РЕАЛЬНО заданных разностей температур (замеры, пожар).
   // Ненулевой градиент пользователь задаёт явно, если нужен геотермический столб.
   const [geoGradient, setGeoGradient] = useState(0);
+  // Привязка к исходной (государственной) системе координат. Импорт .cdf3
+  // вычитает её из X/Y, чтобы схема легла у начала координат; здесь храним
+  // вычтенное, чтобы показывать реальные координаты и возвращать их при экспорте.
+  const [coordOrigin, setCoordOrigin] = useState<{ x: number; y: number } | null>(null);
   // Средняя температура рудничного воздуха t_ср, °C (термодинамический способ
   // Комарова, норматив 7.11/9.2). ГОСТ 15°C по умолчанию. Разность surfaceTemp − t_ср
   // задаёт естественную тягу.
@@ -2799,13 +2803,35 @@ export function useCadPage() {
       }));
     };
 
+    const fileOrigin = result.origin ?? { x: 0, y: 0 };
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
       setSchemaSymbols([...ensureFanSymbols(result.branches, []), ...cdf3BulkheadSymbols()]);
       setSelectedNodeId(null); setSelectedBranchId(null);
+      setCoordOrigin(fileOrigin);
     } else {
-      setNodes(prev => [...prev, ...result.nodes]);
+      // Добавление к схеме. Если у проекта уже есть привязка — переводим новые
+      // узлы в ту же систему, чтобы обе части легли на свои реальные места.
+      // Если схема пуста — просто принимаем привязку файла.
+      let appended = result.nodes;
+      if (coordOrigin) {
+        const dx = fileOrigin.x - coordOrigin.x;
+        const dy = fileOrigin.y - coordOrigin.y;
+        if (dx !== 0 || dy !== 0) {
+          appended = result.nodes.map(n => ({
+            ...n,
+            x: Math.round((n.x + dx) * 10) / 10,
+            y: Math.round((n.y + dy) * 10) / 10,
+            ...(n.surveyX !== undefined ? { surveyX: Math.round((n.surveyX + dx) * 10) / 10 } : {}),
+            ...(n.surveyY !== undefined ? { surveyY: Math.round((n.surveyY + dy) * 10) / 10 } : {}),
+          }));
+        }
+      } else if (nodes.length === 0) {
+        setCoordOrigin(fileOrigin);
+      }
+      const add = appended;
+      setNodes(prev => [...prev, ...add]);
       setBranches(prev => [...prev, ...result.branches]);
       setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev), ...cdf3BulkheadSymbols()]);
     }
@@ -3345,6 +3371,7 @@ export function useCadPage() {
     heatingSeason,
     useNaturalDraft,
     geoGradient,
+    coordOrigin,
     mineAirTemp,
     // Влажность воздуха (норматив, прил. 9, форм. 9.2)
     useHumidity,
@@ -3527,6 +3554,7 @@ export function useCadPage() {
           nodes, branches, horizons,
           projectName: name, fileName: name,
           withBulkheads: o.bulkheads, withHorizons: o.horizons,
+          origin: coordOrigin,
         });
         addLog("info", `Экспорт в Вентиляцию 2.0 (.cdf3): узлов ${st.nodes}, выработок ${st.branches}, перемычек ${st.bulkheads}, горизонтов ${st.horizons}`);
         for (const wmsg of st.warnings) addLog("warn", wmsg);
@@ -3959,6 +3987,10 @@ export function useCadPage() {
     if (data.heatingSeason !== undefined) setHeatingSeason(data.heatingSeason as HeatingSeason);
     if (data.useNaturalDraft !== undefined) setUseNaturalDraft(data.useNaturalDraft as boolean);
     if (data.geoGradient !== undefined) setGeoGradient(data.geoGradient as number);
+    {
+      const o = data.coordOrigin as { x?: unknown; y?: unknown } | null | undefined;
+      setCoordOrigin(o && typeof o.x === "number" && typeof o.y === "number" ? { x: o.x, y: o.y } : null);
+    }
     if (data.mineAirTemp !== undefined) setMineAirTemp(data.mineAirTemp as number);
     // Влажность воздуха. В файлах старых версий этих полей нет — тогда
     // остаются значения по умолчанию (учёт влажности выключен), и расчёт
@@ -4145,6 +4177,7 @@ export function useCadPage() {
     setUseNaturalDraft(true);
     setMineAirTemp(15);
     setGeoGradient(0);
+    setCoordOrigin(null);
     setHeatingSeason("winter");
     setUseHumidity(false);
     setSurfaceHumidity(DEFAULT_SURFACE_HUMIDITY);
@@ -6034,6 +6067,8 @@ export function useCadPage() {
     setUseNaturalDraft,
     geoGradient,
     setGeoGradient,
+    coordOrigin,
+    setCoordOrigin,
     mineAirTemp,
     setMineAirTemp,
     useHumidity,

@@ -22,6 +22,8 @@ interface Props {
   horizons?: Horizon[];
   bulkheadRByBranch?: Map<string, number>; // R перемычки по ветвям, кМюрг
   projectName?: string;
+  /** Смещение начала координат, вычтенное при импорте (.cdf3). */
+  coordOrigin?: { x: number; y: number } | null;
   onClose: () => void;
 }
 
@@ -97,7 +99,7 @@ function UnitsDialog({ units, onSave, onCancel }: {
   );
 }
 
-export default function CsvExportDialog({ branches, nodes, positions, horizons = [], bulkheadRByBranch, projectName = "ПВ-Система", onClose }: Props) {
+export default function CsvExportDialog({ branches, nodes, positions, horizons = [], bulkheadRByBranch, projectName = "ПВ-Система", coordOrigin, onClose }: Props) {
   const [schema, setSchema] = useState<CsvExportSchema>("vent2");
   const [fields, setFields] = useState<CsvExportFields>({ ...DEFAULT_CSV_FIELDS });
   const [units, setUnits] = useState<CsvExportUnits>({ ...DEFAULT_CSV_UNITS });
@@ -107,13 +109,24 @@ export default function CsvExportDialog({ branches, nodes, positions, horizons =
     setFields(prev => ({ ...prev, [k]: !prev[k] }));
 
   function handleExport() {
+    // Схема с привязкой к исходной системе координат — выгружаем реальные X/Y
+    // (внутренние + смещение), чтобы файл совпал с исходной моделью.
+    const ox = coordOrigin?.x ?? 0;
+    const oy = coordOrigin?.y ?? 0;
+    const shifted = ox !== 0 || oy !== 0;
+    const outNodes = shifted
+      ? nodes.map(n => ({ ...n, x: Math.round(((n.x ?? 0) + ox) * 10) / 10, y: Math.round(((n.y ?? 0) + oy) * 10) / 10 }))
+      : nodes;
+    const outPositions = shifted
+      ? positions.map(p => ({ ...p, x: (p.x ?? 0) + ox, y: (p.y ?? 0) + oy }))
+      : positions;
     if (schema === "vent2") {
       // «Вентиляция 2.0» — 5 файлов: nodes, links, jumpers, fans, positions.
-      const files = buildVent2Files(nodes, branches, positions, units, bulkheadRByBranch, horizons);
+      const files = buildVent2Files(outNodes, branches, outPositions, units, bulkheadRByBranch, horizons);
       void downloadCsvZip(files, `${projectName}_vent2`);
     } else {
       // «АэроСеть» — 5 файлов: nodes, excavations, bulkheads, fans, positions.
-      const files = buildAeroSetFiles(nodes, branches, positions, units, bulkheadRByBranch, horizons);
+      const files = buildAeroSetFiles(outNodes, branches, outPositions, units, bulkheadRByBranch, horizons);
       void downloadCsvZip(files, `${projectName}_aeroset`);
     }
     onClose();

@@ -456,6 +456,7 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
         horizons={horizons}
         bulkheadRByBranch={bulkheadRByBranch}
         projectName={suggestedFileName().replace(/\.vproj$/, "")}
+        coordOrigin={c.coordOrigin}
         onClose={() => setShowCsvExport(false)}
       />
     )}

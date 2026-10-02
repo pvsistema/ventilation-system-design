@@ -91,6 +91,11 @@ export interface Vent2Cdf3Result {
     /** Сколько перемычек найдено внутри записей выработок. */
     bulkheads: number;
   };
+  /**
+   * Смещение начала координат, вычтенное из X/Y узлов при импорте.
+   * Реальная (файловая) координата = внутренняя + origin.
+   */
+  origin: { x: number; y: number };
   debug: string;
 }
 
@@ -287,8 +292,10 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
   // уезжала бы в угол на десятки километров от начала координат.
   const realNodes = rawNodes.filter(n => Math.abs(n.x) > 1e-6 || Math.abs(n.y) > 1e-6);
   const base = realNodes.length > 0 ? realNodes : rawNodes;
-  const minX = Math.min(...base.map(n => n.x));
-  const minY = Math.min(...base.map(n => n.y));
+  // Смещение округляем до целого метра: тогда «внутренняя + смещение»
+  // даёт исходную координату файла ровно с точностью до 0,1 м.
+  const minX = Math.floor(Math.min(...base.map(n => n.x)));
+  const minY = Math.floor(Math.min(...base.map(n => n.y)));
 
   for (const rn of rawNodes) {
     if (rn.atm) atmCount++;
@@ -434,6 +441,7 @@ export function parseVent2Cdf3(buf: ArrayBuffer): Vent2Cdf3Result {
       layers: usedLayers.size,
       bulkheads: bulkheadCount,
     },
+    origin: { x: minX, y: minY },
     debug: debug.join("\n"),
   };
 }

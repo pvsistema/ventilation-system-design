@@ -813,6 +813,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 node={selectedNode}
                 onUpdate={(patch) => updateNode(selectedNode.id, patch)}
                 onResetToSurvey={() => resetNodeToSurvey(selectedNode.id)}
+                coordOrigin={c.coordOrigin}
               />
             )}
 

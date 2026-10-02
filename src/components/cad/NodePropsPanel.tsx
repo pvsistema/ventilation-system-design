@@ -18,10 +18,20 @@ interface NodePropsPanelProps {
   onUpdate: (patch: Partial<TopoNode>) => void;
   /** Вернуть узел на его маркшейдерское место */
   onResetToSurvey?: () => void;
+  /**
+   * Смещение начала координат, вычтенное при импорте схемы (.cdf3).
+   * X/Y показываем и вводим в реальной системе координат: внутренняя + смещение.
+   */
+  coordOrigin?: { x: number; y: number } | null;
 }
 
-export default function NodePropsPanel({ node, onUpdate, onResetToSurvey }: NodePropsPanelProps) {
+/** Округление до 0,1 м — убирает хвосты плавающей точки после сложения со смещением. */
+const r1 = (v: number) => Math.round(v * 10) / 10;
+
+export default function NodePropsPanel({ node, onUpdate, onResetToSurvey, coordOrigin }: NodePropsPanelProps) {
   const numVal = (v: number | undefined, d = 2) => v === undefined || isNaN(v) ? "—" : v.toFixed(d);
+  const ox = coordOrigin?.x ?? 0;
+  const oy = coordOrigin?.y ?? 0;
 
   // Маркшейдерские координаты и величина сдвига изображения узла от них.
   const survey = surveyXYZ(node);
@@ -43,12 +53,12 @@ export default function NodePropsPanel({ node, onUpdate, onResetToSurvey }: Node
           двигаем и эталон, и изображение узла: пользователь уточняет, где
           выработка находится на самом деле, а не двигает картинку. */}
       <Row label="X, м">
-        <EditInput type="number" step="0.1" value={survey.x}
-          onChange={(v) => { const x = parseFloat(v) || 0; onUpdate({ x, surveyX: x }); }} />
+        <EditInput type="number" step="0.1" value={r1(survey.x + ox)}
+          onChange={(v) => { const x = r1((parseFloat(v) || 0) - ox); onUpdate({ x, surveyX: x }); }} />
       </Row>
       <Row label="Y, м">
-        <EditInput type="number" step="0.1" value={survey.y}
-          onChange={(v) => { const y = parseFloat(v) || 0; onUpdate({ y, surveyY: y }); }} />
+        <EditInput type="number" step="0.1" value={r1(survey.y + oy)}
+          onChange={(v) => { const y = r1((parseFloat(v) || 0) - oy); onUpdate({ y, surveyY: y }); }} />
       </Row>
       <Row label="Z, м (высотная отм.)">
         <EditInput type="number" step="1" value={survey.z}
