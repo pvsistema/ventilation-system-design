@@ -1105,6 +1105,19 @@ export function useCadPage() {
     setShowMoveSchema(false);
   };
 
+  /**
+   * Привязка схемы к реальной системе координат (AutoCAD / «Вентиляция 2.0»).
+   * Узлы на экране не двигаются — меняется только смещение, которое
+   * прибавляется к X/Y в свойствах узла и при экспорте.
+   */
+  const handleSetCoordOrigin = (origin: { x: number; y: number } | null) => {
+    setCoordOrigin(origin);
+    addLog("ok", origin
+      ? `Привязка координат задана: смещение X ${origin.x}, Y ${origin.y} м`
+      : "Привязка координат сброшена");
+    setShowMoveSchema(false);
+  };
+
   // ─── Наклонный съезд ────────────────────────────────────────────────
   // Трасса рисуется по подложке на плане (X и Y), а высотные отметки узлов
   // раздаёт расчёт: вручную по десяткам узлов их не проставить, и главное —
@@ -6069,6 +6082,7 @@ export function useCadPage() {
     setGeoGradient,
     coordOrigin,
     setCoordOrigin,
+    handleSetCoordOrigin,
     mineAirTemp,
     setMineAirTemp,
     useHumidity,

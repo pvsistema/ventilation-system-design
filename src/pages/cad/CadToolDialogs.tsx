@@ -115,6 +115,11 @@ export interface CadToolDialogsProps {
   /** Сколько узлов затронет каждая область перемещения */
   moveSchemaCounts: { all: number; visible: number; selected: number };
   onMoveSchema: (opts: MoveSchemaOptions) => void;
+  /** Привязка к реальной системе координат (смещение X/Y). */
+  coordOrigin?: { x: number; y: number } | null;
+  onSetCoordOrigin?: (origin: { x: number; y: number } | null) => void;
+  /** Номер выделенного узла — для привязки по точке. */
+  selectedNodeNumber?: string;
   setShowRenumberDialog: (v: boolean) => void;
   renumberAll: (opts: RenumberOptions | "asc" | "desc") => void;
 
@@ -331,6 +336,10 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           counts={p.moveSchemaCounts}
           onClose={() => p.setShowMoveSchema(false)}
           onConfirm={p.onMoveSchema}
+          nodes={p.nodes}
+          coordOrigin={p.coordOrigin}
+          initialNodeNumber={p.selectedNodeNumber}
+          onSetOrigin={p.onSetCoordOrigin}
         />
       )}
 

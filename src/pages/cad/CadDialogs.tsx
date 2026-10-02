@@ -510,6 +510,9 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
       setShowMoveSchema={setShowMoveSchema}
       moveSchemaCounts={moveSchemaCounts}
       onMoveSchema={handleMoveSchema}
+      coordOrigin={c.coordOrigin}
+      onSetCoordOrigin={c.handleSetCoordOrigin}
+      selectedNodeNumber={c.selectedNodeId ? (nodes.find(n => n.id === c.selectedNodeId)?.number ?? "") : ""}
       setShowRenumberDialog={setShowRenumberDialog}
       renumberAll={renumberAll}
       showSelectSimilar={showSelectSimilar}
