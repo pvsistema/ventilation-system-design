@@ -529,6 +529,7 @@ function drawBulkheadOnCanvas(
   const isLattice = tid === "regulator_lattice" || tid.includes("lat_");
   const isWater   = tid.includes("water_dam");
   const isSail    = tid === "sail";
+  const isBlast   = tid.startsWith("bk_blast");
   const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
   const isFirePP  = tid === "fire_door_pp";
   const isProem   = tid.includes("proem_");
@@ -542,7 +543,12 @@ function drawBulkheadOnCanvas(
   ctx.translate(px, py);
   ctx.rotate(brAngle);
 
-  if (isSail) {
+  if (isBlast) {
+    ctx.fillStyle = fill; ctx.strokeStyle = stroke; ctx.lineWidth = sw2; ctx.lineJoin = "round";
+    ctx.beginPath();
+    ctx.moveTo(0, -ph/2); ctx.lineTo(pw*1.3, 0); ctx.lineTo(0, ph/2); ctx.lineTo(-pw*1.3, 0);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+  } else if (isSail) {
     ctx.strokeStyle = "#1a1a1a"; ctx.lineWidth = Math.max(1.8, pw * 0.4); ctx.lineCap = "round";
     // Стойка паруса: только края, середина (где проходит ветвь) вырезана
     ctx.beginPath(); ctx.moveTo(0, -ph*0.5); ctx.lineTo(0, -ph*0.28); ctx.stroke();

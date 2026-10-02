@@ -32,6 +32,10 @@ function solidBulkhead(fill: string, _stroke: string): string {
   return `<rect x="20" y="4" width="8" height="32" fill="${fill}" stroke="${BK_STROKE}" stroke-width="1.5"/>`;
 }
 // Дверь закрытая: прямоугольник + жирная линия вдоль левого края (знак закрытой двери)
+// Взрывоустойчивая перемычка: ромб поперёк выработки
+function blastBulkhead(fill: string): string {
+  return `<polygon points="24,3 33,20 24,37 15,20" fill="${fill}" stroke="${BK_STROKE}" stroke-width="1.5" stroke-linejoin="round"/>`;
+}
 function closedDoor(fill: string, _stroke: string): string {
   return `<rect x="20" y="4" width="8" height="32" fill="${fill}" stroke="${BK_STROKE}" stroke-width="1.5"/>` +
     `<line x1="20" y1="4" x2="20" y2="36" stroke="${BK_STROKE}" stroke-width="3" stroke-linecap="round"/>`;
@@ -156,6 +160,7 @@ export const LEGEND_TYPES: LegendType[] = [
   // ─── ГЛУХИЕ ПЕРЕМЫЧКИ (новые ID, соответствующие справочнику) ────────
   { id: "bk_base",    name: "Глухая перемычка",                group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("white", "#222") },
   { id: "bk_concrete",name: "Глухая перемычка бетонная",       group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#4caf50", "#2e7d32") },
+  { id: "bk_blast_conc", name: "Перемычка взрывоустойчивая бетонная", group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: blastBulkhead("#4caf50") },
   { id: "bk_wood",    name: "Глухая перемычка деревянная",     group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#ffd600", "#f57f17") },
   { id: "bk_brick",   name: "Глухая перемычка кирпичная",      group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#ff9800", "#e65100") },
   { id: "bk_metal",   name: "Глухая перемычка металлическая",  group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#9c27b0", "#6a1b9a") },
@@ -594,7 +599,7 @@ export const EXPLOSION_SYMBOL_IDS = new Set([
 // ID всех перемычек для группировки в выпадающем списке
 export const BULKHEAD_SYMBOL_IDS = new Set([
   "bulkhead", "bulkhead_concrete", "bulkhead_wood", "bulkhead_brick", "bulkhead_metal",
-  "bk_base", "bk_concrete", "bk_wood", "bk_brick", "bk_metal",
+  "bk_base", "bk_concrete", "bk_wood", "bk_brick", "bk_metal", "bk_blast_conc",
   "door_closed", "door_closed_concrete", "door_closed_wood", "door_closed_brick", "door_closed_metal",
   "door_base", "door_conc", "door_wood", "door_brick", "door_metal",
   "door_auto", "door_auto_concrete", "door_auto_wood", "door_auto_brick", "door_auto_metal",
@@ -622,6 +627,7 @@ export function guessBulkheadSymbolId(name: string): string {
   if (/противопож/.test(t)) return "fire_door_pp";
   if (/барьер/.test(t)) return "barrier";
   if (/парус/.test(t)) return "sail";
+  if (/взрыво/.test(t)) return "bk_blast_conc";
   if (/регулятор|шибер/.test(t)) return "regulator";
   if (/автомат/.test(t)) return `auto_${mat}`;
   if (/откр/.test(t)) return `open_${mat}`;

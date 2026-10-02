@@ -3176,6 +3176,7 @@ export default function TopoCanvas(props: Props) {
                   const isLattice = tid === "regulator_lattice" || tid.includes("lat_");
                   const isWater   = tid.includes("water_dam");
                   const isSail    = tid === "sail";
+                  const isBlast   = tid.startsWith("bk_blast");
                   const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
                   const isFirePP  = tid === "fire_door_pp";
                   const isProem   = tid.includes("proem_");
@@ -3200,7 +3201,11 @@ export default function TopoCanvas(props: Props) {
                               fill="#dc2626" stroke="#8b0000" strokeWidth={sw} />
                           </>
                         );
-                      })() : isSail ? (
+                      })() : isBlast ? (
+                        // Взрывоустойчивая: ромб поперёк ветви
+                        <polygon points={`0,${-ph/2} ${pw*1.3},0 0,${ph/2} ${-pw*1.3},0`}
+                          fill={fill} stroke={stroke} strokeWidth={sw2} strokeLinejoin="round" />
+                      ) : isSail ? (
                         // Парус: вертикальная линия поперёк (по Y) + полукруг
                         <>
                           <line x1={0} y1={-ph/2} x2={0} y2={ph/2}

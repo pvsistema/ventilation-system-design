@@ -59,6 +59,8 @@ export interface BlastBarrier {
  */
 export function defaultFailureMPa(typeId: string): number {
   if (typeId === "sail") return 0.005;
+  // Взрывоустойчивая перемычка рассчитана на удар взрывной волны.
+  if (typeId.startsWith("bk_blast")) return 0.3;
   if (/_(conc|concrete)$/.test(typeId)) return 0.08;
   if (/_brick$/.test(typeId)) return 0.04;
   if (/_metal$/.test(typeId)) return 0.02;

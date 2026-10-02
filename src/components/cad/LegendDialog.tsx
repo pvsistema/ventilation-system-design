@@ -156,6 +156,8 @@ const ITEMS: LegendItem[] = [
   // ══════════════════════════════════════════════════════════════════════════
   { id: "bk_base",     group: "Глухие перемычки", name: "Глухая перемычка",           svg: <Bk /> },
   { id: "bk_concrete", group: "Глухие перемычки", name: "Глухая перемычка бетонная",  svg: <Bk fill="#4caf50" stroke="#2e7d32" /> },
+  { id: "bk_blast_conc", group: "Глухие перемычки", name: "Перемычка взрывоустойчивая бетонная",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40"><polygon points="24,3 33,20 24,37 15,20" fill="#4caf50" stroke="#222" strokeWidth={1.5} strokeLinejoin="round" /></svg> },
   { id: "bk_wood",     group: "Глухие перемычки", name: "Глухая перемычка деревянная",svg: <Bk fill="#ffd600" stroke="#f57f17" /> },
   { id: "bk_brick",    group: "Глухие перемычки", name: "Глухая перемычка кирпичная", svg: <Bk fill="#ff9800" stroke="#e65100" /> },
   { id: "bk_metal",    group: "Глухие перемычки", name: "Глухая перемычка металлическая", svg: <Bk fill="#9c27b0" stroke="#6a1b9a" /> },

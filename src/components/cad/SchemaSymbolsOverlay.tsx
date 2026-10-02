@@ -249,6 +249,7 @@ export default function SchemaSymbolsOverlay({
           const isLattice = tid === "regulator_lattice" || tid.includes("lat_");
           const isWater   = tid.includes("water_dam");
           const isSail    = tid === "sail";
+          const isBlast   = tid.startsWith("bk_blast");
           const isBarrier = tid === "barrier" || tid === "bulkhead_barrier";
           const isFirePP  = tid === "fire_door_pp";
           const isProem   = tid.includes("proem_");
@@ -261,7 +262,10 @@ export default function SchemaSymbolsOverlay({
 
           return (
             <g transform={`translate(${px},${py}) rotate(${brAngle})`}>
-              {isSail ? (
+              {isBlast ? (
+                <polygon points={`0,${-ph/2} ${pw*1.3},0 0,${ph/2} ${-pw*1.3},0`}
+                  fill={fill} stroke={stroke} strokeWidth={sw2} strokeLinejoin="round" />
+              ) : isSail ? (
                 <>
                   <line x1={0} y1={-ph*0.5} x2={0} y2={-ph*0.28}
                     stroke="#1a1a1a" strokeWidth={Math.max(1.8, pw * 0.4)} strokeLinecap="round" />
