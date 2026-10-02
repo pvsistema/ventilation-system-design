@@ -2,6 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import Icon from "@/components/ui/icon";
 import type { TopoNode, TopoBranch } from "@/lib/topology";
 import { findMainRoute, buildPointsFromBranchIds } from "./depressogram-utils";
+import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Депрессиограмма — перетаскиваемый диалог без overlay-блокировки
@@ -31,6 +32,8 @@ interface Props {
   onPickModeChange: (active: boolean) => void;
   manualBranchIds: Set<string>;
   onClearManual: () => void;
+  /** Значки схемы — по ним определяются глухие и закрытые перемычки. */
+  schemaSymbols?: SchemaSymbol[];
 }
 
 // Алгоритм маршрута (findMainRoute) и построение точек (buildPointsFromBranchIds)
@@ -136,9 +139,11 @@ function useDraggable(initialPos: { x: number; y: number }) {
 }
 
 // ─── Основной диалог (без overlay — не блокирует схему) ──────────────────────
+const EMPTY_SYMBOLS: SchemaSymbol[] = [];
+
 export default function DepressogramDialog({
   nodes, branches, onClose, onHighlightPath,
-  pickMode, onPickModeChange, manualBranchIds, onClearManual,
+  pickMode, onPickModeChange, manualBranchIds, onClearManual, schemaSymbols = EMPTY_SYMBOLS,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"chart" | "table">("chart");
   const [mode, setMode] = useState<"auto" | "manual">("auto");
@@ -161,8 +166,8 @@ export default function DepressogramDialog({
   const [selectedFanId, setSelectedFanId] = useState<string>("");
 
   const autoRoute = useMemo(
-    () => findMainRoute(nodes, branches, selectedFanId || undefined),
-    [nodes, branches, selectedFanId]
+    () => findMainRoute(nodes, branches, selectedFanId || undefined, schemaSymbols),
+    [nodes, branches, selectedFanId, schemaSymbols]
   );
   const autoPoints = useMemo(() => autoRoute ? buildPointsFromBranchIds(autoRoute.branchPath, nodes, branches) : [], [autoRoute, nodes, branches]);
   const manualPoints = useMemo(() => manualBranchIds.size > 0 ? buildPointsFromBranchIds(Array.from(manualBranchIds), nodes, branches) : [], [manualBranchIds, nodes, branches]);
@@ -538,8 +543,8 @@ export default function DepressogramDialog({
         <div style={{ fontSize: 10, color: "var(--c-t3, #6b7280)" }}>
           {mode === "auto"
             ? (selectedFanId
-                ? `Авто: маршрут наибольшего расхода от выбранного ВГП до поверхности (без перемычек)`
-                : `Авто: маршрут наибольшего расхода от ГВУ до поверхности, без перемычек${fanCount > 1 ? ` (${fanCount} ВГП в схеме)` : ""}`)
+                ? `Авто: маршрут наибольшего расхода от выбранного ВГП до поверхности (без глухих и закрытых перемычек)`
+                : `Авто: маршрут наибольшего расхода от ГВУ до поверхности, без глухих и закрытых перемычек${fanCount > 1 ? ` (${fanCount} ВГП в схеме)` : ""}`)
             : `Ручной: ${manualBranchIds.size} ветв. · кликайте по схеме`}
         </div>
         <div style={{ display: "flex", gap: 8 }}>

@@ -376,6 +376,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
         <DepressogramDialog
           nodes={p.nodes}
           branches={p.branches}
+          schemaSymbols={p.schemaSymbols}
           onClose={() => {
             p.setShowDepressogram(false);
             p.setDepressogramHighlight([]);

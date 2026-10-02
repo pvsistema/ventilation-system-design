@@ -1,4 +1,6 @@
 import type { TopoNode, TopoBranch } from "@/lib/topology";
+import type { SchemaSymbol } from "@/pages/cad/cadTypes";
+import { BULKHEAD_SYMBOL_IDS, OPEN_DOOR_IDS, WINDOW_BULKHEAD_IDS } from "@/lib/schemaSymbols";
 
 // ─── Типы ────────────────────────────────────────────────────────────────────
 
@@ -14,58 +16,89 @@ export interface DepressogramPoint {
   dP: number;
 }
 
-// Перемычка ПРЕГРАЖДАЕТ маршрут (глухая), только если у неё НЕТ прохода воздуха.
-// Перемычки с проходом (открытая дверь, окно/проём, решётчатая) или через которые
-// реально идёт значимый расход воздуха — НЕ преграждают струю, их включаем в маршрут.
-function isBlockingBulkhead(b: TopoBranch): boolean {
-  if (!b.hasBulkhead) return false;                  // перемычки нет
-  if (b.bulkheadDestroyedByExplosion) return false;  // разрушена — не преграда
-  if ((b.bulkheadWindowArea ?? 0) > 0) return false; // есть окно/проём (решётчатая)
-  if (Math.abs(b.flow ?? 0) > 0.05) return false;    // через неё реально идёт воздух → проход открыт
-  return true;                                       // глухая перемычка без прохода — преграждает струю
+// ─── Какие перемычки преграждают маршрут ─────────────────────────────────────
+// Маршрут депрессиограммы идёт по СВОБОДНЫМ выработкам. Преграда — глухие и
+// закрытые сооружения: глухие и взрывоустойчивые перемычки, закрытые и
+// автоматические двери, водоподпорные, противопожарные, барьерные. Утечка
+// через закрытую дверь (сотни Па на ней) — не повод вести через неё маршрут:
+// раньше любая ветвь с расходом > 0,05 м³/с считалась проходимой.
+// Проходимы: открытые двери/проёмы, окна, решётки, регуляторы, паруса и
+// разрушенные взрывом перемычки.
+const PASSABLE_SYMBOL_IDS = new Set([...OPEN_DOOR_IDS, ...WINDOW_BULKHEAD_IDS, "sail", "regulator"]);
+
+function isBlockingSymbol(s: SchemaSymbol): boolean {
+  if (PASSABLE_SYMBOL_IDS.has(s.typeId)) return false;
+  // Окно, заданное в свойствах значка, — сооружение с проходом.
+  if ((s.bkWindowArea ?? 0) > 0.001) return false;
+  return true;
+}
+
+function isBlockingBranch(b: TopoBranch, symsByBranch: Map<string, SchemaSymbol[]>): boolean {
+  if (b.bulkheadDestroyedByExplosion) return false;
+  const syms = symsByBranch.get(b.id) ?? [];
+  if (syms.length > 0) return syms.some(s => isBlockingSymbol(s));
+  // Перемычка задана только во вкладке ветви, без значка на схеме.
+  if (!b.hasBulkhead) return false;
+  if ((b.bulkheadWindowArea ?? 0) > 0) return false;
+  if (/парус|открыт|окн|решёт|решет|регулятор/i.test(b.bulkheadName ?? "")) return false;
+  return true;
+}
+
+/** Ветви, через которые маршрут депрессиограммы не проходит (для подсказок). */
+export function blockedBranchIds(branches: TopoBranch[], symbols: SchemaSymbol[] = []): Set<string> {
+  const map = symbolsByBranch(symbols);
+  return new Set(branches.filter(b => isBlockingBranch(b, map)).map(b => b.id));
+}
+
+function symbolsByBranch(symbols: SchemaSymbol[]): Map<string, SchemaSymbol[]> {
+  const m = new Map<string, SchemaSymbol[]>();
+  for (const s of symbols) {
+    if (!s.branchId || !BULKHEAD_SYMBOL_IDS.has(s.typeId)) continue;
+    (m.get(s.branchId) ?? m.set(s.branchId, []).get(s.branchId)!).push(s);
+  }
+  return m;
 }
 
 // ─── Алгоритм: маршрут наибольшего расхода воздуха от ГВУ до поверхности ──────
 // НОРМАТИВ: маршрут, определяющий аэродинамическое сопротивление шахтной сети —
-// это путь, по которому проходит НАИБОЛЬШЕЕ КОЛИЧЕСТВО ВОЗДУХА (расход Q) от ГВУ
-// до поверхности, БЕЗ преграждения вентиляционными перемычками.
+// путь, по которому проходит НАИБОЛЬШЕЕ КОЛИЧЕСТВО ВОЗДУХА (расход Q) от
+// поверхности (воздухоподающий ствол) до ГВУ, не перекрытый глухими и
+// закрытыми перемычками.
 //
-// Реализация: жадный обход от "шахтного" конца ГВУ вглубь сети — на каждом шаге
-// выбираем соседнюю ветвь с МАКСИМАЛЬНЫМ расходом, НЕ проходя через ГЛУХИЕ
-// перемычки (см. isBlockingBulkhead) и ГЛАВНЫЕ вентиляторы (ГВУ/ВВУ).
-// Допускаются: перемычки с проходом (открытая дверь/окно/решётка/идёт воздух)
-// и ВМП (вентиляторы местного проветривания) — они не преграждают основную струю.
-// Путь разворачивается и дополняется ветвью ГВУ и поверхностным узлом.
+// Реализация (сеть рассчитана): «самый широкий путь» — среди всех путей ПО
+// НАПРАВЛЕНИЮ ДВИЖЕНИЯ ВОЗДУХА от шахтного конца ГВУ до поверхностного узла
+// выбирается тот, у которого наименьший расход на пути наибольший. При равенстве —
+// с большей суммарной депрессией. Так маршрут не уходит в тупики, как раньше
+// жадный обход, и идёт по реальной струе, а не против неё.
+// Если сеть не рассчитана (расходов нет) — прежний жадный обход.
 //
 // ВГП выбирается автоматически (приоритет типу "ГВУ"), либо явно задаётся
-// параметром preferredFanBranchId (пользователь указывает ветвь ВГП).
-// При нескольких ВГП берётся маршрут с наибольшим расходом воздуха через ГВУ.
+// параметром preferredFanBranchId. При нескольких ВГП берётся маршрут с
+// наибольшим расходом воздуха через ГВУ.
 export function findMainRoute(
   nodes: TopoNode[],
   branches: TopoBranch[],
-  preferredFanBranchId?: string
+  preferredFanBranchId?: string,
+  symbols: SchemaSymbol[] = [],
 ): { path: string[]; branchPath: string[]; fanId?: string } | null {
   const surfaceNodeIds = new Set(nodes.filter(n => n.atmosphereLink).map(n => n.id));
   if (surfaceNodeIds.size === 0) return null;
+  const symsByBranch = symbolsByBranch(symbols);
 
-  // Строим граф смежности.
-  // blocking = перемычка ПРЕГРАЖДАЕТ струю (глухая). Перемычки с проходом
-  // (открытая дверь/окно/решётка) НЕ преграждают — их включаем в маршрут.
-  // blockingFan = ГЛАВНЫЙ/вспомогательный вентилятор (ГВУ/ВВУ) — граница струи.
-  // ВМП (вентилятор местного проветривания) НЕ преграждает основную струю —
-  // он в тупиковой выработке добавляет напор; такие ветви проходимы.
-  const adj = new Map<string, { branchId: string; neighborId: string; flow: number; dP: number; blocking: boolean; blockingFan: boolean }[]>();
+  type Edge = { branchId: string; neighborId: string; flow: number; dP: number; blocking: boolean; blockingFan: boolean; signedOut: number };
+  // signedOut — расход, ВЫХОДЯЩИЙ из текущего узла по этой ветви (+ — воздух
+  // уходит к соседу, − — приходит от соседа).
+  const adj = new Map<string, Edge[]>();
   for (const b of branches) {
     if (!adj.has(b.fromId)) adj.set(b.fromId, []);
     if (!adj.has(b.toId)) adj.set(b.toId, []);
     const blockingFan = b.hasFan && !b.fanStopped && b.fanType !== "ВМП";
-    const entry = { branchId: b.id, flow: Math.abs(b.flow ?? 0), dP: Math.abs(b.dP ?? 0), blocking: isBlockingBulkhead(b), blockingFan };
-    adj.get(b.fromId)!.push({ ...entry, neighborId: b.toId });
-    adj.get(b.toId)!.push({ ...entry, neighborId: b.fromId });
+    const q = b.flow ?? 0;
+    const entry = { branchId: b.id, flow: Math.abs(q), dP: Math.abs(b.dPTotal ?? b.dP ?? 0), blocking: isBlockingBranch(b, symsByBranch), blockingFan };
+    adj.get(b.fromId)!.push({ ...entry, neighborId: b.toId, signedOut: q });
+    adj.get(b.toId)!.push({ ...entry, neighborId: b.fromId, signedOut: -q });
   }
 
-  // Список ВГП. Если задан preferredFanBranchId — только он.
-  // Иначе: приоритет главным вентиляторам (fanType === "ГВУ"), затем остальные.
   let fanBranches = branches.filter(b => b.hasFan && !b.fanStopped);
   if (preferredFanBranchId) {
     const preferred = branches.find(b => b.id === preferredFanBranchId);
@@ -76,24 +109,20 @@ export function findMainRoute(
   }
   if (fanBranches.length === 0) return null;
 
-  // Для каждого ВГП строим маршрут; выбираем тот, где расход воздуха наибольший.
   let bestPath: string[] = [];
   let bestBranchPath: string[] = [];
   let bestFlow = -1;
   let bestFanId: string | undefined;
 
+  const MIN_Q = 0.05;
+
   for (const fan of fanBranches) {
-    // Определяем "шахтный" конец ветви ВГП (не поверхность) — от него идём вглубь.
     const flow = fan.flow ?? 0;
     let shaftNodeId: string;
     let surfNodeId: string;
-
     if (Math.abs(flow) < 0.001) {
-      if (surfaceNodeIds.has(fan.toId)) {
-        shaftNodeId = fan.fromId; surfNodeId = fan.toId;
-      } else {
-        shaftNodeId = fan.toId; surfNodeId = fan.fromId;
-      }
+      if (surfaceNodeIds.has(fan.toId)) { shaftNodeId = fan.fromId; surfNodeId = fan.toId; }
+      else { shaftNodeId = fan.toId; surfNodeId = fan.fromId; }
     } else if (flow > 0) {
       shaftNodeId = fan.fromId; surfNodeId = fan.toId;
     } else {
@@ -102,47 +131,96 @@ export function findMainRoute(
     if (surfaceNodeIds.has(shaftNodeId) && !surfaceNodeIds.has(surfNodeId)) {
       [shaftNodeId, surfNodeId] = [surfNodeId, shaftNodeId];
     }
+    // Всасывающая ГВУ: воздух идёт шахта → ГВУ → поверхность, маршрут ищем
+    // ПРОТИВ струи от шахтного конца. Нагнетательная — по струе.
+    const fanQ = Math.abs(flow);
+    const exhaust = fanQ < 0.001
+      ? true
+      : (flow > 0 ? fan.fromId === shaftNodeId : fan.toId === shaftNodeId);
 
-    // Жадный обход: от shaftNodeId вглубь шахты по МАКС. расходу, без перемычек.
-    const visited = new Set<string>([shaftNodeId]);
-    const nodePath: string[] = [shaftNodeId];
-    const branchPath: string[] = [];
-    let current = shaftNodeId;
-    visited.add(surfNodeId); // поверхностный конец ВГП исключаем из обхода
+    let nodePath: string[] = [];
+    let branchPath: string[] = [];
 
-    const MAX_STEPS = 2000;
-    let steps = 0;
-
-    while (steps < MAX_STEPS) {
-      steps++;
-      const neighbors = adj.get(current) ?? [];
-
-      // Кандидаты: не посещённые, без глухих перемычек и без главных вентиляторов
-      // (ГВУ/ВВУ — граница струи). ВМП и проходные перемычки допускаются.
-      // Выбираем ветвь с максимальным расходом воздуха.
-      const candidates = neighbors
-        .filter(n => !visited.has(n.neighborId) && !n.blocking && !n.blockingFan)
-        .sort((a, b) => b.flow - a.flow);
-
-      const chosen = candidates[0];
-      if (!chosen) break;
-
-      visited.add(chosen.neighborId);
-      nodePath.push(chosen.neighborId);
-      branchPath.push(chosen.branchId);
-      current = chosen.neighborId;
+    if (fanQ >= 0.001) {
+      // ── Самый широкий путь по направлению струи ──
+      const width = new Map<string, number>([[shaftNodeId, Infinity]]);
+      const depth = new Map<string, number>([[shaftNodeId, 0]]);
+      const prev = new Map<string, { node: string; branch: string }>();
+      const done = new Set<string>([surfNodeId]);
+      const queue: string[] = [shaftNodeId];
+      let target: string | null = null;
+      while (queue.length > 0) {
+        let bi = 0;
+        for (let i = 1; i < queue.length; i++) {
+          const a = queue[i], c = queue[bi];
+          const wa = width.get(a)!, wc = width.get(c)!;
+          if (wa > wc || (wa === wc && (depth.get(a)! > depth.get(c)!))) bi = i;
+        }
+        const cur = queue.splice(bi, 1)[0];
+        if (done.has(cur)) continue;
+        done.add(cur);
+        if (cur !== shaftNodeId && surfaceNodeIds.has(cur)) { target = cur; break; }
+        for (const e of adj.get(cur) ?? []) {
+          if (e.blocking || e.blockingFan || done.has(e.neighborId)) continue;
+          // Всасывающая: идём против струи — воздух ПРИХОДИТ в cur от соседа.
+          const along = exhaust ? -e.signedOut : e.signedOut;
+          if (along < MIN_Q) continue;
+          const w = Math.min(width.get(cur)!, e.flow);
+          const d = depth.get(cur)! + e.dP;
+          const ow = width.get(e.neighborId);
+          if (ow === undefined || w > ow || (w === ow && d > (depth.get(e.neighborId) ?? 0))) {
+            width.set(e.neighborId, w);
+            depth.set(e.neighborId, d);
+            prev.set(e.neighborId, { node: cur, branch: e.branchId });
+            queue.push(e.neighborId);
+          }
+        }
+      }
+      if (target) {
+        const nodesRev: string[] = [target];
+        const brRev: string[] = [];
+        let n = target;
+        while (n !== shaftNodeId) {
+          const p = prev.get(n)!;
+          brRev.push(p.branch);
+          nodesRev.push(p.node);
+          n = p.node;
+        }
+        // nodesRev: поверхность → … → шахтный конец ГВУ
+        nodePath = nodesRev.reverse();   // шахтный конец → … → поверхность
+        branchPath = brRev.reverse();
+      }
     }
 
-    // Разворачиваем путь (от глубины к ВГП) и добавляем ветвь ВГП + поверхность.
-    const reversedNodes = [...nodePath].reverse();
-    const reversedBranches = [...branchPath].reverse();
-    const fullNodes = [...reversedNodes, surfNodeId];
-    const fullBranches = [...reversedBranches, fan.id];
+    if (branchPath.length === 0) {
+      // ── Запасной вариант: жадный обход по максимальному расходу ──
+      const visited = new Set<string>([shaftNodeId, surfNodeId]);
+      nodePath = [shaftNodeId];
+      branchPath = [];
+      let current = shaftNodeId;
+      for (let steps = 0; steps < 2000; steps++) {
+        const chosen = (adj.get(current) ?? [])
+          .filter(n => !visited.has(n.neighborId) && !n.blocking && !n.blockingFan)
+          .sort((a, b) => b.flow - a.flow)[0];
+        if (!chosen) break;
+        visited.add(chosen.neighborId);
+        nodePath.push(chosen.neighborId);
+        branchPath.push(chosen.branchId);
+        current = chosen.neighborId;
+      }
+    }
 
-    // Критерий выбора между несколькими ВГП — расход воздуха через ГВУ.
-    const routeFlow = Math.abs(fan.flow ?? 0);
-    if (routeFlow > bestFlow && fullBranches.length > 1) {
-      bestFlow = routeFlow;
+    // Порядок по движению воздуха. Всасывающая: поверхность → … → ГВУ → поверхность.
+    // Нагнетательная: поверхность → ГВУ → … → выход на поверхность.
+    const fullNodes = exhaust
+      ? [...[...nodePath].reverse(), surfNodeId]
+      : [surfNodeId, ...nodePath];
+    const fullBranches = exhaust
+      ? [...[...branchPath].reverse(), fan.id]
+      : [fan.id, ...branchPath];
+
+    if (fanQ > bestFlow && fullBranches.length > 1) {
+      bestFlow = fanQ;
       bestPath = fullNodes;
       bestBranchPath = fullBranches;
       bestFanId = fan.id;
