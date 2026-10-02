@@ -138,6 +138,7 @@ export interface CadToolDialogsProps {
   showDepressogram: boolean;
   setShowDepressogram: (v: boolean) => void;
   setDepressogramHighlight: (v: string[]) => void;
+  setDepressogramBlockers?: (v: string[]) => void;
   depressogramPickMode: boolean;
   setDepressogramPickMode: (v: boolean) => void;
   depressogramManualBranches: Set<string>;
@@ -384,6 +385,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
             p.setDepressogramManualBranches(new Set());
           }}
           onHighlightPath={ids => p.setDepressogramHighlight(ids)}
+          onHighlightBlockers={ids => p.setDepressogramBlockers?.(ids)}
           pickMode={p.depressogramPickMode}
           onPickModeChange={active => {
             p.setDepressogramPickMode(active);

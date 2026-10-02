@@ -3282,6 +3282,8 @@ export function useCadPage() {
   const [showHelpDialog, setShowHelpDialog] = useState<boolean>(false);
   const [showDepressogram, setShowDepressogram] = useState<boolean>(false);
   const [depressogramHighlight, setDepressogramHighlight] = useState<string[]>([]);
+  // Перемычки, перекрывшие автомаршрут депрессиограммы, — подсвечиваются красным.
+  const [depressogramBlockers, setDepressogramBlockers] = useState<string[]>([]);
   const [depressogramPickMode, setDepressogramPickMode] = useState<boolean>(false);
   const [depressogramManualBranches, setDepressogramManualBranches] = useState<Set<string>>(new Set());
 
@@ -6446,6 +6448,8 @@ export function useCadPage() {
     setShowDepressogram,
     depressogramHighlight,
     setDepressogramHighlight,
+    depressogramBlockers,
+    setDepressogramBlockers,
     depressogramPickMode,
     setDepressogramPickMode,
     depressogramManualBranches,

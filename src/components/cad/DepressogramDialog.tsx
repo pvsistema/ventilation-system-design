@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoNode, TopoBranch } from "@/lib/topology";
-import { findMainRoute, buildPointsFromBranchIds } from "./depressogram-utils";
+import { findMainRoute, buildPointsFromBranchIds, blockedBranchIds } from "./depressogram-utils";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -32,6 +32,8 @@ interface Props {
   onPickModeChange: (active: boolean) => void;
   manualBranchIds: Set<string>;
   onClearManual: () => void;
+  /** Подсветить на схеме перемычки, перекрывшие маршрут (пустой список — снять). */
+  onHighlightBlockers?: (branchIds: string[]) => void;
   /** Значки схемы — по ним определяются глухие и закрытые перемычки. */
   schemaSymbols?: SchemaSymbol[];
 }
@@ -144,6 +146,7 @@ const EMPTY_SYMBOLS: SchemaSymbol[] = [];
 export default function DepressogramDialog({
   nodes, branches, onClose, onHighlightPath,
   pickMode, onPickModeChange, manualBranchIds, onClearManual, schemaSymbols = EMPTY_SYMBOLS,
+  onHighlightBlockers,
 }: Props) {
   const [activeTab, setActiveTab] = useState<"chart" | "table">("chart");
   const [mode, setMode] = useState<"auto" | "manual">("auto");
@@ -171,6 +174,25 @@ export default function DepressogramDialog({
   );
   const autoPoints = useMemo(() => autoRoute ? buildPointsFromBranchIds(autoRoute.branchPath, nodes, branches) : [], [autoRoute, nodes, branches]);
   const manualPoints = useMemo(() => manualBranchIds.size > 0 ? buildPointsFromBranchIds(Array.from(manualBranchIds), nodes, branches) : [], [manualBranchIds, nodes, branches]);
+
+  // Глухие и закрытые перемычки, примыкающие к узлам автомаршрута, — те, что
+  // маршрут вынужденно обошёл.
+  const [showBlockers, setShowBlockers] = useState(true);
+  const routeBlockers = useMemo(() => {
+    if (!autoRoute) return [] as string[];
+    const onRoute = new Set(autoRoute.path);
+    const inRoute = new Set(autoRoute.branchPath);
+    const blocked = blockedBranchIds(branches, schemaSymbols);
+    return branches
+      .filter(b => blocked.has(b.id) && !inRoute.has(b.id) && (onRoute.has(b.fromId) || onRoute.has(b.toId)))
+      .map(b => b.id);
+  }, [autoRoute, branches, schemaSymbols]);
+  useEffect(() => {
+    onHighlightBlockers?.(mode === "auto" && showBlockers ? routeBlockers : []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeBlockers, mode, showBlockers]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => onHighlightBlockers?.([]), []);
 
   const points = mode === "auto" ? autoPoints : manualPoints;
   const branchIds = mode === "auto" ? (autoRoute?.branchPath ?? []) : Array.from(manualBranchIds);
@@ -546,6 +568,13 @@ export default function DepressogramDialog({
                 ? `Авто: маршрут наибольшего расхода от выбранного ВГП до поверхности (без глухих и закрытых перемычек)`
                 : `Авто: маршрут наибольшего расхода от ГВУ до поверхности, без глухих и закрытых перемычек${fanCount > 1 ? ` (${fanCount} ВГП в схеме)` : ""}`)
             : `Ручной: ${manualBranchIds.size} ветв. · кликайте по схеме`}
+          {mode === "auto" && routeBlockers.length > 0 && (
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 4, marginLeft: 10, cursor: "pointer", color: "var(--c-red, #b91c1c)" }}
+              title="Глухие и закрытые перемычки у маршрута — из-за них маршрут пошёл в обход">
+              <input type="checkbox" checked={showBlockers} onChange={e => setShowBlockers(e.target.checked)} style={{ accentColor: "#dc2626" }} />
+              Перекрывающие перемычки на схеме: {routeBlockers.length}
+            </label>
+          )}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
           {points.length > 1 && (

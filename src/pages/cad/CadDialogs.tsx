@@ -527,6 +527,7 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
       showDepressogram={showDepressogram}
       setShowDepressogram={setShowDepressogram}
       setDepressogramHighlight={setDepressogramHighlight}
+      setDepressogramBlockers={c.setDepressogramBlockers}
       depressogramPickMode={depressogramPickMode}
       setDepressogramPickMode={setDepressogramPickMode}
       depressogramManualBranches={depressogramManualBranches}

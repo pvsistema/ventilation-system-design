@@ -1642,6 +1642,12 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 // в окне, а на схеме не видно, КАКОЙ участок вышел за норму.
                 if (showRampDialog && rampSlopeColors) return rampSlopeColors;
 
+                // Депрессиограмма: красным — глухие и закрытые перемычки,
+                // примыкающие к автомаршруту. Видно, почему маршрут их обошёл.
+                if (c.depressogramBlockers.length > 0) {
+                  return new Map(c.depressogramBlockers.map(id => [id, "#dc2626"]));
+                }
+
                 // Маршруты МПО окрашиваются через posInnerColors/posOuterColors
                 // (внутри / снаружи ветвей — настраивается в маршруте).
                 const map = new Map<string, string>();
