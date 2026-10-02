@@ -109,12 +109,10 @@ export default function SchemeExportDialog(p: Props) {
           hint: "Названия слоёв-горизонтов у выработок" },
         { key: "results" as const, label: "Расходы воздуха", count: flowCount, supported: true,
           hint: "Расчётный расход воздуха выработок" },
-        { key: "onlyPipes" as const, label: "Только выработки с трубопроводом", count: pipeCount, supported: true,
-          hint: "Без отметки выгружается вся схема, труба — признак выработки" },
       ]
     : rows;
 
-  const ready = isHdr ? (opts.onlyPipes ? pipeCount > 0 : p.branches.length > 0) : p.branches.length > 0;
+  const ready = p.branches.length > 0;
 
   return (
     <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40"
@@ -141,7 +139,7 @@ export default function SchemeExportDialog(p: Props) {
             <div className="text-green-700">Узлы ({p.nodes.length}) с координатами и отметками</div>
             <div className="text-green-700">Выработки ({p.branches.length}): связи, длины, сечения и названия</div>
             <div className="text-green-700">Выходы на поверхность</div>
-            {isHdr && <div className="text-green-700">Трубопроводы ППЗ ({pipeCount}) с диаметрами</div>}
+            {isHdr && <div className="text-green-700">Трубопроводы ППЗ ({pipeCount}) с диаметрами — на своих выработках; выработки без трубы тоже выгружаются</div>}
           </div>
 
           {/* Выбор разделов */}
@@ -174,7 +172,7 @@ export default function SchemeExportDialog(p: Props) {
           {!ready && (
             <div className="rounded border border-red-300 px-3 py-2 text-xs text-red-700 bg-red-50 flex items-start gap-2">
               <Icon name="AlertCircle" size={14} className="mt-0.5 shrink-0" />
-              {isHdr && p.branches.length > 0 ? "В схеме нет выработок с трубопроводом ППЗ." : "Схема пуста — выгружать нечего."}
+              Схема пуста — выгружать нечего.
             </div>
           )}
         </div>
@@ -189,7 +187,7 @@ export default function SchemeExportDialog(p: Props) {
             className="px-5 py-1.5 text-sm font-semibold text-white rounded-lg transition-colors"
             style={{ background: ready ? "var(--c-green, #16a34a)" : "#9ca3af", cursor: ready ? "pointer" : "not-allowed" }}>
             {ready
-              ? `Выгрузить (${isHdr && opts.onlyPipes ? pipeCount : p.branches.length} выработок)`
+              ? `Выгрузить (${p.branches.length} выработок)`
               : "Схема пуста"}
           </button>
         </div>

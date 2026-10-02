@@ -3518,7 +3518,7 @@ export function useCadPage() {
           nodes, branches, horizons,
           projectName: name, fileName: name,
           withHorizons: o.horizons, withEquipment: o.water,
-          onlyWaterPipes: o.onlyPipes, withAirFlow: o.results,
+          onlyWaterPipes: false, withAirFlow: o.results,
         });
         addLog("info", `Экспорт водоснабжения в Вентиляцию 2.0 (.hdr): узлов ${st.nodes}, выработок ${st.branches}, трубопроводов ${st.pipes}, задвижек ${st.gates}, клапанов ${st.reducers}, кранов ${st.consumers}, резервуаров ${st.reservoirs}`);
         for (const wmsg of st.warnings) addLog("warn", wmsg);
