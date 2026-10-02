@@ -2097,11 +2097,16 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                           // Одиночный клик (без перетаскивания) — открыть настройки МПО в левой панели
                           const down = (e.currentTarget as HTMLDivElement & { _downXY?: [number, number] })._downXY;
                           if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) >= 4) return;
+                          // Снятие выделения узла/ветви запускает эффект, который
+                          // возвращает панель на «Свойства объекта». Поэтому сначала
+                          // снимаем выделение, а вкладку МПО ставим следующим кадром —
+                          // после этого эффекта.
                           setSelectedInspectionRouteId(l.id);
-                          setActiveSide("inspection");
                           setLeftPanelOpen(true);
                           setSelectedNodeId(null);
                           setSelectedBranchId(null);
+                          setActiveSide("inspection");
+                          requestAnimationFrame(() => setActiveSide("inspection"));
                         }}
                         style={{
                           position: "absolute", left: p.sx, top: p.sy,
