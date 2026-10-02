@@ -428,11 +428,12 @@ const PrintPreviewCanvas = forwardRef<PrintPreviewCanvasHandle, Props>(function 
     activePrintLayers
       .map(h => {
         const pl = h.printLayer!;
-        const rect = computeFrameRect(pl, projNodes, visibleBranches);
+        // С проекцией — чтобы ручная рамка (frameNorm/bounds) совпала с рабочей областью
+        const rect = computeFrameRect(pl, projNodes, visibleBranches, proj, xyScale ?? 1, h.z ?? 0);
         return rect ? { h, pl, ...rect } : null;
       })
       .filter(Boolean) as Array<{ h: Horizon; pl: NonNullable<Horizon["printLayer"]>; rx: number; ry: number; rw: number; rh: number }>,
-    [activePrintLayers, projNodes, visibleBranches],
+    [activePrintLayers, projNodes, visibleBranches, proj, xyScale],
   );
 
   return (

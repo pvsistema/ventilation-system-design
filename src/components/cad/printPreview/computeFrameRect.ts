@@ -5,6 +5,7 @@ import {
   project3D,
 } from "@/lib/topology";
 import { type ProjNode } from "@/lib/canvasRenderer";
+import { manualFrameRect } from "@/lib/printFrameNorm";
 
 // Вычисляет bbox рамки из projNodes — точно как TopoCanvas.renderPrintLayers
 export function computeFrameRect(
@@ -18,19 +19,9 @@ export function computeFrameRect(
   // Если рамка настроена вручную (pl.bounds) — проецируем её углы ТЕМ ЖЕ project3D,
   // что и рабочая область (TopoCanvas). Так предпросмотр/PDF совпадают с тем, что
   // пользователь настроил на схеме, в т.ч. в наклонных видах (ИЗО/Фронт/Профиль).
-  if (pl.bounds && proj) {
-    const z4 = zLevel * (proj.zScale ?? 1);
-    const b = pl.bounds;
-    const c = [
-      project3D({ x: b.x1 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
-      project3D({ x: b.x2 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
-      project3D({ x: b.x1 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
-      project3D({ x: b.x2 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
-    ];
-    const bxs = c.map(p => p.sx), bys = c.map(p => p.sy);
-    const rx = Math.min(...bxs), ry = Math.min(...bys);
-    const rw = Math.max(...bxs) - rx, rh = Math.max(...bys) - ry;
-    return { rx, ry, rw: Math.max(rw, 40), rh: Math.max(rh, 40) };
+  if (proj) {
+    const m = manualFrameRect(pl, proj, xyScale, zLevel, project3D);
+    if (m) return { rx: m.rx, ry: m.ry, rw: Math.max(m.rw, 40), rh: Math.max(m.rh, 40) };
   }
 
   const visibleNodeIds = new Set<string>();

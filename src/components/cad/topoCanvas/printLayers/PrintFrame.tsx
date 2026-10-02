@@ -1,4 +1,5 @@
-import { type PaperFormat, PAPER_SIZES_MM } from "@/lib/topology";
+import { type PaperFormat, type ProjOptions, PAPER_SIZES_MM } from "@/lib/topology";
+import { screenToFrameNorm } from "@/lib/printFrameNorm";
 import { type Props } from "@/components/cad/topoCanvas/topoCanvasTypes";
 import { computeTitleLayout, wrapTitleLines, TITLE_FONT_MIN, TITLE_FONT_MAX } from "@/lib/printTitle";
 import type {
@@ -26,6 +27,8 @@ export interface PrintFrameBaseProps {
   titleFontSize: number;
   isEditing: boolean;
   xyScale: number;
+  zScale: number;
+  proj: ProjOptions;
   unprojFrame: UnprojFrame;
   onPrintLayerBoundsChange?: Props["onPrintLayerBoundsChange"];
   onPrintLayerChange?: Props["onPrintLayerChange"];
@@ -42,7 +45,7 @@ export interface PrintFrameBaseProps {
 export function PrintFrameBase(props: PrintFrameBaseProps) {
   const {
     h, pl, rx, ry, rw, rh, wb, pxPerMm, inset, isEditing,
-    xyScale, unprojFrame, onPrintLayerBoundsChange, onPrintLayerChange,
+    xyScale, zScale, proj, onPrintLayerChange,
     editingTitleId, setEditingTitleId, editingTitleDraft, setEditingTitleDraft,
     setDraggingPrintCorner, draggingPrintTitle, setDraggingPrintTitle,
   } = props;
@@ -57,40 +60,17 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
         fillOpacity={isEditing ? 0.15 : 1}
         style={{ cursor: isEditing ? "move" : "default" }}
         onMouseDown={isEditing ? (e) => {
+          if (e.button !== 0) return;
           e.stopPropagation();
           e.preventDefault();
-          const svgEl = (e.currentTarget as SVGElement).ownerSVGElement;
-          if (!svgEl) return;
-          const svgRect = svgEl.getBoundingClientRect();
-          const csx = e.clientX - svgRect.left;
-          const csy = e.clientY - svgRect.top;
-          const wp = unprojFrame(csx, csy, h.z);
-          if (!wp) return;
-          const _xys = xyScale ?? 1;
-          // activeBounds — углы рамки распроецируем ТЕМ ЖЕ unprojFrame, что и точку,
-          // иначе рассинхрон в наклонных видах даёт скачок размера рамки.
-          const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
-            ? (() => {
-                const wBL = unprojFrame(rx,      ry + rh, h.z);
-                const wTR = unprojFrame(rx + rw, ry,      h.z);
-                if (!wBL || !wTR) return wb;
-                return { x1: wBL.x / _xys, y1: wBL.y / _xys, x2: wTR.x / _xys, y2: wTR.y / _xys };
-              })()
-            : wb;
-          // startWx/startWy тоже делим на xyScale чтобы быть в "чистых" мировых
-          const startWx = wp.x / _xys;
-          const startWy = wp.y / _xys;
-          const startState = { horizonId: h.id, corner: "move" as const, startWx, startWy, startBounds: activeBounds };
-          setDraggingPrintCorner(startState);
+          // Перенос листа — в экранных координатах: лист идёт строго за мышью
+          // в любом виде (план/ИЗО/фронт), без пересчёта через плоскость мира.
+          const sx0 = e.clientX, sy0 = e.clientY;
+          const r0 = { rx, ry, rw, rh };
+          setDraggingPrintCorner({ horizonId: h.id, corner: "move", startWx: 0, startWy: 0, startBounds: wb });
           const onMove = (me: MouseEvent) => {
-            const sx2 = me.clientX - svgRect.left;
-            const sy2 = me.clientY - svgRect.top;
-            const wp2 = unprojFrame(sx2, sy2, h.z);
-            if (!wp2) return;
-            const dx = wp2.x / _xys - startState.startWx;
-            const dy = wp2.y / _xys - startState.startWy;
-            const sb = startState.startBounds;
-            onPrintLayerBoundsChange?.(h.id, { x1: sb.x1 + dx, y1: sb.y1 + dy, x2: sb.x2 + dx, y2: sb.y2 + dy });
+            const r = { ...r0, rx: r0.rx + me.clientX - sx0, ry: r0.ry + me.clientY - sy0 };
+            onPrintLayerChange?.(h.id, { frameNorm: screenToFrameNorm(r, proj, xyScale ?? 1, zScale ?? 1) });
           };
           const onUp = () => {
             setDraggingPrintCorner(null);
@@ -234,88 +214,120 @@ export interface PrintFrameHandlesProps {
   pTL: FrameCorner; pTR: FrameCorner; pBL: FrameCorner; pBR: FrameCorner;
   isEditing: boolean;
   xyScale: number;
+  zScale: number;
+  proj: ProjOptions;
   unprojFrame: UnprojFrame;
   onPrintLayerBoundsChange?: Props["onPrintLayerBoundsChange"];
+  onPrintLayerChange?: Props["onPrintLayerChange"];
   setDraggingPrintCorner: (v: { horizonId: string; corner: "tl" | "tr" | "bl" | "br" | "move"; startWx: number; startWy: number; startBounds: FrameWorldBounds } | null) => void;
 }
 
-/** Подсветка режима редактирования и угловые ручки масштабирования. */
+type Corner = "tl" | "tr" | "bl" | "br";
+type HandleKind = Corner | "t" | "b" | "l" | "r";
+
+/**
+ * Подсветка режима редактирования и ручки изменения размера листа.
+ *
+ * Размер меняется в ЭКРАННЫХ координатах с привязкой к противоположному углу
+ * (или к противоположной стороне — для ручек на серединах сторон), строго
+ * в пропорциях листа. Раньше размер пересчитывался через плоскость мира: в ИЗО
+ * прямоугольник листа превращался в ромб, ручки стояли не в углах, а сдвиг
+ * мыши на пиксель давал непредсказуемо большой скачок размера.
+ *
+ * Shift — изменять размер от центра листа.
+ */
 export function PrintFrameHandles(props: PrintFrameHandlesProps) {
   const {
-    h, rx, ry, rw, rh, wb, pTL, pTR, pBL, pBR, isEditing,
-    xyScale, unprojFrame, onPrintLayerBoundsChange, setDraggingPrintCorner,
+    h, rx, ry, rw, rh, wb, isEditing,
+    xyScale, zScale, proj, onPrintLayerChange, setDraggingPrintCorner,
   } = props;
+  if (!isEditing) return null;
+
+  const pl = h.printLayer!;
+  const mm = PAPER_SIZES_MM[(pl.paperFormat ?? "A3") as PaperFormat];
+  const aspect = (pl.orientation ?? "landscape") === "landscape" ? mm.w / mm.h : mm.h / mm.w;
+
+  const handles: { key: HandleKind; sx: number; sy: number; cur: string }[] = [
+    { key: "tl", sx: rx,          sy: ry,          cur: "nwse-resize" },
+    { key: "tr", sx: rx + rw,     sy: ry,          cur: "nesw-resize" },
+    { key: "bl", sx: rx,          sy: ry + rh,     cur: "nesw-resize" },
+    { key: "br", sx: rx + rw,     sy: ry + rh,     cur: "nwse-resize" },
+    { key: "t",  sx: rx + rw / 2, sy: ry,          cur: "ns-resize" },
+    { key: "b",  sx: rx + rw / 2, sy: ry + rh,     cur: "ns-resize" },
+    { key: "l",  sx: rx,          sy: ry + rh / 2, cur: "ew-resize" },
+    { key: "r",  sx: rx + rw,     sy: ry + rh / 2, cur: "ew-resize" },
+  ];
+
+  const startResize = (e: React.MouseEvent, key: HandleKind) => {
+    if (e.button !== 0) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const sx0 = e.clientX, sy0 = e.clientY;
+    const r0 = { rx, ry, rw, rh };
+    const cx0 = rx + rw / 2, cy0 = ry + rh / 2;
+    const minW = 60;
+    setDraggingPrintCorner({ horizonId: h.id, corner: key.length === 2 ? key as Corner : "br", startWx: 0, startWy: 0, startBounds: wb });
+    const onMove = (me: MouseEvent) => {
+      const dx = me.clientX - sx0, dy = me.clientY - sy0;
+      const fromCenter = me.shiftKey;
+      // Новая ширина по смещению мыши; для угловых ручек — по оси, которая
+      // при пропорциях листа даёт большее изменение (курсор не «отрывается»).
+      const sxSign = key.includes("l") ? -1 : key.includes("r") ? 1 : 0;
+      const sySign = key.includes("t") ? -1 : key.includes("b") ? 1 : 0;
+      const k = fromCenter ? 2 : 1;
+      const wByX = sxSign ? r0.rw + sxSign * dx * k : null;
+      const wByY = sySign ? (r0.rh + sySign * dy * k) * aspect : null;
+      let w = wByX !== null && wByY !== null
+        ? (Math.abs(wByX - r0.rw) >= Math.abs(wByY - r0.rw) ? wByX : wByY)
+        : (wByX ?? wByY ?? r0.rw);
+      w = Math.max(minW, w);
+      const hh = w / aspect;
+      let nx: number, ny: number;
+      if (fromCenter) {
+        nx = cx0 - w / 2; ny = cy0 - hh / 2;
+      } else {
+        // Привязка: противоположный угол / сторона остаются на месте
+        nx = sxSign < 0 ? r0.rx + r0.rw - w : sxSign > 0 ? r0.rx : cx0 - w / 2;
+        ny = sySign < 0 ? r0.ry + r0.rh - hh : sySign > 0 ? r0.ry : cy0 - hh / 2;
+      }
+      onPrintLayerChange?.(h.id, {
+        frameNorm: screenToFrameNorm({ rx: nx, ry: ny, rw: w, rh: hh }, proj, xyScale ?? 1, zScale ?? 1),
+      });
+    };
+    const onUp = () => {
+      setDraggingPrintCorner(null);
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
 
   return (
     <>
       {/* Цветная рамка-подсветка в режиме редактирования */}
-      {isEditing && (
-        <rect x={rx - 1} y={ry - 1} width={rw + 2} height={rh + 2}
-          fill="none" stroke="#7c3aed" strokeWidth={2} strokeDasharray="8 4"
-          style={{ pointerEvents: "none" }} />
-      )}
-      {/* Ручки угловые */}
-      {isEditing && ([
-        { key: "tl" as const, sx: pTL.sx, sy: pTL.sy, cur: "nw-resize" },
-        { key: "tr" as const, sx: pTR.sx, sy: pTR.sy, cur: "ne-resize" },
-        { key: "bl" as const, sx: pBL.sx, sy: pBL.sy, cur: "sw-resize" },
-        { key: "br" as const, sx: pBR.sx, sy: pBR.sy, cur: "se-resize" },
-      ].map(c => (
-        <g key={c.key} style={{ cursor: c.cur }}
-          onMouseDown={(e) => {
-            e.stopPropagation();
-            e.preventDefault();
-            const svgEl = (e.currentTarget as SVGElement).ownerSVGElement;
-            if (!svgEl) return;
-            const svgRect = svgEl.getBoundingClientRect();
-            const csx = e.clientX - svgRect.left;
-            const csy = e.clientY - svgRect.top;
-            const wp = unprojFrame(csx, csy, h.z);
-            if (!wp) return;
-            const _xys2 = xyScale ?? 1;
-            // Углы рамки распроецируем ТЕМ ЖЕ unprojFrame, что и точку (без рассинхрона).
-            const activeBounds = (wb.x1 === 0 && wb.x2 === 0)
-              ? (() => {
-                  const wBL = unprojFrame(rx,      ry + rh, h.z);
-                  const wTR = unprojFrame(rx + rw, ry,      h.z);
-                  if (!wBL || !wTR) return wb;
-                  return { x1: wBL.x / _xys2, y1: wBL.y / _xys2, x2: wTR.x / _xys2, y2: wTR.y / _xys2 };
-                })()
-              : wb;
-            const startState = { horizonId: h.id, corner: c.key, startWx: wp.x / _xys2, startWy: wp.y / _xys2, startBounds: activeBounds };
-            setDraggingPrintCorner(startState);
-            const fmt2 = h.printLayer!.paperFormat ?? "A3";
-            const ori2 = h.printLayer!.orientation ?? "landscape";
-            const mm2 = PAPER_SIZES_MM[fmt2 as PaperFormat];
-            const aspect2 = ori2 === "landscape" ? mm2.w / mm2.h : mm2.h / mm2.w;
-            const onMove = (me: MouseEvent) => {
-              const sx2 = me.clientX - svgRect.left;
-              const sy2 = me.clientY - svgRect.top;
-              const wp2 = unprojFrame(sx2, sy2, h.z);
-              if (!wp2) return;
-              const sb = startState.startBounds;
-              const b2 = { ...sb };
-              const wx2 = wp2.x / _xys2;
-              switch (startState.corner) {
-                case "br": { const w2 = wx2 - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
-                case "bl": { const w2 = sb.x2 - wx2; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y1 = sb.y2-nw2/aspect2; break; }
-                case "tr": { const w2 = wx2 - sb.x1; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x2 = sb.x1+nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
-                case "tl": { const w2 = sb.x2 - wx2; const nw2 = Math.max(Math.abs(sb.x2-sb.x1)*0.05, w2); b2.x1 = sb.x2-nw2; b2.y2 = sb.y1+nw2/aspect2; break; }
-              }
-              onPrintLayerBoundsChange?.(h.id, b2);
-            };
-            const onUp = () => {
-              setDraggingPrintCorner(null);
-              window.removeEventListener("mousemove", onMove);
-              window.removeEventListener("mouseup", onUp);
-            };
-            window.addEventListener("mousemove", onMove);
-            window.addEventListener("mouseup", onUp);
-          }}>
-          <circle cx={c.sx} cy={c.sy} r={8} fill="white" stroke="#7c3aed" strokeWidth={2} />
-          <circle cx={c.sx} cy={c.sy} r={3} fill="#7c3aed" />
-        </g>
-      )))}
+      <rect x={rx - 1} y={ry - 1} width={rw + 2} height={rh + 2}
+        fill="none" stroke="#7c3aed" strokeWidth={2} strokeDasharray="8 4"
+        style={{ pointerEvents: "none" }} />
+      {handles.map(c => {
+        const corner = c.key.length === 2;
+        return (
+          <g key={c.key} style={{ cursor: c.cur }} onMouseDown={(e) => startResize(e, c.key)}>
+            {/* Невидимая увеличенная зона захвата */}
+            <circle cx={c.sx} cy={c.sy} r={12} fill="transparent" />
+            {corner ? (
+              <>
+                <circle cx={c.sx} cy={c.sy} r={7} fill="white" stroke="#7c3aed" strokeWidth={2} />
+                <circle cx={c.sx} cy={c.sy} r={2.5} fill="#7c3aed" />
+              </>
+            ) : (
+              <rect x={c.sx - 5} y={c.sy - 5} width={10} height={10} rx={2}
+                fill="white" stroke="#7c3aed" strokeWidth={2} />
+            )}
+            <title>{corner ? "Потяните, чтобы изменить размер листа (Shift — от центра)" : "Потяните, чтобы изменить размер листа"}</title>
+          </g>
+        );
+      })}
     </>
   );
 }

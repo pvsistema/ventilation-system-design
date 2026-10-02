@@ -587,10 +587,10 @@ export default function HorizonsPanel(p: Props) {
                 {pl && plOn && (
                   <>
                     <Seg value={(pl.paperFormat ?? "A3") as PaperFormat}
-                      onChange={(f) => updatePl({ paperFormat: f, bounds: undefined })}
+                      onChange={(f) => updatePl({ paperFormat: f, bounds: undefined, frameNorm: undefined })}
                       options={(["A4", "A3", "A2", "A1", "A0"] as PaperFormat[]).map(f => ({ value: f, label: f }))} />
                     <Seg value={(pl.orientation ?? "landscape") as "landscape" | "portrait"}
-                      onChange={(o) => updatePl({ orientation: o, bounds: undefined })}
+                      onChange={(o) => updatePl({ orientation: o, bounds: undefined, frameNorm: undefined })}
                       options={[
                         { value: "landscape" as const, label: "Альбомная", icon: "RectangleHorizontal" },
                         { value: "portrait" as const, label: "Книжная", icon: "RectangleVertical" },
@@ -611,8 +611,8 @@ export default function HorizonsPanel(p: Props) {
                         onClick={() => setEditingPrintLayerId(editingPrintLayerId === h.id ? null : h.id)}>
                         {editingPrintLayerId === h.id ? "Готово" : "Изменить рамку"}
                       </Btn>
-                      {pl.bounds && (
-                        <Btn icon="RotateCcw" onClick={() => updatePl({ bounds: undefined })} title="Рамка по габариту горизонта">Авто</Btn>
+                      {(pl.bounds || pl.frameNorm) && (
+                        <Btn icon="RotateCcw" onClick={() => updatePl({ bounds: undefined, frameNorm: undefined })} title="Рамка по габариту горизонта">Авто</Btn>
                       )}
                       <Btn icon="Trash2" danger title="Удалить слой печати со всеми настройками штампа"
                         onClick={() => { updateHorizon(h.id, { printLayer: undefined }); setEditingPrintLayerId(null); }}>{""}</Btn>

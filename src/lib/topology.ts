@@ -591,6 +591,12 @@ export interface HorizonPrintLayer {
   orientation: "landscape" | "portrait";
   /** Положение и размер подложки в мировых координатах (м). null = автовычисление из bbox горизонта */
   bounds?: { x1: number; y1: number; x2: number; y2: number };
+  /**
+   * Рамка листа в координатах ПРОЕКЦИИ (масштаб 1, без сдвига): экран = сдвиг + масштаб × frameNorm.
+   * Прямоугольник с точными пропорциями листа в любом виде (план/ИЗО/фронт),
+   * не зависит от зума и панорамы. Приоритетнее bounds.
+   */
+  frameNorm?: { x: number; y: number; w: number; h: number; az: number; el: number; xy: number; zs: number };
   /** Смещение заголовка относительно центра рамки (в ММ листа — масштабируется вместе с листом) */
   titleOffsetX?: number;
   titleOffsetY?: number;

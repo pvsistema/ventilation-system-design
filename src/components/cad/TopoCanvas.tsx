@@ -1304,36 +1304,11 @@ export default function TopoCanvas(props: Props) {
     const sx = e.clientX - rect.left;
     const sy = e.clientY - rect.top;
 
-    // ── Drag рамки/угла слоя печати — обрабатываем ПЕРВЫМ, до pan/rotate ──
-    if (draggingPrintCorner && onPrintLayerBoundsChange) {
-      const hz = horizons?.find((hh) => hh.id === draggingPrintCorner.horizonId);
-      if (hz && hz.printLayer) {
-        const plane: WorkPlane = { axis: "z", value: hz.z };
-        const wp2 = is3D ? unprojectToPlane(sx, sy, proj, plane) : unproject2D(sx, sy, proj, hz.z);
-        if (wp2) {
-          const sb = draggingPrintCorner.startBounds;
-          const fmt2 = hz.printLayer.paperFormat ?? "A3";
-          const ori2 = hz.printLayer.orientation ?? "landscape";
-          const mm2 = PAPER_SIZES_MM[fmt2 as PaperFormat];
-          const aspect2 = ori2 === "landscape" ? mm2.w / mm2.h : mm2.h / mm2.w;
-          if (draggingPrintCorner.corner === "move") {
-            const dx = wp2.x - draggingPrintCorner.startWx;
-            const dy = wp2.y - draggingPrintCorner.startWy;
-            onPrintLayerBoundsChange(hz.id, { x1: sb.x1 + dx, y1: sb.y1 + dy, x2: sb.x2 + dx, y2: sb.y2 + dy });
-          } else {
-            const b2 = { ...sb };
-            switch (draggingPrintCorner.corner) {
-              case "br": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x2 = sb.x1 + nw2; b2.y1 = sb.y2 - nw2 / aspect2; break; }
-              case "bl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x1 = sb.x2 - nw2; b2.y1 = sb.y2 - nw2 / aspect2; break; }
-              case "tr": { const w2 = wp2.x - sb.x1; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x2 = sb.x1 + nw2; b2.y2 = sb.y1 + nw2 / aspect2; break; }
-              case "tl": { const w2 = sb.x2 - wp2.x; const nw2 = Math.max(Math.abs(sb.x2 - sb.x1) * 0.05, w2); b2.x1 = sb.x2 - nw2; b2.y2 = sb.y1 + nw2 / aspect2; break; }
-            }
-            onPrintLayerBoundsChange(hz.id, b2);
-          }
-        }
-      }
-      return;
-    }
+    // ── Drag рамки/угла слоя печати ──
+    // Перенос и размер листа ведут обработчики ручек (window mousemove, в
+    // экранных координатах, см. PrintFrame). Здесь только гасим pan/rotate,
+    // иначе второй обработчик дублировал бы изменение и рамка «прыгала».
+    if (draggingPrintCorner) return;
     // ── Drag заголовка слоя печати — тоже до pan ──
     if (draggingPrintTitle && onPrintLayerChange) {
       // Смещение заголовка хранится в ММ листа → делим пиксельную дельту

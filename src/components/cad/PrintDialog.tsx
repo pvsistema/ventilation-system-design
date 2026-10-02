@@ -14,6 +14,7 @@ import { drawSymbolsToCanvas } from "@/lib/drawSymbolsToCanvas";
 // jsPDF подключается по требованию (в момент экспорта в PDF), а не при старте
 // программы: библиотека весит сотни килобайт, а нужна лишь при печати.
 import { buildPrintLayerSvgString } from "@/lib/printLayerSvgString";
+import { manualFrameRect } from "@/lib/printFrameNorm";
 import { SvgRecordingContext, ensureVectorMeasureFont } from "@/lib/svgRecordingContext";
 import { svgStringToPdf, VECTOR_DPI, VECTOR_FONT_URLS } from "@/lib/vectorPdf";
 // Общие части и блоки диалога вынесены в отдельные файлы (перенос 1:1)
@@ -534,21 +535,13 @@ export default function PrintDialog({
   // чтобы вписать на лист ровно область рамки, а не bbox всех узлов.
   const frameBboxNorm = useMemo(() => {
     const pl = activePrintHorizon?.printLayer;
-    if (!pl?.bounds) return null;
+    if (!pl) return null;
     const _xySF = (typeof xyScale === "number" && xyScale > 0) ? xyScale : 1;
     const tmpProj = { scale: 1, offsetX: 0, offsetY: 0,
       azimuth: viewState.azimuth, elevation: viewState.elevation, zScale };
-    const z4 = (activePrintHorizon?.z ?? 0) * zScale;
-    const b = pl.bounds;
-    const corners = [
-      project3D({ x: b.x1 * _xySF, y: b.y2 * _xySF, z: z4 }, tmpProj),
-      project3D({ x: b.x2 * _xySF, y: b.y2 * _xySF, z: z4 }, tmpProj),
-      project3D({ x: b.x1 * _xySF, y: b.y1 * _xySF, z: z4 }, tmpProj),
-      project3D({ x: b.x2 * _xySF, y: b.y1 * _xySF, z: z4 }, tmpProj),
-    ];
-    const xs = corners.map(p => p.sx), ys = corners.map(p => p.sy);
-    const minX = Math.min(...xs), maxX = Math.max(...xs);
-    const minY = Math.min(...ys), maxY = Math.max(...ys);
+    const m = manualFrameRect(pl, tmpProj, _xySF, activePrintHorizon?.z ?? 0, project3D);
+    if (!m) return null;
+    const minX = m.rx, minY = m.ry, maxX = m.rx + m.rw, maxY = m.ry + m.rh;
     return { minX, minY, w: (maxX - minX) || 1, h: (maxY - minY) || 1 };
   }, [activePrintHorizon, viewState.azimuth, viewState.elevation, zScale, xyScale]);
 
@@ -940,19 +933,9 @@ export default function PrintDialog({
   ): { rx: number; ry: number; rw: number; rh: number } | null => {
     // Ручная рамка (pl.bounds) — проецируем углы тем же project3D, что и рабочая
     // область: печать/PDF совпадают с настройкой пользователя, в т.ч. в наклонных видах.
-    if (pl.bounds && proj) {
-      const z4 = zLevel * (proj.zScale ?? 1);
-      const b = pl.bounds;
-      const cc = [
-        project3D({ x: b.x1 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
-        project3D({ x: b.x2 * xyScale, y: b.y2 * xyScale, z: z4 }, proj),
-        project3D({ x: b.x1 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
-        project3D({ x: b.x2 * xyScale, y: b.y1 * xyScale, z: z4 }, proj),
-      ];
-      const bxs = cc.map(p => p.sx), bys = cc.map(p => p.sy);
-      const rx = Math.min(...bxs), ry = Math.min(...bys);
-      const rw = Math.max(...bxs) - rx, rh = Math.max(...bys) - ry;
-      return { rx, ry, rw: Math.max(rw, 40), rh: Math.max(rh, 40) };
+    if (proj) {
+      const m = manualFrameRect(pl, proj, xyScale, zLevel, project3D);
+      if (m) return { rx: m.rx, ry: m.ry, rw: Math.max(m.rw, 40), rh: Math.max(m.rh, 40) };
     }
     const visIds = new Set<string>();
     visBranches.forEach(b => { visIds.add(b.fromId); visIds.add(b.toId); });
@@ -1038,20 +1021,11 @@ export default function PrintDialog({
       const plOri2 = pl.orientation ?? "landscape";
       const fAsp = (plOri2 === "landscape" ? plMm2.h : plMm2.w) / (plOri2 === "landscape" ? plMm2.w : plMm2.h);
       let fRx: number, fRy: number, rsw3: number, rsh3: number;
-      if (pl.bounds) {
-        // Ручная рамка: прямоугольник = проекция её углов через proj0.
-        const z4t = (activePrintHorizon.z ?? 0) * zScale;
-        const bb = pl.bounds;
-        const cc = [
-          project3D({ x: bb.x1 * _xySFTile, y: bb.y2 * _xySFTile, z: z4t }, proj0),
-          project3D({ x: bb.x2 * _xySFTile, y: bb.y2 * _xySFTile, z: z4t }, proj0),
-          project3D({ x: bb.x1 * _xySFTile, y: bb.y1 * _xySFTile, z: z4t }, proj0),
-          project3D({ x: bb.x2 * _xySFTile, y: bb.y1 * _xySFTile, z: z4t }, proj0),
-        ];
-        const cxs = cc.map(p => p.sx), cys = cc.map(p => p.sy);
-        fRx = Math.min(...cxs); fRy = Math.min(...cys);
-        rsw3 = (Math.max(...cxs) - fRx) || 1;
-        rsh3 = (Math.max(...cys) - fRy) || 1;
+      const manual = manualFrameRect(pl, proj0, _xySFTile, activePrintHorizon.z ?? 0, project3D);
+      if (manual) {
+        // Ручная рамка (frameNorm или старые мировые bounds) — в проекции proj0.
+        fRx = manual.rx; fRy = manual.ry;
+        rsw3 = manual.rw || 1; rsh3 = manual.rh || 1;
       } else {
         const sw3 = mxSx - mnSx || 1, sh3 = mxSy - mnSy || 1;
         const pad3 = Math.max(sw3, sh3) * 0.08 + 15;

@@ -5,6 +5,7 @@ import {
   project3D, unproject2D, unprojectToPlane,
 } from "@/lib/topology";
 import { type Props, type ProjNodeEntry } from "@/components/cad/topoCanvas/topoCanvasTypes";
+import { frameNormValid, frameNormToScreen } from "@/lib/printFrameNorm";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Сцена и геометрия слоя печати. Вынесено из TopoCanvasPrintLayers 1:1.
@@ -162,7 +163,17 @@ export function computePrintFrameLayout(args: FrameLayoutArgs): PrintFrameLayout
   const pTL = { sx: 0, sy: 0 }, pTR = { sx: 0, sy: 0 }, pBL = { sx: 0, sy: 0 }, pBR = { sx: 0, sy: 0 };
   let skipWorldProject = false; // флаг: экранные coords уже вычислены, пропустить общий блок
 
-  if (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) {
+  if (frameNormValid(pl.frameNorm, proj, xyScale ?? 1, zScale ?? 1)) {
+    // Рамка, заданная пользователем, — ровный прямоугольник с пропорциями листа
+    // в координатах проекции: при зуме/панораме ведёт себя ровно как схема.
+    const r = frameNormToScreen(pl.frameNorm, proj);
+    rx = r.rx; ry = r.ry; rw = Math.max(r.rw, 40); rh = Math.max(r.rh, 40);
+    Object.assign(pTL, { sx: rx, sy: ry });
+    Object.assign(pTR, { sx: rx + rw, sy: ry });
+    Object.assign(pBL, { sx: rx, sy: ry + rh });
+    Object.assign(pBR, { sx: rx + rw, sy: ry + rh });
+    skipWorldProject = true;
+  } else if (h.id === OVERVIEW_HORIZON_ID && !pl.bounds) {
     // Авто-bbox OVERVIEW: проецируем ВИДИМЫЕ ветви с реальными X/Y/Z в экранные координаты.
     // Используем проецированные узлы (projNodes) — они уже готовы с текущей проекцией.
     // Это корректно работает при ЛЮБОЙ проекции (план, ИЗО, фронт, профиль).
@@ -230,17 +241,23 @@ export function computePrintFrameLayout(args: FrameLayoutArgs): PrintFrameLayout
   if (!skipWorldProject) {
     const xy = xyScale ?? 1;
     const z4proj = h.z * (zScale ?? 1);
-    const _pTL = project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: z4proj }, proj);
-    const _pTR = project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: z4proj }, proj);
-    const _pBL = project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: z4proj }, proj);
-    const _pBR = project3D({ x: wb.x2 * xy, y: wb.y1 * xy, z: z4proj }, proj);
-    Object.assign(pTL, _pTL); Object.assign(pTR, _pTR);
-    Object.assign(pBL, _pBL); Object.assign(pBR, _pBR);
-    rx = Math.min(pTL.sx, pBL.sx);
-    ry = Math.min(pTL.sy, pTR.sy);
-    rw = Math.max(pTR.sx, pBR.sx) - rx;
-    rh = Math.max(pBL.sy, pBR.sy) - ry;
-    rw = Math.max(rw, 40); rh = Math.max(rh, 40);
+    // В наклонных видах прямоугольник мира проецируется в ромб — берём его
+    // габарит. Ручки ставим по углам ЭКРАННОГО прямоугольника, а не по
+    // спроецированным углам (те в ИЗО оказывались посередине сторон).
+    const cs = [
+      project3D({ x: wb.x1 * xy, y: wb.y2 * xy, z: z4proj }, proj),
+      project3D({ x: wb.x2 * xy, y: wb.y2 * xy, z: z4proj }, proj),
+      project3D({ x: wb.x1 * xy, y: wb.y1 * xy, z: z4proj }, proj),
+      project3D({ x: wb.x2 * xy, y: wb.y1 * xy, z: z4proj }, proj),
+    ];
+    rx = Math.min(...cs.map(c => c.sx));
+    ry = Math.min(...cs.map(c => c.sy));
+    rw = Math.max(Math.max(...cs.map(c => c.sx)) - rx, 40);
+    rh = Math.max(Math.max(...cs.map(c => c.sy)) - ry, 40);
+    Object.assign(pTL, { sx: rx, sy: ry });
+    Object.assign(pTR, { sx: rx + rw, sy: ry });
+    Object.assign(pBL, { sx: rx, sy: ry + rh });
+    Object.assign(pBR, { sx: rx + rw, sy: ry + rh });
   }
   // Единый масштаб «пикселей на 1 мм листа» — фиксирует размеры текста
   // пропорционально формату листа (A3/A4…), а не экранной высоте рамки rh.

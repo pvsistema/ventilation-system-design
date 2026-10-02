@@ -113,7 +113,7 @@ export function usePrintLayers(deps: PrintLayersDeps) {
           rx={rx} ry={ry} rw={rw} rh={rh} wb={wb}
           pxPerMm={pxPerMm} inset={inset} titleFontSize={titleFontSize}
           isEditing={isEditing}
-          xyScale={xyScale} unprojFrame={unprojFrame}
+          xyScale={xyScale} zScale={zScale} proj={proj} unprojFrame={unprojFrame}
           onPrintLayerBoundsChange={onPrintLayerBoundsChange}
           onPrintLayerChange={onPrintLayerChange}
           editingTitleId={editingTitleId} setEditingTitleId={setEditingTitleId}
@@ -147,8 +147,9 @@ export function usePrintLayers(deps: PrintLayersDeps) {
           rx={rx} ry={ry} rw={rw} rh={rh} wb={wb}
           pTL={pTL} pTR={pTR} pBL={pBL} pBR={pBR}
           isEditing={isEditing}
-          xyScale={xyScale} unprojFrame={unprojFrame}
+          xyScale={xyScale} zScale={zScale} proj={proj} unprojFrame={unprojFrame}
           onPrintLayerBoundsChange={onPrintLayerBoundsChange}
+          onPrintLayerChange={onPrintLayerChange}
           setDraggingPrintCorner={setDraggingPrintCorner}
         />
 
