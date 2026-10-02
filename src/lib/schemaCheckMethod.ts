@@ -54,6 +54,8 @@ export interface MethodCheckResult {
   bulkheadAllowed: BranchNote[];
   /** Перемычки без заданного давления разрушения (или с неправдоподобным). */
   bulkheadFailure: BranchNote[];
+  /** Глухие перемычки и двери без толщины или с неправдоподобной толщиной. */
+  bulkheadThickness: BranchNote[];
   /** Всего позиций ПЛА на схеме. */
   positionsTotal: number;
   /** Разные позиции ПЛА с одинаковым номером. */
@@ -290,6 +292,28 @@ export function checkMethod(
     if (probs.length > 0) push(bulkheadFailure, { branch: b, note: probs.join("; ") });
   }
 
+  // ── Толщина перемычек ───────────────────────────────────────────────────
+  // Проверяем сплошные сооружения (глухие, двери, взрывоустойчивые, водо-
+  // подпорные). Паруса, открытые проёмы и окна во всё сечение — без толщины.
+  const bulkheadThickness: BranchNote[] = [];
+  for (const b of branches) {
+    const probs: string[] = [];
+    for (const s of symsByBranch.get(b.id) ?? []) {
+      if (s.typeId === "sail" || OPEN_DOOR_IDS.has(s.typeId)) continue;
+      const win = s.bkWindowArea ?? 0;
+      const area = b.area ?? 0;
+      if (win > 0.001 && area > 0 && win >= area * 0.999) continue;
+      const name = s.bkBulkheadName || symName(s.typeId);
+      const t = s.bkThickness ?? 0;
+      const blast = s.typeId.startsWith("bk_blast");
+      if (!(t > 0)) probs.push(`${name}: толщина не задана`);
+      else if (t < 0.02) probs.push(`${name}: ${fmtNum(t, 3)} м — слишком тонкая (проверьте единицы: метры, не см)`);
+      else if (t > 10) probs.push(`${name}: ${fmtNum(t, 2)} м — неправдоподобно толстая (проверьте единицы: метры, не мм)`);
+      else if (blast && t < 0.5) probs.push(`${name}: ${fmtNum(t, 2)} м — тоньше обычной для взрывоустойчивой перемычки (0,5 м и более); сверьте с проектом`);
+    }
+    if (probs.length > 0) push(bulkheadThickness, { branch: b, note: probs.join("; ") });
+  }
+
   // ── Позиции ПЛА ─────────────────────────────────────────────────────────
   const positions = opts.positions ?? [];
   const positionDupes: GroupNote[] = [];
@@ -331,7 +355,7 @@ export function checkMethod(
   return {
     solved, measureMismatch, measureNoData, measureTotal,
     controlAlpha, alphaJump, areaJump, surfaceMulti, bulkheadNorm, bulkheadZero, bulkheadAllowed,
-    bulkheadFailure, positionsTotal: positions.length, positionDupes, branchNoPosition,
+    bulkheadFailure, bulkheadThickness, positionsTotal: positions.length, positionDupes, branchNoPosition,
     truncated,
   };
 }

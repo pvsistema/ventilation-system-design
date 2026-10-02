@@ -37,7 +37,7 @@ export type CheckTab =
   | "highV" | "lowV" | "fanAgainst" | "fanRange" | "recirc" | "faceDeficit" | "leakage" | "leakNorm"
   // По методике проверки моделей ВГСЧ
   | "measureMismatch" | "controlAlpha" | "alphaJump" | "areaJump" | "surfaceMulti" | "bulkheadNorm"
-  | "bulkheadFailure" | "positionDupes" | "branchNoPosition"
+  | "bulkheadFailure" | "bulkheadThickness" | "positionDupes" | "branchNoPosition"
   // "solveBlock" — участки, о которые споткнулся расчёт сети. В отличие от
   // остальных вкладок, они не находятся статической проверкой схемы, а
   // приходят в диагностике от самого расчёта.

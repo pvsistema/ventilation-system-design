@@ -2901,6 +2901,21 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     </>
                   )}
 
+                  {/* ── Толщина перемычки ── */}
+                  {isBulkheadSym && brForSym && (
+                    <div className="flex items-center gap-1 mb-1" style={{ borderBottom: "1px solid #ebebeb", paddingBottom: 4 }}>
+                      <span className="text-gray-500 flex-shrink-0" style={{ width: 120 }}
+                        title="Толщина перемычки вдоль выработки. Учитывается в проверке схемы и в выгрузке в Excel">Толщина:</span>
+                      <input type="number" step="0.05" min="0"
+                        value={sym.bkThickness ?? ""}
+                        placeholder="—"
+                        onChange={e => { const v = parseFloat(e.target.value.replace(",", ".")); updSym({ bkThickness: v > 0 ? v : undefined }); }}
+                        className="flex-1 text-[11px] px-1 text-right"
+                        style={{ border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none", background: "white", minWidth: 0 }} />
+                      <span className="text-[11px] text-gray-400 flex-shrink-0" style={{ width: 38 }}>м</span>
+                    </div>
+                  )}
+
                   {/* ── Давление разрушения (только для перемычек с ветвью) ── */}
                   {isBulkheadSym && brForSym && !isWindowBulkhead && (() => {
                     const fp = sym.bkFailurePressure

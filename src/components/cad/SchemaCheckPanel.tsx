@@ -730,6 +730,16 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       ),
     },
     {
+      id: "bulkheadThickness", group: "Ветви", icon: "Ruler", level: "info", count: method.bulkheadThickness.length,
+      title: "Толщина перемычки не задана или неправдоподобна",
+      body: () => (
+        <>
+          <Hint>Толщина задаётся в свойствах перемычки, в метрах. Проверяются глухие, взрывоустойчивые и водоподпорные перемычки и двери. Паруса, открытые проёмы и окна во всё сечение не проверяются. Нормальная толщина от 0,02 до 10 м; у взрывоустойчивых обычно 0,5 м и более.</Hint>
+          {branchNotes(method.bulkheadThickness, "Толщина задана у всех перемычек")}
+        </>
+      ),
+    },
+    {
       id: "positionDupes", group: "План ликвидации аварий", icon: "ListOrdered", level: "warn", count: method.positionDupes.length,
       title: "Повторяющиеся номера позиций ПЛА",
       body: () => (

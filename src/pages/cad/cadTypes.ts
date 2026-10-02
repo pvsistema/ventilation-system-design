@@ -40,6 +40,8 @@ export interface SchemaSymbol {
   bkBulkheadName?: string;
   bkBulkheadR?: number;
   bkFailurePressure?: number;
+  /** Толщина перемычки, м (для проверки схемы и выгрузки). */
+  bkThickness?: number;
   /** Норма утечек через перемычку при 50 Па, м³/мин (своя; иначе из справочника). */
   bkLeakNorm?: number;
   msNumber?: string;

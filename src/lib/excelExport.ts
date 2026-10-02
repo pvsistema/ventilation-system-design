@@ -108,6 +108,7 @@ export const BRANCH_COLUMNS: ExportColumn[] = [
 
   // Оборудование на выработке
   { key: "bulkheads",   title: "Вентсооружения",        group: "Оборудование", hint: "Перемычки, двери, окна на ветви" },
+  { key: "bkThickness", title: "Толщина перемычки",     group: "Оборудование", unit: "м", hint: "По каждой перемычке ветви в том же порядке, что и названия; «—» — не задана" },
   { key: "fanName",     title: "Вентилятор",            group: "Оборудование" },
   { key: "fanType",     title: "Тип вентилятора",       group: "Оборудование", hint: "ГВУ / ВВУ / ВМП" },
   { key: "fanPressure", title: "Напор вентилятора",     group: "Оборудование", unit: "pressure", digits: 1 },
@@ -168,7 +169,7 @@ export const BRANCH_PRESETS: Partial<Record<ExportPreset, string[]>> = {
   flows:       [...HEAD, "fromNumber", "toNumber", "area", "flow", "velocity"],
   depressions: [...HEAD, "flow", "resistance", "rBulkhead", "rTotal", "dP", "dPWork", "dPBulkhead", "fanPressure"],
   speed_check: [...HEAD, "area", "flow", "velocity", "vMin", "vMax", "speedCheck"],
-  objects:     [...HEAD, "flow", "bulkheads", "rBulkhead", "dPBulkhead", "fanName", "fanType", "fanPressure", "fanState",
+  objects:     [...HEAD, "flow", "bulkheads", "bkThickness", "rBulkhead", "dPBulkhead", "fanName", "fanType", "fanPressure", "fanState",
                 "measNumber", "measFlow", "measArea", "measVelocity"],
   fire:        [...HEAD, "flow", "velocity", "airTemp", "dP", "fireLoad", "fireNatDep", "fireTemp", "fireCO"],
   pipes:       [...HEAD, "length", "vpDiameter", "vpLength", "vpR", "vpFlowFace", "wpDiameter", "wpLength", "wpFlow", "wpDeltaP"],
@@ -228,6 +229,8 @@ export interface ExportContext {
   bulkheadR: Map<string, number>;
   /** Названия вентсооружений по ветвям. */
   bulkheadNames: Map<string, string[]>;
+  /** Толщины перемычек по ветвям, м (null — не задана), в порядке названий. */
+  bulkheadThick: Map<string, (number | null)[]>;
   /** Замерные станции по ветвям. */
   measByBranch: Map<string, SchemaSymbol[]>;
   norms: VentNorms;
@@ -247,6 +250,7 @@ function buildContext(
   symbols: SchemaSymbol[], bulkheadR: Map<string, number> | undefined, norms: VentNorms,
 ): ExportContext {
   const bulkheadNames = new Map<string, string[]>();
+  const bulkheadThick = new Map<string, (number | null)[]>();
   const measByBranch = new Map<string, SchemaSymbol[]>();
   for (const s of symbols) {
     if (!s.branchId) continue;
@@ -258,6 +262,9 @@ function buildContext(
       const list = bulkheadNames.get(s.branchId) ?? [];
       list.push(name);
       bulkheadNames.set(s.branchId, list);
+      const th = bulkheadThick.get(s.branchId) ?? [];
+      th.push((s.bkThickness ?? 0) > 0 ? (s.bkThickness as number) : null);
+      bulkheadThick.set(s.branchId, th);
     } else if (s.typeId === "measure_station") {
       const list = measByBranch.get(s.branchId) ?? [];
       list.push(s);
@@ -276,6 +283,7 @@ function buildContext(
     horizonMap: new Map(horizons.map(h => [h.id, h])),
     bulkheadR: bulkheadR ?? new Map(),
     bulkheadNames,
+    bulkheadThick,
     measByBranch,
     norms,
   };
@@ -356,6 +364,13 @@ function branchValue(b: TopoBranch, key: string, ctx: ExportContext): Cell {
     case "power":       return b.power || null;
 
     case "bulkheads":   return (ctx.bulkheadNames.get(b.id) ?? []).join("; ");
+    case "bkThickness": {
+      const th = ctx.bulkheadThick.get(b.id) ?? [];
+      if (th.length === 0 || th.every(v => v == null)) return th.length ? "—" : "";
+      // Одна перемычка — число (Excel посчитает), несколько — список через «; ».
+      if (th.length === 1) return th[0];
+      return th.map(v => v == null ? "—" : String(Math.round(v * 100) / 100).replace(".", ",")).join("; ");
+    }
     case "fanName":     return b.hasFan ? (cleanText(b.fanName) || "Вентилятор") : "";
     case "fanType":     return b.hasFan ? b.fanType : "";
     case "fanPressure": return b.hasFan ? b.fanPressure : null;
