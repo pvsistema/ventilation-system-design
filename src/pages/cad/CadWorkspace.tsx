@@ -810,6 +810,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 ветви с ЕГО расходами (previewBranches). Сам проект при этом
                 не меняется — панели и сохранение видят настоящие данные. */}
             <TopoCanvas
+              coordOrigin={c.coordOrigin}
               nodes={nodes}
               branches={previewBranches}
               selectedNodeId={selectedNodeId}

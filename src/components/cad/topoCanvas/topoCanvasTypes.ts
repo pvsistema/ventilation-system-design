@@ -244,6 +244,8 @@ export interface Props {
   isolateBranchIds?: Set<string> | null;
   /** Строки блока «Маршруты профилактического обследования» для слоя печати */
   routeLegendItems?: import("@/lib/inspectionRoutes").RouteLegendItem[];
+  /** Привязка к реальной системе координат: в строке состояния X/Y показываются со смещением. */
+  coordOrigin?: { x: number; y: number } | null;
   /** ID ветвей, опрокинутых тепловой депрессией пожара — окрашиваются синим */
   reversedBranchIds?: Set<string>;
   /** ID ветвей маршрута горноспасателей — подсвечиваются зелёным */

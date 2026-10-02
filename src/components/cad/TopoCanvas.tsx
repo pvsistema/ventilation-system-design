@@ -114,6 +114,7 @@ export default function TopoCanvas(props: Props) {
     compareBranchColors,
     isolateBranchIds = null,
     routeLegendItems,
+    coordOrigin = null,
   } = props;
 
   const svgRef = useRef<SVGSVGElement | null>(null);
@@ -317,6 +318,8 @@ export default function TopoCanvas(props: Props) {
   const hoverFmtRef = useRef<{ effPlane: WorkPlane; zLevel: number; is3D: boolean }>({
     effPlane: { axis: "z", value: 0 }, zLevel: 0, is3D: false,
   });
+  // Смещение до реальной системы координат (AutoCAD / «Вентиляция 2.0»).
+  const coordOriginRef = useRef<{ x: number; y: number } | null>(coordOrigin);
   const paintHoverPos = useCallback(() => {
     const el = hoverPosElRef.current;
     if (!el) return;
@@ -326,8 +329,16 @@ export default function TopoCanvas(props: Props) {
     const fixX = pl.axis === "x" ? pl.value : null;
     const fixY = pl.axis === "y" ? pl.value : null;
     const fixZ = pl.axis === "z" ? pl.value : null;
-    el.textContent = `X: ${fixX ?? p.x} м · Y: ${fixY ?? p.y} м · Z: ${fixZ ?? (i3 ? "?" : zl)} м`;
+    const ox = coordOriginRef.current?.x ?? 0;
+    const oy = coordOriginRef.current?.y ?? 0;
+    const rx = Math.round((fixX ?? p.x) + ox);
+    const ry = Math.round((fixY ?? p.y) + oy);
+    el.textContent = `X: ${rx} м · Y: ${ry} м · Z: ${fixZ ?? (i3 ? "?" : zl)} м`;
   }, []);
+  useEffect(() => {
+    coordOriginRef.current = coordOrigin;
+    paintHoverPos();
+  }, [coordOrigin, paintHoverPos]);
   const pushHoverPos = useCallback((p: { x: number; y: number } | null) => {
     const cur = hoverPosRef.current;
     if (p === null) {
