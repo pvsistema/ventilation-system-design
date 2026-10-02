@@ -116,172 +116,156 @@ export function findMainRoute(
 
   const MIN_Q = 0.05;
 
+  /**
+   * Путь от узла start до поверхности по струе (dir = +1 — по движению
+   * воздуха, −1 — против). Выход выбирается с наибольшей депрессией по сети,
+   * путь до него — наибольшего расхода. Возвращает узлы и ветви от start
+   * к поверхности; пустой путь, если start сам на поверхности.
+   */
+  const searchSide = (start: string, dir: 1 | -1, fanId: string): { nodes: string[]; branches: string[]; dep: number } | null => {
+    if (surfaceNodeIds.has(start)) return { nodes: [start], branches: [], dep: 0 };
+    // Граф струи от start, без перемычек-преград, главных вентиляторов и
+    // ветви самой ГВУ. Поверхностные узлы — только концы пути.
+    const out = new Map<string, Edge[]>();
+    const reach = new Set<string>([start]);
+    const stack = [start];
+    while (stack.length > 0) {
+      const cur = stack.pop()!;
+      if (cur !== start && surfaceNodeIds.has(cur)) continue;
+      const list: Edge[] = [];
+      for (const e of adj.get(cur) ?? []) {
+        if (e.branchId === fanId || e.blocking || e.blockingFan) continue;
+        if (dir * e.signedOut < MIN_Q) continue;
+        list.push(e);
+        if (!reach.has(e.neighborId)) { reach.add(e.neighborId); stack.push(e.neighborId); }
+      }
+      out.set(cur, list);
+    }
+    // Наибольшая депрессия до каждого узла — по порядку струи (Кан).
+    const indeg = new Map<string, number>();
+    for (const id of reach) indeg.set(id, 0);
+    for (const [, list] of out) for (const e of list) indeg.set(e.neighborId, (indeg.get(e.neighborId) ?? 0) + 1);
+    const q0 = [...reach].filter(id => (indeg.get(id) ?? 0) === 0);
+    const order: string[] = [];
+    while (q0.length > 0) {
+      const id = q0.pop()!;
+      order.push(id);
+      for (const e of out.get(id) ?? []) {
+        const v = (indeg.get(e.neighborId) ?? 0) - 1;
+        indeg.set(e.neighborId, v);
+        if (v === 0) q0.push(e.neighborId);
+      }
+    }
+    const dep = new Map<string, number>([[start, 0]]);
+    for (const id of order) {
+      const base = dep.get(id);
+      if (base === undefined) continue;
+      for (const e of out.get(id) ?? []) {
+        const v = base + e.dP;
+        if (v > (dep.get(e.neighborId) ?? -Infinity)) dep.set(e.neighborId, v);
+      }
+    }
+    let target: string | null = null;
+    let targetDep = -Infinity;
+    for (const id of reach) {
+      if (id === start || !surfaceNodeIds.has(id)) continue;
+      const d = dep.get(id) ?? 0;
+      if (d > targetDep) { targetDep = d; target = id; }
+    }
+    if (!target) return null;
+
+    // «Самый широкий путь» до выбранного выхода.
+    const width = new Map<string, number>([[start, Infinity]]);
+    const depth = new Map<string, number>([[start, 0]]);
+    const prev = new Map<string, { node: string; branch: string }>();
+    const done = new Set<string>();
+    const queue: string[] = [start];
+    let found = false;
+    while (queue.length > 0) {
+      let bi = 0;
+      for (let i = 1; i < queue.length; i++) {
+        const x = queue[i], c = queue[bi];
+        const wx = width.get(x)!, wc = width.get(c)!;
+        if (wx > wc || (wx === wc && depth.get(x)! > depth.get(c)!)) bi = i;
+      }
+      const cur = queue.splice(bi, 1)[0];
+      if (done.has(cur)) continue;
+      done.add(cur);
+      if (cur === target) { found = true; break; }
+      for (const e of out.get(cur) ?? []) {
+        if (done.has(e.neighborId)) continue;
+        if (e.neighborId !== target && surfaceNodeIds.has(e.neighborId)) continue;
+        const w = Math.min(width.get(cur)!, e.flow);
+        const d = depth.get(cur)! + e.dP;
+        const ow = width.get(e.neighborId);
+        if (ow === undefined || w > ow || (w === ow && d > (depth.get(e.neighborId) ?? 0))) {
+          width.set(e.neighborId, w);
+          depth.set(e.neighborId, d);
+          prev.set(e.neighborId, { node: cur, branch: e.branchId });
+          queue.push(e.neighborId);
+        }
+      }
+    }
+    if (!found) return null;
+    const ns: string[] = [target];
+    const bs: string[] = [];
+    let n = target;
+    while (n !== start) {
+      const p = prev.get(n)!;
+      bs.push(p.branch);
+      ns.push(p.node);
+      n = p.node;
+    }
+    return { nodes: ns.reverse(), branches: bs.reverse(), dep: targetDep };
+  };
+
   for (const fan of fanBranches) {
     const flow = fan.flow ?? 0;
-    let shaftNodeId: string;
-    let surfNodeId: string;
-    if (Math.abs(flow) < 0.001) {
-      if (surfaceNodeIds.has(fan.toId)) { shaftNodeId = fan.fromId; surfNodeId = fan.toId; }
-      else { shaftNodeId = fan.toId; surfNodeId = fan.fromId; }
-    } else if (flow > 0) {
-      shaftNodeId = fan.fromId; surfNodeId = fan.toId;
-    } else {
-      shaftNodeId = fan.toId; surfNodeId = fan.fromId;
-    }
-    if (surfaceNodeIds.has(shaftNodeId) && !surfaceNodeIds.has(surfNodeId)) {
-      [shaftNodeId, surfNodeId] = [surfNodeId, shaftNodeId];
-    }
-    // Всасывающая ГВУ: воздух идёт шахта → ГВУ → поверхность, маршрут ищем
-    // ПРОТИВ струи от шахтного конца. Нагнетательная — по струе.
     const fanQ = Math.abs(flow);
-    const exhaust = fanQ < 0.001
-      ? true
-      : (flow > 0 ? fan.fromId === shaftNodeId : fan.toId === shaftNodeId);
-
-    let nodePath: string[] = [];
-    let branchPath: string[] = [];
+    let fullNodes: string[] = [];
+    let fullBranches: string[] = [];
 
     if (fanQ >= 0.001) {
-      // ── Граф струи ──────────────────────────────────────────────────────
-      // Рёбра только по движению воздуха (для всасывающей ГВУ — против струи
-      // от шахтного конца), без глухих/закрытых перемычек и главных
-      // вентиляторов. Поверхностные узлы — только концы маршрута.
-      const out = new Map<string, Edge[]>();
-      const reach = new Set<string>([shaftNodeId]);
-      const stack = [shaftNodeId];
-      while (stack.length > 0) {
-        const cur = stack.pop()!;
-        if (cur !== shaftNodeId && surfaceNodeIds.has(cur)) continue;
-        const list: Edge[] = [];
-        for (const e of adj.get(cur) ?? []) {
-          if (e.blocking || e.blockingFan || e.neighborId === surfNodeId) continue;
-          const along = exhaust ? -e.signedOut : e.signedOut;
-          if (along < MIN_Q) continue;
-          list.push(e);
-          if (!reach.has(e.neighborId)) { reach.add(e.neighborId); stack.push(e.neighborId); }
-        }
-        out.set(cur, list);
-      }
-
-      // ── 1. Выход на поверхность с наибольшей депрессией ─────────────────
-      // Раньше маршрут обрывался на ПЕРВОМ найденном поверхностном узле —
-      // обычно это подсос воздуха с поверхности в вентканал рядом с ГВУ
-      // (2–3 ветви, десятки Па). Настоящий маршрут идёт через всю сеть до
-      // воздухоподающего ствола: на нём теряется почти вся депрессия ГВУ.
-      // Наибольшую депрессию до каждого узла считаем по порядку струи
-      // (граф струи рассчитанной сети не имеет циклов).
-      const indeg = new Map<string, number>();
-      for (const id of reach) indeg.set(id, 0);
-      for (const [, list] of out) for (const e of list) indeg.set(e.neighborId, (indeg.get(e.neighborId) ?? 0) + 1);
-      const order: string[] = [];
-      const q0 = [...reach].filter(id => (indeg.get(id) ?? 0) === 0);
-      while (q0.length > 0) {
-        const id = q0.pop()!;
-        order.push(id);
-        for (const e of out.get(id) ?? []) {
-          const d = (indeg.get(e.neighborId) ?? 0) - 1;
-          indeg.set(e.neighborId, d);
-          if (d === 0) q0.push(e.neighborId);
-        }
-      }
-      const dep = new Map<string, number>([[shaftNodeId, 0]]);
-      for (const id of order) {
-        const base = dep.get(id);
-        if (base === undefined) continue;
-        for (const e of out.get(id) ?? []) {
-          const v = base + e.dP;
-          if (v > (dep.get(e.neighborId) ?? -Infinity)) dep.set(e.neighborId, v);
-        }
-      }
-      let target: string | null = null;
-      let targetDep = -Infinity;
-      for (const id of reach) {
-        if (id === shaftNodeId || !surfaceNodeIds.has(id)) continue;
-        const d = dep.get(id);
-        if (d !== undefined && d > targetDep) { targetDep = d; target = id; }
-      }
-      // Циклы в струе (рециркуляция) — депрессию не посчитать; берём любой
-      // достижимый выход, путь ниже всё равно будет наибольшего расхода.
-      if (!target) target = [...reach].find(id => id !== shaftNodeId && surfaceNodeIds.has(id)) ?? null;
-
-      // ── 2. Путь наибольшего расхода до выбранного выхода ────────────────
-      // «Самый широкий путь»: наименьший расход на пути — наибольший;
-      // при равенстве — большая депрессия.
-      if (target) {
-        const width = new Map<string, number>([[shaftNodeId, Infinity]]);
-        const depth = new Map<string, number>([[shaftNodeId, 0]]);
-        const prev = new Map<string, { node: string; branch: string }>();
-        const done = new Set<string>();
-        const queue: string[] = [shaftNodeId];
-        let found = false;
-        while (queue.length > 0) {
-          let bi = 0;
-          for (let i = 1; i < queue.length; i++) {
-            const a = queue[i], c = queue[bi];
-            const wa = width.get(a)!, wc = width.get(c)!;
-            if (wa > wc || (wa === wc && depth.get(a)! > depth.get(c)!)) bi = i;
-          }
-          const cur = queue.splice(bi, 1)[0];
-          if (done.has(cur)) continue;
-          done.add(cur);
-          if (cur === target) { found = true; break; }
-          for (const e of out.get(cur) ?? []) {
-            if (done.has(e.neighborId)) continue;
-            // Чужие выходы на поверхность — тупик для этого маршрута.
-            if (e.neighborId !== target && surfaceNodeIds.has(e.neighborId)) continue;
-            const w = Math.min(width.get(cur)!, e.flow);
-            const d = depth.get(cur)! + e.dP;
-            const ow = width.get(e.neighborId);
-            if (ow === undefined || w > ow || (w === ow && d > (depth.get(e.neighborId) ?? 0))) {
-              width.set(e.neighborId, w);
-              depth.set(e.neighborId, d);
-              prev.set(e.neighborId, { node: cur, branch: e.branchId });
-              queue.push(e.neighborId);
-            }
-          }
-        }
-        if (found) {
-          const nodesRev: string[] = [target];
-          const brRev: string[] = [];
-          let n = target;
-          while (n !== shaftNodeId) {
-            const p = prev.get(n)!;
-            brRev.push(p.branch);
-            nodesRev.push(p.node);
-            n = p.node;
-          }
-          nodePath = nodesRev.reverse();   // шахтный конец ГВУ → … → поверхность
-          branchPath = brRev.reverse();
-        }
+      // ГВУ может стоять где угодно: у устья (один конец на поверхности) или
+      // в здании ГВУ между вентканалом и диффузором (оба конца в сети). Поэтому
+      // НЕ предполагаем, что какой-то конец на поверхности, а ищем путь
+      // в обе стороны: до вентилятора — против струи, после — по струе.
+      // РАНЬШЕ конец ветви ГВУ, «не похожий на поверхность», считался
+      // поверхностью — и маршрут строился в обратную сторону, вокруг вентканала.
+      const inlet = flow > 0 ? fan.fromId : fan.toId;
+      const outlet = flow > 0 ? fan.toId : fan.fromId;
+      const up = searchSide(inlet, -1, fan.id);    // inlet → … → поверхность (вход воздуха)
+      const down = searchSide(outlet, 1, fan.id);  // outlet → … → поверхность (выход воздуха)
+      if (up && down) {
+        fullNodes = [...[...up.nodes].reverse(), ...down.nodes];
+        fullBranches = [...[...up.branches].reverse(), fan.id, ...down.branches];
       }
     }
 
-    if (branchPath.length === 0) {
-      // ── Запасной вариант: жадный обход по максимальному расходу ──
+    if (fullBranches.length === 0) {
+      // ── Запасной вариант (сеть не рассчитана): жадный обход по расходу ──
+      let shaftNodeId = surfaceNodeIds.has(fan.toId) ? fan.fromId : fan.toId;
+      let surfNodeId = shaftNodeId === fan.fromId ? fan.toId : fan.fromId;
+      if (surfaceNodeIds.has(shaftNodeId) && !surfaceNodeIds.has(surfNodeId)) {
+        [shaftNodeId, surfNodeId] = [surfNodeId, shaftNodeId];
+      }
       const visited = new Set<string>([shaftNodeId, surfNodeId]);
-      nodePath = [shaftNodeId];
-      branchPath = [];
+      const nodePath = [shaftNodeId];
+      const branchPath: string[] = [];
       let current = shaftNodeId;
       for (let steps = 0; steps < 2000; steps++) {
         const chosen = (adj.get(current) ?? [])
           .filter(n => !visited.has(n.neighborId) && !n.blocking && !n.blockingFan)
-          .sort((a, b) => b.flow - a.flow)[0];
+          .sort((x, y) => y.flow - x.flow)[0];
         if (!chosen) break;
         visited.add(chosen.neighborId);
         nodePath.push(chosen.neighborId);
         branchPath.push(chosen.branchId);
         current = chosen.neighborId;
       }
+      fullNodes = [...[...nodePath].reverse(), surfNodeId];
+      fullBranches = [...[...branchPath].reverse(), fan.id];
     }
-
-    // Порядок по движению воздуха. Всасывающая: поверхность → … → ГВУ → поверхность.
-    // Нагнетательная: поверхность → ГВУ → … → выход на поверхность.
-    const fullNodes = exhaust
-      ? [...[...nodePath].reverse(), surfNodeId]
-      : [surfNodeId, ...nodePath];
-    const fullBranches = exhaust
-      ? [...[...branchPath].reverse(), fan.id]
-      : [fan.id, ...branchPath];
 
     if (fanQ > bestFlow && fullBranches.length > 1) {
       bestFlow = fanQ;
