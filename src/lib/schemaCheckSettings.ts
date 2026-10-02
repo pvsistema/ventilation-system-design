@@ -41,6 +41,8 @@ export interface SchemaCheckSettings {
   areaJumpPercent: number;
   /** кМюрг — максимум сопротивления изолирующей перемычки (без герметизации) */
   isolMaxR: number;
+  /** кМюрг — максимум сопротивления вентиляционной перемычки (парус и т. п.) */
+  ventMaxR: number;
 }
 
 export const DEFAULT_SCHEMA_CHECK_SETTINGS: SchemaCheckSettings = {
@@ -66,6 +68,7 @@ export const DEFAULT_SCHEMA_CHECK_SETTINGS: SchemaCheckSettings = {
   controlAlphaMax: 1,
   areaJumpPercent: 10,
   isolMaxR: 305,
+  ventMaxR: 10,
 };
 
 export interface SchemaCheckSettingField {
@@ -92,6 +95,7 @@ export const SCHEMA_CHECK_SETTING_GROUPS: { title: string; fields: SchemaCheckSe
       { key: "highRThreshold", label: "Большое сопротивление ветви", unit: "кМюрг", min: 0, step: 10 },
       { key: "bulkRThreshold", label: "Норматив сопротивления перемычки", unit: "кМюрг", min: 0, step: 1 },
       { key: "isolMaxR", label: "Изолирующая перемычка — максимум (×2,25 с герметизацией)", unit: "кМюрг", min: 1, step: 5 },
+      { key: "ventMaxR", label: "Вентиляционная перемычка (парус) — максимум", unit: "кМюрг", min: 0.001, step: 1 },
     ],
   },
   {

@@ -79,6 +79,8 @@ export interface MethodCheckOptions {
   areaJumpPercent?: number;
   /** кМюрг — максимум сопротивления изолирующей перемычки (методика: 305, с герметизацией ×2,25). */
   isolMaxR?: number;
+  /** кМюрг — максимум сопротивления вентиляционной перемычки (парус). По умолчанию 10. */
+  ventMaxR?: number;
   bulkheads?: Map<string, BranchBulkheadInfo>;
   symbols?: SchemaSymbol[];
   /** Позиции плана ликвидации аварий. */
@@ -97,10 +99,12 @@ export function controlAlphaSi(b: TopoBranch): number {
 }
 
 /** Вид вентсооружения для норм методики (п. 4.1.6). */
-type BulkKind = "isolating" | "sluice" | "regulator" | "open";
+type BulkKind = "isolating" | "sluice" | "regulator" | "open" | "vent";
 
 function bulkKindOf(typeId: string): BulkKind | null {
   if (!BULKHEAD_SYMBOL_IDS.has(typeId)) return null;
+  // Парус — вентиляционная перемычка с малым сопротивлением, не изолирующая.
+  if (typeId === "sail") return "vent";
   if (OPEN_DOOR_IDS.has(typeId)) return "open";
   if (WINDOW_BULKHEAD_IDS.has(typeId) || typeId === "regulator") return "regulator";
   if (/^(door|auto|fire_door)/.test(typeId)) return "sluice";
@@ -120,6 +124,7 @@ export function checkMethod(
   const jumpRatio = opts.alphaJumpRatio ?? 2;
   const areaTol = (opts.areaJumpPercent ?? 10) / 100;
   const isolMaxR = opts.isolMaxR ?? 305;
+  const ventMaxR = opts.ventMaxR ?? 10;
   const symbols = opts.symbols ?? [];
 
   let truncated = false;
@@ -230,21 +235,28 @@ export function checkMethod(
     if (!info?.present || info.allOpen) continue;
     const syms = symbols.filter((s) => s.branchId === b.id && BULKHEAD_SYMBOL_IDS.has(s.typeId));
     const kinds = new Set(syms.map((s) => bulkKindOf(s.typeId)).filter((k): k is BulkKind => !!k));
-    if (kinds.size === 0) kinds.add(info.hasWindow ? "regulator" : "isolating");
+    if (kinds.size === 0) {
+      // Перемычка без значка (задана во вкладке ветви) — вид по названию.
+      kinds.add(/парус/i.test(info.name) ? "vent" : info.hasWindow ? "regulator" : "isolating");
+    }
     const R = info.rKmu;
     const name = info.name;
     const isolating = kinds.has("isolating") && !kinds.has("sluice") && !kinds.has("regulator");
     const sluice = kinds.has("sluice") && !kinds.has("regulator");
+    // Только паруса (вентиляционные перемычки) — без глухих, дверей и регуляторов.
+    const ventOnly = kinds.has("vent") && !kinds.has("isolating") && !kinds.has("sluice") && !kinds.has("regulator");
     if (!(R > 0)) {
       // Закрытая дверь или глухая перемычка без сопротивления — воздух через
       // неё проходит свободно, расчёт считает её открытым проёмом.
-      if (isolating || sluice) {
+      if (isolating || sluice || ventOnly) {
         push(bulkheadZero, { branch: b, note: `${name}: сопротивление не задано (R = 0${info.modeLabel ? `, ${info.modeLabel}` : ""}) — в расчёте перемычки нет` });
       }
       continue;
     }
     const isConveyor = /конвейер/i.test(b.type || "");
-    if (isolating) {
+    if (ventOnly) {
+      if (R > ventMaxR) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — вентиляционная перемычка (парус) не должна превышать ${fmtKmu(ventMaxR)} кμ; проверьте вид сооружения` });
+    } else if (isolating) {
       if (R < 10) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — изолирующая перемычка должна быть не менее 10 кμ` });
       else if (R > isolMaxR * 2.25) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — больше ${fmtKmu(isolMaxR * 2.25)} кμ даже с герметизацией` });
       else if (R > isolMaxR) push(bulkheadAllowed, { branch: b, note: `${name}: ${R_(R)} — выше ${fmtKmu(isolMaxR)} кμ, но в пределах ${fmtKmu(isolMaxR * 2.25)} кμ при герметизации (превышение ×${fmtNum(R / isolMaxR, 2)})` });

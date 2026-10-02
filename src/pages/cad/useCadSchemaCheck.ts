@@ -127,6 +127,7 @@ export function useCadSchemaCheck(
         controlAlphaMax: s.controlAlphaMax,
         areaJumpPercent: s.areaJumpPercent,
         isolMaxR: s.isolMaxR,
+        ventMaxR: s.ventMaxR,
         bulkheads,
         symbols,
         positions,
