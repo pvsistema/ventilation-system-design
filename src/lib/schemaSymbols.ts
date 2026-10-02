@@ -160,7 +160,7 @@ export const LEGEND_TYPES: LegendType[] = [
   // ─── ГЛУХИЕ ПЕРЕМЫЧКИ (новые ID, соответствующие справочнику) ────────
   { id: "bk_base",    name: "Глухая перемычка",                group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("white", "#222") },
   { id: "bk_concrete",name: "Глухая перемычка бетонная",       group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#4caf50", "#2e7d32") },
-  { id: "bk_blast_conc", name: "Перемычка взрывоустойчивая бетонная", group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: blastBulkhead("#4caf50") },
+  { id: "bk_blast_conc", name: "Перемычка взрывоустойчивая", group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: blastBulkhead("#4caf50") },
   { id: "bk_wood",    name: "Глухая перемычка деревянная",     group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#ffd600", "#f57f17") },
   { id: "bk_brick",   name: "Глухая перемычка кирпичная",      group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#ff9800", "#e65100") },
   { id: "bk_metal",   name: "Глухая перемычка металлическая",  group: "Вентиляция", subgroup: "Глухие перемычки", svgContent: solidBulkhead("#9c27b0", "#6a1b9a") },
