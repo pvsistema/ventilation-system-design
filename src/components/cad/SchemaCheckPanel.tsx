@@ -695,14 +695,29 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       ),
     },
     {
-      id: "bulkheadNorm", group: "Ветви", icon: "ShieldAlert", level: "warn", count: method.bulkheadNorm.length,
+      id: "bulkheadNorm", group: "Ветви", icon: "ShieldAlert", level: "warn",
+      count: method.bulkheadNorm.length + method.bulkheadZero.length,
       title: "Сопротивление сооружения вне нормы для вида",
-      body: () => (
-        <>
-          <Hint>Ориентировочные нормы: изолирующие перемычки не менее 10 кμ и не более {num(cfg.isolMaxR)} кμ (с герметизацией ×2,25); шлюзы — от 1,5 кμ в капитальных, 0,8 кμ в участковых, 0,3 кμ в конвейерных выработках; регуляторы с окном — не более 10 кμ и не меньше сопротивления своей выработки.</Hint>
-          {branchNotes(method.bulkheadNorm, "Сооружения в норме")}
-        </>
-      ),
+      body: () => {
+        const sub = (text: string, n: number, color: string) => (
+          <div className="px-2 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1.5"
+            style={{ color }}>
+            {text}
+            <span className="px-1.5 rounded text-[10px]" style={{ background: tint(color, 12) }}>{n}</span>
+          </div>
+        );
+        return (
+          <>
+            <Hint>Ориентировочные нормы: изолирующие перемычки не менее 10 кμ и не более {num(cfg.isolMaxR)} кμ (с герметизацией ×2,25); шлюзы — от 1,5 кμ в капитальных, 0,8 кμ в участковых, 0,3 кμ в конвейерных выработках; регуляторы с окном — не более 10 кμ и не меньше сопротивления своей выработки.</Hint>
+            {sub("Без сопротивления (закрытые и глухие)", method.bulkheadZero.length, LEVEL_COLOR.error)}
+            {branchNotes(method.bulkheadZero, "У всех закрытых и глухих перемычек сопротивление задано")}
+            {sub("Вне нормы", method.bulkheadNorm.length, LEVEL_COLOR.warn)}
+            {branchNotes(method.bulkheadNorm, "Сооружения в норме")}
+            {sub("Допустимое превышение (с герметизацией)", method.bulkheadAllowed.length, LEVEL_COLOR.info)}
+            {branchNotes(method.bulkheadAllowed, "Превышений нормы нет")}
+          </>
+        );
+      },
     },
     {
       id: "bulkheadFailure", group: "Ветви", icon: "Bomb", level: "warn", count: method.bulkheadFailure.length,

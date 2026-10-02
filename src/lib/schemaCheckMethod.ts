@@ -17,7 +17,7 @@
 //   • позиции ПЛА: повторяющиеся номера и выработки, не вошедшие ни в одну позицию.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoNode, type TopoBranch } from "./topology";
-import { type BranchNote, type NodeNote, type GroupNote, pushCapped, fmtNum } from "./schemaCheckTypes";
+import { type BranchNote, type NodeNote, type GroupNote, pushCapped, fmtNum, fmtKmu } from "./schemaCheckTypes";
 import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import { BULKHEAD_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, LEGEND_TYPES } from "./schemaSymbols";
@@ -48,6 +48,10 @@ export interface MethodCheckResult {
   surfaceMulti: NodeNote[];
   /** Сопротивление вентсооружения вне нормы для своего вида. */
   bulkheadNorm: BranchNote[];
+  /** Закрытые и глухие перемычки, у которых сопротивление не задано (R = 0). */
+  bulkheadZero: BranchNote[];
+  /** Изолирующие перемычки выше нормы, но в пределах допуска с герметизацией (×2,25). */
+  bulkheadAllowed: BranchNote[];
   /** Перемычки без заданного давления разрушения (или с неправдоподобным). */
   bulkheadFailure: BranchNote[];
   /** Всего позиций ПЛА на схеме. */
@@ -216,6 +220,9 @@ export function checkMethod(
   // шлюзы: капитальные ≥ 1,5, прочие ≥ 0,8, конвейерные ≥ 0,3;
   // регуляторы с окном ≤ 10 и не меньше удельного R своей выработки.
   const bulkheadNorm: BranchNote[] = [];
+  const bulkheadZero: BranchNote[] = [];
+  const bulkheadAllowed: BranchNote[] = [];
+  const R_ = (v: number) => `R ${fmtKmu(v)} кμ`;
   for (const b of branches) {
     const info = opts.bulkheads?.get(b.id);
     if (!info?.present || info.allOpen) continue;
@@ -223,22 +230,32 @@ export function checkMethod(
     const kinds = new Set(syms.map((s) => bulkKindOf(s.typeId)).filter((k): k is BulkKind => !!k));
     if (kinds.size === 0) kinds.add(info.hasWindow ? "regulator" : "isolating");
     const R = info.rKmu;
-    if (!(R > 0)) continue; // R = 0 ловит проверка «Перемычка без сопротивления»
-    const isConveyor = /конвейер/i.test(b.type || "");
     const name = info.name;
-    if (kinds.has("isolating") && !kinds.has("sluice") && !kinds.has("regulator")) {
-      if (R < 10) push(bulkheadNorm, { branch: b, note: `${name}: R ${fmtNum(R, 2)} кμ — изолирующая перемычка должна быть не менее 10 кμ` });
-      else if (R > isolMaxR * 2.25) push(bulkheadNorm, { branch: b, note: `${name}: R ${fmtNum(R, 0)} кμ — больше ${fmtNum(isolMaxR * 2.25, 0)} кμ даже с герметизацией` });
-    } else if (kinds.has("sluice") && !kinds.has("regulator")) {
+    const isolating = kinds.has("isolating") && !kinds.has("sluice") && !kinds.has("regulator");
+    const sluice = kinds.has("sluice") && !kinds.has("regulator");
+    if (!(R > 0)) {
+      // Закрытая дверь или глухая перемычка без сопротивления — воздух через
+      // неё проходит свободно, расчёт считает её открытым проёмом.
+      if (isolating || sluice) {
+        push(bulkheadZero, { branch: b, note: `${name}: сопротивление не задано (R = 0${info.modeLabel ? `, ${info.modeLabel}` : ""}) — в расчёте перемычки нет` });
+      }
+      continue;
+    }
+    const isConveyor = /конвейер/i.test(b.type || "");
+    if (isolating) {
+      if (R < 10) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — изолирующая перемычка должна быть не менее 10 кμ` });
+      else if (R > isolMaxR * 2.25) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — больше ${fmtKmu(isolMaxR * 2.25)} кμ даже с герметизацией` });
+      else if (R > isolMaxR) push(bulkheadAllowed, { branch: b, note: `${name}: ${R_(R)} — выше ${fmtKmu(isolMaxR)} кμ, но в пределах ${fmtKmu(isolMaxR * 2.25)} кμ при герметизации (превышение ×${fmtNum(R / isolMaxR, 2)})` });
+    } else if (sluice) {
       const min = b.capital ? 1.5 : isConveyor ? 0.3 : 0.8;
       const what = b.capital ? "капитальной" : isConveyor ? "конвейерной" : "участковой";
-      if (R < min) push(bulkheadNorm, { branch: b, note: `${name}: R ${fmtNum(R, 2)} кμ — шлюз в ${what} выработке должен быть не менее ${min} кμ` });
-      else if (R > 10 && !kinds.has("isolating")) push(bulkheadNorm, { branch: b, note: `${name}: R ${fmtNum(R, 1)} кμ — выше 10 кμ (минимум изолирующей перемычки); проверьте вид сооружения` });
+      if (R < min) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — шлюз в ${what} выработке должен быть не менее ${min} кμ` });
+      else if (R > 10 && !kinds.has("isolating")) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — выше 10 кμ (минимум изолирующей перемычки); проверьте вид сооружения` });
     } else if (kinds.has("regulator")) {
       // Сопротивление самой выработки (трение), без вентсооружений.
       const rOwn = b.resistance ?? 0;
-      if (R > 10) push(bulkheadNorm, { branch: b, note: `${name}: R ${fmtNum(R, 1)} кμ — регулятор с окном не должен превышать 10 кμ` });
-      else if (rOwn > 0 && R < rOwn) push(bulkheadNorm, { branch: b, note: `${name}: R ${fmtNum(R, 4)} кμ — меньше сопротивления самой выработки (${fmtNum(rOwn, 4)} кμ), регулятор не работает` });
+      if (R > 10) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — регулятор с окном не должен превышать 10 кμ` });
+      else if (rOwn > 0 && R < rOwn) push(bulkheadNorm, { branch: b, note: `${name}: ${R_(R)} — меньше сопротивления самой выработки (${fmtKmu(rOwn)} кμ), регулятор не работает` });
     }
   }
 
@@ -313,7 +330,7 @@ export function checkMethod(
 
   return {
     solved, measureMismatch, measureNoData, measureTotal,
-    controlAlpha, alphaJump, areaJump, surfaceMulti, bulkheadNorm,
+    controlAlpha, alphaJump, areaJump, surfaceMulti, bulkheadNorm, bulkheadZero, bulkheadAllowed,
     bulkheadFailure, positionsTotal: positions.length, positionDupes, branchNoPosition,
     truncated,
   };

@@ -26,3 +26,16 @@ export function pushCapped<T>(arr: T[], item: T, max = CHECK_MAX_ITEMS): boolean
 }
 
 export const fmtNum = (v: number, d = 1) => (Number.isFinite(v) ? v.toFixed(d) : "—");
+/**
+ * Сопротивление в кМюрг с нужным числом знаков: мелкие значения (паруса,
+ * регуляторы — тысячные доли кМюрг) не превращаются в «0.00».
+ * Лишние нули в конце отбрасываются: 0.00146, 2.5, 305.
+ */
+export function fmtKmu(v: number): string {
+  if (!Number.isFinite(v)) return "—";
+  if (v === 0) return "0";
+  const a = Math.abs(v);
+  const d = a >= 100 ? 0 : a >= 10 ? 1 : a >= 1 ? 2 : Math.min(7, 3 - Math.floor(Math.log10(a)));
+  const t = v.toFixed(d);
+  return t.includes(".") ? t.replace(/0+$/, "").replace(/\.$/, "") : t;
+}
