@@ -3548,12 +3548,14 @@ export function useCadPage() {
       if (fmt === "erp") {
         await exportErp({
           nodes, branches, horizons, positions,
+          schemaSymbols, mineBulkheads,
           projectName: name, fileName: name,
           withFans: o.fans, withBulkheads: o.bulkheads,
           withPositions: o.positions, withResults: o.results,
         });
         const fans = o.fans ? branches.filter(b => b.hasFan).length : 0;
-        const bulks = o.bulkheads ? branches.filter(b => b.hasBulkhead).length : 0;
+        const bulks = o.bulkheads
+          ? branches.filter(b => b.hasBulkhead || bulkheadRByBranch.has(b.id)).length : 0;
         addLog("info", `Экспорт в АэроСеть (.erp): узлов ${nodes.length}, выработок ${branches.length}, вентиляторов ${fans}, перемычек ${bulks}, позиций ПЛА ${o.positions ? positions.length : 0}`);
       } else if (fmt === "hdr") {
         const st = exportVent2Hdr({

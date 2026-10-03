@@ -38,6 +38,11 @@
 import JSZip from "jszip";
 import type { TopoNode, TopoBranch, Horizon } from "@/lib/topology";
 import type { Position } from "@/lib/positions";
+import type { SchemaSymbol } from "@/pages/cad/cadTypes";
+import { bulkheadROfBranch, bulkheadSymbolsOf, type BulkheadRef } from "@/lib/bulkheadResistance";
+import { fanWindowRkMurg } from "@/lib/bulkheads";
+import { getFanById } from "@/lib/fanCurves";
+import { resistanceFromAlpha } from "@/lib/aerodynamics";
 
 /** Перевод давления Па → кгс/м² (мм вод. ст.): формат АэроСети. */
 const PA_PER_KGS_M2 = 9.80665;
@@ -78,6 +83,23 @@ function n(v: number | undefined, digits = 6): string {
   const x = Number(v);
   if (!isFinite(x)) return "0";
   return String(+x.toFixed(digits));
+}
+
+/**
+ * Сопротивление — без потери значащих цифр.
+ *
+ * Сопротивления выработок бывают порядка 10⁻⁵ кМюрг: при toFixed(6) от
+ * «2,1·10⁻⁵» оставалось «0,000021» — 2 значащие цифры, ошибка до 2 %, а у
+ * совсем коротких выработок R округлялось до нуля. Пишем 8 значащих цифр,
+ * но без экспоненты (обычная десятичная запись читается любой программой).
+ */
+function nr(v: number | undefined): string {
+  const x = Number(v);
+  if (!isFinite(x) || x <= 0) return "0";
+  const digits = Math.min(20, Math.max(6, Math.ceil(-Math.log10(x)) + 8));
+  return String(+x.toFixed(digits)).includes("e")
+    ? x.toFixed(digits).replace(/0+$/, "").replace(/\.$/, "")
+    : String(+x.toFixed(digits));
 }
 
 /** Булево в вид «True»/«False», как в файлах АэроСети. */
@@ -177,10 +199,35 @@ export interface ErpExportOptions {
   /** Переносить позиции ПЛА. По умолчанию да. */
   withPositions?: boolean;
   /**
-   * Переносить результаты расчёта — расходы воздуха и заданные вручную
-   * сопротивления. Если снять, АэроСеть посчитает сеть заново по α и сечению.
+   * Переносить результаты расчёта — расходы воздуха. Сопротивления сюда НЕ
+   * относятся: это исходные данные сети, и они пишутся всегда (иначе АэроСеть
+   * пересчитала бы вентрубы и выработки с местными сопротивлениями по α и
+   * получила бы другую сеть).
    */
   withResults?: boolean;
+  /**
+   * Значки схемы. Перемычки и двери у нас почти всегда заданы ЗНАЧКОМ, и их
+   * сопротивление живёт в SchemaSymbol.bk*, а не в ветви. Без значков в файл
+   * уходило только поле ветви — устаревшее или нулевое.
+   */
+  schemaSymbols?: SchemaSymbol[];
+  /** Справочник перемычек рудника — нужен для R значков «по проекту». */
+  mineBulkheads?: BulkheadRef[];
+}
+
+/**
+ * Сопротивление окна ГВУ «внутри перемычки» + перемычки вентилятора, кМюрг.
+ * Дословно та же логика, что в buildBranchPayload (useCadPage) и get_R
+ * решателя — иначе выработка с ГВУ в АэроСети окажется без сопротивления окна.
+ */
+function fanInstallR(b: TopoBranch): number {
+  if (!b.hasFan || (b.fanInstall ?? "Внутри перемычки") !== "Внутри перемычки") return 0;
+  const curve = b.fanMode === "curve" ? getFanById(b.fanCurveId) : undefined;
+  const autoWin = curve && curve.diameter > 0 ? Math.PI * curve.diameter * curve.diameter / 4 : 0;
+  const winA = (b.fanWindowArea ?? 0) > 0.001 ? (b.fanWindowArea ?? 0) : autoWin;
+  const rWin = winA > 0.001 ? fanWindowRkMurg(winA, b.area ?? 0) : 0;
+  const rCross = (b.fanCrossingR ?? 0) / 1000;   // Мюрг → кМюрг, как в get_R
+  return rWin + rCross;
 }
 
 /**
@@ -226,14 +273,33 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
   // Пишем геометрию, сопротивление и объекты на ветви (вентилятор, перемычка).
   // Способ задания R: 2 = «задано пользователем», иначе АэроСеть пересчитает
   // его сама по α и сечению — так ведёт себя и наш импорт в обратную сторону.
+  const symbols = opts.schemaSymbols ?? [];
+  const bulkheadsMap = new Map((opts.mineBulkheads ?? []).map(mb => [mb.id, mb]));
+
   const branchXml = branches.map((br, i) => {
     const from = nodeGuid.get(br.fromId);
     const to = nodeGuid.get(br.toId);
     if (!from || !to) return "";
 
-    // Без результатов расчёта сопротивление не навязываем: АэроСеть посчитает
-    // его сама по α и сечению — так же, как при снятой галочке в импорте.
-    const manualR = withResults && br.resistanceMode === "manual" && br.manualR > 0;
+    // ── СОПРОТИВЛЕНИЕ ВЫРАБОТКИ ─────────────────────────────────────────────
+    // Пишем РОВНО то R, с которым считает наш решатель (b.resistance + окно ГВУ
+    // «внутри перемычки»). Раньше при способе ≠ «вручную» в файл уходил только
+    // α, и АэроСеть сама пересчитывала R = α·P·L/S³. Для большинства выработок
+    // это совпадает, но НЕ для:
+    //   • вентиляционных труб (способ «pipe»: R = 6,48·α·L/D⁵ по α ТРУБЫ) —
+    //     АэроСеть считала их как горную выработку с α крепи, R ошибалось в
+    //     5…25 раз (66 нитей става на «Якутском»);
+    //   • выработок с местными сопротивлениями ξ (R_мест терялось);
+    //   • ветвей ГВУ, установленных в перемычке (R окна терялось целиком);
+    //   • способа «по шероховатости».
+    // Поэтому α-путь оставляем только когда он даёт то же число, а иначе
+    // пишем R как «заданное пользователем» (AirResistanceCalculationType=2).
+    const extraR = fanInstallR(br);
+    const ribR = (br.resistance ?? 0) + extraR;
+    const alphaR = resistanceFromAlpha(br.alphaCoef ?? 0, br.perimeter ?? 0, br.length ?? 0, br.area ?? 0);
+    const alphaMatches = (br.resistanceMode === "alpha" || br.resistanceMode === "surface")
+      && extraR === 0 && ribR > 0 && Math.abs(alphaR - ribR) <= ribR * 1e-3;
+    const manualR = !alphaMatches && ribR > 0;
     const items: string[] = [];
 
     // Объект на выработке ставим в её середину. АэроСеть ТРЕБУЕТ у <ribItem>
@@ -242,10 +308,14 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
 
     if (withFans && br.hasFan) {
       // Напор переводим в кгс/м² — единицы АэроСети (см. шапку файла).
+      // Остановленный вентилятор напора не создаёт: в поле fanPressure у него
+      // может остаться рабочая точка последнего расчёта до остановки, и
+      // АэроСеть «включила» бы его обратно.
+      const fanH = br.fanStopped ? 0 : (br.fanPressure ?? 0);
       items.push(
-        `<ribItem id="${guidFrom("fan:" + br.id)}" itemCode="18" description="${esc(br.fanName || "Вентилятор")}"${itemAttrs(midOffset, 0.25)}>`
+        `<ribItem id="${guidFrom("fan:" + br.id)}" itemCode="18" description="${esc(br.fanName || getFanById(br.fanCurveId)?.name || "Вентилятор")}"${itemAttrs(midOffset, 0.25)}>`
         + `<customFields><fields>`
-        + `<field name="Airflow.FanPressure" value="${n((br.fanPressure ?? 0) / PA_PER_KGS_M2)}" />`
+        + `<field name="Airflow.FanPressure" value="${n(fanH / PA_PER_KGS_M2)}" />`
         + `<field name="Airflow.IdealVentilatorEfficiency" value="${n(br.fanEfficiency ?? 0, 3)}" />`
         + `<field name="Airflow.VentilatorSpeed" value="${n(br.fanRpm ?? 0, 1)}" />`
         + `<field name="Airflow.VentilatorsInParallel" value="${Math.max(1, Math.round(br.fanParallel ?? 1))}" />`
@@ -253,12 +323,28 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
         + `</fields></customFields></ribItem>`,
       );
     }
-    if (withBulkheads && br.hasBulkhead) {
+    // ── ПЕРЕМЫЧКИ ──────────────────────────────────────────────────────────
+    // Сопротивление берём ТОЙ ЖЕ функцией, что и решатель (bulkheadROfBranch):
+    // значки на схеме + вкладка ветви, со всеми режимами (вручную / по съёмке /
+    // по проекту / окно). Раньше писалось только br.bulkheadManualR — поле
+    // вкладки, которое при перемычке-значке не используется в расчёте и было
+    // устаревшим: глухая перемычка 250 кМюрг уходила как 0,0005 (≈ пустая
+    // выработка), значки без hasBulkhead не выгружались вовсе.
+    const bkSyms = bulkheadSymbolsOf(br, symbols);
+    const { total: bkR } = bulkheadROfBranch(br, symbols, bulkheadsMap);
+    if (withBulkheads && (br.hasBulkhead || bkSyms.length > 0)) {
+      const name = bkSyms[0]?.bkBulkheadName || br.bulkheadName || "Перемычка";
+      // Смещение — по положению значка, если он есть.
+      const t = bkSyms[0]?.t;
+      const offset = t != null && isFinite(t) ? (br.length ?? 0) * t : midOffset;
       items.push(
-        `<ribItem id="${guidFrom("bulk:" + br.id)}" itemCode="8" description="${esc(br.bulkheadName || "Перемычка")}"${itemAttrs(midOffset, 0.125)}>`
+        `<ribItem id="${guidFrom("bulk:" + br.id)}" itemCode="8" description="${esc(name)}"${itemAttrs(offset, 0.125)}>`
         + `<customFields><fields>`
-        + `<field name="Airflow.BulkheadUserDefinedResistance" value="${n(br.bulkheadManualR ?? 0)}" />`
-        + `<field name="Airflow.BulkheadDepressionSurveyDischarge" value="${n(br.bulkheadSurveyQ ?? 0, 3)}" />`
+        + `<field name="Airflow.BulkheadUserDefinedResistance" value="${nr(bkR)}" />`
+        // 2 = «сопротивление задано пользователем». Без этого флага АэроСеть
+        // берёт РАСЧЁТНОЕ R по своему типу сооружения и наше число игнорирует.
+        + `<field name="Airflow.AirResistanceCalculationType" value="2" />`
+        + `<field name="Airflow.BulkheadDepressionSurveyDischarge" value="0" />`
         + `</fields></customFields></ribItem>`,
       );
     }
@@ -269,15 +355,22 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       // оттуда его читает и импорт .erp, поэтому пишем обратно туда же.
       + `<field name="Rib.Name" value="${esc(br.type ?? "")}" />`
       + `<field name="Rib.Number" value="${i + 1}" />`
-      + `<field name="Airflow.CrossSectionArea" value="${n(br.area, 3)}" />`
-      + `<field name="Airflow.CrossSectionAreaIsUserDefined" value="${b(br.manualSection)}" />`
-      + `<field name="Airflow.Perimeter" value="${n(br.perimeter, 3)}" />`
+      // Сечение и периметр у нас всегда ГОТОВЫЕ числа (S, P уже посчитаны по
+      // форме). Флаг «задано пользователем» ставим всегда: при False АэроСеть
+      // берёт сечение из своего справочника типа выработки, а у нас тип не
+      // выгружается — и S «уезжало» к значению по умолчанию (10 м²), что меняет
+      // R в кубе. Раньше флаг повторял наш manualSection (у 190 из 318
+      // выработок «Якутского» он был False).
+      + `<field name="Airflow.CrossSectionArea" value="${n(br.area, 4)}" />`
+      + `<field name="Airflow.CrossSectionAreaIsUserDefined" value="True" />`
+      + `<field name="Airflow.Perimeter" value="${n(br.perimeter, 4)}" />`
+      + `<field name="Airflow.PerimeterIsUserDefined" value="True" />`
       + `<field name="Airflow.UserDefinedRibLength" value="${n(br.length, 2)}" />`
       + `<field name="Airflow.RibLengthIsUserDefined" value="True" />`
       // α у нас в рудничных единицах (кгс·с²/м⁴), а АэроСеть хранит его в СИ
       // (кг/м³) — домножаем на g. Парно с делением в erpImport.ts.
       + `<field name="Airflow.Alpha" value="${n((br.alphaCoef ?? 0) * 1e-4 * 9.80665)}" />`
-      + `<field name="Airflow.UserDefinedResistance" value="${n(manualR ? br.manualR : 0)}" />`
+      + `<field name="Airflow.UserDefinedResistance" value="${manualR ? nr(ribR) : "0"}" />`
       + `<field name="Airflow.AirResistanceCalculationType" value="${manualR ? 2 : 0}" />`
       + `<field name="Airflow.Discharge" value="${n(withResults ? (br.flow ?? 0) : 0, 4)}" />`
       + `<field name="Airflow.MaxAirVelocity" value="${n(br.vMax ?? 0, 2)}" />`
