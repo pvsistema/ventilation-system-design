@@ -32,6 +32,7 @@ import { type VentSection } from "@/lib/ventSections";
 import { SURFACE_TYPES, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 import { VENT_DUCT_BRANDS, getDuctBrand, getDuctSize } from "@/lib/ventDucts";
 import { G_ACCEL } from "@/lib/bulkheads";
+import { FNP494_SUPPORTS, supportName, supportOf } from "@/lib/fnp494Blast";
 import Icon from "@/components/ui/icon";
 import {
   Card, Field, Switch, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
@@ -252,6 +253,16 @@ export default function BranchTopologyTab({
             </select>
           </Field>
         )}
+
+        {/* Крепь для расчёта ударной волны от взрыва ВВ (ФНП № 494, прил. 29).
+            Не задана — определяется по типу поверхности выработки. */}
+        <Field label="Крепь для УВВ" hint="ФНП № 494, прил. 29 — коэффициент шероховатости β при расчёте взрыва ВВ">
+          <select className={inputCls} style={selectStyle} value={b.blastSupport ?? ""}
+            onChange={(e) => onUpdate({ blastSupport: e.target.value || undefined })}>
+            <option value="">По типу поверхности — {supportName(supportOf({ surfaceId: b.surfaceId, alphaCoef: b.alphaCoef }))}</option>
+            {FNP494_SUPPORTS.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} — β {sp.min}…{sp.max}</option>)}
+          </select>
+        </Field>
 
         {b.resistanceMode === "alpha" && (
           <Field label="Коэффициент α">

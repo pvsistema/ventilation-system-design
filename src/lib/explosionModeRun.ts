@@ -32,6 +32,8 @@ import { calcGasZone, gasZoneTime, DEFAULT_I_NEPOGASH } from "@/lib/gasZone";
 import { collectBarriers, crossBarriers, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { vgschPressureAt, vgschImpulseAt, type VgschSource } from "@/lib/vgschBlast";
 import { propagateVgsch, type VgschNetResult } from "@/lib/vgschNetwork";
+import { propagateFnp, autoSumS, type FnpNetResult } from "@/lib/fnp494Network";
+import { supportOf, fnpPressureAt, fnpImpulseAt, type Fnp494Source } from "@/lib/fnp494Blast";
 
 export interface ExplosionRunParams {
   branches: TopoBranch[];
@@ -100,16 +102,25 @@ export interface ExplosionRunResult {
   barriers: Map<string, BlastBarrier[]>;
   /** Расчёт по сети по методике ВГСЧ (если есть очаги газа по ней). */
   vgschNet?: VgschNetResult;
+  /** Расчёт по сети по ФНП № 494 (если есть заряды ВВ по ней). */
+  fnpNet?: FnpNetResult;
 }
 
 /** Параметры методики ВГСЧ из ветви-очага — общие для сервера и расчёта на месте. */
-export function vgschParamsOf(b: TopoBranch) {
+export function vgschParamsOf(b: TopoBranch, branches?: TopoBranch[], nodes?: TopoNode[]) {
   return {
     gasMethod: b.explosionGasMethod ?? "vgsch",
     combustionMode: b.explosionCombustionMode ?? "detonation",
     dustParticipation: b.explosionDust === true,
     excavationPerimeter_m: b.perimeter && b.perimeter > 0 ? b.perimeter : undefined,
     excavationAlpha: b.alphaCoef,
+    // Заряд ВВ — по ФНП № 494 (пп. 816–822)
+    massMethod: b.explosionMassMethod ?? "fnp494",
+    hardRock: b.explosionHardRock === true,
+    betaBound: b.explosionBetaBound ?? "min",
+    sumS_m2: branches && nodes ? autoSumS(b, branches, nodes) : (b.explosionSumS || undefined),
+    sumSManual: (b.explosionSumS ?? 0) > 0,
+    support: supportOf(b),
   } as const;
 }
 
@@ -205,7 +216,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     channelMode: b.explosionConsiderWalls ?? true,
     // Коэффициент участия Z по Методике №415 (0.1 открыто / 0.5 замкнуто)
     zParticipation: b.explosionZ ?? 0.5,
-    ...vgschParamsOf(b),
+    ...vgschParamsOf(b, branches, nodes),
     thresholds,
   }));
   // Ответы сервера по номеру ветви. Если связи нет — карта пустая,
@@ -278,7 +289,14 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         const dpKgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.0 / (rBar * rBar * rBar);
         return Math.round(dpKgf * 98.07 * 10) / 10;
       };
-      if (data.vgsch) {
+      if (data.fnp) {
+        const f = data.fnp as Fnp494Source;
+        res = {
+          ...data,
+          pressureAtDistance: (r: number) => fnpPressureAt(r, f),
+          impulseAtDistance: (r: number) => fnpImpulseAt(r, f),
+        };
+      } else if (data.vgsch) {
         const v = data.vgsch as VgschSource;
         res = {
           ...data,
@@ -322,7 +340,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         considerWalls: b.explosionConsiderWalls ?? true,
         channelMode: b.explosionConsiderWalls ?? true,
         zParticipation: b.explosionZ ?? 0.5,
-        ...vgschParamsOf(b),
+        ...vgschParamsOf(b, branches, nodes),
         thresholds,
       });
     }
@@ -445,6 +463,18 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     ? propagateVgsch({ branches: updatedBranches, nodes, sources: vgschSources, barriers })
     : undefined;
   if (vgschNet) for (const [k, h] of vgschNet.hits) barrierHits.set(k, h);
+
+  // Заряды ВВ по ФНП № 494 — свой обход: βi и di каждой выработки,
+  // коэффициенты местных сопротивлений прил. 30, тупики короче ¼ пути.
+  const fnpSources = new Map<string, Fnp494Source>();
+  for (const [bid, r] of resultByBranch) if (r.fnp && !r.noExplosion) fnpSources.set(bid, r.fnp);
+  const fnpNet = fnpSources.size > 0
+    ? propagateFnp({ branches: updatedBranches, nodes, sources: fnpSources, barriers })
+    : undefined;
+  if (fnpNet) for (const [k, h] of fnpNet.hits) {
+    const prev = barrierHits.get(k);
+    if (!prev || h.incident_kPa > prev.incident_kPa) barrierHits.set(k, h);
+  }
   /** Запоминаем самый сильный удар по перемычке — с какой бы стороны он ни пришёл. */
   const recordHit = (bar: BlastBarrier, hit: BarrierHit) => {
     const prev = barrierHits.get(bar.key);
@@ -466,6 +496,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   updatedBranches.forEach(src => {
     if (!src.hasExplosion || src.explosionComputedMaxP <= 0) return;
     if (vgschSources.has(src.id)) return; // ведётся обходом по методике ВГСЧ
+    if (fnpSources.has(src.id)) return;   // ведётся обходом по ФНП № 494
     const len = bLen(src); const t = src.explosionT ?? 0.5;
     const res = resultByBranch.get(src.id);
     const rTr = res?.transitionRadius_m ?? 0;
@@ -610,8 +641,34 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     return Math.round(r);
   };
 
+  // Заряды ВВ по ФНП № 494 — радиус зоны по сети: наибольший путь до точки,
+  // где давление ещё не ниже порога (с шагом по длине каждой выработки).
+  if (fnpNet) {
+    for (const [srcId, res] of resultByBranch) {
+      if (!fnpSources.has(srcId)) continue;
+      const before = res.zones.map(z => z.radius_m);
+      const reach = new Map<number, number>(res.zones.map(z => [z.deltaP_kPa, 0]));
+      const N = 24;
+      for (const b of updatedBranches) {
+        for (let i = 0; i <= N; i++) {
+          const r = fnpNet.pressureAt(b.id, i / N);
+          if (!r || r.srcId !== srcId) continue;
+          for (const thr of reach.keys()) if (r.p >= thr && r.d > reach.get(thr)!) reach.set(thr, r.d);
+        }
+      }
+      res.zones = res.zones.map(z => {
+        const r = Math.round(reach.get(z.deltaP_kPa) ?? 0);
+        return { ...z, radius_m: r, impulse_Pas: res.impulseAtDistance(r) };
+      });
+      if (Array.isArray(res.log)) {
+        res.log.push("Зоны поражения по сети выработок (βi, di каждой выработки, местные сопротивления прил. 30, перемычки):");
+        res.zones.forEach((z, i) => res.log.push(`  ${z.name}: ${z.radius_m} м по сети (в одиночной выработке ${before[i]} м)`));
+      }
+    }
+  }
+
   for (const [srcId, res] of resultByBranch) {
-    if (res.noExplosion || res.vgsch || vgschSources.has(srcId)) continue;
+    if (res.noExplosion || res.vgsch || vgschSources.has(srcId) || fnpSources.has(srcId)) continue;
     const before = res.zones.map(z => z.radius_m);
     res.zones = res.zones.map(z => {
       const r = reachOnNet(srcId, z.deltaP_kPa, z.radius_m);
@@ -641,9 +698,14 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       explosionComputedR_medium: zr.zones[2]?.radius_m ?? 0,
       explosionComputedR_light: zr.zones[3]?.radius_m ?? 0,
     } : b0;
+    // Давление в выработке по ФНП № 494 — наибольшее вдоль неё (для протокола)
+    const fnpP = fnpNet
+      ? Math.max(0, ...[0, 0.25, 0.5, 0.75, 1].map(t => fnpNet.pressureAt(b.id, t)?.p ?? 0))
+      : 0;
     const list = barriers.get(b.id);
     if (!list || list.length === 0) {
-      return b.hasBulkhead ? { ...b, bulkheadDestroyedByExplosion: false } : b;
+      const withP = fnpP > 0 ? { ...b, explosionComputedDeltaP: Math.round(fnpP * 10) / 10 } : b;
+      return withP.hasBulkhead ? { ...withP, bulkheadDestroyedByExplosion: false } : withP;
     }
     let destroyed = false;
     let maxIncident = 0;
@@ -655,12 +717,22 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     }
     return {
       ...b,
-      explosionComputedDeltaP: Math.round(maxIncident * 10) / 10,
+      explosionComputedDeltaP: Math.round(Math.max(maxIncident, fnpP) * 10) / 10,
       bulkheadDestroyedByExplosion: destroyed,
     };
   });
 
   // Путь волны по методике ВГСЧ — в общую карту (нужна для шкалы на схеме)
+  if (fnpNet) {
+    for (const [nid, st] of fnpNet.nodeState) {
+      const src = fnpSources.get(st.srcId);
+      const cur = netWave.get(nid);
+      if (!src) continue;
+      const p0 = src ? fnpPressureAt(src.rMin_m, src) : 0;
+      const att = p0 > 0 ? fnpNet.pressureOfState(st) / p0 : 0;
+      if (!cur || st.d > cur.d) netWave.set(nid, { d: st.d, att, srcId: st.srcId });
+    }
+  }
   if (vgschNet) {
     for (const [nid, st] of vgschNet.nodeState) {
       const r = vgschSources.get(st.srcId);
@@ -673,6 +745,6 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
 
   return {
     branches: finalBranches, results, resultByBranch, netWave, pressureAtNode,
-    barrierHits, barriers, vgschNet,
+    barrierHits, barriers, vgschNet, fnpNet,
   };
 }

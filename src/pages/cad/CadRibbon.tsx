@@ -1125,7 +1125,7 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                 });
                 if (!run) return;
                 const { branches: finalBranches, results, resultByBranch } = run;
-                setExplosionBarriers({ byBranch: run.barriers, hits: run.barrierHits });
+                setExplosionBarriers({ byBranch: run.barriers, hits: run.barrierHits, fnpNet: run.fnpNet });
 
                 setBranches(finalBranches);
                 if (results.length > 0) {
@@ -1238,6 +1238,7 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                   resultByBranch: explosionResultByBranch,
                   barriers: explosionBarriers.byBranch,
                   barrierHits: explosionBarriers.hits,
+                  fnpNet: explosionBarriers.fnpNet,
                   duringEmergency: blastDuringEmergency,
                 });
               }}

@@ -27,7 +27,9 @@ export interface BulkheadCatalogItem {
   // В расчёте используется rMkyurgs (числовое значение в Мюрг).
   rMin: number;   // мин. R, Мюрг (нижняя граница диапазона)
   rMax: number;   // макс. R, Мюрг (верхняя граница; = rMin если точное значение)
-  // Давление разрушения, МПа (0 = не нормируется)
+  // Давление разрушения, МПа (0 = не нормируется). Для деревянных, кирпичных
+  // и бетонных — по прил. 28 ФНП № 494: 0,01 / 0,05 / 0,2 (200…400 кПа, нижняя
+  // граница — с запасом). Прочие — справочные значения каталога.
   failurePressure: number;
   // Примечание (ГОСТ, нормативный документ)
   note: string;
@@ -54,7 +56,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "door",
     airPermeability: 0.003182,
     rMin: 98_712, rMax: 98_712,
-    failurePressure: 0.08,
+    failurePressure: 0.2,
     note: "A=0,003182 м²/(с·√Па)",
     color: "var(--c-blue, #1565c0)",
   },
@@ -74,7 +76,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "door",
     airPermeability: 0.003863,
     rMin: 66_980, rMax: 66_980,
-    failurePressure: 0.04,
+    failurePressure: 0.05,
     note: "A=0,003863 м²/(с·√Па)",
     color: "var(--c-blue, #1565c0)",
   },
@@ -106,7 +108,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "door",
     airPermeability: 0.003182,
     rMin: 98_712, rMax: 98_712,
-    failurePressure: 0.08,
+    failurePressure: 0.2,
     note: "A=0,003182 м²/(с·√Па)",
     color: "#0288d1",
   },
@@ -126,7 +128,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "door",
     airPermeability: 0.003863,
     rMin: 66_980, rMax: 66_980,
-    failurePressure: 0.04,
+    failurePressure: 0.05,
     note: "A=0,003863 м²/(с·√Па)",
     color: "#0288d1",
   },
@@ -170,7 +172,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "water",
     airPermeability: 0.003074,
     rMin: 105_800, rMax: 105_800,
-    failurePressure: 0.08,
+    failurePressure: 0.2,
     note: "A=0,003074 м²/(с·√Па)",
     color: "var(--c-purple-ink, #6a1b9a)",
   },
@@ -190,7 +192,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "water",
     airPermeability: 0.003765,
     rMin: 70_617, rMax: 70_617,
-    failurePressure: 0.04,
+    failurePressure: 0.05,
     note: "A=0,003765 м²/(с·√Па)",
     color: "var(--c-purple-ink, #6a1b9a)",
   },
@@ -222,7 +224,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "solid",
     airPermeability: 0.003074,
     rMin: 105_800, rMax: 105_800,
-    failurePressure: 0.08,
+    failurePressure: 0.2,
     note: "A=0,003074 м²/(с·√Па)",
     color: "var(--c-green, #2e7d32)",
   },
@@ -242,7 +244,7 @@ export const BULKHEAD_CATALOG: BulkheadCatalogItem[] = [
     type: "solid",
     airPermeability: 0.003765,
     rMin: 70_617, rMax: 70_617,
-    failurePressure: 0.04,
+    failurePressure: 0.05,
     note: "A=0,003765 м²/(с·√Па)",
     color: "#558b2f",
   },

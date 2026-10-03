@@ -20,6 +20,8 @@ import { type TopoBranch, type TopoNode } from "@/lib/topology";
 import { type ExplosionResult, waveFrontSpeed, GAS_TYPES, EXPLOSIVE_TYPES, concUnitLabel } from "@/lib/explosionCalculator";
 import { barrierDisplayName, barrierArrival, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { combustionMode } from "@/lib/vgschBlast";
+import { supportName } from "@/lib/fnp494Blast";
+import { fnpBranchInfo, type FnpNetResult } from "@/lib/fnp494Network";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 
 export interface ExplosionReportInput {
@@ -31,6 +33,8 @@ export interface ExplosionReportInput {
   barriers: Map<string, BlastBarrier[]>;
   barrierHits: Map<string, BarrierHit>;
   duringEmergency?: boolean;
+  /** Обход сети по ФНП № 494 — для пройденных местных сопротивлений. */
+  fnpNet?: FnpNetResult;
 }
 
 type Ws = ExcelJSNs.Worksheet;
@@ -127,7 +131,7 @@ function sourceText(b: TopoBranch): string {
 }
 
 function methodText(b: TopoBranch, r?: ExplosionResult): string {
-  if (!isGasSource(b)) return "Садовский (ВВ)";
+  if (!isGasSource(b)) return r?.fnp ? "ФНП № 494, пп. 816–822" : "Садовский (ВВ)";
   if (r?.vgsch) return "ВГСЧ (Прил. 12 к Уставу ВГСЧ)";
   return "Прямолинейная";
 }
@@ -222,15 +226,21 @@ function buildProtocolSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, l
       massSrc.map(b => {
         const r = inp.resultByBranch.get(b.id);
         if (!r || r.noExplosion) return [label(b), sourceText(b), null, null, null, null, null, "взрыв не происходит"];
+        const note = r.fnp
+          ? `ФНП № 494: ΣS = ${r1(r.fnp.sumS_m2, 1)} м², d = ${r1(r.fnp.d_m, 2)} м, β = ${r.fnp.beta} (${supportName(r.fnp.support)})${r.fnp.kRock > 1 ? ", ×1,5 крепкие породы" : ""}; ΔP_max при r = Qэ^⅓ = ${r1(r.fnp.rMin_m, 2)} м; импульс справочно`
+          : `на границе применимости r = ${r1(r.minValidRadius_m, 2)} м`;
         return [label(b), sourceText(b), r1(r.q_tnt_kg, 2), r1(r.maxDeltaP_kPa, 1), r1(r.maxImpulse_Pas, 1),
-          r1(r.waveFrontSpeed_ms, 0), r1(r.phaseDuration_ms, 1), `на границе применимости r = ${r1(r.minValidRadius_m, 2)} м`];
+          r1(r.waveFrontSpeed_ms, 0), r1(r.phaseDuration_ms, 1), note];
       }),
       { numFmt: [undefined, undefined, "0.00", "#,##0.0", "#,##0.0", "#,##0", "0.0"] });
   }
 
   // Зоны поражения
   let n = 2 + (gasSrc.length ? 1 : 0) + (massSrc.length ? 1 : 0);
-  row = section(ws, row, `${n}. ЗОНЫ ПОРАЖЕНИЯ (расстояние от центра очага по одиночной прямой выработке)`, COLS);
+  const anyNet = srcBranches.some(b => !!inp.resultByBranch.get(b.id)?.fnp);
+  row = section(ws, row, anyNet
+    ? `${n}. ЗОНЫ ПОРАЖЕНИЯ (для ВВ по ФНП № 494 — путь по сети выработок; для газа — по одиночной выработке)`
+    : `${n}. ЗОНЫ ПОРАЖЕНИЯ (расстояние от центра очага по одиночной прямой выработке)`, COLS);
   const zRows: Cell[][] = [];
   const zTones: Tone[] = [];
   srcBranches.forEach(b => {
@@ -245,7 +255,9 @@ function buildProtocolSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, l
   });
   row = table(ws, row, ["Выработка-очаг", "Зона", "Расстояние, м", "ΔP, кПа", "Импульс", "Ед. импульса", "Характеристика", ""],
     zRows, { tones: zTones, numFmt: [undefined, undefined, "#,##0", "0.##", "#,##0.0"] });
-  ws.getCell(row - 1, 1).value = "По схеме волна ведётся с учётом сопряжений, поворотов и перемычек — фактические расстояния зон по сети короче.";
+  ws.getCell(row - 1, 1).value = anyNet
+    ? "ВВ по ФНП № 494: ΔP = (3410·Qэ/(R·ΣS) + 794·√(Qэ/(R·ΣS)))·e^(−βср·R/dср) / ΠK; βср и dср — по пройденным выработкам (прил. 29, ф. 24), K — местные сопротивления (прил. 30). Подробно — лист «Выработки»."
+    : "По схеме волна ведётся с учётом сопряжений, поворотов и перемычек — фактические расстояния зон по сети короче.";
   ws.getCell(row - 1, 1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
   row += 1;
 
@@ -348,22 +360,39 @@ function buildBarriersSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, l
 
 // ─── Лист «Выработки» ────────────────────────────────────────────────────────
 function buildBranchesSheet(wb: ExcelJSNs.Workbook, inp: ExplosionReportInput, label: ReturnType<typeof makeLabel>) {
-  const headers = ["№ п/п", "Выработка", "Длина, м", "Сечение, м²", "ΔP волны, кПа", "Перемычка разрушена"];
+  const fnp = [...inp.resultByBranch.values()].some(r => !!r.fnp);
+  const bound = [...inp.resultByBranch.values()].find(r => r.fnp)?.fnp?.betaBound ?? "min";
+  const headers = fnp
+    ? ["№ п/п", "Выработка", "Длина, м", "Сечение, м²", "ΔP волны, кПа", "Перемычка разрушена", "Крепь (прил. 29)", "β", "d = 1,12√S, м", "Путь от заряда, м", "Местные сопротивления на пути (прил. 30)"]
+    : ["№ п/п", "Выработка", "Длина, м", "Сечение, м²", "ΔP волны, кПа", "Перемычка разрушена"];
   const ws = wb.addWorksheet("Выработки", { views: [{ state: "frozen", ySplit: 3 }] });
-  ws.columns = [7, 50, 11, 12, 14, 14].map(width => ({ width }));
-  title(ws, 1, "Давление ударной волны по выработкам", headers.length);
+  ws.columns = (fnp ? [7, 50, 11, 12, 14, 14, 34, 8, 12, 12, 80] : [7, 50, 11, 12, 14, 14]).map(width => ({ width }));
+  title(ws, 1, fnp ? "Давление ударной волны по выработкам (ФНП № 494, пп. 816–822)" : "Давление ударной волны по выработкам", headers.length);
   const list = inp.branches
     .filter(b => (b.explosionComputedDeltaP ?? 0) > 0 || b.hasExplosion)
     .sort((a, b) => (b.explosionComputedDeltaP ?? 0) - (a.explosionComputedDeltaP ?? 0));
-  const rows: Cell[][] = list.map((b, i) => [
-    i + 1, label(b) + (b.hasExplosion ? " — очаг" : ""), r1(b.length, 0), r1(b.area, 1),
-    r1(b.explosionComputedDeltaP, 1), b.bulkheadDestroyedByExplosion ? "да" : "",
-  ]);
+  const rows: Cell[][] = list.map((b, i) => {
+    const base: Cell[] = [
+      i + 1, label(b) + (b.hasExplosion ? " — очаг" : ""), r1(b.length, 0), r1(b.area, 1),
+      r1(b.explosionComputedDeltaP, 1), b.bulkheadDestroyedByExplosion ? "да" : "",
+    ];
+    if (!fnp) return base;
+    const info = fnpBranchInfo(b, bound);
+    const st = inp.fnpNet ? [inp.fnpNet.nodeState.get(b.fromId), inp.fnpNet.nodeState.get(b.toId)]
+      .filter(Boolean)
+      .sort((x, y) => (x!.d) - (y!.d))[0] : undefined;
+    return [...base, info.support, info.beta, r1(info.d, 2), st ? r1(st.d, 0) : (b.hasExplosion ? 0 : null),
+      (st?.local ?? []).join("; ") || (b.hasExplosion ? "очаг" : "—")];
+  });
   if (rows.length === 0) rows.push(["", "Нет данных", null, null, null, ""]);
   table(ws, 3, headers, rows, {
     tones: list.map(b => b.bulkheadDestroyedByExplosion ? "bad" : undefined),
-    align: ["center", "left", "right", "right", "right", "center"],
-    numFmt: [undefined, undefined, "#,##0", "0.0", "#,##0.0"],
+    align: fnp
+      ? ["center", "left", "right", "right", "right", "center", "left", "right", "right", "right", "left"]
+      : ["center", "left", "right", "right", "right", "center"],
+    numFmt: fnp
+      ? [undefined, undefined, "#,##0", "0.0", "#,##0.0", undefined, undefined, "0.000", "0.00", "#,##0"]
+      : [undefined, undefined, "#,##0", "0.0", "#,##0.0"],
   });
   ws.autoFilter = { from: { row: 3, column: 1 }, to: { row: 3, column: headers.length } };
 }

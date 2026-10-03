@@ -31,6 +31,8 @@ import { type SideTab, type CompareStatus } from "./cadTypes";
 import { isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
 import type { SchemaSymbol } from "./cadTypes";
 import { type CombustionMode, COMBUSTION_MODES, combustionMode } from "@/lib/vgschBlast";
+import { FNP494_SUPPORTS, supportName, supportOf } from "@/lib/fnp494Blast";
+import { autoSumS } from "@/lib/fnp494Network";
 import { safeFixed } from "./cadCompute";
 import type { CadPageState } from "./useCadPage";
 
@@ -1602,6 +1604,11 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         ? <>Методика определения параметров УВВ при взрывах газов и пыли в горных
                           выработках (Прил. 12 к Уставу ВГСЧ). Перемычки разрушаются при давлении
                           во фронте не ниже давления разрушения (табл. 8); устоявшие волну задерживают.</>
+                        : (b.explosionSourceType ?? "gas") === "mass" && (b.explosionMassMethod ?? "fnp494") === "fnp494"
+                        ? <>ФНП № 494 «Правила безопасности при производстве, хранении и применении ВМ
+                          промышленного назначения», пп. 816–822: давление по ф. (22) с коэффициентом
+                          шероховатости β каждой выработки (прил. 29), местные сопротивления — прил. 30,
+                          давление разрушения перемычек — прил. 28. Действует до 01.01.2027.</>
                         : <>Методика газодинамического расчёта параметров воздушных ударных волн
                           (формула Садовского), тротиловый эквивалент — по Методике №415.</>}
                     </span>
@@ -1616,7 +1623,10 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     )}
                   </div>
 
-                  {/* Настройки */}
+                  {/* Настройки — только для прежней модели заряда ВВ и газа «Прямолинейная»:
+                      в ФНП № 494 и методике ВГСЧ волна всегда идёт по выработкам. */}
+                  {(((b.explosionSourceType ?? "gas") === "mass" && b.explosionMassMethod === "sadovsky")
+                    || ((b.explosionSourceType ?? "gas") === "gas" && b.explosionGasMethod === "aeroset")) && (<>
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Настройки</div>
                   <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <input type="checkbox" id={`exp_walls_${b.id}`}
@@ -1624,6 +1634,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                       onChange={e => updateBranch(b.id, { explosionConsiderWalls: e.target.checked })} />
                     <label htmlFor={`exp_walls_${b.id}`} className="text-[11px] text-gray-700 cursor-pointer">Учитывать отражение от стенок выработки</label>
                   </div>
+                  </>)}
 
                   {/* Способ задания */}
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Задание энергии взрыва</div>
@@ -1952,6 +1963,54 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         onChange={e => updateBranch(b.id, { explosionExplosiveMass: parseFloat(e.target.value) || 10 })}
                         className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
                     </div>
+                    <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Методика:</span>
+                      <select value={b.explosionMassMethod ?? "fnp494"}
+                        onChange={e => updateBranch(b.id, { explosionMassMethod: e.target.value as "fnp494" | "sadovsky" })}
+                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                        <option value="fnp494">ФНП № 494, пп. 816–822</option>
+                        <option value="sadovsky">Садовский + канал (прежняя, для сверки)</option>
+                      </select>
+                    </div>
+                    {(b.explosionMassMethod ?? "fnp494") === "fnp494" && (<>
+                      <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}
+                        title="Вид крепи выработки-очага (прил. 29). Для остальных выработок — в их свойствах, иначе по типу поверхности">
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Крепь (прил. 29):</span>
+                        <select value={b.blastSupport ?? ""}
+                          onChange={e => updateBranch(b.id, { blastSupport: e.target.value || undefined })}
+                          className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                          <option value="">По типу поверхности — {supportName(supportOf({ surfaceId: b.surfaceId, alphaCoef: b.alphaCoef }))}</option>
+                          {FNP494_SUPPORTS.map(sp => <option key={sp.id} value={sp.id}>{sp.name} — β {sp.min}…{sp.max}</option>)}
+                        </select>
+                      </div>
+                      <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}
+                        title="Нижняя граница β даёт большее давление — расчёт с запасом для людей">
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Значение β:</span>
+                        <select value={b.explosionBetaBound ?? "min"}
+                          onChange={e => updateBranch(b.id, { explosionBetaBound: e.target.value as "min" | "max" })}
+                          className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                          <option value="min">Нижняя граница (с запасом)</option>
+                          <option value="max">Верхняя граница</option>
+                        </select>
+                      </div>
+                      <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}
+                        title="Суммарное сечение выработок, примыкающих к заряду (п. 817). Пусто — по схеме: в тупике S, иначе 2·S">
+                        <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>ΣS, м²:</span>
+                        <input type="number" step="0.1" min="0"
+                          value={b.explosionSumS ?? ""}
+                          placeholder={`по схеме: ${Math.round(autoSumS({ ...b, explosionSumS: 0 }, branches, nodes) * 10) / 10}`}
+                          onChange={e => { const v = parseFloat(e.target.value); updateBranch(b.id, { explosionSumS: v > 0 ? v : undefined }); }}
+                          className="flex-1 text-[11px] text-right px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }} />
+                      </div>
+                      <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                        <input type="checkbox" id={`exp_hard_${b.id}`}
+                          checked={b.explosionHardRock === true}
+                          onChange={e => updateBranch(b.id, { explosionHardRock: e.target.checked })} />
+                        <label htmlFor={`exp_hard_${b.id}`} className="text-[11px] text-gray-700 cursor-pointer">
+                          Породы IX группы и выше (f = 12…20) — давление ×1,5
+                        </label>
+                      </div>
+                    </>)}
                     {(() => {
                       const expl = EXPLOSIVE_TYPES.find(ex => ex.id === (b.explosionExplosiveId ?? "ammonit"));
                       if (!expl) return null;
@@ -1985,6 +2044,22 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                       const res = explosionResultByBranch.get(b.id);
                       if (!res || !res.maxImpulse_Pas) return null;
                       const isGas = !!res.gasSource;
+                      if (res.fnp) {
+                        const f = res.fnp;
+                        return (<>
+                          <Row label="ΣS (п. 817):" value={`${Math.round(f.sumS_m2 * 10) / 10} м²`} />
+                          <Row label="d = 1,12·√S (ф. 23):" value={`${Math.round(f.d_m * 100) / 100} м`} />
+                          <Row label="β (прил. 29):" value={`${f.beta} — ${supportName(f.support)}`} />
+                          {f.kRock > 1 && <Row label="Крепкие породы:" value="×1,5" />}
+                          <Row label="Импульс (справочно):" value={`${res.maxImpulse_Pas} Па·с`} />
+                          <div className="px-2 py-1 text-[10px] leading-tight" style={{ color: "var(--c-t2, #4b5563)", borderBottom: "1px solid #f3f4f6" }}>
+                            ФНП № 494: ΔP по ф. (22); по схеме — β и d каждой выработки,
+                            местные сопротивления прил. 30, тупики короче ¼ пути не учитываются.
+                            Максимум — на расстоянии Qэ<sup>1/3</sup> ≈ {Math.round(f.rMin_m * 100) / 100} м.
+                            Допустимо для людей — 10 кПа.
+                          </div>
+                        </>);
+                      }
                       if (res.vgsch) {
                         const v = res.vgsch;
                         const pvLen = Math.round(v.pvVolumePerSide_m3 / (v.area_m2 || 1));

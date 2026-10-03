@@ -1262,6 +1262,8 @@ export function useCadPage() {
   const [explosionBarriers, setExplosionBarriers] = useState<{
     byBranch: Map<string, BlastBarrier[]>;
     hits: Map<string, BarrierHit>;
+    /** Обход сети по ФНП № 494 — для протокола (пройденные сопротивления). */
+    fnpNet?: import("@/lib/fnp494Network").FnpNetResult;
   } | null>(null);
   // Предварительный расчёт очага — считается на месте, как только на ветви
   // выставлены параметры взрыва. Наполняется ниже (см. explosionPreview).
@@ -2029,7 +2031,7 @@ export function useCadPage() {
       ambientPressure_kPa: 101.3,
       considerWalls: src.explosionConsiderWalls ?? true,
       zParticipation: src.explosionZ ?? 0.5,
-      ...vgschParamsOf(src),
+      ...vgschParamsOf(src, branches, nodes),
       thresholds: blastThresholds,
     });
     if (res.noExplosion) { setExplosionPreview(null); return; }

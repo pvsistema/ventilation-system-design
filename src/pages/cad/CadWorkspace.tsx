@@ -14,6 +14,8 @@ import { makeTextBlock } from "./cadTypes";
 import type { SchemaSymbol } from "./cadTypes";
 import ScrollArrows from "@/components/cad/ScrollArrows";
 import { propagateVgsch } from "@/lib/vgschNetwork";
+import { propagateFnp } from "@/lib/fnp494Network";
+import { type Fnp494Source } from "@/lib/fnp494Blast";
 import { type VgschSource } from "@/lib/vgschBlast";
 import { ToolBtn, ViewBtn } from "./cadComponents";
 import type { CadPageState } from "./useCadPage";
@@ -1326,6 +1328,24 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     })
                   : null;
 
+                // Заряды ВВ по ФНП № 494 — тот же обход, что в полном расчёте:
+                // β и d каждой выработки, местные сопротивления прил. 30.
+                const fnpSrc = new Map<string, Fnp494Source>();
+                sources.forEach(sb => { const f = resFor(sb.id)?.fnp; if (f) fnpSrc.set(sb.id, f); });
+                const fnpNetC = fnpSrc.size > 0
+                  ? propagateFnp({
+                      branches, nodes, sources: fnpSrc,
+                      barriers: explosionCalcDone && explosionBarriers
+                        ? explosionBarriers.byBranch
+                        : collectBarriers(branches, schemaSymbols, BULKHEAD_SYMBOL_IDS),
+                      decided: explosionCalcDone && explosionBarriers ? explosionBarriers.hits : undefined,
+                    })
+                  : null;
+                // Очаги, которые ведутся своим нормативным обходом
+                const ownNet = (id: string) => vgschSrc.has(id) || fnpSrc.has(id);
+                const netPressureAt = (bid: string, t: number) =>
+                  vgschNetC?.pressureAt(bid, t) ?? fnpNetC?.pressureAt(bid, t) ?? null;
+
                 // Длина ветви по координатам узлов (3D)
                 const nodeByIdMap = new Map(nodes.map(n => [n.id, n]));
                 const branchLen = (b: typeof branches[0]): number => {
@@ -1389,7 +1409,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                   // Старую модель для него не запускаем: иначе там, куда волна
                   // ВГСЧ не дошла (устоявшая перемычка, угасание), подмешивалась
                   // бы волна другой модели — отсюда «хаотичная» окраска.
-                  if (vgschSrc.has(src.id)) return;
+                  if (ownNet(src.id)) return;
                   const len = branchLen(src);
                   const t = src.explosionT ?? 0.5;
                   const res = resFor(src.id);
@@ -1470,7 +1490,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                   const isSource = b.hasExplosion && b.explosionComputedMaxP > 0;
                   const rFrom = distNode.get(b.fromId);
                   const rTo   = distNode.get(b.toId);
-                  const vgHere = vgschNetC ? (vgschNetC.pressureAt(b.id, 0.5)?.p ?? 0) > 0 : false;
+                  const vgHere = (netPressureAt(b.id, 0)?.p ?? 0) > 0
+                    || (netPressureAt(b.id, 0.5)?.p ?? 0) > 0 || (netPressureAt(b.id, 1)?.p ?? 0) > 0;
                   if (!isSource && !rFrom && !rTo && !vgHere) return; // волна не дошла
 
                   // Затухание вдоль САМОЙ этой ветви — по её сечению
@@ -1513,7 +1534,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     if (rTo)   take(rTo.d   + len * (1 - t), rTo.srcId,   rTo.att   * decay(len * (1 - t)) * barK(1, t));
                     // Если очаг стоит на самой этой ветви — идём по ней напрямую,
                     // не огибая через узлы
-                    if (isSource && !vgschSrc.has(b.id)) {
+                    if (isSource && !ownNet(b.id)) {
                       const tSrc = b.explosionT ?? 0.5;
                       const dSrc = Math.abs(t - tSrc) * len;
                       const rTrS = resFor(b.id)?.transitionRadius_m ?? 0;
@@ -1529,7 +1550,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                   let worst = "safe";
                   for (let i = 0; i < SEG_N; i++) {
                     const tMid = (i + 0.5) / SEG_N;
-                    const vg = vgschNetC?.pressureAt(b.id, tMid);
+                    const vg = netPressureAt(b.id, tMid);
                     // Ниже границы безопасной зоны волна на схеме не показывается:
                     // иначе «безопасная» зелёная окраска тянется далеко за её радиус.
                     if (vg && vg.p > 0 && vg.p < blastThresholds.safeLimit) {
@@ -1548,7 +1569,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     }
                     const reach = reachAt(tMid);
                     // Волна от очага ВГСЧ сюда не дошла — старая модель тоже не красит
-                    if (reach && vgschSrc.has(reach.srcId)) {
+                    if (reach && ownNet(reach.srcId)) {
                       if (curColor !== null) { segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N }); curColor = null; }
                       continue;
                     }

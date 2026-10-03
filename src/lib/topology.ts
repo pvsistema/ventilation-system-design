@@ -485,6 +485,20 @@ export interface TopoBranch {
   explosionExplosiveMass: number;          // кг — масса ВВ
   // Настройки
   explosionConsiderWalls: boolean;         // учитывать отражение от стенок
+  /**
+   * Методика расчёта взрыва ЗАРЯДА ВВ:
+   *   "fnp494"  — ФНП № 494, пп. 816–822 (по умолчанию);
+   *   "sadovsky" — прежняя модель (Садовский + канал), для сверки.
+   */
+  explosionMassMethod?: "fnp494" | "sadovsky";
+  /** Породы IX группы и выше (f = 12…20): давление ×1,5 (п. 817 ФНП № 494). */
+  explosionHardRock?: boolean;
+  /** Граница диапазона β по прил. 29: "min" — с запасом (давление выше). */
+  explosionBetaBound?: "min" | "max";
+  /** ΣS — суммарное сечение выработок, примыкающих к заряду, м² (0 — по схеме). */
+  explosionSumS?: number;
+  /** Вид крепи по прил. 29 ФНП № 494 для расчёта УВВ (пусто — по типу поверхности). */
+  blastSupport?: string;
   // Вычисленные результаты
   explosionComputedQtnt: number;           // кг ТНТ — тротиловый эквивалент
   explosionComputedMaxP: number;           // кПа — максимальное давление (на границе применимости, r̄=1)

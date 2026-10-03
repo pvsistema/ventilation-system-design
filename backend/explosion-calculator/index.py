@@ -14,6 +14,7 @@ POST: {
 import json, math
 from license_guard import license_gate
 import vgsch
+import fnp494
 
 CORS = {
     "Access-Control-Allow-Origin": "*",
@@ -642,6 +643,10 @@ def calc_one(body: dict) -> dict:
     if not (source_type == "gas" and body.get("gasMethod", "vgsch") == "vgsch"):
         log.append(f"Тротиловый эквивалент: Q_tnt = {q_tnt_rounded} кг ТНТ")
 
+    # ЗАРЯД ВВ ПО ФНП № 494 (по умолчанию)
+    if source_type != "gas" and body.get("massMethod", "fnp494") == "fnp494":
+        return calc_fnp494(body, mass_kg, q_tnt_rounded, area_m2, th, log, warnings, distances)
+
     # ГАЗ И ПЫЛЬ ПО МЕТОДИКЕ ВГСЧ (по умолчанию). Прежняя модель «как в
     # Аэросети» доступна через gasMethod = "aeroset".
     if source_type == "gas" and body.get("gasMethod", "vgsch") == "vgsch":
@@ -873,6 +878,87 @@ def calc_vgsch(body, gas, conc, volume, gas_zone_len, area_m2, perimeter_m,
         "pressurePoints":     points,
         "log":                log,
         "warnings":           warnings,
+    }
+
+
+def calc_fnp494(body, mass_kg, q_tnt, area_m2, th, log, warnings, distances):
+    """Заряд ВВ в выработке по ФНП № 494 (ф. 22) — одиночная выработка-очаг."""
+    sum_s = body.get("sumS_m2")
+    sum_s = float(sum_s) if sum_s else None
+    src = fnp494.make_source(mass_kg, q_tnt, area_m2, sum_s, body.get("support", "arch"),
+                             body.get("betaBound", "min"), bool(body.get("hardRock")))
+    area = src["area_m2"]
+    log.append(f"Методика: {fnp494.REF}")
+    log.append("ΔP = (3410·Qэ/(R·ΣS) + 794·√(Qэ/(R·ΣS)))·e^(−β·R/d), кПа (ф. 22)")
+    log.append(f"Qэ = {mass_kg:g} кг (масса одновременно взрываемого заряда)")
+    s_sum = round(src['sumS_m2'], 1)
+    if body.get("sumSManual"):
+        how = "задано вручную"
+    elif abs(src["sumS_m2"] - area) < 1e-6:
+        how = "заряд в тупике — волна уходит в одну выработку, ΣS = S"
+    else:
+        how = "заряд не в тупике — волна уходит в обе стороны выработки, ΣS = 2·S"
+    log.append(f"ΣS = {s_sum:g} м² ({how}, п. 817)")
+    log.append(f"d = 1,12·√S = 1,12·√{area:g} = {round(src['d_m'], 2)} м (ф. 23)")
+    log.append(f"β = {src['beta']:g} — {fnp494.support_name(src)}, "
+               f"{'верхняя' if src['betaBound'] == 'max' else 'нижняя'} граница (прил. 29)")
+    if src["kRock"] > 1:
+        log.append(f"Породы IX группы и выше (f = 12…20): давление ×{fnp494.HARD_ROCK_K:g} (п. 817)")
+    r_min = src["rMin_m"]
+    log.append(f"Ближе r = Qэ^⅓ = {round(r_min, 2)} м давление принимается равным значению на этой границе")
+    max_dp = fnp494.pressure_at(r_min, src)
+    max_imp = fnp494.impulse_at(r_min, src)
+    phase_ms = round(max_imp / (max_dp * 1000) * 1000, 1) if max_dp > 0 else 0
+    log.append(f"Максимальное давление (r = {round(r_min, 2)} м): ΔP = {max_dp} кПа")
+    log.append(f"Импульс (справочно, Садовский i = 200·Q_тнт^⅔/R с тем же затуханием): {max_imp} Па·с")
+    log.append(f"Допустимое давление для людей — {fnp494.PEOPLE_KPA:g} кПа (п. 817)")
+
+    zone_defs = [
+        ("Летальная",         "lethal", th["lethal"], None,         "летальный исход, полное разрушение"),
+        ("Тяжёлые поражения", "heavy",  th["heavy"],  th["lethal"], "тяжёлые травмы, обрушение конструкций"),
+        ("Средние поражения", "medium", th["medium"], th["heavy"],  "средние травмы, повреждение оборудования"),
+        ("Лёгкие поражения",  "light",  th["light"],  th["medium"], "контузии, звуковая травма, лёгкие повреждения"),
+    ]
+    zones = []
+    for name, lvl, lo, hi, what in zone_defs:
+        r = fnp494.distance_at_pressure(lo, src)
+        desc = f"ΔP > {lo:g} кПа — {what}" if hi is None else f"ΔP {lo:g}–{hi:g} кПа — {what}"
+        zones.append({"name": name, "description": desc, "radius_m": r, "deltaP_kPa": lo,
+                      "impulse_Pas": fnp494.impulse_at(r, src), "hazardLevel": lvl})
+    r_safe = fnp494.distance_at_pressure(th["safe"], src)
+    zones.append({"name": "Безопасная зона", "description": f"ΔP < {th['safe']:g} кПа — незначительное воздействие",
+                  "radius_m": r_safe, "deltaP_kPa": th["safe"], "impulse_Pas": fnp494.impulse_at(r_safe, src),
+                  "hazardLevel": "safe"})
+    for z in zones:
+        log.append(f"{z['name']}: {z['radius_m']} м по одиночной выработке, ΔP = {z['deltaP_kPa']:g} кПа")
+    if th["light"] > fnp494.PEOPLE_KPA:
+        warnings.append(f"Порог лёгких поражений ({th['light']:g} кПа) выше допустимого для людей по ФНП № 494 "
+                        f"({fnp494.PEOPLE_KPA:g} кПа)")
+    points = []
+    for r in distances or []:
+        try:
+            rf = float(r)
+        except (TypeError, ValueError):
+            continue
+        points.append({"r_m": rf, "deltaP_kPa": fnp494.pressure_at(rf, src),
+                       "impulse_Pas": fnp494.impulse_at(rf, src)})
+    return {
+        "q_tnt_kg": q_tnt,
+        "maxDeltaP_kPa": max_dp,
+        "maxImpulse_Pas": max_imp,
+        "phaseDuration_ms": phase_ms,
+        "waveFrontSpeed_ms": wave_front_speed(max_dp),
+        "minValidRadius_m": round(r_min, 2),
+        "thresholds": th,
+        "channelMode": True,
+        "transitionRadius_m": 0,
+        "channelDecay_per_m": src["beta"] / src["d_m"] if src["d_m"] > 0 else 0,
+        "channel": {"area_m2": area, "perimeter_m": body.get("excavationPerimeter_m")},
+        "fnp": src,
+        "zones": zones,
+        "points": points,
+        "log": log,
+        "warnings": warnings,
     }
 
 

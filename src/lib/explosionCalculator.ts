@@ -35,6 +35,11 @@ import {
   combustionMode, VGSCH_SAFE_KPA, VGSCH_SAFE_IMPULSE, VGSCH_ZONE1_KPA, VGSCH_PV_FACTOR,
   type VgschSource, type CombustionMode,
 } from "./vgschBlast";
+import {
+  makeFnp494Source, fnpPressureAt, fnpImpulseAt, fnpDistanceAtPressure, supportName,
+  reducedDiameter, FNP494_REF, FNP494_PEOPLE_KPA, FNP494_HARD_ROCK_K,
+  type Fnp494Source, type Fnp494SupportId,
+} from "./fnp494Blast";
 
 // ─── Константы ────────────────────────────────────────────────────────────────
 const Q_TNT   = 4520;   // кДж/кг — теплота взрыва ТНТ
@@ -198,6 +203,18 @@ export interface ExplosionParams {
   dustParticipation?: boolean;
   /** Коэффициент аэродинамического сопротивления выработки α (×10⁻⁴) — для Кз. */
   excavationAlpha?: number;
+  /** Методика для заряда ВВ: "fnp494" (по умолчанию) или "sadovsky" (прежняя). */
+  massMethod?: "fnp494" | "sadovsky";
+  /** Породы IX группы и выше — давление ×1,5 (п. 817 ФНП № 494). */
+  hardRock?: boolean;
+  /** Граница диапазона β (прил. 29): "min" — с запасом. */
+  betaBound?: "min" | "max";
+  /** ΣS — суммарное сечение выработок, примыкающих к заряду, м². */
+  sumS_m2?: number;
+  /** ΣS задано вручную (иначе — определено по схеме). */
+  sumSManual?: boolean;
+  /** Вид крепи выработки-очага по прил. 29 ФНП № 494. */
+  support?: Fnp494SupportId;
 }
 
 /** Методика расчёта взрыва газа и пыли. */
@@ -252,6 +269,8 @@ export interface ExplosionResult {
   gasSource?: GasSourceParams;
   /** Источник по методике ВГСЧ — задан, если расчёт газа шёл по ней. */
   vgsch?: VgschSource;
+  /** Источник по ФНП № 494 — задан, если заряд ВВ считался по ней. */
+  fnp?: Fnp494Source;
   /**
    * Взрыва нет: заряд нулевой либо смесь вне пределов взрываемости.
    * В этом случае все радиусы и давления равны нулю — зоны поражения
@@ -1077,6 +1096,11 @@ export function calcExplosion(params: ExplosionParams): ExplosionResult {
     return calcVgsch(params, th, gasZoneLen, gasVolume, q_tnt, log, warnings);
   }
 
+  // ── ЗАРЯД ВВ ПО ФНП № 494 (по умолчанию) ─────────────────────────────────
+  if (params.sourceType === "mass" && (params.massMethod ?? "fnp494") === "fnp494") {
+    return calcFnp494(params, th, q_tnt, log, warnings);
+  }
+
   // Граница применимости формулы для этого заряда, м (r̄ = 1).
   // Ниже её параметры волны методикой не определяются.
   const rMinValid = minValidRadius(q_tnt);
@@ -1365,6 +1389,98 @@ function calcVgsch(
     channelDecay_per_m: src.kz * P / S,
     channel: { area_m2: S, perimeter_m: P },
     vgsch: src,
+    zones,
+    pressureAtDistance,
+    impulseAtDistance,
+    log,
+    warnings,
+  };
+}
+
+/**
+ * Взрыв заряда ВВ в подземной выработке по ФНП № 494 (пп. 816–822).
+ *
+ * Здесь — давление в ОДИНОЧНОЙ выработке-очаге без местных сопротивлений
+ * (ф. 22). По схеме волна ведётся с β и d каждой выработки и коэффициентами
+ * местных сопротивлений прил. 30 (explosionModeRun).
+ */
+function calcFnp494(
+  params: ExplosionParams,
+  th: ExplosionThresholds,
+  q_tnt: number,
+  log: string[],
+  warnings: string[],
+): ExplosionResult {
+  const area = params.excavationArea_m2 > 0 ? params.excavationArea_m2 : 12;
+  const mass = params.explosiveMass_kg;
+  const support: Fnp494SupportId = params.support ?? "arch";
+  const src = makeFnp494Source({
+    Q_kg: mass, qTnt_kg: q_tnt, area_m2: area, sumS_m2: params.sumS_m2,
+    support, betaBound: params.betaBound, hardRock: params.hardRock,
+  });
+
+  log.push(`Методика: ${FNP494_REF}`);
+  log.push("ΔP = (3410·Qэ/(R·ΣS) + 794·√(Qэ/(R·ΣS)))·e^(−β·R/d), кПа (ф. 22)");
+  log.push(`Qэ = ${mass} кг (масса одновременно взрываемого заряда)`);
+  {
+    const sS = Math.round(src.sumS_m2 * 10) / 10;
+    const how = params.sumSManual ? "задано вручную"
+      : Math.abs(src.sumS_m2 - area) < 1e-6 ? "заряд в тупике — волна уходит в одну выработку, ΣS = S"
+      : "заряд не в тупике — волна уходит в обе стороны выработки, ΣS = 2·S";
+    log.push(`ΣS = ${sS} м² (${how}, п. 817)`);
+  }
+  log.push(`d = 1,12·√S = 1,12·√${area} = ${Math.round(reducedDiameter(area) * 100) / 100} м (ф. 23)`);
+  log.push(`β = ${src.beta} — ${supportName(support)}, ${src.betaBound === "max" ? "верхняя" : "нижняя"} граница (прил. 29)`);
+  if (src.kRock > 1) log.push(`Породы IX группы и выше (f = 12…20): давление ×${FNP494_HARD_ROCK_K} (п. 817)`);
+  log.push(`Ближе r = Qэ^⅓ = ${Math.round(src.rMin_m * 100) / 100} м давление принимается равным значению на этой границе`);
+
+  const pressureAtDistance = (r: number) => fnpPressureAt(r, src);
+  const impulseAtDistance = (r: number) => fnpImpulseAt(r, src);
+  const maxDeltaP = pressureAtDistance(src.rMin_m);
+  const maxImpulse = impulseAtDistance(src.rMin_m);
+  const phaseDuration_ms = maxDeltaP > 0 ? Math.round(maxImpulse / (maxDeltaP * 1000) * 1000 * 10) / 10 : 0;
+  log.push(`Максимальное давление (r = ${Math.round(src.rMin_m * 100) / 100} м): ΔP = ${maxDeltaP} кПа`);
+  log.push(`Импульс (справочно, Садовский i = 200·Q_тнт^⅔/R с тем же затуханием): ${maxImpulse} Па·с`);
+  log.push(`Допустимое давление для людей — ${FNP494_PEOPLE_KPA} кПа (п. 817)`);
+
+  const zoneDefs: Array<{ name: string; level: ExplosionZone["hazardLevel"]; from: number; to: number | null; what: string }> = [
+    { name: "Летальная",         level: "lethal", from: th.lethal, to: null,      what: "летальный исход, полное разрушение" },
+    { name: "Тяжёлые поражения", level: "heavy",  from: th.heavy,  to: th.lethal, what: "тяжёлые травмы, обрушение конструкций" },
+    { name: "Средние поражения", level: "medium", from: th.medium, to: th.heavy,  what: "средние травмы, повреждение оборудования" },
+    { name: "Лёгкие поражения",  level: "light",  from: th.light,  to: th.medium, what: "контузии, звуковая травма, лёгкие повреждения" },
+  ];
+  const zones: ExplosionZone[] = zoneDefs.map(d => {
+    const r = fnpDistanceAtPressure(d.from, src);
+    return {
+      name: d.name,
+      description: `ΔP ${d.to === null ? `> ${d.from}` : `${d.from}–${d.to}`} кПа — ${d.what}`,
+      radius_m: r, deltaP_kPa: d.from, impulse_Pas: impulseAtDistance(r), hazardLevel: d.level,
+    };
+  });
+  const rSafe = fnpDistanceAtPressure(th.safeLimit, src);
+  zones.push({
+    name: "Безопасная зона",
+    description: `ΔP < ${th.safeLimit} кПа — незначительное воздействие`,
+    radius_m: rSafe, deltaP_kPa: th.safeLimit, impulse_Pas: impulseAtDistance(rSafe), hazardLevel: "safe",
+  });
+  zones.forEach(z => log.push(`${z.name}: ${z.radius_m} м по одиночной выработке, ΔP = ${z.deltaP_kPa} кПа`));
+  if (th.light > FNP494_PEOPLE_KPA) {
+    warnings.push(`Порог лёгких поражений (${th.light} кПа) выше допустимого для людей по ФНП № 494 (${FNP494_PEOPLE_KPA} кПа)`);
+  }
+
+  return {
+    q_tnt_kg: Math.round(q_tnt * 100) / 100,
+    maxDeltaP_kPa: maxDeltaP,
+    maxImpulse_Pas: maxImpulse,
+    phaseDuration_ms,
+    waveFrontSpeed_ms: waveFrontSpeed(maxDeltaP),
+    minValidRadius_m: Math.round(src.rMin_m * 100) / 100,
+    thresholds: th,
+    channelMode: true,
+    transitionRadius_m: 0,
+    channelDecay_per_m: src.d_m > 0 ? src.beta / src.d_m : 0,
+    channel: { area_m2: area, perimeter_m: params.excavationPerimeter_m },
+    fnp: src,
     zones,
     pressureAtDistance,
     impulseAtDistance,
