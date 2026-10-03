@@ -14,7 +14,7 @@ import {
   calcExplosion, GAS_TYPES, wallReflectionFactor, type ExplosionThresholds,
   type ExplosionResult, type ExplosionSourceType,
   channelPressureAt, channelImpulseAt, channelDecay, LAMBDA_DEFAULT,
-  gasChannelPressureAt, gasChannelImpulseAt, junctionTransmission,
+  gasChannelPressureAt, gasChannelImpulseAt, junctionTransmission, SADOVSKY_IMPULSE_A,
 } from "@/lib/explosionCalculator";
 
 /**
@@ -199,6 +199,10 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     excavationLength_m: b.length ?? 100,
     ambientPressure_kPa: 101.3,
     considerWalls: b.explosionConsiderWalls ?? true,
+    // «Учитывать отражение от стенок» = волна идёт по выработке как по каналу.
+    // Раньше галочка ни на что не влияла: коэффициент стенок применялся только
+    // в сферической модели, а она по умолчанию выключена.
+    channelMode: b.explosionConsiderWalls ?? true,
     // Коэффициент участия Z по Методике №415 (0.1 открыто / 0.5 замкнуто)
     zParticipation: b.explosionZ ?? 0.5,
     ...vgschParamsOf(b),
@@ -271,7 +275,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         // иначе эпицентр взрыва попадал в зону «безопасно».
         const rBar = Math.max(r, _rMin) / Math.pow(_qTnt, 1 / 3);
         // Коэффициенты Садовского дают кгс/см² — переводим в кПа (×98.07)
-        const dpKgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.15 / (rBar * rBar * rBar);
+        const dpKgf = 0.84 / rBar + 2.7 / (rBar * rBar) + 7.0 / (rBar * rBar * rBar);
         return Math.round(dpKgf * 98.07 * 10) / 10;
       };
       if (data.vgsch) {
@@ -295,10 +299,10 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
           if (_gas) return gasChannelImpulseAt(r, _gas, _ch);
           if (_qTnt <= 0) return 0;
           if (_channelMode) return channelImpulseAt(r, _qTnt, _ch);
-          // Импульс по Методике №415: i = 123·m^0.66/r (Па·с).
+          // Импульс заряда ВВ по Садовскому: i = 200·Q^(2/3)/r (Па·с).
           // Ограничен той же границей применимости — при r → 0 растёт
           // неограниченно.
-          return Math.round(123 * Math.pow(_qTnt, 0.66) / Math.max(r, _rMin) * _wf * 10) / 10;
+          return Math.round(SADOVSKY_IMPULSE_A * Math.pow(_qTnt, 2 / 3) / Math.max(r, _rMin) * _wf * 10) / 10;
         },
       };
     } catch {
@@ -316,6 +320,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
         excavationLength_m: length,
         ambientPressure_kPa: 101.3,
         considerWalls: b.explosionConsiderWalls ?? true,
+        channelMode: b.explosionConsiderWalls ?? true,
         zParticipation: b.explosionZ ?? 0.5,
         ...vgschParamsOf(b),
         thresholds,
@@ -371,6 +376,17 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     return Math.sqrt((tN.x-fN.x)**2+(tN.y-fN.y)**2+(tN.z-fN.z)**2) || (b.length > 0 ? b.length : 1);
   };
   const bArea = (b: TopoBranch) => (b.area && b.area > 0 ? b.area : 12);
+  const bPerim = (b: TopoBranch) => (b.perimeter && b.perimeter > 0 ? b.perimeter : undefined);
+  /**
+   * Погонное затухание на трении для волны ОТ ЭТОГО очага. В сферической
+   * модели (отражение от стенок выключено) давление уже падает с расстоянием
+   * по Садовскому — трение поверх него учло бы затухание дважды.
+   */
+  const decayFor = (srcId: string, area: number, perimeter?: number) => {
+    const r = resultByBranch.get(srcId);
+    if (r && r.channelMode === false && !r.gasSource) return 0;
+    return channelDecay({ area_m2: area, perimeter_m: perimeter, lambda: LAMBDA_DEFAULT });
+  };
 
   /**
    * Состояние волны в узле: путь, множитель ослабления, очаг-источник и
@@ -380,7 +396,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
    * бы половину энергии на каждом промежуточном узле, хотя там она просто
    * идёт насквозь.
    */
-  type WaveState = { d: number; att: number; srcId: string; fromNode?: string };
+  type WaveState = { d: number; att: number; srcId: string; fromNode?: string; fromBranch?: string };
 
   /**
    * Давление в точке, кПа: функция давления СВОЕГО очага от длины пути, к
@@ -453,7 +469,9 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     const len = bLen(src); const t = src.explosionT ?? 0.5;
     const res = resultByBranch.get(src.id);
     const rTr = res?.transitionRadius_m ?? 0;
-    const betaSrc = channelDecay({ area_m2: bArea(src), lambda: LAMBDA_DEFAULT });
+    // Периметр ветви-очага учитывается так же, как в расчёте одиночной
+    // выработки (раньше здесь сечение считалось круглым — другое затухание).
+    const betaSrc = decayFor(src.id, bArea(src), bPerim(src));
     // Для газа затухание начинается не от точки сшивки сферы, а от ГРАНИЦЫ
     // загазованного участка: внутри него давление постоянно и равно ΔP₀.
     const gasHalf = res?.gasSource ? res.gasSource.zoneLength_m / 2 : 0;
@@ -472,21 +490,26 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       list, tFrom: t, tTo: 1, len, d0: 0, attAt: attTo,
       srcId: src.id, pressureOf, onHit: recordHit,
     });
-    if (kFrom > 0) pushWave(src.fromId, { d: dFrom, att: attTo(dFrom) * kFrom, srcId: src.id });
-    if (kTo > 0)   pushWave(src.toId,   { d: dTo,   att: attTo(dTo) * kTo,     srcId: src.id });
+    // ВАЖНО: волна приходит в концы ветви-очага ПО САМОЙ ВЕТВИ-ОЧАГУ. Раньше
+    // это не запоминалось: на первых двух сопряжениях не было «входящей»
+    // ветви, сечение входа бралось равным сумме выходов, и коэффициент
+    // прохождения выходил ровно 1 — волна шла дальше без потерь. Заодно она
+    // пускалась обратно по ветви-очагу.
+    if (kFrom > 0) pushWave(src.fromId, { d: dFrom, att: attTo(dFrom) * kFrom, srcId: src.id, fromBranch: src.id });
+    if (kTo > 0)   pushWave(src.toId,   { d: dTo,   att: attTo(dTo) * kTo,     srcId: src.id, fromBranch: src.id });
   });
 
   // Смежность с геометрией ребра. Для каждого направления помним, откуда
   // волна входит в ветвь (0 — со стороны fromId, 1 — со стороны toId): по
   // этому порядку она и проходит перемычки ветви.
-  type AdjEdge = { to: string; len: number; area: number; branchId: string; tStart: 0 | 1 };
+  type AdjEdge = { to: string; len: number; area: number; perimeter?: number; branchId: string; tStart: 0 | 1 };
   const adjMap = new Map<string, AdjEdge[]>();
   updatedBranches.forEach(b => {
-    const len = bLen(b), area = bArea(b);
+    const len = bLen(b), area = bArea(b), perimeter = bPerim(b);
     if (!adjMap.has(b.fromId)) adjMap.set(b.fromId, []);
     if (!adjMap.has(b.toId))   adjMap.set(b.toId, []);
-    adjMap.get(b.fromId)!.push({ to: b.toId,   len, area, branchId: b.id, tStart: 0 });
-    adjMap.get(b.toId)!.push  ({ to: b.fromId, len, area, branchId: b.id, tStart: 1 });
+    adjMap.get(b.fromId)!.push({ to: b.toId,   len, area, perimeter, branchId: b.id, tStart: 0 });
+    adjMap.get(b.toId)!.push  ({ to: b.fromId, len, area, perimeter, branchId: b.id, tStart: 1 });
   });
 
   const vis2 = new Set<string>();
@@ -494,7 +517,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
   while (pq2.length > 0 && guard++ < 200000) {
     // Разбираем по убыванию силы волны
     pq2.sort((a, b) => b.att - a.att);
-    const { id: cur, d: curD, att: curAtt, srcId, fromNode } = pq2.shift()!;
+    const { id: cur, d: curD, att: curAtt, srcId, fromBranch } = pq2.shift()!;
     if (vis2.has(cur)) continue;
     vis2.add(cur);
     const edges = adjMap.get(cur) ?? [];
@@ -503,10 +526,12 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
     // не входит: назад энергия не уносится. Поэтому в прямом штреке (узел с
     // двумя рёбрами) волна идёт насквозь без потерь на «деление», а делится
     // только там, где выработки реально расходятся.
-    const out = edges.filter(e => e.to !== fromNode);
+    // Входящая ветвь определяется по id ВЕТВИ, а не по соседнему узлу: две
+    // параллельные выработки между одними узлами — это разные пути.
+    const out = edges.filter(e => e.branchId !== fromBranch);
     const outArea = out.reduce((s, e) => s + e.area, 0);
     // Сечение выработки, по которой волна пришла в этот узел
-    const inArea = edges.find(e => e.to === fromNode)?.area ?? outArea;
+    const inArea = edges.find(e => e.branchId === fromBranch)?.area ?? outArea;
     for (const e of out) {
       const toNode = nodeById.get(e.to);
       // Волна выходит на поверхность — дальше не идёт
@@ -517,7 +542,7 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       // за 5-6 узлов, и окраска обрывалась в середине схемы.
       const split = junctionTransmission(inArea, outArea);
       // Затухание на трении вдоль ребра
-      const beta = channelDecay({ area_m2: e.area, lambda: LAMBDA_DEFAULT });
+      const beta = decayFor(srcId, e.area, e.perimeter);
       const attIn = curAtt * split;
       // Перемычки этой ветви — по ходу волны. Устоявшая обнуляет волну,
       // разрушенная пропускает ослабленную (см. blastBarriers.ts).
@@ -530,16 +555,92 @@ export async function runExplosionMode(p: ExplosionRunParams): Promise<Explosion
       const att = attIn * Math.exp(-beta * e.len) * kBar;
       // Волна угасла (или остановлена перемычкой) — ветвь не продолжаем
       if (att < 1e-4) continue;
-      pushWave(e.to, { d: curD + e.len, att, srcId, fromNode: cur });
+      pushWave(e.to, { d: curD + e.len, att, srcId, fromNode: cur, fromBranch: e.branchId });
+    }
+  }
+
+  // ── ЗОНЫ ПОРАЖЕНИЯ ПО СЕТИ ─────────────────────────────────────────────
+  // Раньше радиусы зон в панели считались для ОДНОЙ прямой выработки без
+  // сопряжений и перемычек, а схема окрашивалась по сети — цифры в панели
+  // и цвет ветвей расходились. Теперь радиус зоны — это наибольший путь по
+  // выработкам от очага до точки, где давление по СЕТЕВОМУ расчёту ещё не
+  // ниже порога. Внутри ветви-очага — по одиночному расчёту (сопряжений там
+  // нет), дальше — по состоянию волны в узлах с затуханием вдоль ветви.
+  const reachOnNet = (srcId: string, thr: number, single: number): number => {
+    const src = updatedBranches.find(b => b.id === srcId);
+    if (!src || thr <= 0) return single;
+    const len = bLen(src);
+    const t = src.explosionT ?? 0.5;
+    let r = Math.min(single, Math.max(len * t, len * (1 - t)));
+    for (const [nid, st] of netWave) {
+      if (st.srcId !== srcId) continue;
+      const p = pressureAtNode(st);
+      if (!(p >= thr)) continue;
+      if (st.d > r) r = st.d;
+      // Потери на сопряжении — те же, что в обходе.
+      const edgesHere = adjMap.get(nid) ?? [];
+      const outHere = edgesHere.filter(e => e.branchId !== st.fromBranch);
+      const outAreaHere = outHere.reduce((s, e) => s + e.area, 0);
+      const inAreaHere = edgesHere.find(e => e.branchId === st.fromBranch)?.area ?? outAreaHere;
+      const splitHere = junctionTransmission(inAreaHere, outAreaHere);
+      for (const e of outHere) {
+        if (nodeById.get(e.to)?.atmosphereLink) continue;
+        // Как далеко по этой ветви давление ещё не ниже порога — тем же
+        // законом, что и в обходе: функция давления очага × затухание.
+        const beta = decayFor(srcId, e.area, e.perimeter);
+        const pAt = (x: number) => pressureAtNode({ d: st.d + x, att: st.att * splitHere * Math.exp(-beta * x), srcId });
+        let ext: number;
+        if (pAt(e.len) >= thr) ext = e.len;
+        else {
+          let lo = 0, hi = e.len;
+          for (let i = 0; i < 40; i++) { const m = (lo + hi) / 2; if (pAt(m) >= thr) lo = m; else hi = m; }
+          ext = lo;
+        }
+        // Устоявшая перемычка на ветви останавливает волну на себе.
+        for (const bar of barriers.get(e.branchId) ?? []) {
+          const hit = barrierHits.get(bar.key);
+          if (hit && !hit.destroyed && hit.transmit <= 0) {
+            const pos = (e.tStart === 0 ? bar.t : 1 - bar.t) * e.len;
+            if (pos < ext) ext = pos;
+          }
+        }
+        if (st.d + ext > r) r = st.d + ext;
+      }
+    }
+    return Math.round(r);
+  };
+
+  for (const [srcId, res] of resultByBranch) {
+    if (res.noExplosion || res.vgsch || vgschSources.has(srcId)) continue;
+    const before = res.zones.map(z => z.radius_m);
+    res.zones = res.zones.map(z => {
+      const r = reachOnNet(srcId, z.deltaP_kPa, z.radius_m);
+      return { ...z, radius_m: r, impulse_Pas: res.impulseAtDistance(r) };
+    });
+    if (Array.isArray(res.log)) {
+      res.log.push("Зоны поражения пересчитаны по сети выработок (с сопряжениями и перемычками):");
+      res.zones.forEach((z, i) => {
+        res.log.push(`  ${z.name}: ${z.radius_m} м по сети (в одиночной выработке ${before[i]} м)`);
+      });
     }
   }
 
   // ── ИТОГ ПО ПЕРЕМЫЧКАМ ─────────────────────────────────────────────────
-  // Разрушение определено прямо на пути волны — по давлению ОТРАЖЕНИЯ, а не
-  // набегающей волны: перемычка стоит поперёк хода и тормозит волну до нуля.
-  // В ветвь пишется давление набегающей волны: от него считается толщина
-  // взрывоустойчивой перемычки (там отражение применяется отдельно).
-  const finalBranches = updatedBranches.map(b => {
+  // Разрушение определено прямо на пути волны — по давлению ВО ФРОНТЕ
+  // набегающей волны: ΔP_фронта ≥ P_разр (табл. 8 методики ВГСЧ, давления
+  // разрушения даны именно по фронту). Давление отражения считается только
+  // справочно и для толщины взрывоустойчивой перемычки (РБ №343).
+  // В ветвь пишется давление набегающей волны.
+  const finalBranches = updatedBranches.map(b0 => {
+    // Радиусы зон в ветви-очаге — уже по сети (см. выше).
+    const zr = b0.hasExplosion ? resultByBranch.get(b0.id) : undefined;
+    const b = zr && !zr.noExplosion ? {
+      ...b0,
+      explosionComputedR_lethal: zr.zones[0]?.radius_m ?? 0,
+      explosionComputedR_heavy: zr.zones[1]?.radius_m ?? 0,
+      explosionComputedR_medium: zr.zones[2]?.radius_m ?? 0,
+      explosionComputedR_light: zr.zones[3]?.radius_m ?? 0,
+    } : b0;
     const list = barriers.get(b.id);
     if (!list || list.length === 0) {
       return b.hasBulkhead ? { ...b, bulkheadDestroyedByExplosion: false } : b;

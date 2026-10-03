@@ -149,24 +149,21 @@ def sadovsky_delta_p_raw(r_m, q_tnt):
         return 0.0
     r_bar = max(r_m / (q_tnt ** (1.0 / 3.0)), R_BAR_MIN)
     # Коэффициенты Садовского дают кгс/см² — переводим в кПа (×98.07)
-    dp_kgf = 0.84 / r_bar + 2.7 / r_bar**2 + 7.15 / r_bar**3
+    dp_kgf = 0.84 / r_bar + 2.7 / r_bar**2 + 7.0 / r_bar**3
     return dp_kgf * KGF_CM2_TO_KPA
 
 
 def sadovsky_impulse(r_m, q_tnt):
-    """Импульс положительной фазы, Па·с — по Методике №415: i = 123·m^0.66/r.
+    """Импульс положительной фазы заряда ВВ, Па·с — по Садовскому: i = 200·Q^(2/3)/r.
 
-    Коэффициент 123 из той же методики, что и формула давления. Прежний
-    коэффициент 200 (другая редакция формулы, иные единицы) завышал
-    импульс ровно на 68 % на всех расстояниях.
-
-    Ограничен той же границей применимости: 123·m^0.66/r при r -> 0
-    растёт неограниченно.
+    Формула 123·m^0.66/r из Методики №415 относится к взрывам газовоздушных
+    облаков, а не к зарядам ВВ: с ней импульс был занижен в 1,6 раза.
+    Ограничен границей применимости: при r -> 0 растёт неограниченно.
     """
     if q_tnt <= 0 or r_m <= 0:
         return 0.0
     r = max(r_m, min_valid_radius(q_tnt))
-    return round(123 * q_tnt ** 0.66 / r, 1)
+    return round(200 * q_tnt ** (2.0 / 3.0) / r, 1)
 
 
 def min_valid_radius(q_tnt):
@@ -456,7 +453,7 @@ def channel_impulse_at(l_m, q_tnt, area_m2, perimeter_m=None, lam=None, path_fac
     r_min = R_BAR_MIN * (q_tnt ** (1.0 / 3.0))
     r_tr = max(transition_radius(area_m2), r_min)
     l = max(l_m, r_min)
-    base = 123 * q_tnt ** 0.66
+    base = 200 * q_tnt ** (2.0 / 3.0)
     if l <= r_tr:
         return round((base / l) * path_factor, 1)
     beta = channel_decay(area_m2, perimeter_m, lam) * 0.5
