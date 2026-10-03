@@ -87,6 +87,7 @@
 
 import JSZip from "jszip";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
+import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
 
 /**
  * Единицы сопротивления выработок в файле .erp.
@@ -171,7 +172,7 @@ const NODE_PLAN_POSITION = "1001";
 // сопутствующим полям, а списки ниже — лишь быстрый путь для известных кодов.
 // Собрано по реальным проектам: 8, 15, 92, 99, 101, 110 — перемычки/двери,
 // 68, 89 — изолирующие перемычки (Seal*), 16, 18 — вентиляторы (ВМП и ГВУ).
-const ITEM_BULKHEAD = new Set(["8", "15", "68", "89", "92", "99", "101", "110"]);
+const ITEM_BULKHEAD = new Set(["8", "15", "68", "89", "92", "99", "101", "110", ...ERP_BULKHEAD_CODES]);
 const ITEM_FAN = new Set(["16", "18"]);
 
 // Признаки в полях самого объекта — надёжнее кода, работают на любом проекте.
@@ -236,6 +237,32 @@ function readFields(el: Element): Record<string, string> {
     const n = f.getAttribute("name");
     if (n) out[n] = f.getAttribute("value") ?? "";
   });
+  return out;
+}
+
+/**
+ * Поля объекта на выработке: собственные + параметры ПЕРВОГО режима
+ * проветривания (<ventModesData><ventModeData>).
+ *
+ * В АэроСети тип вентилятора, характеристика, способ задания R перемычки и
+ * площадь окна лежат в ventModeData — по одному набору на КАЖДЫЙ режим
+ * проветривания. Сплошной обход всех <field> давал значения ПОСЛЕДНЕГО
+ * режима (в эталоне их 104), а не основного.
+ */
+function readItemFields(el: Element): Record<string, string> {
+  const out: Record<string, string> = {};
+  const put = (scope: Element | null | undefined) => {
+    if (!scope) return;
+    const fields = Array.from(scope.children).find(c => c.tagName === "fields");
+    fields?.querySelectorAll(":scope > field").forEach(f => {
+      const n = f.getAttribute("name");
+      if (n) out[n] = f.getAttribute("value") ?? "";
+    });
+  };
+  put(Array.from(el.children).find(c => c.tagName === "customFields"));
+  const modes = Array.from(el.children).find(c => c.tagName === "ventModesData");
+  const first = modes ? Array.from(modes.children).find(c => c.tagName === "ventModeData") : undefined;
+  if (first) put(Array.from(first.children).find(c => c.tagName === "customFields"));
   return out;
 }
 
@@ -454,7 +481,7 @@ export async function parseErp(
         items.push({
           code: it.getAttribute("itemCode") ?? "",
           description: it.getAttribute("description") ?? "",
-          f: readFields(it),
+          f: readItemFields(it),
         });
       });
       // Точки излома: <innerNodes><ribNode index x y><…field name="z"/>.
@@ -746,12 +773,16 @@ export async function parseErp(
       fanMode: "constant",
       fanPressure: hasFan ? fanPressure : 0,
       fanName: hasFan ? (fanItem?.description || f["Rib.Name"] || "Вентилятор") : "",
+      // Код картинки 16 — вентилятор местного проветривания, 18 — главный.
+      fanType: hasFan && fanItem?.code === ERP_FAN_LOCAL ? "ВМП" : "ГВУ",
       fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
       fanRpm: hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0,
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
-      bulkheadName: hasBulkhead ? (bulkItem?.description || "Перемычка") : "",
+      // Материал и вид перемычки в АэроСети задаёт КОД картинки — по нему и
+      // называем, если у объекта нет своего описания.
+      bulkheadName: hasBulkhead ? (bulkItem?.description || erpBulkheadName(bulkItem?.code ?? "") || "Перемычка") : "",
       // АэроСеть хранит сопротивление перемычки в кМюрг, а поле bulkheadR —
       // в базовых Мюрг (как при импорте CSV/.cdf3), поэтому умножаем на 1000.
       bulkheadR: hasBulkhead ? bulkR * 1000 : 0,
