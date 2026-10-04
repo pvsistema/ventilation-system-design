@@ -14,7 +14,7 @@ import { makeTextBlock } from "./cadTypes";
 import type { SchemaSymbol } from "./cadTypes";
 import ScrollArrows from "@/components/cad/ScrollArrows";
 import { propagateVgsch } from "@/lib/vgschNetwork";
-import { propagateFnp } from "@/lib/fnp494Network";
+import { propagateFnp, branchLength as fnpBranchLength } from "@/lib/fnp494Network";
 import { type Fnp494Source } from "@/lib/fnp494Blast";
 import { type VgschSource } from "@/lib/vgschBlast";
 import { ToolBtn, ViewBtn } from "./cadComponents";
@@ -1489,6 +1489,59 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 // Теперь ветвь делится на участки, и у каждого своё давление.
                 const SEG_N = 12; // участков на ветвь — хватает для глаза
 
+                // ── Геометрический путь от очагов по выработкам ─────────────
+                // Нужен, чтобы при движении ползунка R вся схема в пределах R
+                // становилась хотя бы «безопасной» (зелёной). Раньше выработки,
+                // куда расчётная волна не дошла (за устоявшей перемычкой, на
+                // другой стороне сети), оставались белыми при любом R.
+                const plainDist = new Map<string, number>();
+                {
+                  const lenOfB = (b: typeof branches[0]) => fnpBranchLength(b, nodeByIdMap);
+                  const pqD: Array<{ id: string; d: number }> = [];
+                  const relax = (id: string, d: number) => {
+                    const cur = plainDist.get(id);
+                    if (cur === undefined || d < cur) { plainDist.set(id, d); pqD.push({ id, d }); }
+                  };
+                  sources.forEach(src => {
+                    const L = lenOfB(src), t = src.explosionT ?? 0.5;
+                    relax(src.fromId, L * t);
+                    relax(src.toId, L * (1 - t));
+                  });
+                  const adjD = new Map<string, Array<{ to: string; len: number }>>();
+                  branches.forEach(b => {
+                    const L = lenOfB(b);
+                    if (!adjD.has(b.fromId)) adjD.set(b.fromId, []);
+                    if (!adjD.has(b.toId)) adjD.set(b.toId, []);
+                    adjD.get(b.fromId)!.push({ to: b.toId, len: L });
+                    adjD.get(b.toId)!.push({ to: b.fromId, len: L });
+                  });
+                  const doneD = new Set<string>();
+                  let g = 0;
+                  while (pqD.length > 0 && g++ < 400000) {
+                    let bi = 0;
+                    for (let i = 1; i < pqD.length; i++) if (pqD[i].d < pqD[bi].d) bi = i;
+                    const { id, d } = pqD.splice(bi, 1)[0];
+                    if (doneD.has(id)) continue;
+                    doneD.add(id);
+                    // Через выход на поверхность волна в шахту не возвращается
+                    if (nodeByIdMap.get(id)?.atmosphereLink) continue;
+                    for (const e of adjD.get(id) ?? []) relax(e.to, d + e.len);
+                  }
+                }
+                /** Кратчайший путь от очага до точки t ветви, м (undefined — не связано). */
+                const plainDistAt = (b: typeof branches[0], t: number): number | undefined => {
+                  const L = fnpBranchLength(b, nodeByIdMap);
+                  const a = plainDist.get(b.fromId), c = plainDist.get(b.toId);
+                  let best: number | undefined;
+                  if (a !== undefined) best = a + L * t;
+                  if (c !== undefined) best = Math.min(best ?? Infinity, c + L * (1 - t));
+                  if (b.hasExplosion && sources.some(sb => sb.id === b.id)) {
+                    best = Math.min(best ?? Infinity, Math.abs(t - (b.explosionT ?? 0.5)) * L);
+                  }
+                  return best;
+                };
+                const safeColor = EXPLOSION_HAZARD_COLORS.safe;
+
                 branches.forEach(b => {
                   const len = branchLen(b);
                   const isSource = b.hasExplosion && b.explosionComputedMaxP > 0;
@@ -1496,7 +1549,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                   const rTo   = distNode.get(b.toId);
                   const vgHere = (netPressureAt(b.id, 0)?.p ?? 0) > 0
                     || (netPressureAt(b.id, 0.5)?.p ?? 0) > 0 || (netPressureAt(b.id, 1)?.p ?? 0) > 0;
-                  if (!isSource && !rFrom && !rTo && !vgHere) return; // волна не дошла
+                  const plainNear = Math.min(plainDistAt(b, 0) ?? Infinity, plainDistAt(b, 1) ?? Infinity);
+                  if (!isSource && !rFrom && !rTo && !vgHere && !(plainNear <= blastWaveRadius)) return; // фронт не дошёл
 
                   // Затухание вдоль САМОЙ этой ветви — по её сечению
                   const betaB = channelDecay({ area_m2: branchArea(b), lambda: LAMBDA_DEFAULT });
@@ -1571,20 +1625,27 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                       }
                       continue;
                     }
-                    const reach = reachAt(tMid);
-                    // Волна от очага ВГСЧ сюда не дошла — старая модель тоже не красит
-                    if (reach && ownNet(reach.srcId)) {
-                      if (curColor !== null) { segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N }); curColor = null; }
-                      continue;
-                    }
-                    // Участок вне досягаемости волны — обрываем текущий отрезок
-                    if (!reach) {
-                      if (curColor !== null) {
+                    // Участок, до которого расчётная волна не дошла (устоявшая
+                    // перемычка, выход на поверхность): если фронт по выработкам
+                    // уже прошёл его (путь ≤ R) — он «безопасный», зелёный.
+                    const paintSafeOrCut = () => {
+                      const pd = plainDistAt(b, tMid);
+                      if (pd !== undefined && pd <= blastWaveRadius) {
+                        if (safeColor !== curColor) {
+                          if (curColor !== null) segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N });
+                          curColor = safeColor;
+                          curStart = i / SEG_N;
+                        }
+                      } else if (curColor !== null) {
                         segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N });
                         curColor = null;
                       }
-                      continue;
-                    }
+                    };
+                    // Нормативный обход (ФНП/ВГСЧ) сюда не дошёл, а фронт ещё
+                    // не прошёл расстояние до участка по своему пути
+                    if (vg && vg.d > blastWaveRadius) { paintSafeOrCut(); continue; }
+                    const reach = reachAt(tMid);
+                    if (!reach || ownNet(reach.srcId)) { paintSafeOrCut(); continue; }
                     // Давление: ближняя зона — сферическая часть, дальше —
                     // значение на сшивке × накопленное по графу ослабление.
                     // Трение здесь повторно НЕ применяется: оно уже в att.
