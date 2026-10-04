@@ -115,7 +115,10 @@ export function vgschParamsOf(b: TopoBranch, branches?: TopoBranch[], nodes?: To
     excavationPerimeter_m: b.perimeter && b.perimeter > 0 ? b.perimeter : undefined,
     excavationAlpha: b.alphaCoef,
     // Заряд ВВ — по ФНП № 494 (пп. 816–822)
-    massMethod: b.explosionMassMethod ?? "fnp494",
+    // Методика «Садовский + канал» выведена из программы (код сохранён в
+    // explosionCalculator.ts). Даже если в старом проекте записано
+    // "sadovsky" — считаем по ФНП № 494.
+    massMethod: "fnp494" as const,
     hardRock: b.explosionHardRock === true,
     betaBound: b.explosionBetaBound ?? "min",
     sumS_m2: branches && nodes ? autoSumS(b, branches, nodes) : (b.explosionSumS || undefined),

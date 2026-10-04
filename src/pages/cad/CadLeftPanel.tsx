@@ -1604,7 +1604,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         ? <>Методика определения параметров УВВ при взрывах газов и пыли в горных
                           выработках (Прил. 12 к Уставу ВГСЧ). Перемычки разрушаются при давлении
                           во фронте не ниже давления разрушения (табл. 8); устоявшие волну задерживают.</>
-                        : (b.explosionSourceType ?? "gas") === "mass" && (b.explosionMassMethod ?? "fnp494") === "fnp494"
+                        : (b.explosionSourceType ?? "gas") === "mass"
                         ? <>ФНП № 494 «Правила безопасности при производстве, хранении и применении ВМ
                           промышленного назначения», пп. 816–822: давление по ф. (22) с коэффициентом
                           шероховатости β каждой выработки (прил. 29), местные сопротивления — прил. 30,
@@ -1625,8 +1625,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
 
                   {/* Настройки — только для прежней модели заряда ВВ и газа «Прямолинейная»:
                       в ФНП № 494 и методике ВГСЧ волна всегда идёт по выработкам. */}
-                  {(((b.explosionSourceType ?? "gas") === "mass" && b.explosionMassMethod === "sadovsky")
-                    || ((b.explosionSourceType ?? "gas") === "gas" && b.explosionGasMethod === "aeroset")) && (<>
+                  {((b.explosionSourceType ?? "gas") === "gas" && b.explosionGasMethod === "aeroset") && (<>
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Настройки</div>
                   <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <input type="checkbox" id={`exp_walls_${b.id}`}
@@ -1965,14 +1964,12 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     </div>
                     <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Методика:</span>
-                      <select value={b.explosionMassMethod ?? "fnp494"}
-                        onChange={e => updateBranch(b.id, { explosionMassMethod: e.target.value as "fnp494" | "sadovsky" })}
-                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
-                        <option value="fnp494">ФНП № 494, пп. 816–822</option>
-                        <option value="sadovsky">Садовский + канал (прежняя, для сверки)</option>
-                      </select>
+                      {/* Методика «Садовский + канал» выведена из программы (код сохранён) */}
+                      <span className="flex-1 text-[11px] px-1 rounded flex items-center" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "#f9fafb" }}>
+                        ФНП № 494, пп. 816–822
+                      </span>
                     </div>
-                    {(b.explosionMassMethod ?? "fnp494") === "fnp494" && (<>
+                    {true && (<>
                       <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}
                         title="Вид крепи выработки-очага (прил. 29). Для остальных выработок — в их свойствах, иначе по типу поверхности">
                         <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Крепь (прил. 29):</span>
