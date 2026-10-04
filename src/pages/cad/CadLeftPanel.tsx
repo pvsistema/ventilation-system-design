@@ -2321,12 +2321,6 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 bulkheadRKmu={bulkheadRByBranch.get(selectedBranch.id) ?? 0}
                 nodes={nodes}
                 waterBranchResult={waterNetwork.branchResults.get(selectedBranch.id)}
-                allBranches={branches}
-                onBulkUpdate={(patches) => {
-                  if (patches.size === 0) return;
-                  pushHistory();
-                  setBranches(prev => prev.map(b => { const p = patches.get(b.id); return p ? { ...b, ...p } : b; }));
-                }}
                 reducerSymbolScale={(() => {
                   const sym = schemaSymbols.find(s => REDUCER_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);
                   return sym?.scale ?? 1;

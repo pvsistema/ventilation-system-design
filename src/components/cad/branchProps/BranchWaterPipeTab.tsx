@@ -11,7 +11,7 @@
 // Поля ветви читает сетевой расчёт: lib/waterSolver.ts и
 // backend/water-hydraulics/solver.py.
 // ─────────────────────────────────────────────────────────────────────────────
-import { type ReactNode, useState } from "react";
+import { type ReactNode } from "react";
 import { type TopoBranch } from "@/lib/topology";
 import { type WaterBranchResult, MATERIAL_ROUGHNESS_MM, SMOOTH_ROUGHNESS_MM } from "@/lib/waterHydraulics";
 import { SHEVELEV_MATERIALS, shevelevLambda } from "@/lib/waterSolver";
@@ -29,66 +29,6 @@ interface Props {
   onRemoveReducer?: () => void;
   reducerSymbolScale?: number;
   onReducerSymbolScale?: (scale: number) => void;
-  /** Все ветви схемы — для пакетного приведения труб к методике «Аэросети». */
-  allBranches?: TopoBranch[];
-  /** Применить изменения сразу ко многим трубам (одним шагом отмены). */
-  onBulkUpdate?: (patches: Map<string, Partial<TopoBranch>>) => void;
-}
-
-/** Патч приведения трубы к методике «Аэросети»: Шевелёв + наружный × стенка. */
-function aerosetPipePatch(b: TopoBranch, wallMm: number): Partial<TopoBranch> | null {
-  if (!b.hasWaterPipe || b.wpRoughnessMode === "manual") return null;
-  const patch: Partial<TopoBranch> = {};
-  if ((b.wpRoughnessMode ?? "shevelev") !== "shevelev") patch.wpRoughnessMode = "shevelev";
-  if ((b.wpDiameterKind ?? "inner") !== "outer") {
-    patch.wpDiameterKind = "outer";
-    patch.wpWallThickness = wallMm;
-  } else if (!(b.wpWallThickness && b.wpWallThickness > 0)) {
-    patch.wpWallThickness = wallMm;
-  }
-  return Object.keys(patch).length ? patch : null;
-}
-
-/** Карточка: перевести все трубы схемы на Шевелёв и «наружный × стенка». */
-function AerosetBulkCard({ branches, onApply }: {
-  branches: TopoBranch[]; onApply: (patches: Map<string, Partial<TopoBranch>>) => void;
-}) {
-  const [wall, setWall] = useState(2);
-  const [done, setDone] = useState<number | null>(null);
-  const pipes = branches.filter(b => b.hasWaterPipe);
-  const patches = new Map<string, Partial<TopoBranch>>();
-  for (const b of pipes) {
-    const p = aerosetPipePatch(b, wall);
-    if (p) patches.set(b.id, p);
-  }
-  const manual = pipes.filter(b => b.wpRoughnessMode === "manual").length;
-  return (
-    <Card icon="Wand2" title="Все трубы — как в «Аэросети»" collapsible defaultOpen={false}>
-      <Hint>
-        Расчёт по Шевелёву (λ = 0,021/d^0,3), диаметр — наружный, внутренний = наружный − 2 × стенка.
-        Трубам, где диаметр уже наружный, стенка не меняется. Трубы со «Своим R» не трогаем.
-      </Hint>
-      <Field label="Толщина стенки для труб с внутренним Ø">
-        <NumInput value={wall} min={0} step={0.5} unit="мм" onChange={(v) => { setWall(v); setDone(null); }} />
-      </Field>
-      <div className="text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>
-        Водопровод: {pipes.length} тр. · изменится: {patches.size}{manual > 0 ? ` · со своим R: ${manual}` : ""}
-      </div>
-      <button type="button" disabled={patches.size === 0}
-        onClick={() => { onApply(patches); setDone(patches.size); }}
-        className="w-full h-8 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5"
-        style={{
-          background: patches.size ? "var(--c-accent, #1e5a7a)" : "var(--c-s3, #eef0f2)",
-          color: patches.size ? "#fff" : "var(--c-t4, #767f8c)",
-          border: "none", cursor: patches.size ? "pointer" : "default",
-        }}>
-        <Icon name="Wand2" size={13} /> Привести {patches.size || ""} труб
-      </button>
-      {done !== null && (
-        <Hint icon="CircleCheck">Готово: изменено труб — {done}. Отменить можно через Ctrl+Z.</Hint>
-      )}
-    </Card>
-  );
 }
 
 const MATERIALS = ["Сталь", "Чугун", "Полиэтилен", "ПВХ", "Асбестоцемент", "Прочее"];
@@ -218,7 +158,7 @@ function Hint({ icon = "Info", children }: { icon?: string; children: ReactNode 
 
 export default function BranchWaterPipeTab({
   branch: b, onUpdate, waterBranchResult: r, onRemoveGate,
-  onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, allBranches, onBulkUpdate,
+  onRemoveReducer, reducerSymbolScale, onReducerSymbolScale,
 }: Props) {
   const hasWater = b.hasWaterPipe ?? false;
   const hasAir   = b.hasAirPipe ?? false;
@@ -328,10 +268,6 @@ export default function BranchWaterPipeTab({
           )}
         </div>
       </PipeCard>
-
-      {hasWater && allBranches && onBulkUpdate && (
-        <AerosetBulkCard branches={allBranches} onApply={onBulkUpdate} />
-      )}
 
       {hasWater && (<>
         {/* ═══ Результат расчёта ═════════════════════════════════════════ */}
