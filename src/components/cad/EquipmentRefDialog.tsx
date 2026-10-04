@@ -29,6 +29,10 @@ import {
 } from "@/lib/explosionCalculator";
 import { LEGEND_TYPES, guessBulkheadSymbolId, bulkheadLegendTypes } from "@/lib/schemaSymbols";
 import { useDraggableWindow } from "@/hooks/useDraggableWindow";
+import {
+  useVehicles, getVehicles, saveVehicle, deleteVehicle, revertVehicle, resetVehicles,
+  isVehicleEdited, newVehicleId, VEHICLE_TYPES, type MineVehicle,
+} from "@/lib/mineVehicles";
 import { useResizableWindow } from "@/hooks/useResizableWindow";
 import { PHeader } from "@/components/cad/printPreview/printUi";
 
@@ -139,7 +143,7 @@ const TABS: { id: TabId; label: string; icon: string; group: string; hint: strin
   { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод",
     hint: "Трубы рудника. Заполняется вручную. В расчётах пока не используется." },
   { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее",
-    hint: "Самоходная техника: пожарная нагрузка (резина, дизель, масло), кг." },
+    hint: "Масса горючих материалов на машине (резина, дизель, масло). Нажмите на строку, чтобы изменить; можно добавить свою технику." },
   { id: "units",     label: "Единицы измерения",   icon: "Ruler",     group: "Общее",
     hint: "Единицы, в которых программа показывает и принимает значения." },
 ];
@@ -1666,91 +1670,148 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
     </div>
   );
 }
-interface MineVehicle {
-  name: string;
-  type: string;
-  tonnage?: string;
-  rubber: number;
-  diesel: number;
-  oil: number;
+// ─── Справочник самоходной техники (пожарная нагрузка) ──────────────────────
+// Простая таблица: поиск, правка в форме, своя техника. Данные — в
+// lib/mineVehicles.ts (хранятся в браузере, правки поверх встроенного каталога).
+function VehicleCatalogSection() {
+  const vehicles = useVehicles();
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<MineVehicle | null>(null);
+  const q = search.trim().toLowerCase();
+  const filtered = vehicles.filter(v =>
+    !q || v.name.toLowerCase().includes(q) || v.type.toLowerCase().includes(q));
+  const total = (v: MineVehicle) => v.rubber + v.diesel + v.oil;
+
+  return (
+    <div className="flex flex-col h-full">
+      {/* Панель: поиск + действия */}
+      <div className="flex items-center gap-2 p-3 border-b border-[var(--c-b1)] flex-shrink-0">
+        <div className="relative flex-1">
+          <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--c-t4)]"><Icon name="Search" size={13} /></span>
+          <input className={INPUT} style={{ paddingLeft: 26 }} value={search}
+            onChange={e => setSearch(e.target.value)} placeholder="Поиск по модели или типу" />
+        </div>
+        <button className={BTN_PRIMARY} onClick={() => setEditing({
+          id: newVehicleId(), name: "", type: "ПДМ", rubber: 0, diesel: 0, oil: 0, custom: true,
+        })}>
+          <Icon name="Plus" size={13} /> Добавить технику
+        </button>
+        <button className={BTN} title="Вернуть исходный справочник (своя техника будет удалена)"
+          onClick={() => { if (confirm("Вернуть исходный справочник техники? Ваши правки и добавленная техника будут удалены.")) resetVehicles(); }}>
+          <Icon name="RotateCcw" size={13} /> Сбросить
+        </button>
+      </div>
+
+      {/* Таблица */}
+      <div className="flex-1 overflow-auto">
+        <table className="w-full border-collapse">
+          <thead><tr>
+            <Th>Модель</Th><Th>Тип</Th><Th>Груз., т</Th>
+            <Th>Резина, кг</Th><Th>Дизель, кг</Th><Th>Масло, кг</Th><Th>Всего, кг</Th><Th>{""}</Th>
+          </tr></thead>
+          <tbody>
+            {filtered.map(v => (
+              <tr key={v.id} className="hover:bg-[var(--c-s2)] cursor-pointer" onClick={() => setEditing(v)}
+                title="Нажмите, чтобы изменить">
+                <Td>
+                  <span className="font-medium">{v.name || "Без названия"}</span>
+                  {v.custom && <span className="ml-1.5 text-[10px] px-1 rounded" style={{ background: "var(--c-tint-blue, #eff6ff)", color: "var(--c-accent, #1e5a7a)" }}>своя</span>}
+                  {!v.custom && isVehicleEdited(v.id) && <span className="ml-1.5 text-[10px] px-1 rounded" style={{ background: "var(--c-tint-amber, #fef9c3)", color: "#92400e" }}>изменена</span>}
+                </Td>
+                <Td>{v.type}</Td>
+                <Td>{v.tonnage ?? "—"}</Td>
+                <Td>{v.rubber}</Td>
+                <Td>{v.diesel}</Td>
+                <Td>{v.oil}</Td>
+                <Td><b>{total(v)}</b></Td>
+                <td className="px-1 border-b border-[var(--c-b1)] w-9 text-right">
+                  <Icon name="Pencil" size={12} className="text-[var(--c-t4)]" />
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr><td colSpan={8} className="px-4 py-8 text-center text-[12px] text-[var(--c-t3)]">
+                Ничего не найдено. Нажмите «Добавить технику», чтобы внести свою модель.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="px-3 py-2 text-[10px] text-[var(--c-t3)] border-t border-[var(--c-b1)] flex-shrink-0">
+        Масса горючих материалов на машине — для расчёта пожара техники. Значения справочные:
+        уточните по паспорту своей техники. Технику выбирают в свойствах очага пожара.
+      </div>
+
+      {editing && <VehicleEditDialog vehicle={editing} onClose={() => setEditing(null)} />}
+    </div>
+  );
 }
 
-const MINE_VEHICLES: MineVehicle[] = [
-  { name: "Sandvik TH315",        type: "Самосвал",          tonnage: "15 т",  rubber: 780,  diesel: 260, oil: 160 },
-  { name: "Sandvik TH430",        type: "Самосвал",          tonnage: "30 т",  rubber: 1200, diesel: 400, oil: 220 },
-  { name: "Sandvik TH540",        type: "Самосвал",          tonnage: "40 т",  rubber: 1500, diesel: 520, oil: 280 },
-  { name: "Sandvik LH203",        type: "ПДМ",               tonnage: "2 т",   rubber: 260,  diesel: 100, oil: 70  },
-  { name: "Sandvik LH307",        type: "ПДМ",               tonnage: "7 т",   rubber: 520,  diesel: 180, oil: 110 },
-  { name: "Sandvik LH514",        type: "ПДМ",               tonnage: "14 т",  rubber: 900,  diesel: 280, oil: 180 },
-  { name: "Epiroc ST7 Scooptram", type: "ПДМ",               tonnage: "6.8 т", rubber: 480,  diesel: 170, oil: 120 },
-  { name: "Epiroc ST14 Scooptram",type: "ПДМ",               tonnage: "14 т",  rubber: 900,  diesel: 280, oil: 200 },
-  { name: "Epiroc MT42",          type: "Самосвал",          tonnage: "42 т",  rubber: 1600, diesel: 550, oil: 300 },
-  { name: "Caterpillar R1300G",   type: "ПДМ",               tonnage: "13 т",  rubber: 850,  diesel: 260, oil: 180 },
-  { name: "Caterpillar R1600H",   type: "ПДМ",               tonnage: "16 т",  rubber: 950,  diesel: 290, oil: 210 },
-  { name: "Caterpillar AD22",     type: "Самосвал",          tonnage: "22 т",  rubber: 1000, diesel: 340, oil: 200 },
-  { name: "Caterpillar AD45B",    type: "Самосвал",          tonnage: "41 т",  rubber: 1500, diesel: 530, oil: 290 },
-  { name: "Komatsu WJ-5",         type: "ПДМ",               tonnage: "5 т",   rubber: 400,  diesel: 150, oil: 95  },
-  { name: "Normet Spraymec",      type: "Набрызг-машина",    tonnage: undefined, rubber: 360, diesel: 140, oil: 90  },
-  { name: "Epiroc Boomer T1D",    type: "Буровая установка", tonnage: undefined, rubber: 800, diesel: 290, oil: 240 },
-  { name: "Epiroc Boltec LC",     type: "Анкеровщик",       tonnage: undefined, rubber: 480, diesel: 180, oil: 140 },
-  { name: "TH-545",               type: "Самосвал",          tonnage: "45 т",  rubber: 1200, diesel: 400, oil: 200 },
-  { name: "БелАЗ-7555",           type: "Самосвал карьерный",tonnage: "55 т",  rubber: 2000, diesel: 700, oil: 400 },
-];
+function VehicleEditDialog({ vehicle, onClose }: { vehicle: MineVehicle; onClose: () => void }) {
+  const [v, setV] = useState<MineVehicle>(vehicle);
+  const isNew = vehicle.custom && !getVehicles().some(x => x.id === vehicle.id);
+  const num = (s: string) => Math.max(0, parseFloat(s.replace(",", ".")) || 0);
+  const set = (p: Partial<MineVehicle>) => setV(prev => ({ ...prev, ...p }));
+  const canSave = v.name.trim().length > 0;
 
-function VehicleCatalogSection() {
-  const [search, setSearch] = useState("");
-  const filtered = MINE_VEHICLES.filter(v =>
-    v.name.toLowerCase().includes(search.toLowerCase()) ||
-    v.type.toLowerCase().includes(search.toLowerCase())
-  );
   return (
-    <div style={{ background: "var(--c-s1, #fff)", minHeight: "100%", padding: "12px" }}>
-      <div style={{ position: "relative", marginBottom: 12 }}>
-        <span style={{ position: "absolute", left: 10, top: "50%", transform: "translateY(-50%)", color: "var(--c-t4, #9ca3af)", fontSize: 14 }}>🔍</span>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Поиск по названию или типу..."
-          style={{
-            width: "100%", boxSizing: "border-box",
-            background: "var(--c-s3, #f3f4f6)", border: "1px solid var(--c-b2, #d1d5db)", borderRadius: "var(--radius-ui)",
-            color: "var(--c-t1, #111827)", fontSize: 12, padding: "8px 10px 8px 32px", outline: "none",
-          }}
-        />
-      </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-        {filtered.map((v, i) => (
-          <div key={i} style={{
-            background: "var(--c-s2, #f8fafc)", border: "1px solid var(--c-b1, #e2e8f0)", borderRadius: "var(--radius-ui)", padding: "10px 12px",
-            cursor: "default",
-          }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-              <div>
-                <div style={{ color: "var(--c-t1, #111827)", fontWeight: 600, fontSize: 13 }}>{v.name}</div>
-                <div style={{ color: "var(--c-t3, #6b7280)", fontSize: 11, marginTop: 1 }}>
-                  {v.type}{v.tonnage ? ` · ${v.tonnage}` : ""}
-                </div>
-              </div>
-              <span style={{ color: "var(--c-t4, #d1d5db)", fontSize: 14 }}>›</span>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 4, marginTop: 8 }}>
-              {[
-                { label: "РЕЗИНА", val: v.rubber, color: "var(--c-t2, #374151)" },
-                { label: "ДИЗЕЛЬ", val: v.diesel, color: "var(--c-blue, #2563eb)" },
-                { label: "МАСЛО",  val: v.oil,    color: "var(--c-amber, #ea580c)" },
-              ].map(({ label, val, color }) => (
-                <div key={label} style={{ background: "var(--c-s3, #eef2f7)", borderRadius: 6, padding: "5px 6px" }}>
-                  <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 9, fontWeight: 600, letterSpacing: "0.05em" }}>{label}</div>
-                  <div style={{ color, fontSize: 16, fontWeight: 700, lineHeight: 1.1 }}>{val}</div>
-                  <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 9 }}>КГ</div>
-                </div>
-              ))}
-            </div>
+    <div className="fixed inset-0 z-[400] flex items-center justify-center" style={{ background: "rgba(0,0,0,0.35)" }}
+      onMouseDown={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={MODAL} style={{ width: 420 }}>
+        <div className={MODAL_HEAD}>
+          <IconBadge icon="Truck" />
+          <span className="text-[13px] font-semibold text-[var(--c-t1)] flex-1">
+            {isNew ? "Новая техника" : "Изменить технику"}
+          </span>
+          <button className={ICON_BTN} onClick={onClose}><Icon name="X" size={14} /></button>
+        </div>
+        <div className="p-4 grid grid-cols-2 gap-3">
+          <div className="col-span-2">
+            <label className={LABEL}>Модель</label>
+            <input className={INPUT} value={v.name} autoFocus placeholder="Например, Sandvik LH410"
+              onChange={e => set({ name: e.target.value })} />
           </div>
-        ))}
-      </div>
-      <div style={{ color: "var(--c-t4, #9ca3af)", fontSize: 10, marginTop: 12, textAlign: "center", fontStyle: "italic" }}>
-        Данные приблизительные. После выбора можно скорректировать значения вручную.
+          <div>
+            <label className={LABEL}>Тип</label>
+            <select className={INPUT} value={v.type} onChange={e => set({ type: e.target.value })}>
+              {Array.from(new Set([...VEHICLE_TYPES, v.type])).map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={LABEL}>Грузоподъёмность, т</label>
+            <input className={INPUT} type="number" min={0} step={0.5} value={v.tonnage ?? ""} placeholder="—"
+              onChange={e => set({ tonnage: e.target.value === "" ? undefined : num(e.target.value) })} />
+          </div>
+          <div className="col-span-2 text-[11px] font-semibold text-[var(--c-t2)] mt-1">Горючие материалы на машине, кг</div>
+          {([["rubber", "Резина (шины)"], ["diesel", "Дизельное топливо"], ["oil", "Масло"]] as const).map(([k, label]) => (
+            <div key={k} className={k === "oil" ? "col-span-2" : ""}>
+              <label className={LABEL}>{label}</label>
+              <input className={INPUT} type="number" min={0} step={10} value={v[k]}
+                onChange={e => set({ [k]: num(e.target.value) } as Partial<MineVehicle>)} />
+            </div>
+          ))}
+          <div className="col-span-2 text-[11px] text-[var(--c-t3)]">
+            Всего горючего: <b className="text-[var(--c-t1)]">{v.rubber + v.diesel + v.oil} кг</b>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-4 py-3 border-t border-[var(--c-b1)]">
+          {!isNew && (
+            <button className={BTN_DANGER} onClick={() => {
+              if (confirm(`Удалить «${vehicle.name}» из справочника?`)) { deleteVehicle(vehicle); onClose(); }
+            }}><Icon name="Trash2" size={13} /> Удалить</button>
+          )}
+          {!vehicle.custom && isVehicleEdited(vehicle.id) && (
+            <button className={BTN} onClick={() => { revertVehicle(vehicle.id); onClose(); }}>
+              <Icon name="RotateCcw" size={13} /> Исходные данные
+            </button>
+          )}
+          <div className="flex-1" />
+          <button className={BTN} onClick={onClose}>Отмена</button>
+          <button className={BTN_PRIMARY} disabled={!canSave}
+            onClick={() => { saveVehicle({ ...v, name: v.name.trim() }); onClose(); }}>
+            Сохранить
+          </button>
+        </div>
       </div>
     </div>
   );

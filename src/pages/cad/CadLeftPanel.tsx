@@ -32,12 +32,15 @@ import { isHeaterActive, DEFAULT_HEATER_EFFICIENCY, MIN_SHAFT_TEMP_C } from "@/l
 import type { SchemaSymbol } from "./cadTypes";
 import { type CombustionMode, COMBUSTION_MODES, combustionMode } from "@/lib/vgschBlast";
 import { FNP494_SUPPORTS, supportName, supportOf } from "@/lib/fnp494Blast";
+import { useVehicles } from "@/lib/mineVehicles";
 import { autoSumS } from "@/lib/fnp494Network";
 import { safeFixed } from "./cadCompute";
 import type { CadPageState } from "./useCadPage";
 
 // Левая часть: вертикальные вкладки, панель свойств и разделитель ширины.
 export default function CadLeftPanel({ c }: { c: CadPageState }) {
+  // Справочник техники (Справочники → Транспорт) — для выбора в очаге пожара
+  const vehicleList = useVehicles();
   const {
     activeSide,
     setActiveSide,
@@ -1026,6 +1029,22 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         {/* Заголовок блока ввода */}
                         <div className="px-1 py-0.5 text-[10px] font-semibold mt-0.5" style={{ background: "var(--c-tint-amber, #fff7ed)", borderBottom: "1px solid #fed7aa", color: "var(--c-amber, #c2410c)" }}>
                           Исходные данные — состав техники
+                        </div>
+
+                        {/* Выбор техники из справочника — массы подставляются сами */}
+                        <div className="flex items-center px-1 pt-1" title="Справочники → Транспорт: там можно изменить данные и добавить свою технику">
+                          <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 90 }}>Из справочника:</span>
+                          <select value=""
+                            onChange={e => {
+                              const v = vehicleList.find(x => x.id === e.target.value);
+                              if (v) updateBranch(b.id, { fireVehicleMassRubber: v.rubber, fireVehicleMassDiesel: v.diesel, fireVehicleMassOil: v.oil });
+                            }}
+                            className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
+                            <option value="">— выберите технику —</option>
+                            {vehicleList.map(v => (
+                              <option key={v.id} value={v.id}>{v.name} · {v.type}{v.tonnage ? ` ${v.tonnage} т` : ""}</option>
+                            ))}
+                          </select>
                         </div>
 
                         {/* Таблица ввода масс */}
