@@ -1,6 +1,6 @@
 import React from "react";
 import { type TopoBranch } from "@/lib/topology";
-import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolContentBox, symbolSvgContent, isFireVehicleSymbol, uprightAlongBranch } from "@/lib/schemaSymbols";
+import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolSvgContent, isFireVehicleSymbol, uprightAlongBranch } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
 import { solidBulkheadRkMurg } from "@/lib/bulkheads";
 import { msIndBg, fanIndBg, msIndTextColor } from "@/lib/msIndicatorStyle";
@@ -75,7 +75,7 @@ export function renderSymbolNode(
 ): React.ReactNode {
   const {
     view, tool, fixedObjectScale, projNodesMap, projectWithZ,
-    branchById, legendTypeById, hiddenBranchIds, branchBodyColor,
+    branchById, legendTypeById, hiddenBranchIds,
     handleSymbolClick,
     _branchObjSF, _indZoomSF,
     branchWidth, thinLines, bulkheadScale, fanScale,
@@ -88,14 +88,6 @@ export function renderSymbolNode(
   } = d;
 
   const isBulkheadOv = BULKHEAD_SYMBOL_IDS.has(sym.typeId) || sym.typeId === "measure_station";
-  // Символы, у которых размер считается ОТ ШИРИНЫ ВЕТВИ (см. расчёт SZ ниже):
-  // они узкие вдоль ветви, и подложка цвета должна повторять этот узкий габарит.
-  // Список обязан совпадать с условием расчёта SZ, иначе подложка окажется
-  // в 2–3 раза длиннее самого знака и накроет соседние символы и выработки.
-  const isNarrowOnBranch = isBulkheadOv
-    || HEATER_SYMBOL_IDS.has(sym.typeId)
-    || sym.typeId === "emergency_exit";
-
   const lt = legendTypeById.get(sym.typeId);
   if (!lt && !isBulkheadOv) return null;
   if (sym.branchId && hiddenBranchIds.has(sym.branchId)) return null;
@@ -318,80 +310,10 @@ export function renderSymbolNode(
       })() : (
         <rect x={vcpx - vSZ / 2 - 4} y={vcpy - vSZ / 2 - 4} width={vSZ + 8} height={vSZ + 8} fill="transparent" stroke="none" />
       )}
-      {/* Подложка цвета ветви ПОД символом УО: в canvas-режиме символы
-          рисуются в оверлее поверх холста и белым перекрывают окраску
-          ветви. Кладём сегмент цвета ветви вдоль неё, чтобы окраска не
-          прерывалась (для ЛЮБОГО символа на ветви, кроме valve_reduce —
-          тот сидит на трубе, а не на теле ветви). */}
-      {sym.branchId && hasBranchPts && sym.typeId !== "valve_reduce"
-        // Для иконок-изображений (вентилятор/насос/запорный вентиль)
-        // подложка НЕ нужна: сама иконка непрозрачна (белый фон-круг) и
-        // перекрывает разрыв окраски ветви. Прямоугольная подложка у них
-        // «вылезала» вдоль ветви за пределы иконки (как было у перемычек).
-        && sym.typeId !== "fan" && sym.typeId !== "pump" && sym.typeId !== "valve_water"
-        && (() => {
-        const brBody = symBr;
-        const bodyCol = branchBodyColor(brBody ?? ({ id: sym.branchId } as TopoBranch));
-        if (!bodyCol) return null;
-        const bDx = tsx2 - fsx, bDy = tsy2 - fsy;
-        const bLen = Math.hypot(bDx, bDy) || 1;
-        const bAng = Math.atan2(bDy, bDx) * 180 / Math.PI;
-        const uBw = (brBody?.lineWidth && brBody.lineWidth > 0) ? brBody.lineWidth : branchWidth;
-        const uW = Math.max(1.5, uBw * _branchObjSF);
-        // Длина подложки вдоль ветви.
-        // Для перемычек/замерных станций символ узкий вдоль ветви
-        // (реальный габарит ≈ pw = ph·0.38·… ≈ SZ·0.85·0.38), поэтому
-        // подложка должна совпадать с этим габаритом, иначе она «вылезает»
-        // на соседние перемычки и, просвечивая в зазорах открытых дверей,
-        // выглядит как белый прямоугольник поверх соседей. Берём ровно
-        // ширину символа вдоль ветви (без множителя-запаса).
-        //
-        // Значки-иконки (устье, вентиляторы, пожарные и аварийные знаки)
-        // рисуются в КВАДРАТЕ SZ×SZ с viewBox="0 0 48 40", но сама фигура
-        // занимает лишь часть этого холста: у устья 36 единиц из 48, у
-        // вентилятора — круг диаметром 30. Подложка же бралась SZ+uW, то есть
-        // в 2–2,4 раза длиннее знака, и выступала далеко за него вдоль ветви,
-        // накрывая соседние обозначения. Берём РЕАЛЬНЫЙ габарит значка.
-        //
-        // ВАЖНО: сам значок НЕ вращается вместе с ветвью (рисуется по осям
-        // экрана), а подложка вращается на угол ветви. Поэтому на наклонной
-        // ветви её длина должна покрывать ПРОЕКЦИЮ неповёрнутого
-        // прямоугольника значка на направление ветви: w·|cos| + h·|sin|.
-        // Без этого на наклонном стволе подложка оказалась бы короче значка и
-        // окраска ветви снова разорвалась бы — теперь уже с другой стороны.
-        const bAngRad = Math.atan2(bDy, bDx);
-        // Обе стороны делятся на 48: при viewBox="0 0 48 40" в квадрате SZ×SZ
-        // браузер масштабирует холст единым коэффициентом min(SZ/48, SZ/40),
-        // то есть SZ/48 — иначе высота вышла бы завышенной.
-        const iconBox = symbolContentBox(sym.typeId);
-        const iconW = SZ * (iconBox.w / 48);
-        const iconH = SZ * (iconBox.h / 48);
-        const iconProj = iconW * Math.abs(Math.cos(bAngRad))
-                       + iconH * Math.abs(Math.sin(bAngRad));
-        const uLen = isNarrowOnBranch
-          ? Math.max(uW, SZ * 0.85 * 0.38 + uW * 0.5)
-          // Техника под очагом развёрнута вдоль ветви — её длина вдоль ветви = ширина значка
-          : isFireVeh ? Math.max(uW, iconW)
-          : Math.max(uW, iconProj);
-        // Проекция символа на линию ветви (t вдоль from→to) — подложку
-        // ставим на САМУ ветвь (не на смещённый offset'ом символ), чтобы
-        // окраска не прерывалась именно в точке пересечения с ветвью.
-        const tRaw = ((px - fsx) * bDx + (py - fsy) * bDy) / (bLen * bLen);
-        const tClamp = Math.max(0, Math.min(1, tRaw));
-        const anchorX = fsx + bDx * tClamp;
-        const anchorY = fsy + bDy * tClamp;
-        // ВАЖНО: стрелка направления воздуха здесь НЕ рисуется — иначе она
-        // ложится поверх соседних символов УО (стрелка одного символа
-        // перекрывала перемычку другого). Стрелки выведены в отдельный
-        // проход ПОД символами (renderArrowOv), как в SVG-режиме.
-        return (
-          <g pointerEvents="none">
-            <g transform={`translate(${anchorX},${anchorY}) rotate(${bAng})`}>
-              <rect x={-uLen / 2} y={-uW / 2} width={uLen} height={uW} fill={bodyCol} stroke="none" />
-            </g>
-          </g>
-        );
-      })()}
+      {/* Подложки под УО НЕТ: символ рисуется поверх ветви прозрачным фоном,
+          чтобы не перекрывать окраску выработки (зоны взрыва, дым, позиции ПЛА,
+          расход). Раньше здесь лежал прямоугольник цвета ветви — он закрывал
+          окраску зон взрыва и выглядел как «разрыв» ветви у значка. */}
       {isSel && <circle cx={vcpx} cy={vcpy} r={vSZ / 2 + 4} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 2" />}
       {/* Запасной выход: по направлению и ширине ветви */}
       {sym.typeId === "emergency_exit" && hasBranchPts ? (() => {

@@ -51,6 +51,12 @@ export interface OverlayLayersDeps {
   renderArrowOv: (sym: SymbolItem) => React.ReactNode;
 }
 
+/**
+ * Перерисовывать ли ветви вышележащих горизонтов поверх УО нижних.
+ * Выключено: перерисовка затирала окраску выработок (зоны взрыва и т. п.).
+ */
+const OCCLUDE_SYMBOLS_BY_HIGHER_LAYERS: boolean = false;
+
 /** Собирает список узлов оверлея в правильном порядке наложения. */
 export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
   const {
@@ -133,10 +139,12 @@ export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
       const p = symScreenPos(sym);
       if (p) ordSyms.push(p);
     }
-    // Occluder нужен только для перекрытия символов этого слоя ветвями
-    // ВЫШЕ. Отбираем лишь те ветви, что реально проходят рядом с символом
-    // (bbox-проверка) — иначе на больших схемах это тысячи лишних линий.
-    if (ordSyms.length) {
+    // Occluder (перерисовка ветвей ВЫШЕЛЕЖАЩИХ горизонтов поверх УО) ОТКЛЮЧЁН.
+    // Он рисовал ветви заново поверх холста цветом «без окраски»: затирал
+    // зоны взрыва, окраску позиций ПЛА и расхода, а у значков появлялись
+    // белые/цветные «заплатки». УО теперь без подложки и прозрачны, поэтому
+    // перекрывать их ветвями верхних слоёв не нужно — ветви видны сквозь них.
+    if (OCCLUDE_SYMBOLS_BY_HIGHER_LAYERS && ordSyms.length) {
       let minSx = Infinity, minSy = Infinity, maxSx = -Infinity, maxSy = -Infinity;
       for (const p of ordSyms) {
         if (p.x < minSx) minSx = p.x; if (p.x > maxSx) maxSx = p.x;

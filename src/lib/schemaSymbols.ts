@@ -48,10 +48,10 @@ function autoDoor(fill: string, _stroke: string): string {
 }
 
 // УО вентилятора-пропеллера (ВМП — вентилятор местного проветривания)
-export const FAN_SVG_PROPELLER = `<circle cx="24" cy="20" r="16" fill="white" stroke="#222" stroke-width="2"/><path d="M24,20 C24,12 32,8 36,14 C32,16 28,18 24,20Z" fill="#222"/><path d="M24,20 C16,20 12,12 18,8 C20,12 22,16 24,20Z" fill="#222"/><path d="M24,20 C24,28 16,32 12,26 C16,24 20,22 24,20Z" fill="#222"/><circle cx="24" cy="20" r="3" fill="white" stroke="#222" stroke-width="1.5"/>`;
+export const FAN_SVG_PROPELLER = `<circle cx="24" cy="20" r="16" fill="none" stroke="#222" stroke-width="2"/><path d="M24,20 C24,12 32,8 36,14 C32,16 28,18 24,20Z" fill="#222"/><path d="M24,20 C16,20 12,12 18,8 C20,12 22,16 24,20Z" fill="#222"/><path d="M24,20 C24,28 16,32 12,26 C16,24 20,22 24,20Z" fill="#222"/><circle cx="24" cy="20" r="3" fill="white" stroke="#222" stroke-width="1.5"/>`;
 
 // УО вентиляторной установки (ГВУ / ВВУ) — двойная окружность (кольцо в кольце)
-export const FAN_SVG_STATION = `<circle cx="24" cy="20" r="16" fill="white" stroke="#333" stroke-width="2.6"/><circle cx="24" cy="20" r="7" fill="white" stroke="#333" stroke-width="2.6"/>`;
+export const FAN_SVG_STATION = `<circle cx="24" cy="20" r="16" fill="none" stroke="#333" stroke-width="2.6"/><circle cx="24" cy="20" r="7" fill="none" stroke="#333" stroke-width="2.6"/>`;
 
 // Возвращает SVG-содержимое УО вентилятора в зависимости от назначения
 // ("ГВУ"/"ВВУ" — двойная окружность, иначе — пропеллер)
@@ -299,7 +299,7 @@ export const LEGEND_TYPES: LegendType[] = [
 
   // ─── ВОДОПРОВОД ───────────────────────────────────────────────────────
   { id: "pump",        name: "Насос",                             group: "Водопровод",
-    svgContent: `<circle cx="24" cy="20" r="16" fill="white" stroke="#dc2626" stroke-width="2"/><path d="M12,27 Q24,7 36,27" fill="none" stroke="#dc2626" stroke-width="2"/>` },
+    svgContent: `<circle cx="24" cy="20" r="16" fill="none" stroke="#dc2626" stroke-width="2"/><path d="M12,27 Q24,7 36,27" fill="none" stroke="#dc2626" stroke-width="2"/>` },
   { id: "pump_station",name: "Насос и насосная станция стационарные", group: "Водопровод",
     svgContent: `<circle cx="24" cy="20" r="14" fill="#222" stroke="#333" stroke-width="1.5"/><path d="M14,26 Q24,8 34,26" fill="none" stroke="white" stroke-width="1.5"/>` },
   { id: "valve_reduce",name: "Клапан редукционный",               group: "Водопровод",
