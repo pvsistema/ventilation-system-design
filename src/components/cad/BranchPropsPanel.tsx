@@ -85,6 +85,8 @@ interface BranchPropsPanelProps {
   /** Изменить масштаб символа УО редукционного клапана */
   onReducerSymbolScale?: (scale: number) => void;
   onRemoveGate?: () => void;
+  allBranches?: TopoBranch[];
+  onBulkUpdate?: (patches: Map<string, Partial<TopoBranch>>) => void;
 }
 
 
@@ -107,7 +109,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate, allBranches, onBulkUpdate }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -219,6 +221,8 @@ export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, 
             onRemoveReducer={onRemoveReducer}
             reducerSymbolScale={reducerSymbolScale}
             onReducerSymbolScale={onReducerSymbolScale}
+            allBranches={allBranches}
+            onBulkUpdate={onBulkUpdate}
           />
         )}
 
