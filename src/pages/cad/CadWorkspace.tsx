@@ -1559,7 +1559,9 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     // цветом — пока фронт волны (R на шкале) до него дошёл.
                     // Раньше такие участки пропускались, и при увеличении R
                     // окраска схемы дальше радиуса безопасной зоны не шла.
-                    if (vg && vg.p > 0 && vg.d <= blastWaveRadius) {
+                    // Участок достигнут фронтом (путь ≤ R) — красим по давлению,
+                    // в том числе «безопасным» цветом, если давление ничтожно.
+                    if (vg && vg.p >= 0 && vg.d <= blastWaveRadius) {
                       const { color, hazardLevel: lvlV } = zoneColor(vg.p);
                       if (RANK.indexOf(lvlV) > RANK.indexOf(worst)) worst = lvlV;
                       if (color !== curColor) {

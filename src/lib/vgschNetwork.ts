@@ -360,7 +360,8 @@ export function propagateVgsch(opts: {
       const kBar = cross(e.branchId, e.g, e.len, entry, e.tStart, e.tStart === 0 ? 1 : 0);
       const endSt = advance(src, e.g, entry, e.len);
       const next = { ...endSt, mult: endSt.mult * kBar, fromNode: cur, fromBranch: e.branchId };
-      if (vgschRatio(src, next) * src.dPn_kPa < 0.01) return;
+      // Ведём фронт по всей сети до устоявшей перемычки (см. fnp494Network)
+      if (!(next.mult > 0)) return;
       push(e.to, next);
     });
   }
@@ -373,10 +374,12 @@ export function propagateVgsch(opts: {
     const consider = (st: VgschState, dist: number, tFrom: number) => {
       const src = sources.get(st.srcId);
       if (!src) return;
+      if (!(st.mult > 0)) return;
       const k = cross(branchId, g, len, st, tFrom, t);
+      if (!(k > 0)) return;
       const s2 = advance(src, g, st, dist);
       const p = src.dPn_kPa * vgschRatio(src, s2) * k;
-      if (!best || p > best.p) best = { p: Math.round(p * 10) / 10, d: s2.d, srcId: st.srcId };
+      if (!best || p > best.p || (p === best.p && s2.d < best.d)) best = { p, d: s2.d, srcId: st.srcId };
     };
     const e0 = edgeEntry.get(`${branchId}:0`);
     const e1 = edgeEntry.get(`${branchId}:1`);

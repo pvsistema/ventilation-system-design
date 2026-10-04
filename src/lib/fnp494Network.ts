@@ -216,7 +216,11 @@ export function propagateFnp(opts: {
       const kBar = cross(e.branch, e.len, entry, e.tStart, e.tStart === 0 ? 1 : 0, true);
       const end = advance(entry, g, e.len, true);
       const next: FnpState = { ...end, k: end.k * kBar, fromBranch: e.branch.id };
-      if (pressureOfState(next) < 0.01) return;
+      // Волну ведём по ВСЕЙ сети, пока её не остановит устоявшая перемычка:
+      // фронт доходит до выработки, даже если давление уже ничтожно мало.
+      // Раньше обход обрывался по малому давлению, и при увеличении R на шкале
+      // дальние выработки не окрашивались вовсе.
+      if (!(next.k > 0)) return;
       push(e.to, next);
     });
   }
@@ -231,9 +235,13 @@ export function propagateFnp(opts: {
       if (!src) return;
       const g = geomFor(b, src);
       const dist = Math.abs(t - tFrom) * len;
+      if (!(st.k > 0)) return;
       const k = cross(b, len, st, tFrom, t, true);
+      // Устоявшая перемычка между входом и точкой — волны здесь нет
+      if (!(k > 0)) return;
       const p = fnpStatePressure(src, st, { dist, beta: g.beta, d: g.d, newBranch: true }) * k;
-      if (!best || p > best.p) best = { p: Math.round(p * 10) / 10, d: st.d + dist, srcId: st.srcId };
+      // Без округления: дальние участки с ничтожным давлением тоже «достигнуты»
+      if (!best || p > best.p || (p === best.p && st.d + dist < best.d)) best = { p, d: st.d + dist, srcId: st.srcId };
     };
     const e0 = edgeEntry.get(`${branchId}:0`);
     const e1 = edgeEntry.get(`${branchId}:1`);
