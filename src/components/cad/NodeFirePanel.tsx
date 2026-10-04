@@ -174,6 +174,12 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
   // Для потребителя — предупреждение о низком давлении
   if (isConsumer && isOpen) {
     const dp = waterResult?.dynamicP ?? 0;
+    if (waterResult?.noWater) {
+      warnings.push({
+        level: "error",
+        text: "Вода до крана не доходит: напора не хватает на подъём и потери, либо кран не связан с резервуаром.",
+      });
+    }
     if (dp > 0 && dp < MIN_PRESSURE) {
       warnings.push({
         level: "error",

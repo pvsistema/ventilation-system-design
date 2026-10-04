@@ -8,12 +8,12 @@
 //   • «Запорный вентиль» и «Редукционный клапан» — только если они стоят
 //     на ветви (ставятся значком на схеме).
 //
-// Логика расчёта не менялась — те же поля ветви, что читает
-// calcWaterNetwork() в lib/waterHydraulics.ts.
+// Поля ветви читает сетевой расчёт: lib/waterSolver.ts и
+// backend/water-hydraulics/solver.py.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type ReactNode } from "react";
 import { type TopoBranch } from "@/lib/topology";
-import { type WaterBranchResult } from "@/lib/waterHydraulics";
+import { type WaterBranchResult, MATERIAL_ROUGHNESS_MM, SMOOTH_ROUGHNESS_MM } from "@/lib/waterHydraulics";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 import Icon from "@/components/ui/icon";
 import {
@@ -31,8 +31,9 @@ interface Props {
 }
 
 const MATERIALS = ["Сталь", "Чугун", "Полиэтилен", "ПВХ", "Асбестоцемент", "Прочее"];
-/** Шероховатость «гладкой» трубы — та же константа, что в calcWaterNetwork. */
-const SMOOTH_ROUGHNESS_MM = 0.03;
+const REGIME_LABEL: Record<string, string> = {
+  laminar: "ламинарный", transition: "переходный", turbulent: "турбулентный",
+};
 
 const selectStyle: React.CSSProperties = { ...inputStyle, cursor: "pointer" };
 const fmt = (v: number | undefined, d: number) => (v !== undefined && Number.isFinite(v) ? v.toFixed(d) : "—");
@@ -164,6 +165,10 @@ export default function BranchWaterPipeTab({
 
   const wpDiam = b.wpDiameter ?? 100;
   const roughMode = b.wpRoughnessMode ?? "rough";
+  const diamKind = b.wpDiameterKind ?? "inner";
+  const wall = b.wpWallThickness ?? 0;
+  const innerDiam = diamKind === "outer" ? wpDiam - 2 * Math.max(0, wall) : wpDiam;
+  const material = b.wpMaterial ?? "Сталь";
   const solved = (r?.flow ?? 0) > 0;
 
   return (
@@ -171,16 +176,43 @@ export default function BranchWaterPipeTab({
 
       {/* ═══ Водопровод ППЗ ══════════════════════════════════════════════ */}
       <PipeCard icon="Droplets" title="Водопровод ППЗ" enabled={hasWater}
-        subtitle={`Ø${wpDiam} мм · ${b.wpMaterial ?? "Сталь"}`}
+        subtitle={`Ø${diamKind === "outer" ? `${wpDiam}×${wall}` : wpDiam} мм · ${material}`}
         onToggle={(v) => onUpdate({ hasWaterPipe: v })}>
+        <Field label="Диаметр задан как">
+          <Segmented value={diamKind} size="sm"
+            onChange={(v) => onUpdate({ wpDiameterKind: v })}
+            options={[
+              { value: "inner", label: "Внутренний", title: "В расчёт идёт введённый диаметр" },
+              { value: "outer", label: "Наружный × стенка", title: "Внутренний = наружный − 2 × толщина стенки" },
+            ]} />
+        </Field>
         <div className="grid grid-cols-2 gap-2">
-          <Field label="Диаметр">
-            <NumInput value={wpDiam} min={0} step={5} unit="мм" onChange={(v) => onUpdate({ wpDiameter: v })} />
+          <Field label={diamKind === "outer" ? "Наружный Ø" : "Внутренний Ø"}>
+            <NumInput value={wpDiam} min={0} step={1} unit="мм" onChange={(v) => onUpdate({ wpDiameter: v })} />
           </Field>
-          <Field label="Материал">
-            <MaterialSelect value={b.wpMaterial ?? "Сталь"} onChange={(v) => onUpdate({ wpMaterial: v })} />
-          </Field>
+          {diamKind === "outer" ? (
+            <Field label="Толщина стенки">
+              <NumInput value={wall} min={0} step={0.5} unit="мм" onChange={(v) => onUpdate({ wpWallThickness: v })} />
+            </Field>
+          ) : (
+            <Field label="Материал">
+              <MaterialSelect value={material} onChange={(v) => onUpdate({ wpMaterial: v })} />
+            </Field>
+          )}
         </div>
+        {diamKind === "outer" && (
+          <div className="grid grid-cols-2 gap-2">
+            <Field label="Внутренний Ø (расчётный)">
+              <ReadValue value={innerDiam > 1 ? fmt(innerDiam, 1) : "—"} unit="мм" title="Наружный − 2 × стенка" />
+            </Field>
+            <Field label="Материал">
+              <MaterialSelect value={material} onChange={(v) => onUpdate({ wpMaterial: v })} />
+            </Field>
+          </div>
+        )}
+        {diamKind === "outer" && innerDiam <= 1 && (
+          <Hint icon="TriangleAlert">Толщина стенки больше половины наружного диаметра — проверьте данные.</Hint>
+        )}
         <LengthField manual={b.wpLengthManual ?? false} value={b.wpLength ?? 0} branchLen={branchLen}
           onManual={(v) => onUpdate(v
             ? { wpLengthManual: true, wpLength: b.wpLength || Math.round(branchLen) }
@@ -191,8 +223,9 @@ export default function BranchWaterPipeTab({
           <Segmented value={roughMode}
             onChange={(v) => onUpdate({ wpRoughnessMode: v })}
             options={[
+              { value: "material", label: "По материалу", title: "Шероховатость из справочника по материалу трубы" },
               { value: "smooth", label: "Гладкая", title: `Шероховатость ${SMOOTH_ROUGHNESS_MM} мм` },
-              { value: "rough",  label: "Шероховатая", title: "Задать шероховатость стенки" },
+              { value: "rough",  label: "Своя Δ", title: "Задать шероховатость стенки" },
               { value: "manual", label: "Своё R", title: "Задать сопротивление напрямую" },
             ]} />
         </Field>
@@ -201,6 +234,12 @@ export default function BranchWaterPipeTab({
             <Field label="Шероховатость">
               <NumInput value={b.wpRoughness ?? 0.5} min={0} step={0.05} unit="мм"
                 onChange={(v) => onUpdate({ wpRoughness: v })} />
+            </Field>
+          )}
+          {roughMode === "material" && (
+            <Field label="Шероховатость">
+              <ReadValue value={String(MATERIAL_ROUGHNESS_MM[material] ?? 0.5)} unit="мм"
+                title={`Эквивалентная шероховатость: ${material}, трубы в эксплуатации`} />
             </Field>
           )}
           {roughMode === "smooth" && (
@@ -232,7 +271,14 @@ export default function BranchWaterPipeTab({
           <div>
             <KV label="Потери давления" value={solved ? fmt(r?.deltaP, 4) : "—"} unit="МПа" />
             <KV label="Сопротивление трубы" value={fmt(r?.resistance ?? 0, 4)} unit="МН·с²/м⁸" />
+            {solved && r?.regime && r.regime !== "none" && (<>
+              <KV label="Режим течения" value={`${REGIME_LABEL[r.regime] ?? r.regime}, Re ${Math.round(r.reynolds ?? 0).toLocaleString("ru-RU")}`} />
+              <KV label="Коэф. трения λ" value={fmt(r.lambda, 4)} />
+            </>)}
           </div>
+          {solved && r?.reducerOverCapacity && (
+            <Hint icon="TriangleAlert">Расход выше паспортной пропускной способности редуктора.</Hint>
+          )}
           {!solved && (
             <Hint>
               {b.wpHasGate && b.wpGateClosed

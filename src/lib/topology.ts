@@ -213,11 +213,13 @@ export interface TopoBranch {
   indicators?: Record<string, boolean>;
   // ─── Водопровод (ППЗ) ────────────────────────────────
   hasWaterPipe: boolean;           // ветвь содержит трубопровод ППЗ
-  wpDiameter: number;              // мм — внутренний диаметр трубы
+  wpDiameter: number;              // мм — диаметр трубы (внутренний или наружный, см. wpDiameterKind)
+  wpDiameterKind?: "inner" | "outer"; // как задан диаметр; по умолчанию — внутренний
+  wpWallThickness?: number;        // мм — толщина стенки (для наружного диаметра)
   wpMaterial: string;              // материал трубы
   wpLengthManual: boolean;         // длина задана вручную
   wpLength: number;                // м — длина трубопровода
-  wpRoughnessMode: "smooth" | "rough" | "manual"; // способ задания шероховатости
+  wpRoughnessMode: "smooth" | "rough" | "material" | "manual"; // способ задания шероховатости
   wpRoughness: number;             // мм — абсолютная шероховатость
   wpManualR: number;               // МН·с²/м⁸ — ручное сопротивление
   wpLocalXi: number;               // сумма ξ местных сопротивлений
