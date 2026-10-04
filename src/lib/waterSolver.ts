@@ -20,7 +20,7 @@ const RHO = 1000;
 const G = 9.81;
 const NU = 1.31e-6;
 const RHO_G_MPA = (RHO * G) / 1e6;
-const NOZZLE_MU = 0.82;
+const NOZZLE_MU = 0.92; // конический насадок пожарного ствола (по паспортам РС-50/РС-70)
 export const SMOOTH_ROUGHNESS_MM = 0.03;
 const RE_LAM = 2000;
 const RE_TURB = 4000;
@@ -29,6 +29,17 @@ const Q_REG = 1e-4;
 const C_CLOSED = 1e-8;
 const MAX_ITER = 120;
 const SOURCE_R = 1e-3;
+
+/** Материалы, для которых «по материалу» = формула Шевелёва (как в «Аэросети»). */
+export const SHEVELEV_MATERIALS = new Set(["Сталь", "Чугун", "Прочее"]);
+
+/** λ = 0.021 / d^0.3 — стальные и чугунные трубы в эксплуатации (Шевелёв). */
+export const shevelevLambda = (dM: number): number => 0.021 / dM ** 0.3;
+
+export function usesShevelev(b: Partial<TopoBranch>): boolean {
+  const mode = b.wpRoughnessMode ?? "shevelev";
+  return mode === "shevelev" || (mode === "material" && SHEVELEV_MATERIALS.has(b.wpMaterial ?? "Сталь"));
+}
 
 /** Эквивалентная шероховатость Δ, мм — для труб, бывших в эксплуатации. */
 export const MATERIAL_ROUGHNESS_MM: Record<string, number> = {
@@ -90,6 +101,10 @@ class Pipe {
     this.e = pipeRoughnessMm(b) / 1000 / this.d;
     this.xi = Math.max(0, num(b.wpLocalXi, 0));
     this.K = RHO / (2 * this.A * this.A) / 1e6;
+    // Шевелёв: постоянное сопротивление R = (λ·L/d + Σξ)·ρ/(2S²)
+    if (this.manualR === null && usesShevelev(b)) {
+      this.manualR = this.K * ((shevelevLambda(this.d) * this.L) / this.d + this.xi);
+    }
     this.C1 = this.d / (this.A * NU);
     const lamL = 64 / RE_LAM;
     const lamT = 0.11 * (this.e + 68 / RE_TURB) ** 0.25;
@@ -99,6 +114,7 @@ class Pipe {
 
   lam(aq: number): [number, number] {
     const re = this.C1 * aq;
+    if (this.manualR !== null) return [Math.max(0, ((this.manualR / this.K - this.xi) * this.d) / this.L), re];
     if (re <= RE_LAM) return [re > 0 ? 64 / re : Infinity, re];
     if (re < RE_TURB) return [this.lamA + this.lamB * re, re];
     return [0.11 * (this.e + 68 / re) ** 0.25, re];

@@ -23,7 +23,7 @@ RHO = 1000.0
 G = 9.81
 NU = 1.31e-6               # м²/с — кинематическая вязкость воды при ~10 °C (шахтная вода)
 RHO_G_MPA = RHO * G / 1e6  # МПа на метр высоты
-NOZZLE_MU = 0.82
+NOZZLE_MU = 0.92          # конический насадок пожарного ствола (по паспортам РС-50/РС-70)
 SMOOTH_ROUGHNESS_MM = 0.03
 RE_LAM = 2000.0
 RE_TURB = 4000.0
@@ -32,6 +32,21 @@ Q_REG = 1e-4                # м³/с — сглаживание квадрат�
 C_CLOSED = 1e-8             # проводимость закрытой связи (обратный клапан)
 MAX_ITER = 120
 SOURCE_R = 1e-3            # МН·с²/м⁸ — пренебрежимо малое сопротивление выхода резервуара
+
+# Материалы, для которых в режиме «по материалу» применяется формула
+# Шевелёва для труб, бывших в эксплуатации (как в ПО «Аэросеть»).
+SHEVELEV_MATERIALS = {"Сталь", "Чугун", "Прочее"}
+
+
+def shevelev_lambda(d_m):
+    """λ = 0.021 / d^0.3 — стальные и чугунные трубы в эксплуатации (Шевелёв), квадратичная зона."""
+    return 0.021 / d_m ** 0.3
+
+
+def uses_shevelev(b):
+    mode = b.get("wpRoughnessMode") or "shevelev"
+    return mode == "shevelev" or (mode == "material" and (b.get("wpMaterial") or "Сталь") in SHEVELEV_MATERIALS)
+
 
 # Эквивалентная шероховатость Δ, мм — для труб, бывших в эксплуатации.
 MATERIAL_ROUGHNESS_MM = {
@@ -111,6 +126,9 @@ class Pipe:
         self.e = pipe_roughness_mm(b) / 1000.0 / self.d
         self.xi = max(0.0, _f(b.get("wpLocalXi"), 0.0))
         self.K = RHO / (2.0 * self.A * self.A) / 1e6      # МПа·с²/м⁶
+        # Шевелёв: постоянное сопротивление R = (λ·L/d + Σξ)·ρ/(2S²)
+        if self.manualR is None and uses_shevelev(b):
+            self.manualR = self.K * (shevelev_lambda(self.d) * self.L / self.d + self.xi)
         self.C1 = self.d / (self.A * NU)                  # Re = C1·|q|
         lam_l = 64.0 / RE_LAM
         lam_t = 0.11 * (self.e + 68.0 / RE_TURB) ** 0.25
@@ -119,6 +137,9 @@ class Pipe:
 
     def lam(self, aq):
         re = self.C1 * aq
+        if self.manualR is not None:
+            lam = (self.manualR / self.K - self.xi) * self.d / self.L
+            return max(0.0, lam), re
         if re <= RE_LAM:
             return 64.0 / re if re > 0 else float("inf"), re
         if re < RE_TURB:

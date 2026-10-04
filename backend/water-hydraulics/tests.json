@@ -59,18 +59,18 @@
           {
             "nodeId": "N1",
             "staticP": 0.6,
-            "flow": 144.715
+            "flow": 151.869
           },
           {
             "nodeId": "N2",
-            "flow": 144.715,
-            "dynamicP": 0.3117
+            "flow": 151.869,
+            "dynamicP": 0.2727
           }
         ],
         "branchResults": [
           {
             "branchId": "B1",
-            "flow": 144.715,
+            "flow": 151.869,
             "flowFromTo": true,
             "regime": "turbulent"
           }
@@ -267,15 +267,72 @@
         "branchResults": [
           {
             "branchId": "rj",
-            "flow": 70.397
+            "flow": 77.836
           },
           {
             "branchId": "j1",
-            "flow": 35.198
+            "flow": 38.918
           },
           {
             "branchId": "j2",
-            "flow": 35.198
+            "flow": 38.918
+          }
+        ]
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Сверка с Аэросетью: труба 100×2, 20 м по Шевелёву",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {
+            "id": "R",
+            "fireNodeType": "reservoir",
+            "fireInitPressure": 0.5,
+            "fireCapacity": 50,
+            "z": 0
+          },
+          {
+            "id": "C",
+            "fireNodeType": "consumer",
+            "fireHydrantOpen": true,
+            "fireHydrantDiameter": 19,
+            "fireResistanceMode": "project",
+            "z": 0
+          }
+        ],
+        "branches": [
+          {
+            "id": "P",
+            "fromId": "R",
+            "toId": "C",
+            "hasWaterPipe": true,
+            "wpDiameter": 100,
+            "wpDiameterKind": "outer",
+            "wpWallThickness": 2,
+            "length": 20,
+            "wpRoughnessMode": "shevelev"
+          }
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "nodeResults": [
+          {
+            "nodeId": "R"
+          },
+          {
+            "nodeId": "C",
+            "resistance": 7348.52512
+          }
+        ],
+        "branchResults": [
+          {
+            "branchId": "P",
+            "resistance": 84.333864,
+            "lambda": 0.04242
           }
         ]
       },

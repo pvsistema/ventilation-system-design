@@ -219,7 +219,7 @@ export interface TopoBranch {
   wpMaterial: string;              // материал трубы
   wpLengthManual: boolean;         // длина задана вручную
   wpLength: number;                // м — длина трубопровода
-  wpRoughnessMode: "smooth" | "rough" | "material" | "manual"; // способ задания шероховатости
+  wpRoughnessMode: "shevelev" | "smooth" | "rough" | "material" | "manual"; // способ расчёта сопротивления трубы
   wpRoughness: number;             // мм — абсолютная шероховатость
   wpManualR: number;               // МН·с²/м⁸ — ручное сопротивление
   wpLocalXi: number;               // сумма ξ местных сопротивлений
@@ -847,7 +847,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     wpMaterial: "Сталь",
     wpLengthManual: false,
     wpLength: 0,
-    wpRoughnessMode: "rough",
+    wpRoughnessMode: "shevelev",
     wpRoughness: 0.5,
     wpManualR: 0,
     wpLocalXi: 0,

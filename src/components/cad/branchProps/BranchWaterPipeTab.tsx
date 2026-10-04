@@ -14,6 +14,7 @@
 import { type ReactNode } from "react";
 import { type TopoBranch } from "@/lib/topology";
 import { type WaterBranchResult, MATERIAL_ROUGHNESS_MM, SMOOTH_ROUGHNESS_MM } from "@/lib/waterHydraulics";
+import { SHEVELEV_MATERIALS, shevelevLambda } from "@/lib/waterSolver";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 import Icon from "@/components/ui/icon";
 import {
@@ -164,7 +165,7 @@ export default function BranchWaterPipeTab({
   const branchLen = b.length ?? 0;
 
   const wpDiam = b.wpDiameter ?? 100;
-  const roughMode = b.wpRoughnessMode ?? "rough";
+  const roughMode = b.wpRoughnessMode ?? "shevelev";
   const diamKind = b.wpDiameterKind ?? "inner";
   const wall = b.wpWallThickness ?? 0;
   const innerDiam = diamKind === "outer" ? wpDiam - 2 * Math.max(0, wall) : wpDiam;
@@ -223,7 +224,8 @@ export default function BranchWaterPipeTab({
           <Segmented value={roughMode}
             onChange={(v) => onUpdate({ wpRoughnessMode: v })}
             options={[
-              { value: "material", label: "По материалу", title: "Шероховатость из справочника по материалу трубы" },
+              { value: "shevelev", label: "Шевелёв", title: "λ = 0,021/d^0,3 — стальные трубы в эксплуатации (как в «Аэросети»)" },
+              { value: "material", label: "По материалу", title: "Сталь/чугун — по Шевелёву, пластик и асбестоцемент — по шероховатости" },
               { value: "smooth", label: "Гладкая", title: `Шероховатость ${SMOOTH_ROUGHNESS_MM} мм` },
               { value: "rough",  label: "Своя Δ", title: "Задать шероховатость стенки" },
               { value: "manual", label: "Своё R", title: "Задать сопротивление напрямую" },
@@ -236,7 +238,13 @@ export default function BranchWaterPipeTab({
                 onChange={(v) => onUpdate({ wpRoughness: v })} />
             </Field>
           )}
-          {roughMode === "material" && (
+          {(roughMode === "shevelev" || (roughMode === "material" && SHEVELEV_MATERIALS.has(material))) && (
+            <Field label="Коэф. трения λ">
+              <ReadValue value={innerDiam > 1 ? shevelevLambda(innerDiam / 1000).toFixed(4) : "—"}
+                title="λ = 0,021 / d^0,3, d — внутренний диаметр, м" />
+            </Field>
+          )}
+          {roughMode === "material" && !SHEVELEV_MATERIALS.has(material) && (
             <Field label="Шероховатость">
               <ReadValue value={String(MATERIAL_ROUGHNESS_MM[material] ?? 0.5)} unit="мм"
                 title={`Эквивалентная шероховатость: ${material}, трубы в эксплуатации`} />
