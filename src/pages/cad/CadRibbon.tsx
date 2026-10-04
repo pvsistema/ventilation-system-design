@@ -1041,18 +1041,8 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
           </div>
         </RibbonGroup>
 
-        {/* ── Группа: Метод тепловой депрессии пожара ── */}
-        <RibbonGroup label="Тепловая депрессия">
-          <div className="flex flex-col justify-center gap-1" style={{ minWidth: 110 }}>
-            <div className="text-[10px] text-gray-600 leading-tight">Метод расчёта:</div>
-            {/* «Методика» выведена из программы (код сохранён) — только Норматив */}
-            <div className="text-[11px] px-2 py-1 rounded text-left"
-              style={{ background: "var(--c-red-ink, #991b1b)", color: "#fff", border: "1px solid var(--c-red-ink, #991b1b)" }}
-              title="Тепловая депрессия пожара — по нормативным формулам 4.5–4.13">
-              ● Норматив (4.5)
-            </div>
-          </div>
-        </RibbonGroup>
+        {/* Группа «Метод тепловой депрессии» скрыта: расчёт пожара идёт по
+            одной методике — «Норматив (4.5)», выбирать нечего. */}
 
         {/* ── Группа: Взрыв ── */}
         <RibbonGroup label="Взрыв">
