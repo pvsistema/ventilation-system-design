@@ -104,6 +104,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     setBlastMaxRadius,
     blastRadiusStep,
     setBlastRadiusStep,
+    blastPaintMode,
+    setBlastPaintMode,
     blastAnimating,
     setBlastAnimating,
     blastAnimRef,
@@ -1291,9 +1293,11 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 // Взрыва не было — окрашивать выработки не по чему.
                 if (baseRes.noExplosion) return undefined;
                 if (blastWaveRadius <= 0) return undefined;
+                const paintInside = blastPaintMode === "inside";
                 const map = new Map<string, {
                   color: string; hazardLevel: string;
                   segments?: Array<{ color: string; fromT: number; toT: number }>;
+                  inside?: boolean;
                 }>();
 
                 // Цвета зон — из explosionCalculator (единый источник правды).
@@ -1551,12 +1555,10 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                   for (let i = 0; i < SEG_N; i++) {
                     const tMid = (i + 0.5) / SEG_N;
                     const vg = netPressureAt(b.id, tMid);
-                    // Ниже границы безопасной зоны волна на схеме не показывается:
-                    // иначе «безопасная» зелёная окраска тянется далеко за её радиус.
-                    if (vg && vg.p > 0 && vg.p < blastThresholds.safeLimit) {
-                      if (curColor !== null) { segments.push({ color: curColor, fromT: curStart, toT: i / SEG_N }); curColor = null; }
-                      continue;
-                    }
+                    // Ниже границы безопасной зоны участок красится «безопасным»
+                    // цветом — пока фронт волны (R на шкале) до него дошёл.
+                    // Раньше такие участки пропускались, и при увеличении R
+                    // окраска схемы дальше радиуса безопасной зоны не шла.
                     if (vg && vg.p > 0 && vg.d <= blastWaveRadius) {
                       const { color, hazardLevel: lvlV } = zoneColor(vg.p);
                       if (RANK.indexOf(lvlV) > RANK.indexOf(worst)) worst = lvlV;
@@ -1605,6 +1607,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     color: EXPLOSION_HAZARD_COLORS[worst as keyof typeof EXPLOSION_HAZARD_COLORS],
                     hazardLevel: worst,
                     segments,
+                    inside: paintInside,
                   });
                 });
 
@@ -2750,6 +2753,26 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                       ΔP = {activeExplosionRes.pressureAtDistance(blastWaveRadius).toFixed(1)} кПа
                     </span>
                   )}
+                </div>
+
+                <div style={{ width: 1, background: "var(--c-amber-bg, #b45309)", alignSelf: "stretch", margin: "0 2px" }} />
+
+                {/* Окраска: снаружи (аура) / внутри выработки */}
+                <span style={{ fontSize: 10, color: "#fde68a", whiteSpace: "nowrap" }}>Окраска:</span>
+                <div style={{ display: "flex", border: "1px solid var(--c-amber, #b45309)", borderRadius: "var(--radius-ui)", overflow: "hidden", flexShrink: 0 }}>
+                  {([["outside", "Снаружи"], ["inside", "Внутри"]] as const).map(([m, label]) => (
+                    <button key={m}
+                      onClick={() => setBlastPaintMode(m)}
+                      title={m === "outside" ? "Зоны — аурой вокруг выработки" : "Зоны — заливкой внутри выработки"}
+                      style={{
+                        fontSize: 11, padding: "1px 8px", cursor: "pointer", border: "none",
+                        background: blastPaintMode === m ? "var(--c-amber-lt, #f59e0b)" : "#1c1202",
+                        color: blastPaintMode === m ? "#fff" : "#fde68a",
+                        fontWeight: blastPaintMode === m ? 700 : 400,
+                      }}>
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
                 <div style={{ width: 1, background: "var(--c-amber-bg, #b45309)", alignSelf: "stretch", margin: "0 2px" }} />

@@ -2287,7 +2287,7 @@ export default function TopoCanvas(props: Props) {
               {/* Подсветка взрыва — штриховая аура по участкам ветви.
                   Давление падает с расстоянием, поэтому длинная выработка
                   красится не одним цветом, а по участкам (t от fromId к toId). */}
-              {expSeg && (expSeg.segments && expSeg.segments.length > 0
+              {expSeg && !expSeg.inside && (expSeg.segments && expSeg.segments.length > 0
                 ? expSeg.segments
                 : [{ color: expSeg.color, fromT: 0, toT: 1 }]
               ).map((part, pi) => {
@@ -2805,9 +2805,36 @@ export default function TopoCanvas(props: Props) {
                 );
               })
             : null;
+          // ── Зоны взрыва ВНУТРИ выработок — полосой по оси поверх заливки ──
+          const blastInsidePass = (branchExplosionColors && branchExplosionColors.size > 0)
+            ? branchesSorted.map(({ branch: b }) => {
+                const ex = branchExplosionColors.get(b.id);
+                if (!ex?.inside) return null;
+                const from = projNodesMap.get(b.fromId);
+                const to   = projNodesMap.get(b.toId);
+                if (!from || !to) return null;
+                const bw = branchDisplayWidth(b);
+                const w = thinLines ? 1 : Math.max(bw * objSF, 1.0);
+                const parts = ex.segments && ex.segments.length > 0
+                  ? ex.segments : [{ color: ex.color, fromT: 0, toT: 1 }];
+                return (
+                  <g key={`blastin-${b.id}`} pointerEvents="none">
+                    {parts.map((part, pi) => (
+                      <line key={pi}
+                        x1={from.sx + (to.sx - from.sx) * part.fromT}
+                        y1={from.sy + (to.sy - from.sy) * part.fromT}
+                        x2={from.sx + (to.sx - from.sx) * part.toT}
+                        y2={from.sy + (to.sy - from.sy) * part.toT}
+                        stroke={part.color} strokeWidth={Math.max(w * 0.75, 2.5)}
+                        strokeLinecap="butt" opacity="0.95" />
+                    ))}
+                  </g>
+                );
+              })
+            : null;
           // Публикуем дым — рисуем его ПОСЛЕ блока УО (см. smokePassRef ниже),
           // иначе перерисовка ветвей верхних горизонтов перекрывает дым.
-          smokePassRef.current = smokePass;
+          smokePassRef.current = (smokePass || blastInsidePass) ? <>{blastInsidePass}{smokePass}</> : null;
           return <>{comparePass}{posOuterPass}{highlightPass}{layered}</>;
         })()}
 

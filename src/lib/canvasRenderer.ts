@@ -207,6 +207,8 @@ export interface CanvasRenderOptions {
   branchExplosionColors?: Map<string, {
     color: string; hazardLevel: string;
     segments?: Array<{ color: string; fromT: number; toT: number }>;
+    /** true — окраска ВНУТРИ выработки (полосой по оси), иначе аура снаружи */
+    inside?: boolean;
   }>;
   /** Режим цвета: none = по скорости, flowQ = по расходу */
   colorMode?: "none" | "flowQ" | "velocityV" | "section" | "ventsection";
@@ -664,12 +666,40 @@ let _branchLabelBoxes: BranchLabelBox[] = [];
  *
  * Если участков нет — ветвь красится одним цветом целиком (старое поведение).
  */
-function drawExplosionAura(
+/** Окраска зон взрыва ВНУТРИ выработки — полосой по оси, поверх заливки. */
+function drawExplosionInside(
   ctx: CanvasRenderingContext2D,
   seg: { color: string; segments?: Array<{ color: string; fromT: number; toT: number }> },
   fromSx: number, fromSy: number, toSx: number, toSy: number,
   w: number,
 ) {
+  const parts = seg.segments && seg.segments.length > 0
+    ? seg.segments
+    : [{ color: seg.color, fromT: 0, toT: 1 }];
+  const dx = toSx - fromSx, dy = toSy - fromSy;
+  ctx.setLineDash([]);
+  ctx.lineCap = "butt";
+  ctx.globalAlpha = 0.95;
+  ctx.lineWidth = Math.max(w * 0.75, 2.5);
+  for (const part of parts) {
+    ctx.strokeStyle = part.color;
+    ctx.beginPath();
+    ctx.moveTo(fromSx + dx * part.fromT, fromSy + dy * part.fromT);
+    ctx.lineTo(fromSx + dx * part.toT,   fromSy + dy * part.toT);
+    ctx.stroke();
+  }
+  ctx.lineCap = "round";
+  ctx.globalAlpha = 1;
+}
+
+function drawExplosionAura(
+  ctx: CanvasRenderingContext2D,
+  seg: { color: string; segments?: Array<{ color: string; fromT: number; toT: number }>; inside?: boolean },
+  fromSx: number, fromSy: number, toSx: number, toSy: number,
+  w: number,
+) {
+  // Режим «внутри» рисуется отдельным проходом поверх заливки ветвей
+  if (seg.inside) return;
   const parts = seg.segments && seg.segments.length > 0
     ? seg.segments
     : [{ color: seg.color, fromT: 0, toT: 1 }];
@@ -1697,6 +1727,19 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.lineWidth = Math.max(w * 0.7, 2);
       ctx.globalAlpha = 0.95;
       ctx.beginPath(); ctx.moveTo(fsx, fsy); ctx.lineTo(tsx, tsy); ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+    ctx.setLineDash([]);
+  }
+
+  // ── ГЛОБАЛЬНЫЙ ПРОХОД: зоны взрыва ВНУТРИ выработок ─────────────────────
+  if (branchExplosionColors && branchExplosionColors.size > 0) {
+    for (const { b } of sorted) {
+      const expIn = branchExplosionColors.get(b.id);
+      if (!expIn?.inside) continue;
+      const p = bParamsMap.get(b.id);
+      if (!p) continue;
+      drawExplosionInside(ctx, expIn, p.fromSx, p.fromSy, p.toSx, p.toSy, p.w);
     }
     ctx.globalAlpha = 1;
     ctx.setLineDash([]);

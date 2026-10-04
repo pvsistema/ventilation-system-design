@@ -1293,6 +1293,14 @@ export function useCadPage() {
   // Максимум шкалы (м) — радиус безопасной зоны
   const [blastMaxRadius, setBlastMaxRadius] = useState(500);
   const [blastRadiusStep, setBlastRadiusStep] = useState(10);
+  // Окраска зон взрыва: "outside" — аура вокруг выработки, "inside" — полоса внутри
+  const [blastPaintMode, setBlastPaintModeState] = useState<"outside" | "inside">(() => {
+    try { return localStorage.getItem("blastPaintMode") === "inside" ? "inside" : "outside"; } catch { return "outside"; }
+  });
+  const setBlastPaintMode = useCallback((m: "outside" | "inside") => {
+    setBlastPaintModeState(m);
+    try { localStorage.setItem("blastPaintMode", m); } catch { /* ignore */ }
+  }, []);
   // Анимация распространения волны
   const [blastAnimating, setBlastAnimating] = useState(false);
   const blastAnimRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -6043,6 +6051,8 @@ export function useCadPage() {
     setBlastMaxRadius,
     blastRadiusStep,
     setBlastRadiusStep,
+    blastPaintMode,
+    setBlastPaintMode,
     blastAnimating,
     setBlastAnimating,
     blastAnimRef,

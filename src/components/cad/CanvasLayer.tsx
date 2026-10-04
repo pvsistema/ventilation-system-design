@@ -71,6 +71,8 @@ interface CanvasLayerProps {
   branchExplosionColors?: Map<string, {
     color: string; hazardLevel: string;
     segments?: Array<{ color: string; fromT: number; toT: number }>;
+    /** true — окраска ВНУТРИ выработки (полосой по оси), иначе аура снаружи */
+    inside?: boolean;
   }>;
   reversedBranchIds?: Set<string>;
   fixedObjectScale?: boolean;

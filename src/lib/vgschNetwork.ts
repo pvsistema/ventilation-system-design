@@ -360,7 +360,7 @@ export function propagateVgsch(opts: {
       const kBar = cross(e.branchId, e.g, e.len, entry, e.tStart, e.tStart === 0 ? 1 : 0);
       const endSt = advance(src, e.g, entry, e.len);
       const next = { ...endSt, mult: endSt.mult * kBar, fromNode: cur, fromBranch: e.branchId };
-      if (vgschRatio(src, next) * src.dPn_kPa < 0.5) return;
+      if (vgschRatio(src, next) * src.dPn_kPa < 0.01) return;
       push(e.to, next);
     });
   }

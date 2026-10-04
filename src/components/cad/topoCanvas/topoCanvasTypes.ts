@@ -236,6 +236,8 @@ export interface Props {
   branchExplosionColors?: Map<string, {
     color: string; hazardLevel: string;
     segments?: Array<{ color: string; fromT: number; toT: number }>;
+    /** true — окраска ВНУТРИ выработки (полосой по оси), иначе аура снаружи */
+    inside?: boolean;
   }>;
   /**
    * Показать на схеме ТОЛЬКО эти ветви (режим «только маршруты МПО»).

@@ -216,7 +216,7 @@ export function propagateFnp(opts: {
       const kBar = cross(e.branch, e.len, entry, e.tStart, e.tStart === 0 ? 1 : 0, true);
       const end = advance(entry, g, e.len, true);
       const next: FnpState = { ...end, k: end.k * kBar, fromBranch: e.branch.id };
-      if (pressureOfState(next) < 0.5) return;
+      if (pressureOfState(next) < 0.01) return;
       push(e.to, next);
     });
   }
