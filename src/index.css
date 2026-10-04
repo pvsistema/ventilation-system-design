@@ -1424,6 +1424,31 @@ select, input[type="text"], input[type="number"], input[type="search"], textarea
   font-size: 9.5px; font-weight: 700; letter-spacing: 0.14em;
   text-transform: uppercase; color: #7d858e;
 }
+.help-download {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px !important;
+  height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1c1202;
+  background: #e8a317;
+  border: 1px solid #e8a317;
+  border-radius: var(--radius-ui, 4px);
+  transition: background .15s, opacity .15s;
+}
+.help-download:hover:not(:disabled) { background: #f0b53a; }
+.help-download:disabled { opacity: .7; cursor: wait; }
+.help-download-ext {
+  font-size: 9.5px;
+  letter-spacing: .06em;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: rgba(0, 0, 0, 0.18);
+}
 .help-nav {
   position: relative;
   width: 100%;

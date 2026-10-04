@@ -11,11 +11,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
 import AppLogo from "@/components/AppLogo";
 import { type Section, nodeText } from "@/components/cad/help/HelpPrimitives";
-import { HELP_SECTIONS_BASICS } from "@/components/cad/help/helpSectionsBasics";
-import { HELP_SECTIONS_SCHEMA } from "@/components/cad/help/helpSectionsSchema";
-import { HELP_SECTIONS_VENTPIPE } from "@/components/cad/help/helpSectionsVentPipe";
-import { HELP_SECTIONS_ADVANCED } from "@/components/cad/help/helpSectionsAdvanced";
-import { HELP_SECTIONS_GUIDES } from "@/components/cad/help/helpSectionsGuides";
+import { HELP_GROUPS as GROUPS, getHelpSections } from "@/components/cad/help/helpContent";
+import { downloadBlob } from "@/lib/vdsReport/docx";
 
 interface Props {
   onClose: () => void;
@@ -23,32 +20,8 @@ interface Props {
 
 type IconName = Parameters<typeof Icon>[0]["name"];
 
-// Порядок разделов — от простого к сложному. Группы нужны, чтобы длинный
-// список (20+ разделов) читался как оглавление, а не как сплошная колонка.
-const GROUPS: { title: string; ids: string[] }[] = [
-  { title: "Начало работы", ids: ["overview", "quickstart", "interface", "file", "import"] },
-  { title: "Схема сети",    ids: ["topology", "branch-props", "symbols", "survey"] },
-  { title: "Расчёты",       ids: ["ventilation", "ventpipe", "analysis"] },
-  { title: "Аварии и ПЛА",  ids: ["accidents", "waterpipes", "rescue"] },
-  { title: "Оформление",    ids: ["view", "refs", "print"] },
-  { title: "Справка",       ids: ["scenarios", "shortcuts", "tips", "faq"] },
-];
-
 export default function HelpDialog({ onClose }: Props) {
-  const sections: Section[] = useMemo(() => {
-    const all = [
-      ...HELP_SECTIONS_BASICS,
-      ...HELP_SECTIONS_SCHEMA,
-      ...HELP_SECTIONS_VENTPIPE,
-      ...HELP_SECTIONS_ADVANCED,
-      ...HELP_SECTIONS_GUIDES,
-    ];
-    const byId = new Map(all.map(s => [s.id, s]));
-    const ordered = GROUPS.flatMap(g => g.ids.map(id => byId.get(id)).filter(Boolean) as Section[]);
-    // Раздел, не попавший ни в одну группу, не теряется — идёт в конец.
-    all.forEach(s => { if (!ordered.includes(s)) ordered.push(s); });
-    return ordered;
-  }, []);
+  const sections: Section[] = useMemo(() => getHelpSections(), []);
 
   const groupOf = useMemo(() => {
     const m = new Map<string, string>();
@@ -64,6 +37,24 @@ export default function HelpDialog({ onClose }: Props) {
 
   const [activeSection, setActiveSection] = useState("overview");
   const [query, setQuery] = useState("");
+  const [downloading, setDownloading] = useState(false);
+
+  // Скачать всё руководство в Word: модуль грузится по требованию,
+  // чтобы не утяжелять открытие окна.
+  const downloadManual = async () => {
+    if (downloading) return;
+    setDownloading(true);
+    try {
+      const { buildHelpDocx, helpDocxFileName } = await import("@/lib/helpDocx");
+      const blob = await buildHelpDocx();
+      downloadBlob(blob, helpDocxFileName());
+    } catch (err) {
+      console.error("Не удалось сформировать руководство:", err);
+      alert("Не удалось сформировать файл руководства. Попробуйте ещё раз.");
+    } finally {
+      setDownloading(false);
+    }
+  };
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const q = query.trim().toLowerCase();
@@ -148,7 +139,15 @@ export default function HelpDialog({ onClose }: Props) {
             )}
           </nav>
 
-          <div className="px-4 py-2.5 text-[10px]" style={{ color: "#6b737c", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+          <div className="px-3 pt-2.5" style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+            <button onClick={downloadManual} disabled={downloading} className="help-download"
+              title="Скачать полное руководство пользователя в формате Word (.docx)">
+              <Icon name={downloading ? "Loader2" : "FileDown"} size={14} className={downloading ? "animate-spin" : undefined} />
+              <span className="flex-1 text-left whitespace-nowrap">{downloading ? "Формирую…" : "Скачать руководство"}</span>
+              <span className="help-download-ext">DOCX</span>
+            </button>
+          </div>
+          <div className="px-4 py-2.5 text-[10px]" style={{ color: "#6b737c" }}>
             © 2026 ПВ-Система · <span className="font-num">Esc</span> — закрыть
           </div>
         </aside>
