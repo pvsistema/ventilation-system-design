@@ -120,6 +120,20 @@ export function isSignificantReversal(origFlow: number, newFlow: number): boolea
 // по эталону Аэросети (падение ~595→147°C на транспортном съезде).
 const WALL_HEAT_ALPHA = 14.0;  // Вт/(м²·К)
 
+// Коэффициент скорости фронта задымления относительно средней скорости
+// воздуха Q/S. Профиль скорости в выработке неравномерный: по оси струи дым
+// движется быстрее среднего, поэтому передний фронт опережает v_ср ≈ на 20%.
+const SMOKE_FRONT_FACTOR = 1.2;
+
+// Искусственное затухание концентраций вдоль ветви, 1/м. По умолчанию ВЫКЛЮЧЕНО
+// (0): в квазистационарной модели продукты горения сохраняются по массе и
+// снижаются ТОЛЬКО разбавлением в узлах слияния. Можно включить (напр. 0.0005)
+// как грубый учёт осаждения сажи/потерь — тогда c_вых = c_вх·exp(−k·L).
+const SMOKE_BRANCH_DECAY_PER_M = 0;
+
+// Скорость фронта, если у ветви не задано сечение (нет данных для Q/S), м/с.
+const SMOKE_SPEED_NO_AREA = 0.3;
+
 // ─── Характеристики горючих материалов ───────────────────────────────────────
 export interface CombustibleProps {
   id: string;
@@ -2148,6 +2162,7 @@ export function calcFireMode(
   interface NodeContrib {
     smokedQ: number;      // расход задымлённого воздуха (м³/с)
     freshQ: number;       // расход свежего воздуха (м³/с)
+    actQ: number;         // ФАКТИЧЕСКИЙ расход из ветвей-очагов в узел (м³/с) — для смешения
     wCO: number;          // взвешенная сумма CO * Q
     wCO2: number;
     wSmoke: number;
@@ -2158,7 +2173,7 @@ export function calcFireMode(
   const nodeArrivalTime = new Map<string, number>();
 
   const getNC = (nid: string): NodeContrib => {
-    if (!nodeContribs.has(nid)) nodeContribs.set(nid, { smokedQ: 0, freshQ: 0, wCO: 0, wCO2: 0, wSmoke: 0, wTemp: 0 });
+    if (!nodeContribs.has(nid)) nodeContribs.set(nid, { smokedQ: 0, freshQ: 0, actQ: 0, wCO: 0, wCO2: 0, wSmoke: 0, wTemp: 0 });
     return nodeContribs.get(nid)!;
   };
 
@@ -2348,7 +2363,9 @@ export function calcFireMode(
 
     // Позиция очага вдоль ветви: fireT=0 → у fromId, fireT=1 → у toId
     const fireT = (fb.fireT ?? 0.5);
-    const smokeSpeed = Math.max(airQ > 0 && (fb.area ?? 0) > 0 ? airQ / fb.area : 0.5, 0.3);
+    // Скорость фронта в ветви-очаге: базовая скорость (по штатному расходу — п.4
+    // не менялся) × коэффициент опережения фронта, как и во всех прочих ветвях.
+    const smokeSpeed = SMOKE_FRONT_FACTOR * Math.max(airQ > 0 && (fb.area ?? 0) > 0 ? airQ / fb.area : 0.5, 0.3);
     const branchLen = fb.length ?? 0;
 
     // Время от очага до ВЫХОДНОГО узла (по направлению потока)
@@ -2370,6 +2387,7 @@ export function calcFireMode(
 
     const nc = getNC(outNodeId);
     nc.smokedQ += airQ;
+    nc.actQ += fbActualQ;
     nc.wCO += coConc * airQ;
     nc.wCO2 += co2Conc * airQ;
     nc.wSmoke += smokeDensity * airQ;
@@ -2438,7 +2456,7 @@ export function calcFireMode(
       hazardLevel: hazard,
       flowDelta: Math.round(flowDelta * 100) / 100,
       smokeArrivalTime: 0,
-      airSpeed: Math.max(smokeSpeed, 0.3),
+      airSpeed: Math.round(smokeSpeed * 1000) / 1000,
       flowSign: fbFlow >= 0 ? 1 : -1,
       thermalDepMethod: depMethod,
       normative: normDetail ? {
@@ -2493,38 +2511,183 @@ export function calcFireMode(
     nodeInflowQ.set(outNodeId, (nodeInflowQ.get(outNodeId) ?? 0) + Math.abs(flow));
   }
 
-  // ── Шаг 4: Dijkstra-BFS распространения задымления ────────────────────────
-  // Используем Dijkstra (priority queue по времени прихода) вместо простого BFS,
-  // чтобы корректно обрабатывать сети с циклами: каждый узел обрабатывается
-  // ТОЛЬКО ОДИН РАЗ — когда найден кратчайший путь к нему.
+  // ── Шаг 4а: УСТАНОВИВШИЕСЯ концентрации в узлах (смешение всех струй) ─────
+  // Квазистационарная модель: в каждом узле продукты горения полностью
+  // смешиваются со ВСЕМИ входящими струями:
+  //   c_узла = Σ(c_i·Q_i) / ΣQ_вх,
+  // где сумма в числителе — по задымлённым входящим ветвям (и ветвям-очагам),
+  // а знаменатель — полный приток в узел (включая свежий воздух, c=0).
+  // Раньше концентрацию узла задавал только ПЕРВЫЙ дошедший путь Dijkstra —
+  // второй задымлённый поток, сливаясь в узле, не учитывался, и концентрация
+  // за слиянием занижалась. Время прихода считается отдельно (шаг 4б).
   interface SmokeParams { coC: number; co2C: number; smokeC: number; tempC: number; }
+  const CO2_BG = 0.04; // фоновая концентрация CO₂ в свежем воздухе, %
   const smokeAtNode = new Map<string, SmokeParams>();
   // Итоговые концентрации CO / CO₂ в задымлённых узлах (для панели свойств узла)
   // Тип обязан совпадать с полем nodeGas в результате расчёта: кроме газов
   // сюда пишутся температура воздуха и стенок задымлённого узла.
   const nodeGas = new Map<string, { co: number; co2: number; airTemp: number; wallTemp: number }>();
 
-  // Инициализация: только ВЫХОДНЫЕ узлы очагов попадают в начало обхода.
-  // Входной узел очага (inNodeId) — источник свежего воздуха, НЕ задымляется.
-  // При опрокидывании (actuallyReversed) очаг уже находится в reverserBranches,
-  // и его входной/выходной узлы поменяются местами по знаку flow.
-  for (const fb of fireBranches) {
-    // outNodeId определяется знаком flow ПОСЛЕ итеративного расчёта
-    const outNodeId = (fb.flow ?? 0) >= 0 ? fb.toId : fb.fromId;
-    const nc = nodeContribs.get(outNodeId);
-    if (!nc || nc.smokedQ < 0.0001) continue;
-    const sp: SmokeParams = {
-      coC:    nc.wCO    / nc.smokedQ,
-      co2C:   nc.wCO2   / nc.smokedQ,
-      smokeC: nc.wSmoke / nc.smokedQ,
-      tempC:  nc.wTemp  / nc.smokedQ,
-    };
-    smokeAtNode.set(outNodeId, sp);
+  // Вклады очагов в их выходные узлы: концентрации (взвешены по штатному
+  // расходу, как и раньше) и ФАКТИЧЕСКИЙ расход продуктов горения в узел.
+  interface FireSrc { sp: SmokeParams; q: number; }
+  const fireSrc = new Map<string, FireSrc>();
+  for (const [nid, nc] of nodeContribs) {
+    if (nc.smokedQ < 0.0001) continue;
+    fireSrc.set(nid, {
+      sp: {
+        coC:    nc.wCO    / nc.smokedQ,
+        co2C:   nc.wCO2   / nc.smokedQ,
+        smokeC: nc.wSmoke / nc.smokedQ,
+        tempC:  nc.wTemp  / nc.smokedQ,
+      },
+      q: nc.actQ,
+    });
   }
 
-  // Dijkstra: min-heap priority queue по времени прихода.
-  // Используем бинарную кучу для корректной работы на больших схемах (>800 ветвей).
-  // finalized[nodeId] = true когда узел обработан окончательно.
+  // Параметры ветви для переноса дыма от входного узла к выходному
+  const branchDecay = (b: TopoBranch): number =>
+    SMOKE_BRANCH_DECAY_PER_M > 0 ? Math.exp(-(b.length ?? 0) * SMOKE_BRANCH_DECAY_PER_M) : 1;
+  const branchCool = (b: TopoBranch): number => {
+    // Остывание продуктов горения о стенки выработки (сток тепла в породу):
+    // T = T_ст + (T_вх − T_ст)·exp(−α·P·L/(ρ·cp·Q)). Ограничиваем остывание на
+    // ОДНОЙ ветви (≥30% перегрева), чтобы на коротких приочаговых ветвях
+    // температура не «схлопывалась».
+    const bLen = b.length ?? 0;
+    const bPer = (b.perimeter && b.perimeter > 0) ? b.perimeter : 4 * Math.sqrt(Math.max(1, b.area ?? 1));
+    const bMassFlow = Math.max(0.5, 1.25 * Math.abs(b.flow ?? 0)); // кг/с
+    return Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
+  };
+  const branchOut = (b: TopoBranch, sp: SmokeParams): SmokeParams => {
+    const k = branchDecay(b);
+    return {
+      coC:    sp.coC * k,
+      co2C:   CO2_BG + Math.max(0, sp.co2C - CO2_BG) * k,
+      smokeC: sp.smokeC * k,
+      tempC:  ambientTemp_C + (sp.tempC - ambientTemp_C) * branchCool(b),
+    };
+  };
+
+  // Входящие (по направлению потока) НЕ-очаговые ветви каждого узла
+  const branchesByOutNode = new Map<string, TopoBranch[]>();
+  branchesByInNode.forEach(list => {
+    for (const b of list) {
+      const outId = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
+      if (!branchesByOutNode.has(outId)) branchesByOutNode.set(outId, []);
+      branchesByOutNode.get(outId)!.push(b);
+    }
+  });
+
+  // Узлы, достижимые вниз по потоку от выходных узлов очагов, в порядке
+  // топологической сортировки (Kahn) подграфа. Узлы на циклах, которые Kahn
+  // не снял, добавляются в конец — их досчитывают итерации ниже.
+  const reach = new Set<string>();
+  {
+    const stack = [...fireSrc.keys()];
+    while (stack.length > 0) {
+      const n = stack.pop()!;
+      if (reach.has(n)) continue;
+      reach.add(n);
+      for (const b of branchesByInNode.get(n) ?? []) {
+        const o = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
+        if (!reach.has(o)) stack.push(o);
+      }
+    }
+  }
+  const order: string[] = [];
+  {
+    const indeg = new Map<string, number>();
+    reach.forEach(n => indeg.set(n, 0));
+    reach.forEach(n => {
+      for (const b of branchesByInNode.get(n) ?? []) {
+        const o = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
+        if (reach.has(o)) indeg.set(o, (indeg.get(o) ?? 0) + 1);
+      }
+    });
+    const queue: string[] = [];
+    indeg.forEach((d, n) => { if (d === 0) queue.push(n); });
+    const placed = new Set<string>();
+    for (let qi = 0; qi < queue.length; qi++) {
+      const n = queue[qi];
+      placed.add(n);
+      order.push(n);
+      for (const b of branchesByInNode.get(n) ?? []) {
+        const o = (b.flow ?? 0) >= 0 ? b.toId : b.fromId;
+        if (!reach.has(o)) continue;
+        const d = (indeg.get(o) ?? 0) - 1;
+        indeg.set(o, d);
+        if (d === 0) queue.push(o);
+      }
+    }
+    reach.forEach(n => { if (!placed.has(n)) order.push(n); });
+  }
+
+  // Итерации Гаусса–Зейделя по топологическому порядку. На ациклической
+  // сети сходится за один проход (второй — проверочный); на циклах
+  // (рециркуляция дыма) — геометрически, ограничиваем числом проходов.
+  const MIX_MAX_PASSES = 200;
+  const MIX_TOL = 1e-6;
+  let mixPasses = 0;
+  for (let pass = 0; pass < MIX_MAX_PASSES; pass++) {
+    mixPasses = pass + 1;
+    let maxDelta = 0;
+    for (const nid of order) {
+      let sumQ = 0, wCO = 0, wCO2ex = 0, wSmoke = 0, wTex = 0;
+      const src = fireSrc.get(nid);
+      if (src) {
+        // Если фактический расход из очага ничтожен (ветвь «заперта»), даём
+        // ему минимальный вес — узел очага всё равно получает продукты горения.
+        const q = Math.max(src.q, 0.001);
+        sumQ += q;
+        wCO    += src.sp.coC * q;
+        wCO2ex += Math.max(0, src.sp.co2C - CO2_BG) * q;
+        wSmoke += src.sp.smokeC * q;
+        wTex   += (src.sp.tempC - ambientTemp_C) * q;
+      }
+      for (const b of branchesByOutNode.get(nid) ?? []) {
+        const inId = (b.flow ?? 0) >= 0 ? b.fromId : b.toId;
+        const up = smokeAtNode.get(inId);
+        if (!up) continue;
+        const q = Math.abs(b.flow ?? 0);
+        const o = branchOut(b, up);
+        sumQ   += q;
+        wCO    += o.coC * q;
+        wCO2ex += Math.max(0, o.co2C - CO2_BG) * q;
+        wSmoke += o.smokeC * q;
+        wTex   += (o.tempC - ambientTemp_C) * q;
+      }
+      if (sumQ <= 0) continue;
+      // Полный приток узла (задымлённый + свежий воздух). Свежий воздух
+      // несёт нулевые CO/дым, фоновый CO₂ и температуру ambient.
+      const totalQ = Math.max(nodeInflowQ.get(nid) ?? 0, sumQ);
+      const next: SmokeParams = {
+        coC:    wCO / totalQ,
+        co2C:   CO2_BG + wCO2ex / totalQ,
+        smokeC: wSmoke / totalQ,
+        tempC:  ambientTemp_C + wTex / totalQ,
+      };
+      const prev = smokeAtNode.get(nid);
+      const d = prev ? Math.abs(prev.smokeC - next.smokeC) + Math.abs(prev.coC - next.coC) : next.smokeC + next.coC;
+      if (d > maxDelta) maxDelta = d;
+      smokeAtNode.set(nid, next);
+    }
+    if (maxDelta < MIX_TOL) break;
+  }
+  log.push(`Смешение в узлах: узлов=${order.length}, проходов=${mixPasses}`);
+
+  // Порог задымления по видимости (модель Аэросеть/Вентиляция): узел/ветвь
+  // считается задымлённой, только пока видимость в дыму НИЖЕ порога. Порог
+  // проверяется ПОСЛЕ смешения всех струй в узле. Смешение — усреднение, поэтому
+  // ниже незадымлённого узла концентрация выше порога появиться не может:
+  // задымлённая зона остаётся связной.
+  const SMOKE_VIS_THRESHOLD = smokeVisThreshold > 0 ? smokeVisThreshold : 50; // м — граница различимого задымления
+  // Плотность, соответствующая порогу — по той же формуле видимости, что и всюду.
+  const SMOKE_DENS_THRESHOLD = densityFromVisibility(SMOKE_VIS_THRESHOLD);
+
+  // ── Шаг 4б: Dijkstra — ТОЛЬКО время прихода фронта задымления ─────────────
+  // Концентрации уже известны (шаг 4а). Dijkstra находит минимальное время
+  // прихода фронта в каждый задымлённый узел; ветвь задымляется с момента
+  // задымления её входного узла.
   const finalized = new Set<string>();
 
   type PQEntry = [number, string]; // [arrivalTime, nodeId]
@@ -2562,30 +2725,16 @@ export function calcFireMode(
     return top;
   };
 
-  // Добавляем стартовые узлы (выходные узлы очагов)
+  // Стартовые узлы — выходные узлы очагов (время = проход от очага до узла)
   for (const [nodeId, time] of nodeArrivalTime) {
-    if (smokeAtNode.has(nodeId)) {
-      pqPush([time, nodeId]);
-    }
+    if (smokeAtNode.has(nodeId)) pqPush([time, nodeId]);
   }
 
-  // Порог задымления по видимости (модель Аэросеть/Вентиляция): дым считается
-  // «дошедшим» в ветвь, только пока видимость в дыму НИЖЕ порога. Как только
-  // при затухании вдоль струи видимость восстанавливается выше порога —
-  // дальше идёт практически чистый воздух, и фронт задымления ОБРЫВАЕТСЯ.
-  // Это гарантирует связность: задымлены только ветви на непрерывном пути от
-  // очага, где концентрация ещё опасна (никаких «оторванных» задымлённых ветвей).
-  const SMOKE_VIS_THRESHOLD = smokeVisThreshold > 0 ? smokeVisThreshold : 50; // м — граница различимого задымления
-  // Плотность, соответствующая порогу — по той же формуле видимости, что и всюду.
-  const SMOKE_DENS_THRESHOLD = densityFromVisibility(SMOKE_VIS_THRESHOLD);
-
+  let smokedNodes = 0;
   while (pq.length > 0) {
     const [entryTime, smokedNodeId] = pqPop();
 
-    // Пропускаем если уже обработан (Dijkstra гарантирует оптимальность).
-    // Также пропускаем «устаревшие» записи в куче: если время в записи больше
-    // текущего оптимального времени узла — этот путь неактуален (в куче могло
-    // остаться несколько записей для одного узла с разным временем).
+    // Пропускаем обработанные и «устаревшие» записи кучи.
     if (finalized.has(smokedNodeId)) continue;
     const optArrival = nodeArrivalTime.get(smokedNodeId) ?? 0;
     if (entryTime > optArrival + 1e-9) continue;
@@ -2593,10 +2742,9 @@ export function calcFireMode(
 
     const sp = smokeAtNode.get(smokedNodeId);
     if (!sp) continue;
-    // Узел задымлён по порогу? Если дым сюда пришёл уже рассеянным (плотность
-    // ниже порога) — дальше он НЕ распространяется (обрыв фронта, чистый воздух).
+    // Узел ниже порога задымления — фронт здесь обрывается.
     if (sp.smokeC < SMOKE_DENS_THRESHOLD) continue;
-    // Фиксируем концентрации продуктов горения и температуры в задымлённом узле.
+    smokedNodes++;
     // Температура стенок выработки нагревается медленнее воздуха (сток тепла в
     // породу) — принимаем как ambient + 0.5·(t_возд − ambient).
     const nodeAirTemp  = sp.tempC;
@@ -2607,65 +2755,40 @@ export function calcFireMode(
       airTemp:  Math.round(nodeAirTemp  * 100) / 100,
       wallTemp: Math.round(nodeWallTemp * 100) / 100,
     });
-    // Время задымления ВХОДНОГО узла — оно уже оптимально (узел финализирован).
     const arrivalAtIn = optArrival;
 
-    // Все ветви, для которых этот узел — входной (дым идёт вниз по потоку)
-    const downBranches = branchesByInNode.get(smokedNodeId) ?? [];
-
-    for (const b of downBranches) {
+    for (const b of branchesByInNode.get(smokedNodeId) ?? []) {
       const flow = b.flow ?? 0;
       const outNodeId = flow >= 0 ? b.toId : b.fromId;
 
-      const rawSpeed = Math.abs(flow) > 0 && (b.area ?? 0) > 0
-        ? Math.abs(flow) / b.area : 0;
-      const speed = Math.max(rawSpeed, 0.3); // мин. 0.3 м/с
-      const transitMin = (b.length ?? 0) > 0 ? b.length / speed / 60 : 0;
+      // Скорость фронта = k_ф·|Q|/S по ФАКТИЧЕСКОМУ расходу, без нижнего
+      // предела: через утечки и перемычки дым идёт медленно, и это должно
+      // отражаться во времени прихода (ветви с |Q| < 0.001 исключены выше).
+      const meanSpeed = (b.area ?? 0) > 0 ? Math.abs(flow) / b.area : SMOKE_SPEED_NO_AREA;
+      const speed = SMOKE_FRONT_FACTOR * meanSpeed;
+      const transitMin = (b.length ?? 0) > 0 && speed > 0 ? b.length / speed / 60 : 0;
       const arrivalAtOut = Math.min(600, arrivalAtIn + transitMin);
 
-      // Затухание концентраций вдоль ветви
-      const lf     = Math.max(0.5, Math.exp(-(b.length ?? 0) * 0.0005));
-      const coOut    = sp.coC    * lf;
-      const smokeOut = sp.smokeC * lf;
-      const co2Out   = Math.max(0.04, sp.co2C * lf);
-      // Остывание продуктов горения о стенки выработки (сток тепла в породу).
-      // Температура экспоненциально приближается к температуре стенок (≈ ambient)
-      // по мере движения: T = T_ст + (T_вх − T_ст)·exp(−α·P·L/(ρ·cp·Q)).
-      // Чем длиннее выработка и меньше расход — тем сильнее остывание (как в
-      // Аэросети). Раньше стоял слабый exp(−L·0.001) без учёта периметра и
-      // расхода — температура почти не падала (435°C в узле вместо ~147°C).
-      const bLen  = b.length ?? 0;
-      const bPer  = (b.perimeter && b.perimeter > 0) ? b.perimeter : 4 * Math.sqrt(Math.max(1, b.area ?? 1));
-      const bMassFlow = Math.max(0.5, 1.25 * Math.abs(flow)); // кг/с
-      // Ограничиваем остывание на ОДНОЙ ветви: за один короткий участок воздух
-      // не успевает полностью сравняться со стенками — оставляем ≥30% перегрева,
-      // чтобы на коротких приочаговых ветвях температура не «схлопывалась».
-      const coolExp = Math.max(0.3, Math.exp(-(WALL_HEAT_ALPHA * bPer * bLen) / (bMassFlow * CP_AIR * 1000)));
-      const tempOut  = ambientTemp_C + (sp.tempC - ambientTemp_C) * coolExp;
-      const visOut   = visibilityFromDensity(smokeOut);
-      const hazard   = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
+      const o = branchOut(b, sp);
+      const coOut = o.coC, co2Out = o.co2C, smokeOut = o.smokeC, tempOut = o.tempC;
 
-      // Порог: если дым в этой ветви уже рассеялся ниже порога видимости —
-      // ветвь НЕ задымляется и дальше по ней распространение не идёт.
+      // Ветвь задымлена, только если на её выходе дым ещё выше порога
+      // (актуально при включённом SMOKE_BRANCH_DECAY_PER_M).
       if (smokeOut < SMOKE_DENS_THRESHOLD) continue;
 
-      // Реальное опрокидывание: знак расхода изменился по сравнению с исходным.
-      // Порог значимости — общий с очагом (isSignificantReversal). Прежние
-      // 0.01 м³/с ловили обычный численный шум увязки: на схеме Джусинского
-      // счётчик набирал 36 «опрокинутых» ветвей, хотя реального разворота
-      // струи там не было.
+      const visOut = visibilityFromDensity(smokeOut);
+      const hazard = calcHazardLevel(coOut, co2Out, smokeOut, tempOut);
+
+      // Реальное опрокидывание: знак расхода изменился по сравнению с исходным
+      // (порог значимости общий с очагом — isSignificantReversal).
       const bOrigFlow = (b as TopoBranch & { originalFlow?: number }).originalFlow;
       const bActuallyReversed = bOrigFlow !== undefined
         ? isSignificantReversal(bOrigFlow, flow)
         : false;
       if (bActuallyReversed) reversedBranches.add(b.id);
 
-      // У каждой ветви ровно один входной узел (по знаку flow), поэтому она
-      // обрабатывается ровно один раз — когда её входной узел финализирован
-      // Dijkstra с гарантированно оптимальным (минимальным) временем прихода.
-      // Дым начинает вползать в ветвь именно с момента arrivalAtIn — фронтенд
-      // рисует прогресс от этого времени со скоростью speed. Очаги исключены
-      // из branchesByInNode, поэтому их smokeArrivalTime=0 не перезаписывается.
+      // У ветви один входной узел, он финализирован с оптимальным временем.
+      // Очаги исключены из branchesByInNode — их smokeArrivalTime=0 не трогаем.
       if (!resultMap.has(b.id)) {
         resultMap.set(b.id, {
           branchId: b.id,
@@ -2680,35 +2803,26 @@ export function calcFireMode(
           visibility:        Math.round(visOut   * 10)   / 10,
           hazardLevel:       hazard,
           smokeArrivalTime:  Math.round(arrivalAtIn * 100) / 100,
-          airSpeed:          Math.round(speed * 100) / 100,
+          // Точность 1e-4 м/с и строго > 0: на утечках скорость может быть
+          // сотыми долями м/с, а 0 фронтенд подменил бы запасными 0.3 м/с.
+          airSpeed:          Math.max(1e-4, Math.round(speed * 10000) / 10000),
           flowSign:          flow >= 0 ? 1 : -1,
         });
       }
 
-      // Обновляем выходной узел в Dijkstra только если новый путь строго быстрее
+      // Время прихода в выходной узел — только если он сам задымлён выше
+      // порога после смешения (иначе фронт обрывается на этой ветви).
       if (finalized.has(outNodeId)) continue;
+      const outSp = smokeAtNode.get(outNodeId);
+      if (!outSp || outSp.smokeC < SMOKE_DENS_THRESHOLD) continue;
       const prevArrival = nodeArrivalTime.get(outNodeId);
       if (prevArrival !== undefined && arrivalAtOut >= prevArrival - 1e-9) continue;
-
-      // Разбавление в узле слияния: дым, принесённый этой ветвью (расход |flow|),
-      // смешивается со ВСЕМ воздухом, входящим в узел (nodeInflowQ). Чем больше
-      // подмешивается свежего воздуха — тем сильнее падает концентрация. Это
-      // естественно обрывает фронт задымления в узлах с большим притоком воздуха.
-      const totalInQ = Math.max(nodeInflowQ.get(outNodeId) ?? Math.abs(flow), Math.abs(flow));
-      const dil = totalInQ > 0 ? Math.abs(flow) / totalInQ : 1;
-
       nodeArrivalTime.set(outNodeId, arrivalAtOut);
-      smokeAtNode.set(outNodeId, {
-        coC:    coOut    * dil,
-        co2C:   Math.max(0.04, co2Out * dil),
-        smokeC: smokeOut * dil,
-        tempC:  ambientTemp_C + (tempOut - ambientTemp_C) * dil,
-      });
       pqPush([arrivalAtOut, outNodeId]);
     }
   }
 
-  log.push(`Dijkstra: задымлено узлов=${finalized.size}, ветвей=${resultMap.size} из ${branches.length}`);
+  log.push(`Dijkstra: задымлено узлов=${smokedNodes}, ветвей=${resultMap.size} из ${branches.length}`);
 
   // ── Итоговая статистика ───────────────────────────────────────────────────
   const smokedCount = resultMap.size;
