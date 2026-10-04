@@ -109,7 +109,10 @@ export interface ExplosionRunResult {
 /** Параметры методики ВГСЧ из ветви-очага — общие для сервера и расчёта на месте. */
 export function vgschParamsOf(b: TopoBranch, branches?: TopoBranch[], nodes?: TopoNode[]) {
   return {
-    gasMethod: b.explosionGasMethod ?? "vgsch",
+    // Методика «Прямолинейная» выведена из программы (код сохранён в
+    // explosionCalculator.ts). Даже если в старом проекте записано
+    // "aeroset" — газ и пыль считаем по Методике ВГСЧ.
+    gasMethod: "vgsch" as const,
     combustionMode: b.explosionCombustionMode ?? "detonation",
     dustParticipation: b.explosionDust === true,
     excavationPerimeter_m: b.perimeter && b.perimeter > 0 ? b.perimeter : undefined,

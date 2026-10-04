@@ -1600,7 +1600,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Алгоритм расчёта</div>
                   <div className="flex flex-col gap-1 px-2 py-1.5" style={{ borderBottom: SB }}>
                     <span className="text-[10px] text-gray-700 leading-tight">
-                      {(b.explosionSourceType ?? "gas") === "gas" && (b.explosionGasMethod ?? "vgsch") === "vgsch"
+                      {(b.explosionSourceType ?? "gas") === "gas"
                         ? <>Методика определения параметров УВВ при взрывах газов и пыли в горных
                           выработках (Прил. 12 к Уставу ВГСЧ). Перемычки разрушаются при давлении
                           во фронте не ниже давления разрушения (табл. 8); устоявшие волну задерживают.</>
@@ -1623,9 +1623,9 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     )}
                   </div>
 
-                  {/* Настройки — только для прежней модели заряда ВВ и газа «Прямолинейная»:
-                      в ФНП № 494 и методике ВГСЧ волна всегда идёт по выработкам. */}
-                  {((b.explosionSourceType ?? "gas") === "gas" && b.explosionGasMethod === "aeroset") && (<>
+                  {/* Настройки — только для прежних моделей («Садовский», «Прямолинейная»),
+                      выведенных из программы. В ФНП № 494 и ВГСЧ волна всегда идёт по выработкам. */}
+                  {false && (<>
                   <div className="px-1 py-0.5 text-[10px] font-semibold" style={{ background: SH, borderBottom: SB, color: "var(--c-amber-ink, #92400e)" }}>Настройки</div>
                   <div className="flex items-center gap-1.5 px-2 py-1" style={{ borderBottom: "1px solid #f3f4f6" }}>
                     <input type="checkbox" id={`exp_walls_${b.id}`}
@@ -1672,14 +1672,12 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         оставлена для сверки со старыми расчётами. */}
                     <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Методика:</span>
-                      <select value={b.explosionGasMethod ?? "vgsch"}
-                        onChange={e => updateBranch(b.id, { explosionGasMethod: e.target.value as "vgsch" | "aeroset" })}
-                        className="flex-1 text-[11px] px-1 rounded" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "white" }}>
-                        <option value="vgsch">ВГСЧ (Прил. 12 к Уставу ВГСЧ)</option>
-                        <option value="aeroset">Прямолинейная</option>
-                      </select>
+                      {/* Методика «Прямолинейная» выведена из программы (код сохранён) */}
+                      <span className="flex-1 text-[11px] px-1 rounded flex items-center" style={{ border: "1px solid var(--c-b2, #d1d5db)", height: 20, background: "#f9fafb" }}>
+                        ВГСЧ (Прил. 12 к Уставу ВГСЧ)
+                      </span>
                     </div>
-                    {(b.explosionGasMethod ?? "vgsch") === "vgsch" && (<>
+                    {true && (<>
                       <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                         <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Вид взрыва (табл. 2):</span>
                         <select value={b.explosionCombustionMode ?? "detonation"}
@@ -1855,7 +1853,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         «Аэросети»): 50 м → 209 кПа, 100 м → 282 кПа.
                         Ручной ввод нужен только для сверки с чужим расчётом,
                         поэтому включается галочкой. */}
-                    {(b.explosionGasMethod ?? "vgsch") === "aeroset" && (() => {
+                    {false && (() => {
                       const zoneLen = b.explosionGasZoneLength ?? 100;
                       // ΔP₀ зависит не только от длины, но и от ЭНЕРГИИ смеси:
                       // вид газа, концентрация и Z входят через E_v.
@@ -1903,7 +1901,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         </div>
                       );
                     })()}
-                    {(b.explosionGasMethod ?? "vgsch") === "aeroset" && <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
+                    {false && <div className="flex items-center px-2 py-0.5" style={{ borderBottom: "1px solid #f3f4f6" }}>
                       <span className="text-[11px] text-gray-600 flex-shrink-0" style={{ width: 148 }}>Коэф. участия Z:</span>
                       <select value={String(b.explosionZ ?? 0.5)}
                         onChange={e => updateBranch(b.id, { explosionZ: parseFloat(e.target.value) || 0.5 })}
