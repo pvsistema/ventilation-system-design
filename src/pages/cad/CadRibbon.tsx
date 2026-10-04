@@ -1,7 +1,6 @@
 import Icon from "@/components/ui/icon";
 import SolverParamsPanel, { SOLVER_DEFAULTS, type SolverParams } from "@/components/cad/SolverParamsPanel";
 import { BULKHEAD_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
-import { type ThermalDepMethod } from "@/lib/fireCalculator";
 import { loadRecentData, hasRecentData, loadHandleFromIDB } from "@/lib/useRecentFiles";
 import { INSTALLER_URL } from "@/lib/updater";
 import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
@@ -115,7 +114,6 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
     setSmokeMaxTime,
     smokeVisThreshold,
     thermalDepMethod,
-    changeThermalDepMethod,
     solveResult,
     vcSolving,
     solveProgress,
@@ -1047,24 +1045,12 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
         <RibbonGroup label="Тепловая депрессия">
           <div className="flex flex-col justify-center gap-1" style={{ minWidth: 110 }}>
             <div className="text-[10px] text-gray-600 leading-tight">Метод расчёта:</div>
-            {([
-              { id: "normative" as ThermalDepMethod, label: "Норматив (4.5)" },
-              { id: "aerosети" as ThermalDepMethod, label: "Методика" },
-            ]).map(opt => (
-              <button
-                key={opt.id}
-                onClick={() => changeThermalDepMethod(opt.id)}
-                className="text-[11px] px-2 py-1 rounded text-left transition-colors"
-                style={{
-                  background: thermalDepMethod === opt.id ? "var(--c-red-ink, #991b1b)" : "var(--c-s3, #f3f4f6)",
-                  color: thermalDepMethod === opt.id ? "#fff" : "var(--c-t2, #374151)",
-                  border: `1px solid ${thermalDepMethod === opt.id ? "var(--c-red-ink, #991b1b)" : "var(--c-b2, #d1d5db)"}`,
-                }}
-                title="Применится при следующем «Расчёте пожара»"
-              >
-                {thermalDepMethod === opt.id ? "● " : "○ "}{opt.label}
-              </button>
-            ))}
+            {/* «Методика» выведена из программы (код сохранён) — только Норматив */}
+            <div className="text-[11px] px-2 py-1 rounded text-left"
+              style={{ background: "var(--c-red-ink, #991b1b)", color: "#fff", border: "1px solid var(--c-red-ink, #991b1b)" }}
+              title="Тепловая депрессия пожара — по нормативным формулам 4.5–4.13">
+              ● Норматив (4.5)
+            </div>
           </div>
         </RibbonGroup>
 

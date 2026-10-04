@@ -20,7 +20,7 @@ import FanIndicatorsPanel from "@/components/cad/FanIndicatorsPanel";
 import HorizonsPanel from "@/components/cad/HorizonsPanel";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, WINDOW_BULKHEAD_IDS, OPEN_DOOR_IDS, REDUCER_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS, WATER_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import PumpPanel from "@/components/cad/PumpPanel";
-import { COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type VehicleFireResult } from "@/lib/fireCalculator";
+import { COMBUSTIBLES, VEHICLE_MATERIALS, calcVehicleFire, calcFirePowerFromMaterial, calcFireMaterialSummary, NORMATIVE_TIME_MAX_MIN, type VehicleFireResult } from "@/lib/fireCalculator";
 import { GAS_TYPES, EXPLOSIVE_TYPES, EXPLOSION_HAZARD_COLORS, concUnitLabel, tntEquivalent, gasInitialPressure, gasEnergyDensity, type ExplosionSourceType } from "@/lib/explosionCalculator";
 import { calcGasZone, gasZoneTime, EXPLOSIVE_CH4_CONC, DEFAULT_I_NEPOGASH, GAS_TIME_PLA, GAS_TIME_EMERGENCY_MIN } from "@/lib/gasZone";
 import { barrierDisplayName, type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
@@ -123,7 +123,6 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
     smokeVisThreshold,
     setSmokeVisThreshold,
     thermalDepMethod,
-    changeThermalDepMethod,
     setHqDialogData,
     normFireTime,
     changeNormFireTime,
@@ -1150,22 +1149,10 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                       нельзя, и поля норматива просто не показались бы. */}
                   <div className="px-1 py-1" style={{ borderBottom: "1px solid #ebebeb" }}>
                     <div className="text-[10px] text-gray-600 mb-0.5">Метод тепловой депрессии:</div>
-                    <div className="flex gap-1">
-                      {([
-                        { id: "aerosети" as ThermalDepMethod, label: "Методика" },
-                        { id: "normative" as ThermalDepMethod, label: "Норматив (4.5)" },
-                      ]).map(opt => (
-                        <button
-                          key={opt.id}
-                          onClick={() => changeThermalDepMethod(opt.id)}
-                          className="text-[10px] px-1.5 py-0.5 rounded flex-1"
-                          style={{
-                            background: thermalDepMethod === opt.id ? "var(--c-red-ink, #991b1b)" : "var(--c-s3, #f3f4f6)",
-                            color: thermalDepMethod === opt.id ? "#fff" : "var(--c-t2, #374151)",
-                            border: `1px solid ${thermalDepMethod === opt.id ? "var(--c-red-ink, #991b1b)" : "var(--c-b2, #d1d5db)"}`,
-                          }}
-                        >{opt.label}</button>
-                      ))}
+                    {/* «Методика» выведена из программы (код сохранён) — только Норматив */}
+                    <div className="text-[10px] px-1.5 py-0.5 rounded text-center"
+                      style={{ background: "var(--c-red-ink, #991b1b)", color: "#fff", border: "1px solid var(--c-red-ink, #991b1b)" }}>
+                      Норматив (4.5)
                     </div>
                   </div>
                   {thermalDepMethod === "normative" && (

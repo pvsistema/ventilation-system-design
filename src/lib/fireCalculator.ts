@@ -1659,14 +1659,17 @@ export type ThermalDepMethod = "aerosети" | "normative";
 const THERMAL_DEP_METHOD_KEY = "fireThermalDepMethod";
 
 export function getThermalDepMethod(): ThermalDepMethod {
-  try {
-    const v = localStorage.getItem(THERMAL_DEP_METHOD_KEY);
-    return v === "aerosети" ? "aerosети" : "normative";
-  } catch { return "normative"; }
+  // Метод «Методика» (распределённая тяга через температуры узлов) выведен из
+  // программы — код сохранён. Тепловая депрессия всегда считается по
+  // Нормативу (ф. 4.5–4.13), даже если в браузере сохранён прежний выбор.
+  void THERMAL_DEP_METHOD_KEY;
+  return "normative";
 }
 
 export function setThermalDepMethod(m: ThermalDepMethod): void {
-  try { localStorage.setItem(THERMAL_DEP_METHOD_KEY, m); } catch { /* noop */ }
+  // Выбор метода отключён: всегда «Норматив (4.5)».
+  try { localStorage.setItem(THERMAL_DEP_METHOD_KEY, "normative"); } catch { /* noop */ }
+  void m;
 }
 
 // ─── Параметры нормативной методики (4.5–4.13), задаются пользователем ───────

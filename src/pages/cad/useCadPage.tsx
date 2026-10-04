@@ -1317,8 +1317,10 @@ export function useCadPage() {
   // столба) или "normative" (нормативная методика, формулы 4.5–4.13).
   const [thermalDepMethod, setThermalDepMethodState] = useState<ThermalDepMethod>(getThermalDepMethod());
   const changeThermalDepMethod = (m: ThermalDepMethod) => {
-    setThermalDepMethod(m);
-    setThermalDepMethodState(m);
+    // «Методика» выведена из программы — остаётся только «Норматив (4.5)»
+    void m;
+    setThermalDepMethod("normative");
+    setThermalDepMethodState("normative");
   };
   // Данные для увеличенного просмотра h–Q диаграммы (null — окно закрыто)
   const [hqDialogData, setHqDialogData] = useState<(HQDiagramData & { branchName?: string }) | null>(null);
