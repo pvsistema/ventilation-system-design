@@ -1719,7 +1719,10 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       if (!fireSeg) continue;
       const p = bParamsMap.get(b.id);
       if (!p) continue;
-      const { sxA, syA, sxB, syB, w } = p;
+      // ВАЖНО: fromT/toT задаются в координатах ветви fromId→toId (0 = узел
+      // fromId), а НЕ «по струе». sxA/sxB переставлены для реверсных ветвей
+      // (flow<0) — с ними дым зеркалился и стартовал с другого конца.
+      const { fromSx: sxA, fromSy: syA, toSx: sxB, toSy: syB, w } = p;
       const { color: fireCol, fromT, toT } = fireSeg;
       const fsx = sxA + (sxB - sxA) * fromT, fsy = syA + (syB - syA) * fromT;
       const tsx = sxA + (sxB - sxA) * toT,   tsy = syA + (syB - syA) * toT;

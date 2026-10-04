@@ -389,9 +389,9 @@ export function buildOverlayLayers(d: OverlayLayersDeps): React.ReactNode[] {
       const f = projNodesMap.get(b.fromId);
       const tN = projNodesMap.get(b.toId);
       if (!f || !tN) continue;
-      const revS = (b.flow ?? 0) < 0 || (!!b.hasFan && (b.fanReverse ?? false) && (b.flow ?? 0) >= 0);
-      const sxA = revS ? tN.sx : f.sx, syA = revS ? tN.sy : f.sy;
-      const sxB = revS ? f.sx : tN.sx, syB = revS ? f.sy : tN.sy;
+      // fromT/toT — в координатах fromId→toId; концы по знаку расхода не меняем.
+      const sxA = f.sx, syA = f.sy;
+      const sxB = tN.sx, syB = tN.sy;
       const sbw = (b.lineWidth && b.lineWidth > 0) ? b.lineWidth : branchWidth;
       const sw = thinLines ? 1 : Math.max(sbw * _branchObjSF, 1.0);
       const { color: fireCol, fromT, toT } = fireSeg;

@@ -2785,12 +2785,11 @@ export default function TopoCanvas(props: Props) {
                 const from = projNodesMap.get(b.fromId);
                 const to   = projNodesMap.get(b.toId);
                 if (!from || !to) return null;
-                const fanReverseOverride = b.hasFan && (b.fanReverse ?? false) && b.flow >= 0;
-                const reversed = b.flow < 0 || fanReverseOverride;
-                const sxA = reversed ? to.sx : from.sx;
-                const syA = reversed ? to.sy : from.sy;
-                const sxB = reversed ? from.sx : to.sx;
-                const syB = reversed ? from.sy : to.sy;
+                // fromT/toT — в координатах ветви fromId→toId (0 = fromId),
+                // поэтому НЕ переставляем концы по знаку расхода: иначе дым
+                // на реверсных ветвях зеркалится и идёт против струи.
+                const sxA = from.sx, syA = from.sy;
+                const sxB = to.sx,   syB = to.sy;
                 const bw = branchDisplayWidth(b);
                 const w = thinLines ? 1 : Math.max(bw * objSF, 1.0);
                 const { color: fireCol, fromT, toT } = fireSeg;
