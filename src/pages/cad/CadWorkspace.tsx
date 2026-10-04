@@ -14,7 +14,7 @@ import { makeTextBlock } from "./cadTypes";
 import type { SchemaSymbol } from "./cadTypes";
 import ScrollArrows from "@/components/cad/ScrollArrows";
 import { propagateVgsch } from "@/lib/vgschNetwork";
-import { propagateFnp, branchLength as fnpBranchLength } from "@/lib/fnp494Network";
+import { propagateFnp, branchLength as fnpBranchLength, farthestReachFromSources } from "@/lib/fnp494Network";
 import { type Fnp494Source } from "@/lib/fnp494Blast";
 import { type VgschSource } from "@/lib/vgschBlast";
 import { ToolBtn, ViewBtn } from "./cadComponents";
@@ -2750,6 +2750,29 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     color: "#fde68a", fontSize: 11, padding: "2px 7px", cursor: "pointer",
                   }}>
                   ⏮
+                </button>
+
+                {/* До конца сети — R на самую дальнюю выработку */}
+                <button
+                  onClick={() => {
+                    if (blastAnimRef.current) clearInterval(blastAnimRef.current);
+                    blastAnimRef.current = null;
+                    setBlastAnimating(false);
+                    const far = farthestReachFromSources(branches, nodes);
+                    if (far <= 0) return;
+                    const r = Math.ceil(far / 10) * 10;
+                    if (r > blastMaxRadius) {
+                      setBlastMaxRadius(Math.min(50000, r));
+                      setBlastRadiusStep(r <= 200 ? 5 : r <= 500 ? 10 : r <= 2000 ? 25 : 50);
+                    }
+                    setBlastWaveRadius(Math.min(50000, r));
+                  }}
+                  title="Поставить R на самую дальнюю выработку сети — вся схема окрасится"
+                  style={{
+                    background: "#1c1202", border: "1px solid var(--c-amber, #b45309)", borderRadius: "var(--radius-ui)",
+                    color: "#fde68a", fontSize: 11, padding: "2px 8px", cursor: "pointer", whiteSpace: "nowrap",
+                  }}>
+                  ⏭ До конца сети
                 </button>
 
                 {/* Ползунок с маркерами зон */}

@@ -269,3 +269,46 @@ export function autoSumS(b: TopoBranch, branches: TopoBranch[], nodes: TopoNode[
   const deadTo = deg(b.toId) <= 1 && !atm.has(b.toId);
   return deadFrom || deadTo ? area : 2 * area;
 }
+
+/**
+ * Наибольшее расстояние по выработкам от очагов взрыва до самой дальней точки
+ * сети, м. Через выход на поверхность путь в шахту не продолжается.
+ * Нужно шкале волны: кнопка «До конца сети» ставит R на это значение.
+ */
+export function farthestReachFromSources(branches: TopoBranch[], nodes: TopoNode[]): number {
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  const sources = branches.filter(b => b.hasExplosion);
+  if (sources.length === 0) return 0;
+  const adj = new Map<string, Array<{ to: string; len: number }>>();
+  for (const b of branches) {
+    const L = branchLength(b, nodeById);
+    if (!adj.has(b.fromId)) adj.set(b.fromId, []);
+    if (!adj.has(b.toId)) adj.set(b.toId, []);
+    adj.get(b.fromId)!.push({ to: b.toId, len: L });
+    adj.get(b.toId)!.push({ to: b.fromId, len: L });
+  }
+  const dist = new Map<string, number>();
+  const pq: Array<{ id: string; d: number }> = [];
+  const relax = (id: string, d: number) => {
+    const cur = dist.get(id);
+    if (cur === undefined || d < cur) { dist.set(id, d); pq.push({ id, d }); }
+  };
+  for (const s of sources) {
+    const L = branchLength(s, nodeById), t = s.explosionT ?? 0.5;
+    relax(s.fromId, L * t);
+    relax(s.toId, L * (1 - t));
+  }
+  const done = new Set<string>();
+  while (pq.length > 0) {
+    let bi = 0;
+    for (let i = 1; i < pq.length; i++) if (pq[i].d < pq[bi].d) bi = i;
+    const { id, d } = pq.splice(bi, 1)[0];
+    if (done.has(id)) continue;
+    done.add(id);
+    if (nodeById.get(id)?.atmosphereLink) continue;
+    for (const e of adj.get(id) ?? []) relax(e.to, d + e.len);
+  }
+  let max = 0;
+  for (const d of dist.values()) if (d > max) max = d;
+  return Math.ceil(max);
+}
