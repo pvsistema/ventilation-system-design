@@ -30,15 +30,20 @@ const C_CLOSED = 1e-8;
 const MAX_ITER = 120;
 const SOURCE_R = 1e-3;
 
-/** Материалы, для которых «по материалу» = формула Шевелёва (как в «Аэросети»). */
-export const SHEVELEV_MATERIALS = new Set(["Сталь", "Чугун", "Прочее"]);
+/** Сталь и чугун (трубы в эксплуатации) считаются по λ = 0,021/d^0,3 (как в «Аэросети»). */
+export const SHEVELEV_MATERIALS = new Set(["Сталь", "Чугун"]);
 
-/** λ = 0.021 / d^0.3 — стальные и чугунные трубы в эксплуатации (Шевелёв). */
+/** λ = 0.021 / d^0.3 — стальные и чугунные трубы в эксплуатации. */
 export const shevelevLambda = (dM: number): number => 0.021 / dM ** 0.3;
 
+/** Способ расчёта сопротивления; старый режим "shevelev" = «по материалу». */
+export function pipeRoughnessMode(b: Partial<TopoBranch>): "material" | "smooth" | "rough" | "manual" {
+  const m = b.wpRoughnessMode ?? "material";
+  return m === "shevelev" ? "material" : m;
+}
+
 export function usesShevelev(b: Partial<TopoBranch>): boolean {
-  const mode = b.wpRoughnessMode ?? "shevelev";
-  return mode === "shevelev" || (mode === "material" && SHEVELEV_MATERIALS.has(b.wpMaterial ?? "Сталь"));
+  return pipeRoughnessMode(b) === "material" && SHEVELEV_MATERIALS.has(b.wpMaterial || "Сталь");
 }
 
 /** Эквивалентная шероховатость Δ, мм — для труб, бывших в эксплуатации. */
@@ -58,18 +63,17 @@ const num = (x: unknown, def = 0): number => {
 
 const nodeZ = (n?: TopoNode): number => (n ? num(surveyXYZ(n).z, 0) : 0);
 
-/** Внутренний диаметр трубы, мм: при наружном вычитаем две толщины стенки. */
+/** Внутренний диаметр трубы, мм: наружный − 2 × толщина стенки. */
 export function pipeInnerDiameterMm(b: Partial<TopoBranch>): number {
-  let d = num(b.wpDiameter, 100) || 100;
-  if ((b.wpDiameterKind ?? "inner") === "outer") d -= 2 * Math.max(0, num(b.wpWallThickness, 0));
+  const d = (num(b.wpDiameter, 100) || 100) - 2 * Math.max(0, num(b.wpWallThickness, 0));
   return d > 1 ? d : 1;
 }
 
 /** Расчётная шероховатость трубы, мм. */
 export function pipeRoughnessMm(b: Partial<TopoBranch>): number {
-  const mode = b.wpRoughnessMode ?? "rough";
+  const mode = pipeRoughnessMode(b);
   if (mode === "smooth") return SMOOTH_ROUGHNESS_MM;
-  if (mode === "material") return MATERIAL_ROUGHNESS_MM[b.wpMaterial ?? "Сталь"] ?? 0.5;
+  if (mode === "material") return MATERIAL_ROUGHNESS_MM[b.wpMaterial || "Сталь"] ?? 0.5;
   return Math.max(0, num(b.wpRoughness, 0.5));
 }
 
@@ -92,18 +96,21 @@ export function consumerResistance(n: TopoNode): number {
 class Pipe {
   d: number; A: number; L: number; e: number; xi: number; K: number; C1: number;
   manualR: number | null = null; lamA: number; lamB: number;
+  /** Входят ли местные сопротивления в manualR (в режиме «Своё R» — нет). */
+  xiInR = false;
 
   constructor(b: TopoBranch) {
-    if ((b.wpRoughnessMode ?? "rough") === "manual") this.manualR = Math.max(0, num(b.wpManualR, 0));
+    if (pipeRoughnessMode(b) === "manual") this.manualR = Math.max(0, num(b.wpManualR, 0));
     this.d = pipeInnerDiameterMm(b) / 1000;
     this.A = (Math.PI * this.d * this.d) / 4;
     this.L = Math.max(MIN_PIPE_LEN, pipeLengthM(b));
     this.e = pipeRoughnessMm(b) / 1000 / this.d;
     this.xi = Math.max(0, num(b.wpLocalXi, 0));
     this.K = RHO / (2 * this.A * this.A) / 1e6;
-    // Шевелёв: постоянное сопротивление R = (λ·L/d + Σξ)·ρ/(2S²)
+    // Сталь/чугун: постоянное сопротивление R = (λ·L/d + Σξ)·ρ/(2S²)
     if (this.manualR === null && usesShevelev(b)) {
       this.manualR = this.K * ((shevelevLambda(this.d) * this.L) / this.d + this.xi);
+      this.xiInR = true;
     }
     this.C1 = this.d / (this.A * NU);
     const lamL = 64 / RE_LAM;
@@ -114,7 +121,10 @@ class Pipe {
 
   lam(aq: number): [number, number] {
     const re = this.C1 * aq;
-    if (this.manualR !== null) return [Math.max(0, ((this.manualR / this.K - this.xi) * this.d) / this.L), re];
+    if (this.manualR !== null) {
+      const xi = this.xiInR ? this.xi : 0;
+      return [Math.max(0, ((this.manualR / this.K - xi) * this.d) / this.L), re];
+    }
     if (re <= RE_LAM) return [re > 0 ? 64 / re : Infinity, re];
     if (re < RE_TURB) return [this.lamA + this.lamB * re, re];
     return [0.11 * (this.e + 68 / re) ** 0.25, re];

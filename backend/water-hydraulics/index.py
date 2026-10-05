@@ -16,8 +16,9 @@ POST: {
               wpHasPump, wpPumpHead, wpPumpReverse}]
 }
 
-Новые поля трубы: wpDiameterKind ("inner"|"outer"), wpWallThickness (мм),
-wpRoughnessMode "material" — шероховатость по материалу wpMaterial.
+Диаметр трубы wpDiameter — наружный, wpWallThickness — толщина стенки (мм).
+wpRoughnessMode "material" (по умолчанию) — сталь/чугун по λ = 0,021/d^0,3,
+остальные материалы — по эквивалентной шероховатости wpMaterial.
 
 """
 import json

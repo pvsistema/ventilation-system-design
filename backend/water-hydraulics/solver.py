@@ -33,19 +33,23 @@ C_CLOSED = 1e-8             # проводимость закрытой связ
 MAX_ITER = 120
 SOURCE_R = 1e-3            # МН·с²/м⁸ — пренебрежимо малое сопротивление выхода резервуара
 
-# Материалы, для которых в режиме «по материалу» применяется формула
-# Шевелёва для труб, бывших в эксплуатации (как в ПО «Аэросеть»).
-SHEVELEV_MATERIALS = {"Сталь", "Чугун", "Прочее"}
+# Сталь и чугун (трубы в эксплуатации) считаются по λ = 0,021/d^0,3 (как в «Аэросети»).
+SHEVELEV_MATERIALS = {"Сталь", "Чугун"}
 
 
 def shevelev_lambda(d_m):
-    """λ = 0.021 / d^0.3 — стальные и чугунные трубы в эксплуатации (Шевелёв), квадратичная зона."""
+    """λ = 0.021 / d^0.3 — стальные и чугунные трубы в эксплуатации, квадратичная зона."""
     return 0.021 / d_m ** 0.3
 
 
+def pipe_roughness_mode(b):
+    """Способ расчёта сопротивления; старый режим "shevelev" = «по материалу»."""
+    m = b.get("wpRoughnessMode") or "material"
+    return "material" if m == "shevelev" else m
+
+
 def uses_shevelev(b):
-    mode = b.get("wpRoughnessMode") or "shevelev"
-    return mode == "shevelev" or (mode == "material" and (b.get("wpMaterial") or "Сталь") in SHEVELEV_MATERIALS)
+    return pipe_roughness_mode(b) == "material" and (b.get("wpMaterial") or "Сталь") in SHEVELEV_MATERIALS
 
 
 # Эквивалентная шероховатость Δ, мм — для труб, бывших в эксплуатации.
@@ -75,15 +79,13 @@ def node_z(n):
 
 
 def pipe_inner_diameter_mm(b):
-    """Внутренний диаметр: если задан наружный — вычитаем две толщины стенки."""
-    d = _f(b.get("wpDiameter"), 100.0) or 100.0
-    if (b.get("wpDiameterKind") or "inner") == "outer":
-        d -= 2.0 * max(0.0, _f(b.get("wpWallThickness"), 0.0))
+    """Внутренний диаметр: наружный − 2 × толщина стенки."""
+    d = (_f(b.get("wpDiameter"), 100.0) or 100.0) - 2.0 * max(0.0, _f(b.get("wpWallThickness"), 0.0))
     return d if d > 1.0 else 1.0
 
 
 def pipe_roughness_mm(b):
-    mode = b.get("wpRoughnessMode") or "rough"
+    mode = pipe_roughness_mode(b)
     if mode == "smooth":
         return SMOOTH_ROUGHNESS_MM
     if mode == "material":
@@ -114,11 +116,12 @@ def consumer_resistance(n):
 # ─── Модель трубы ──────────────────────────────────────────────────────────────
 
 class Pipe:
-    __slots__ = ("d", "A", "L", "e", "xi", "K", "C1", "manualR", "lamA", "lamB")
+    __slots__ = ("d", "A", "L", "e", "xi", "K", "C1", "manualR", "lamA", "lamB", "xiInR")
 
     def __init__(self, b):
         self.manualR = None
-        if (b.get("wpRoughnessMode") or "rough") == "manual":
+        self.xiInR = False   # входят ли местные сопротивления в manualR («Своё R» — нет)
+        if pipe_roughness_mode(b) == "manual":
             self.manualR = max(0.0, _f(b.get("wpManualR"), 0.0))
         self.d = pipe_inner_diameter_mm(b) / 1000.0
         self.A = math.pi * self.d * self.d / 4.0
@@ -126,9 +129,10 @@ class Pipe:
         self.e = pipe_roughness_mm(b) / 1000.0 / self.d
         self.xi = max(0.0, _f(b.get("wpLocalXi"), 0.0))
         self.K = RHO / (2.0 * self.A * self.A) / 1e6      # МПа·с²/м⁶
-        # Шевелёв: постоянное сопротивление R = (λ·L/d + Σξ)·ρ/(2S²)
+        # Сталь/чугун: постоянное сопротивление R = (λ·L/d + Σξ)·ρ/(2S²)
         if self.manualR is None and uses_shevelev(b):
             self.manualR = self.K * (shevelev_lambda(self.d) * self.L / self.d + self.xi)
+            self.xiInR = True
         self.C1 = self.d / (self.A * NU)                  # Re = C1·|q|
         lam_l = 64.0 / RE_LAM
         lam_t = 0.11 * (self.e + 68.0 / RE_TURB) ** 0.25
@@ -138,7 +142,8 @@ class Pipe:
     def lam(self, aq):
         re = self.C1 * aq
         if self.manualR is not None:
-            lam = (self.manualR / self.K - self.xi) * self.d / self.L
+            xi = self.xi if self.xiInR else 0.0
+            lam = (self.manualR / self.K - xi) * self.d / self.L
             return max(0.0, lam), re
         if re <= RE_LAM:
             return 64.0 / re if re > 0 else float("inf"), re

@@ -213,13 +213,13 @@ export interface TopoBranch {
   indicators?: Record<string, boolean>;
   // ─── Водопровод (ППЗ) ────────────────────────────────
   hasWaterPipe: boolean;           // ветвь содержит трубопровод ППЗ
-  wpDiameter: number;              // мм — диаметр трубы (внутренний или наружный, см. wpDiameterKind)
-  wpDiameterKind?: "inner" | "outer"; // как задан диаметр; по умолчанию — внутренний
-  wpWallThickness?: number;        // мм — толщина стенки (для наружного диаметра)
+  wpDiameter: number;              // мм — наружный диаметр трубы
+  wpDiameterKind?: "inner" | "outer"; // устарело: не используется, диаметр всегда наружный
+  wpWallThickness?: number;        // мм — толщина стенки (внутренний Ø = наружный − 2 × стенка)
   wpMaterial: string;              // материал трубы
   wpLengthManual: boolean;         // длина задана вручную
   wpLength: number;                // м — длина трубопровода
-  wpRoughnessMode: "shevelev" | "smooth" | "rough" | "material" | "manual"; // способ расчёта сопротивления трубы
+  wpRoughnessMode: "material" | "smooth" | "rough" | "manual" | "shevelev"; // способ расчёта сопротивления ("shevelev" — устар., = material)
   wpRoughness: number;             // мм — абсолютная шероховатость
   wpManualR: number;               // МН·с²/м⁸ — ручное сопротивление
   wpLocalXi: number;               // сумма ξ местных сопротивлений
@@ -847,7 +847,7 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     wpMaterial: "Сталь",
     wpLengthManual: false,
     wpLength: 0,
-    wpRoughnessMode: "shevelev",
+    wpRoughnessMode: "material",
     wpRoughness: 0.5,
     wpManualR: 0,
     wpLocalXi: 0,

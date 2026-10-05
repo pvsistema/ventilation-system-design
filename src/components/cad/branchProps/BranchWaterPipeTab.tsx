@@ -14,7 +14,7 @@
 import { type ReactNode } from "react";
 import { type TopoBranch } from "@/lib/topology";
 import { type WaterBranchResult, MATERIAL_ROUGHNESS_MM, SMOOTH_ROUGHNESS_MM } from "@/lib/waterHydraulics";
-import { SHEVELEV_MATERIALS, shevelevLambda } from "@/lib/waterSolver";
+import { SHEVELEV_MATERIALS, shevelevLambda, pipeRoughnessMode } from "@/lib/waterSolver";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 import Icon from "@/components/ui/icon";
 import {
@@ -165,11 +165,10 @@ export default function BranchWaterPipeTab({
   const branchLen = b.length ?? 0;
 
   const wpDiam = b.wpDiameter ?? 100;
-  const roughMode = b.wpRoughnessMode ?? "shevelev";
-  const diamKind = b.wpDiameterKind ?? "inner";
+  const roughMode = pipeRoughnessMode(b);
   const wall = b.wpWallThickness ?? 0;
-  const innerDiam = diamKind === "outer" ? wpDiam - 2 * Math.max(0, wall) : wpDiam;
-  const material = b.wpMaterial ?? "Сталь";
+  const innerDiam = wpDiam - 2 * Math.max(0, wall);
+  const material = b.wpMaterial || "Сталь";
   const solved = (r?.flow ?? 0) > 0;
 
   return (
@@ -177,41 +176,25 @@ export default function BranchWaterPipeTab({
 
       {/* ═══ Водопровод ППЗ ══════════════════════════════════════════════ */}
       <PipeCard icon="Droplets" title="Водопровод ППЗ" enabled={hasWater}
-        subtitle={`Ø${diamKind === "outer" ? `${wpDiam}×${wall}` : wpDiam} мм · ${material}`}
+        subtitle={`Ø${wpDiam}×${wall} мм · ${material}`}
         onToggle={(v) => onUpdate({ hasWaterPipe: v })}>
-        <Field label="Диаметр задан как">
-          <Segmented value={diamKind} size="sm"
-            onChange={(v) => onUpdate({ wpDiameterKind: v })}
-            options={[
-              { value: "inner", label: "Внутренний", title: "В расчёт идёт введённый диаметр" },
-              { value: "outer", label: "Наружный × стенка", title: "Внутренний = наружный − 2 × толщина стенки" },
-            ]} />
-        </Field>
         <div className="grid grid-cols-2 gap-2">
-          <Field label={diamKind === "outer" ? "Наружный Ø" : "Внутренний Ø"}>
+          <Field label="Наружный Ø">
             <NumInput value={wpDiam} min={0} step={1} unit="мм" onChange={(v) => onUpdate({ wpDiameter: v })} />
           </Field>
-          {diamKind === "outer" ? (
-            <Field label="Толщина стенки">
-              <NumInput value={wall} min={0} step={0.5} unit="мм" onChange={(v) => onUpdate({ wpWallThickness: v })} />
-            </Field>
-          ) : (
-            <Field label="Материал">
-              <MaterialSelect value={material} onChange={(v) => onUpdate({ wpMaterial: v })} />
-            </Field>
-          )}
+          <Field label="Толщина стенки">
+            <NumInput value={wall} min={0} step={0.5} unit="мм" onChange={(v) => onUpdate({ wpWallThickness: v })} />
+          </Field>
         </div>
-        {diamKind === "outer" && (
-          <div className="grid grid-cols-2 gap-2">
-            <Field label="Внутренний Ø (расчётный)">
-              <ReadValue value={innerDiam > 1 ? fmt(innerDiam, 1) : "—"} unit="мм" title="Наружный − 2 × стенка" />
-            </Field>
-            <Field label="Материал">
-              <MaterialSelect value={material} onChange={(v) => onUpdate({ wpMaterial: v })} />
-            </Field>
-          </div>
-        )}
-        {diamKind === "outer" && innerDiam <= 1 && (
+        <div className="grid grid-cols-2 gap-2">
+          <Field label="Внутренний Ø (расчётный)">
+            <ReadValue value={innerDiam > 1 ? fmt(innerDiam, 1) : "—"} unit="мм" title="Наружный − 2 × стенка" />
+          </Field>
+          <Field label="Материал">
+            <MaterialSelect value={material} onChange={(v) => onUpdate({ wpMaterial: v })} />
+          </Field>
+        </div>
+        {innerDiam <= 1 && (
           <Hint icon="TriangleAlert">Толщина стенки больше половины наружного диаметра — проверьте данные.</Hint>
         )}
         <LengthField manual={b.wpLengthManual ?? false} value={b.wpLength ?? 0} branchLen={branchLen}
@@ -224,8 +207,7 @@ export default function BranchWaterPipeTab({
           <Segmented value={roughMode}
             onChange={(v) => onUpdate({ wpRoughnessMode: v })}
             options={[
-              { value: "shevelev", label: "Шевелёв", title: "λ = 0,021/d^0,3 — стальные трубы в эксплуатации (как в «Аэросети»)" },
-              { value: "material", label: "По материалу", title: "Сталь/чугун — по Шевелёву, пластик и асбестоцемент — по шероховатости" },
+              { value: "material", label: "По материалу", title: "Сталь и чугун: λ = 0,021/d^0,3 (трубы в эксплуатации); пластик и асбестоцемент — по шероховатости" },
               { value: "smooth", label: "Гладкая", title: `Шероховатость ${SMOOTH_ROUGHNESS_MM} мм` },
               { value: "rough",  label: "Своя Δ", title: "Задать шероховатость стенки" },
               { value: "manual", label: "Своё R", title: "Задать сопротивление напрямую" },
@@ -238,7 +220,7 @@ export default function BranchWaterPipeTab({
                 onChange={(v) => onUpdate({ wpRoughness: v })} />
             </Field>
           )}
-          {(roughMode === "shevelev" || (roughMode === "material" && SHEVELEV_MATERIALS.has(material))) && (
+          {roughMode === "material" && SHEVELEV_MATERIALS.has(material) && (
             <Field label="Коэф. трения λ">
               <ReadValue value={innerDiam > 1 ? shevelevLambda(innerDiam / 1000).toFixed(4) : "—"}
                 title="λ = 0,021 / d^0,3, d — внутренний диаметр, м" />

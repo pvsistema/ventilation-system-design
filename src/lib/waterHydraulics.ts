@@ -166,7 +166,7 @@ export function waterInputsFingerprint(
     const x = b as TopoBranch & Record<string, unknown>;
     parts.push([
       "b", b.id, b.fromId, b.toId,
-      x.wpDiameter, x.wpDiameterKind, x.wpWallThickness, x.wpMaterial, x.wpLength, x.wpLengthManual, b.length,
+      x.wpDiameter, x.wpWallThickness, x.wpMaterial, x.wpLength, x.wpLengthManual, b.length,
       x.wpRoughness, x.wpRoughnessMode, x.wpLocalXi, x.wpManualR,
       x.wpHasGate, x.wpGateClosed,
       x.wpHasReducer, x.wpReducerOutPressure, x.wpReducerMaxFlow,

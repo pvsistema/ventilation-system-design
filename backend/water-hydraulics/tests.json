@@ -282,7 +282,7 @@
       "bodyMatcher": "partial"
     },
     {
-      "name": "Сверка с Аэросетью: труба 100×2, 20 м по Шевелёву",
+      "name": "Сверка с Аэросетью: стальная труба 100×2, 20 м",
       "method": "POST",
       "path": "/",
       "body": {
@@ -310,10 +310,10 @@
             "toId": "C",
             "hasWaterPipe": true,
             "wpDiameter": 100,
-            "wpDiameterKind": "outer",
             "wpWallThickness": 2,
+            "wpMaterial": "Сталь",
             "length": 20,
-            "wpRoughnessMode": "shevelev"
+            "wpRoughnessMode": "material"
           }
         ]
       },
