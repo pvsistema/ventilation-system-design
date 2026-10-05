@@ -99,7 +99,7 @@ export function buildApproverElements(kind: SignBlockKind = "approve"): Approver
     return [
       { x: 2, y: 3.5, label: "Разработал:", align: "left", fontScale: 1.05 },
       { x: 2,  y: 8.5, field: "developTitle", placeholder: "Должность", align: "left", fontScale: 0.95, cellX: 1, cellW: 50 },
-      { x: 56, y: 8.5, field: "developName", placeholder: "И.О. Фамилия", align: "left", fontScale: 0.95, color: "#1a44b8", cellX: 55, cellW: 40 },
+      { x: 56, y: 8.5, field: "developName", placeholder: "И.О. Фамилия", align: "left", fontScale: 0.95, color: "#111", cellX: 55, cellW: 40 },
       { x: 27, y: 13.2, label: "должность", align: "center", fontScale: 0.65, color: cap },
       { x: 75, y: 13.2, label: "И.О. Фамилия", align: "center", fontScale: 0.65, color: cap },
       { x: 113, y: 13.2, label: "подпись", align: "center", fontScale: 0.65, color: cap },
