@@ -111,7 +111,7 @@ export function buildApproverElements(kind: SignBlockKind = "approve"): Approver
     { x: CX, y: 12, field: f.title, placeholder: "Должность", align: "center", fontScale: 0.95, cellX: 4, cellW: APPROVER_W_MM - 8 },
     { x: CX, y: 18, field: f.org,   placeholder: "Организация", align: "center", fontScale: 0.95, cellX: 4, cellW: APPROVER_W_MM - 8 },
     // ФИО над линией подписи
-    { x: APPROVER_W_MM - 4, y: 27, field: f.name, placeholder: "И.О. Фамилия", align: "right", fontScale: 0.95, color: "#1a44b8", cellX: 22, cellW: APPROVER_W_MM - 26 },
+    { x: APPROVER_W_MM - 4, y: 27, field: f.name, placeholder: "И.О. Фамилия", align: "right", fontScale: 0.95, color: "#111", cellX: 22, cellW: APPROVER_W_MM - 26 },
     // Дата: «день» месяц год г.
     { x: 3,  y: 36, label: "«", align: "left", fontScale: 0.95 },
     { x: 6,  y: 36, field: f.day,   placeholder: "__", align: "left", fontScale: 0.95, cellX: 5,  cellW: 8 },
