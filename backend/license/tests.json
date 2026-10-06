@@ -167,6 +167,36 @@
         "ok": false
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Deactivate with invalid key format",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "deactivate",
+        "fingerprint": "test-fp-deact",
+        "key": "BAD"
+      },
+      "expectedStatus": 400,
+      "expectedBody": {
+        "error": "invalid_key_format"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Deactivate unknown key",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "deactivate",
+        "fingerprint": "test-fp-deact",
+        "key": "PVS-ZZZZ-ZZZZ-ZZZZ-ZZZZ"
+      },
+      "expectedStatus": 404,
+      "expectedBody": {
+        "error": "key_not_found"
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }

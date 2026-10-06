@@ -966,6 +966,43 @@ def handler(event: dict, context) -> dict:
             "server_now": srv_now_ms,
         })
 
+    # ── deactivate — пользователь сам освобождает рабочее место ────────────────
+    # Кнопка «Деактивировать на этом устройстве» (Файл → Лицензия). Место
+    # удаляется из license_seats, счётчик «занято» уменьшается, и ключ можно
+    # сразу активировать на другом ПК — без обращения к правообладателю.
+    # Освобождается ТОЛЬКО место этого компьютера (по отпечатку), чужие места
+    # по тому же ключу не трогаются.
+    if action == "deactivate":
+        license_key = body.get("key", "").strip().upper()
+        if not validate_key(license_key):
+            conn.close()
+            return resp(400, {"error": "invalid_key_format"})
+        cur.execute("SELECT id, max_seats FROM licenses WHERE key = %s", (license_key,))
+        lic = cur.fetchone()
+        if not lic:
+            conn.close()
+            return resp(404, {"error": "key_not_found"})
+        lic_id, max_seats = lic
+        fps = [x for x in (hw_fph, fph) if x]
+        cur.execute("""
+            DELETE FROM license_seats
+            WHERE license_id = %s AND (hw_fingerprint = ANY(%s) OR fingerprint = ANY(%s))
+            RETURNING id
+        """, (lic_id, fps, fps))
+        removed = [r[0] for r in cur.fetchall()]
+        log_event(cur, license_id=lic_id, license_key=license_key,
+                  seat_id=removed[0] if removed else None,
+                  event_type="deactivated_by_user" if removed else "deactivate_no_seat",
+                  fph=fph, hostname=hostname, platform=platform,
+                  app_version=app_version, ip=ip,
+                  detail=f"освобождено мест: {len(removed)}")
+        cur.execute("SELECT COUNT(*) FROM license_seats WHERE license_id = %s", (lic_id,))
+        used = int(cur.fetchone()[0])
+        conn.commit()
+        conn.close()
+        return resp(200, {"ok": True, "released": len(removed),
+                          "seats": {"max": int(max_seats or 0), "used": used}})
+
     # ── transfer ────────────────────────────────────────────────────────────────
     if action == "transfer":
         license_key = body.get("key", "").strip().upper()

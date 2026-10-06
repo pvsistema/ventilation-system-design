@@ -16,6 +16,25 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
   const [done, setDone]       = useState(false);
   // Повторная проверка: "idle" → "run" → "fail" (успех виден по самой лицензии).
   const [recheckState, setRecheckState] = useState<"idle" | "run" | "fail">("idle");
+  // Деактивация: подтверждение → запрос на сервер (освобождение места)
+  const [deactState, setDeactState] = useState<"idle" | "confirm" | "run">("idle");
+  const [deactErr, setDeactErr]     = useState<string | null>(null);
+  const [released, setReleased]     = useState(false);
+
+  const handleDeactivate = async () => {
+    setDeactState("run");
+    setDeactErr(null);
+    try {
+      await license.deactivate();
+      setDone(false);
+      setKey("");
+      setReleased(true);
+      setDeactState("idle");
+    } catch (e: unknown) {
+      setDeactErr(e instanceof Error ? e.message : "Не удалось деактивировать лицензию");
+      setDeactState("confirm");
+    }
+  };
 
   /**
    * «Проверить снова» — спросить сервер прямо сейчас.
@@ -273,10 +292,48 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                 )}
               </div>
               {workplaceRow}
-              <button onClick={() => { license.deactivate(); setDone(false); setKey(""); }}
-                className="mt-3 text-[11px] text-red-500 hover:text-red-700 underline">
-                Деактивировать на этом устройстве
-              </button>
+              {deactState === "idle" ? (
+                <button onClick={() => { setDeactState("confirm"); setDeactErr(null); }}
+                  className="mt-3 text-[11px] text-red-500 hover:text-red-700 underline">
+                  Деактивировать на этом устройстве
+                </button>
+              ) : (
+                <div className="mt-3 p-2.5 rounded-lg border border-red-200 bg-white">
+                  <div className="text-[12px] text-gray-800 font-semibold">Освободить рабочее место?</div>
+                  <div className="mt-1 text-[11px] text-gray-600">
+                    {isEmergency
+                      ? "Аварийный ключ будет удалён с этого компьютера. Программа перейдёт в демо-режим."
+                      : "Лицензия будет снята с этого компьютера, а место по ключу освободится на сервере — ключ можно будет сразу активировать на другом ПК. Программа перейдёт в демо-режим."}
+                  </div>
+                  {deactErr && (
+                    <div className="mt-1.5 text-[11px] text-red-600 flex gap-1">
+                      <Icon name="AlertCircle" size={12} className="shrink-0 mt-[1px]" />{deactErr}
+                    </div>
+                  )}
+                  <div className="mt-2 flex gap-2">
+                    <button onClick={handleDeactivate} disabled={deactState === "run"}
+                      className="flex-1 py-1.5 rounded-md text-[12px] font-semibold text-white bg-red-600 hover:bg-red-700 disabled:opacity-50">
+                      {deactState === "run" ? (
+                        <span className="flex items-center justify-center gap-1.5">
+                          <Icon name="Loader2" size={12} className="animate-spin" />Освобождаем…
+                        </span>
+                      ) : "Деактивировать"}
+                    </button>
+                    <button onClick={() => { setDeactState("idle"); setDeactErr(null); }} disabled={deactState === "run"}
+                      className="flex-1 py-1.5 rounded-md text-[12px] font-semibold border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50">
+                      Отмена
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Место освобождено */}
+          {released && !isLicensed && (
+            <div className="mb-4 p-3 rounded-lg border border-green-200 bg-green-50 text-[12px] text-green-800 flex gap-2">
+              <Icon name="CheckCircle2" size={16} className="text-green-600 shrink-0" />
+              <span>Лицензия деактивирована, рабочее место освобождено. Ключ можно активировать на другом компьютере.</span>
             </div>
           )}
 

@@ -5,6 +5,7 @@ import {
   checkLicense,
   activateLicense,
   clearLicenseCache,
+  releaseLicenseSeat,
   checkOfflineEmergency,
   isCheckDue,
   sendHeartbeat,
@@ -23,7 +24,12 @@ export interface UseLicenseReturn {
   fingerprint: string;
   machineInfo: MachineInfo | null;
   activate: (key: string) => Promise<void>;
-  deactivate: () => void;
+  /**
+   * Деактивировать лицензию на этом ПК: освободить рабочее место на сервере
+   * (счётчик «занято» уменьшается — ключ можно ввести на другом компьютере)
+   * и стереть лицензию локально. Без связи бросает ошибку и ничего не стирает.
+   */
+  deactivate: () => Promise<void>;
   /**
    * Спросить сервер заново, прямо сейчас.
    *
@@ -281,11 +287,19 @@ export function useLicense(): UseLicenseReturn {
     setStatus("licensed");
   }, []);
 
-  const deactivate = useCallback(() => {
+  const deactivate = useCallback(async () => {
+    setError(null);
+    const cur = info;
+    // Обычный ключ (PVS-…) занимает место на сервере — сначала освобождаем его.
+    // Аварийный ключ (PVSO.) работает без сервера, у него освобождать нечего.
+    if (cur?.key && !cur.emergency && cur.key.startsWith("PVS-")) {
+      const mi = machineInfoRef.current ?? await getMachineInfo();
+      await releaseLicenseSeat(cur.key, mi);
+    }
     clearLicenseCache();
     setInfo(null);
     setStatus("demo");
-  }, []);
+  }, [info]);
 
   /**
    * Повторная проверка по нажатию кнопки «Проверить снова».

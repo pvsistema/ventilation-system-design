@@ -805,6 +805,56 @@ function saveCache(info: LicenseInfo) {
   } catch { /* ignore */ }
 }
 
+/**
+ * Освободить рабочее место на сервере (кнопка «Деактивировать на этом устройстве»).
+ *
+ * Без этого место оставалось занятым в license_seats: локально лицензия
+ * стиралась, а счётчик «занято» на сервере не менялся, и активировать ключ
+ * на другом ПК было нельзя, пока правообладатель не удалит место вручную.
+ *
+ * Бросает ошибку, если сервер недоступен или отказал — тогда локальную
+ * лицензию НЕ стираем, чтобы человек не остался без лицензии и с занятым местом.
+ */
+export async function releaseLicenseSeat(
+  key: string,
+  machineInfo: MachineInfo,
+): Promise<{ released: number; seats?: { max: number; used: number } }> {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), ACTIVATE_TIMEOUT_MS);
+  let res: Response;
+  try {
+    res = await fetch(LICENSE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({
+        action: "deactivate",
+        key,
+        fingerprint: machineInfo.fingerprint,
+        hw_fingerprint: machineInfo.hwFingerprint,
+        hostname: machineInfo.hostname,
+        platform: machineInfo.platform,
+        app_version: APP_VERSION,
+        is_desktop: IS_DESKTOP,
+      }),
+    });
+  } catch {
+    throw new Error("Нет связи с сервером лицензий. Подключитесь к интернету, чтобы освободить рабочее место");
+  } finally {
+    clearTimeout(timer);
+  }
+  let data: { ok?: boolean; released?: number; seats?: { max: number; used: number }; error?: string } = {};
+  try { data = await res.json(); } catch { /* ignore */ }
+  if (res.status === 404 && data.error === "key_not_found") {
+    // Ключ удалён на сервере — занимать нечего, можно чистить локально.
+    return { released: 0 };
+  }
+  if (!res.ok || !data.ok) {
+    throw new Error("Сервер лицензий не освободил рабочее место. Повторите попытку позже");
+  }
+  return { released: data.released ?? 0, seats: data.seats };
+}
+
 export function clearLicenseCache() {
   try {
     storage.remove(STORAGE_KEY);
