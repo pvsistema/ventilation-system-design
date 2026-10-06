@@ -8,7 +8,7 @@ import {
   saveStabilityFacts, clearStabilityFacts, getValidStabilityFacts,
 } from "@/lib/stabilitySession";
 import { exportStabilityAct } from "@/lib/stabilityActExport";
-import { loadActTitle, saveActTitle, loadLogoDataUrl, type ActTitleFields } from "@/lib/stabilityActTitle";
+import { loadActTitle, saveActTitle, loadLogoDataUrl, ACT_TITLE_HINTS, type ActTitleFields } from "@/lib/stabilityActTitle";
 
 interface Props {
   branches: TopoBranch[];
@@ -70,7 +70,9 @@ export default function FireStabilityDialog({
   const [factsStale, setFactsStale] = useState(false);
   // Реквизиты титульного листа акта
   const [title, setTitle] = useState<ActTitleFields>(() => loadActTitle());
-  const [titleOpen, setTitleOpen] = useState(false);
+  // Раздел реквизитов открыт сразу — акт оформляется вместе с заполнением титула.
+  const [titleOpen, setTitleOpen] = useState(true);
+  const titleRef = useRef<HTMLDivElement>(null);
   useEffect(() => { saveActTitle(title); }, [title]);
   const setT = <K extends keyof ActTitleFields>(k: K, v: ActTitleFields[K]) => setTitle(t => ({ ...t, [k]: v }));
 
@@ -138,11 +140,17 @@ export default function FireStabilityDialog({
   }, [inputsKey, factsKey]);
 
   async function handleExport() {
+    // Титул свёрнут — сначала показываем его для заполнения, выгрузка по 2-му нажатию.
+    if (!titleOpen) {
+      setTitleOpen(true);
+      setTimeout(() => titleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
+      return;
+    }
     try {
       const logoDataUrl = title.useLogo ? await loadLogoDataUrl() : undefined;
       await exportStabilityAct(result, {
         projectName: title.objectTitle || projectName,
-        objectTitle: title.objectTitle || projectName,
+        objectTitle: title.objectTitle,
         orgName: title.orgName,
         approverTitle: title.approverTitle,
         approverOrg: title.approverOrg,
@@ -277,7 +285,7 @@ export default function FireStabilityDialog({
         </div>
 
         {/* Реквизиты титульного листа */}
-        <div className="px-4 py-2" style={{ borderBottom: "1px solid #e0e4ee" }}>
+        <div ref={titleRef} className="px-4 py-2" style={{ borderBottom: "1px solid #e0e4ee" }}>
           <button onClick={() => setTitleOpen(o => !o)}
             className="w-full flex items-center justify-between text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
             <span>Титульный лист акта</span>
@@ -285,6 +293,9 @@ export default function FireStabilityDialog({
           </button>
           {titleOpen && (
             <div className="pt-2 space-y-1.5">
+              <div className="text-[10px] text-gray-400 leading-snug">
+                Заполните реквизиты акта. Незаполненные поля выйдут в акте пустыми строками «______» для заполнения от руки.
+              </div>
               {([
                 ["approverTitle", "Утверждает: должность"],
                 ["approverOrg", "Утверждает: организация"],
@@ -299,7 +310,7 @@ export default function FireStabilityDialog({
               ] as [keyof ActTitleFields, string][]).map(([k, label]) => (
                 <div key={k} className="flex items-center gap-2">
                   <span className="text-[11px] text-gray-600 w-40 shrink-0">{label}</span>
-                  <input value={title[k] as string} onChange={e => setT(k, e.target.value as never)}
+                  <input value={title[k] as string} placeholder={ACT_TITLE_HINTS[k]} onChange={e => setT(k, e.target.value as never)}
                     className="text-[11px] border border-gray-300 rounded px-2 py-0.5 flex-1 min-w-0" />
                 </div>
               ))}
@@ -321,7 +332,7 @@ export default function FireStabilityDialog({
                   className="text-[11px] text-blue-700 hover:underline">+ Добавить члена комиссии</button>
                 <label className="flex items-center gap-1.5 text-[11px] text-gray-600">
                   <input type="checkbox" checked={title.useLogo} onChange={e => setT("useLogo", e.target.checked)} />
-                  Логотип «Башмедь»
+                  Логотип организации
                 </label>
               </div>
             </div>

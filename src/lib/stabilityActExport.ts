@@ -372,9 +372,9 @@ function buildTitleSheet(wb: Workbook, m: ActMeta, result: StabilityResult): voi
 
   // Блок «УТВЕРЖДАЮ» — справа, жирный Times
   const right = (row: number, text: string) => para(ws, row, 7, N, text, { bold: true, align: "right" });
-  const year = m.approveYear || String(new Date().getFullYear());
+  const year = m.approveYear || "20___";
   right(1, "У Т В Е Р Ж Д А Ю:");
-  right(2, m.approverTitle);
+  right(2, m.approverTitle || "_______________________");
   const apOrg = m.approverOrg ?? m.orgName;
   if (apOrg) right(3, apOrg);
   right(5, `_________________ ${m.approverName || "_______________"}`);
@@ -382,14 +382,14 @@ function buildTitleSheet(wb: Workbook, m: ActMeta, result: StabilityResult): voi
 
   // Заголовок акта
   let row = 9;
-  const objectTitle = m.objectTitle || m.projectName;
+  const objectTitle = m.objectTitle ?? m.projectName;
   const head = (t: string, size = 14) => para(ws, row++, 1, N, t, { bold: true, size, align: "center" });
   head("АКТ", 16);
   head("проверки устойчивости вентиляционных режимов в горных выработках");
-  head(`«${objectTitle}»${m.orgName ? " " + m.orgName : ""}  при воздействии тепловой депрессии`);
+  head(`«${objectTitle || "________________________________"}»${m.orgName ? " " + m.orgName : ""}  при воздействии тепловой депрессии`);
   head("и оценка эффективности принятых мер по предотвращению самопроизвольного опрокидывания");
   head("вентиляционной струи при пожаре");
-  head(`(к ПМЛЛПА на ${m.period})`);
+  head(`(к ПМЛЛПА на ${m.period || "______________________________"})`);
   row++;
 
   // Состав комиссии: должность слева, ФИО справа
@@ -401,7 +401,7 @@ function buildTitleSheet(wb: Workbook, m: ActMeta, result: StabilityResult): voi
     para(ws, row, 9, N, p?.name || "______________________", body);
     row++;
   };
-  person(m.chairman ?? (m.approverName ? { title: `${m.approverTitle.toLowerCase()}${apOrg ? " " + apOrg : ""}`, name: m.approverName } : undefined));
+  person(m.chairman ?? (m.approverName ? { title: `${(m.approverTitle || "").toLowerCase()}${apOrg ? " " + apOrg : ""}`, name: m.approverName } : undefined));
   para(ws, row++, 1, N, "члены комиссии:", { ...body, italic: true });
   const members = m.members && m.members.length > 0 ? m.members : [undefined, undefined, undefined];
   members.forEach(p => person(p));
@@ -425,7 +425,7 @@ function buildTitleSheet(wb: Workbook, m: ActMeta, result: StabilityResult): voi
     ws.getRow(r).height = heightFor(linesFor("1." + t, colsWidth(ws, 1, N), 11), 11);
   }
   para(ws, row++, 1, N,
-    `Определение устойчивости проветривания горных выработок производилось на основе топологии горных выработок рудника с подземным способом разработки «${objectTitle}»${m.orgName ? " " + m.orgName : ""}, с использованием программного обеспечения «ПВ-Система». Мощность пожара рассчитывалась с использованием справочника пожарной нагрузки (Документ СИТИС-СПН-1, редакция 2 от 15.05.2014г.).`,
+    `Определение устойчивости проветривания горных выработок производилось на основе топологии горных выработок рудника с подземным способом разработки «${objectTitle || "________________________________"}»${m.orgName ? " " + m.orgName : ""}, с использованием программного обеспечения «ПВ-Система». Мощность пожара рассчитывалась с использованием справочника пожарной нагрузки (Документ СИТИС-СПН-1, редакция 2 от 15.05.2014г.).`,
     { ...body, align: "justify" });
 
   const cnt = (c: StabilityCategory) => result.byCategory[c].length;

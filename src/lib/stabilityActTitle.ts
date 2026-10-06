@@ -1,5 +1,5 @@
 // Реквизиты титульного листа «Акта проверки устойчивости» — хранятся в
-// localStorage, по умолчанию заполнены по образцу акта ЮПР ООО «Башкирская медь».
+// localStorage, по умолчанию пустые.
 
 export interface ActTitleFields {
   approverTitle: string;
@@ -16,25 +16,38 @@ export interface ActTitleFields {
   useLogo: boolean;
 }
 
+// По умолчанию все реквизиты пустые — пользователь заполняет их при оформлении
+// акта (пустые поля в акте печатаются строками «______» для заполнения от руки).
 export const DEFAULT_ACT_TITLE: ActTitleFields = {
+  approverTitle: "",
+  approverOrg: "",
+  approverName: "",
+  approveYear: "",
+  objectTitle: "",
+  orgName: "",
+  period: "",
+  chairmanTitle: "",
+  chairmanName: "",
+  members: [{ title: "", name: "" }, { title: "", name: "" }],
+  checkPeriod: "",
+  useLogo: false,
+};
+
+/** Подсказки (placeholder) — пример заполнения по образцу акта. */
+export const ACT_TITLE_HINTS: Partial<Record<keyof ActTitleFields, string>> = {
   approverTitle: "Главный инженер",
   approverOrg: 'ЮПР ООО "Башкирская медь"',
   approverName: "Д.Н. Демченко",
   approveYear: "2026",
-  objectTitle: "Подземного рудника Юбилейного месторождения медно-цинково-колчеданных и бурожелезняковых золотосодержащих руд",
+  objectTitle: "Подземного рудника Юбилейного месторождения…",
   orgName: "ООО «Башкирская медь»",
   period: 'II полугодие 2026г. с "01" июля 2026г. по 31 декабря 2026г.',
+  checkPeriod: 'с "04" мая 2026 года по "29" мая 2026 года',
   chairmanTitle: 'главного инженера ЮПР ООО "Башкирская медь"',
   chairmanName: "Д.Н. Демченко",
-  members: [
-    { title: "Начальник ПВС ЮПР ООО «Башкирская медь»", name: "Р.Р. Ибатуллин" },
-    { title: 'Командир взвода СДС филиала "Копейского ВГСО" ФГУП "ВГСЧ"', name: "С.Г. Ипатов" },
-  ],
-  checkPeriod: 'с "04" мая 2026 года по "29" мая 2026 года',
-  useLogo: true,
 };
 
-const LS_KEY = "pvs_stability_act_title";
+const LS_KEY = "pvs_stability_act_title_v2";
 
 export function loadActTitle(): ActTitleFields {
   try {
@@ -42,6 +55,12 @@ export function loadActTitle(): ActTitleFields {
     if (s) return { ...DEFAULT_ACT_TITLE, ...JSON.parse(s) };
   } catch { /* ignore */ }
   return { ...DEFAULT_ACT_TITLE, members: DEFAULT_ACT_TITLE.members.map(m => ({ ...m })) };
+}
+
+/** Заполнен ли титул хотя бы частично. */
+export function isActTitleFilled(f: ActTitleFields): boolean {
+  return [f.approverTitle, f.approverName, f.objectTitle, f.orgName, f.period, f.chairmanName]
+    .some(v => v.trim() !== "");
 }
 
 export function saveActTitle(f: ActTitleFields): void {
