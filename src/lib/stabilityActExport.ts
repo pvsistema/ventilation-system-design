@@ -1,14 +1,28 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // stabilityActExport.ts — Формирование «Акта проверки устойчивости вентиляционных
-// режимов при пожаре» в Excel (.xlsx) по образцу (ориентир: ПО «АэроСеть»).
+// режимов при пожаре» в Excel (.xlsx) по образцу акта ЮПР (ориентир: «АэроСеть»).
 //
-// Структура книги повторяет шаблон:
-//   • Титул — шапка акта
-//   • «нисх накл.», «нисх верт.», «восх накл.», «восх верт.» — таблицы устойчивости
+// Книга (как в образце):
+//   • Титул — «УТВЕРЖДАЮ», заголовок акта, состав комиссии, вводная часть
+//   • «нисх накл.», «нисх верт.», «восх накл.», «восх верт.» — Таблицы №1–4
+//   • «Мероприятия» — Таблица №5, меры по группам выработок
+//   • «Выводы» — выводы комиссии и подписи
+//
+// Оформление печати (по ГОСТ Р 7.0.97 для документов):
+//   поля: левое 3 см, правое 1 см, верхнее и нижнее 2 см; A4, альбомная;
+//   масштаб «вписать по ширине», повтор шапки таблицы на каждой странице,
+//   нумерация листов в нижнем колонтитуле. Шрифт Times New Roman, чёрные рамки.
+//
+// Используется ExcelJS: бесплатная сборка SheetJS (xlsx 0.18) стили и
+// параметры страницы в файл не записывает.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import * as XLSX from "xlsx";
+import type ExcelJSNS from "exceljs";
 import type { StabilityResult, StabilityRow, StabilityCategory } from "./fireStability";
+
+type Workbook = ExcelJSNS.Workbook;
+type Worksheet = ExcelJSNS.Worksheet;
+type Cell = ExcelJSNS.Cell;
 
 export interface ActMeta {
   projectName: string;   // название проекта/рудника
@@ -17,6 +31,12 @@ export interface ActMeta {
   approverName: string;  // ФИО утверждающего
   period: string;        // период действия
   date: string;          // дата акта (строка)
+  /** Председатель комиссии: должность и ФИО. */
+  chairman?: { title: string; name: string };
+  /** Члены комиссии. */
+  members?: { title: string; name: string }[];
+  /** Период проведения проверки, напр. «с "04" мая 2026 г. по "29" мая 2026 г.». */
+  checkPeriod?: string;
 }
 
 const DEFAULT_META: ActMeta = {
@@ -28,368 +48,503 @@ const DEFAULT_META: ActMeta = {
   date: new Date().toLocaleDateString("ru-RU"),
 };
 
-// Заголовки колонок таблицы устойчивости (как в образце)
-const TABLE_HEADERS = [
-  "№ п/п",
-  "№ ветви",
-  "Позиция",
-  "Наименование ветви",
-  "Угол наклона, град",
-  "Длина, м",
-  "Сечение, м²",
-  "Скорость движения воздуха, м/с",
-  "Расход воздуха в выработке, м³/сек",
-  "Скорость при пожаре, м/с",
-  "Расход при пожаре, м³/сек",
-  "Расчётная мощность пожара, МВт",
-  "Расчётная температура пожара, °C",
-  "Тепловая депрессия h_т, Па",
-  "Критическая депрессия h_кр, Па",
-  // Запас до опрокидывания заполняется только для НИСХОДЯЩИХ выработок:
-  // восходящая струя опрокинуться не может (тепловая депрессия по потоку).
-  "Запас до опрокидывания, Па",
-  "Показатель устойчивости p_у",
-  "Степень устойчивости",
-  "Пожарная нагрузка",
+// ─── Параметры печати ────────────────────────────────────────────────────────
+const CM = 1 / 2.54; // сантиметры → дюймы (ExcelJS задаёт поля в дюймах)
+const PAGE_MARGINS = {
+  left: 3 * CM,
+  right: 1 * CM,
+  top: 2 * CM,
+  bottom: 2 * CM,
+  header: 0.8 * CM,
+  footer: 0.8 * CM,
+};
+
+const FONT = "Times New Roman";
+const LINE = { style: "thin" as const, color: { argb: "FF000000" } };
+const BOX = { top: LINE, left: LINE, bottom: LINE, right: LINE };
+const HEAD_FILL: ExcelJSNS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+const NUM_FILL: ExcelJSNS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7E6E6" } };
+const GROUP_FILL: ExcelJSNS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7F7F7" } };
+const BAD_FILL: ExcelJSNS.Fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFDE2E2" } };
+
+function addSheet(wb: Workbook, name: string, orientation: "landscape" | "portrait" = "landscape"): Worksheet {
+  const ws = wb.addWorksheet(name, {
+    pageSetup: {
+      paperSize: 9, // A4
+      orientation,
+      fitToPage: true,
+      fitToWidth: 1,
+      fitToHeight: 0, // по высоте — сколько потребуется
+      horizontalCentered: true,
+      margins: PAGE_MARGINS,
+    },
+    views: [{ showGridLines: false }],
+  });
+  ws.headerFooter.oddFooter = "&R&9Лист &P из &N";
+  ws.properties.defaultRowHeight = 15;
+  return ws;
+}
+
+// ─── Оценка высоты строки ────────────────────────────────────────────────────
+// Excel не подбирает высоту объединённых ячеек и ячеек с переносом при открытии
+// файла, созданного программно, — считаем её сами, иначе текст обрежется.
+function linesFor(text: string, widthChars: number, fontSize: number): number {
+  if (!text) return 1;
+  // Ширина колонки задаётся в символах шрифта 11 pt; для другого кегля
+  // вмещается пропорционально больше/меньше символов (с запасом ~10%).
+  const perLine = Math.max(4, Math.floor(widthChars * (11 / fontSize) * 0.92));
+  return String(text).split("\n").reduce((n, part) => {
+    if (!part) return n + 1;
+    // перенос по словам: считаем, сколько строк реально займёт абзац
+    let lines = 1, cur = 0;
+    for (const w of part.split(/\s+/)) {
+      const len = w.length;
+      if (cur === 0) cur = len;
+      else if (cur + 1 + len <= perLine) cur += 1 + len;
+      else { lines++; cur = len; }
+      while (cur > perLine) { lines++; cur -= perLine; }
+    }
+    return n + lines;
+  }, 0);
+}
+const heightFor = (lines: number, fontSize: number) => Math.max(15, Math.ceil(lines * fontSize * 1.32 + 4));
+
+function colsWidth(ws: Worksheet, from: number, to: number): number {
+  let s = 0;
+  for (let c = from; c <= to; c++) s += ws.getColumn(c).width ?? 9;
+  return s;
+}
+
+interface TextOpts {
+  bold?: boolean;
+  italic?: boolean;
+  size?: number;
+  align?: "left" | "center" | "right" | "justify";
+  indent?: boolean; // абзацный отступ
+}
+
+/** Абзац текста в объединённой строке с автоподбором высоты. */
+function para(ws: Worksheet, row: number, c1: number, c2: number, text: string, o: TextOpts = {}): void {
+  const size = o.size ?? 12;
+  if (c2 > c1) ws.mergeCells(row, c1, row, c2);
+  const cell = ws.getCell(row, c1);
+  const value = o.indent ? `\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0${text}` : text;
+  cell.value = value;
+  cell.font = { name: FONT, size, bold: o.bold, italic: o.italic };
+  cell.alignment = { horizontal: o.align ?? "left", vertical: "top", wrapText: true };
+  const lines = linesFor(value, colsWidth(ws, c1, c2), size);
+  const h = heightFor(lines, size);
+  const r = ws.getRow(row);
+  r.height = Math.max(r.height ?? 0, h);
+}
+
+function styleCell(cell: Cell, o: { size?: number; bold?: boolean; align?: "left" | "center" | "right" | "justify"; fill?: ExcelJSNS.Fill; numFmt?: string; color?: string }) {
+  cell.font = { name: FONT, size: o.size ?? 10, bold: o.bold, color: o.color ? { argb: o.color } : undefined };
+  cell.alignment = { horizontal: o.align ?? "center", vertical: "middle", wrapText: true };
+  cell.border = BOX;
+  if (o.fill) cell.fill = o.fill;
+  if (o.numFmt) cell.numFmt = o.numFmt;
+}
+
+/** Шапка таблицы + строка нумерации граф (как в образце). Возвращает следующую строку. */
+function tableHeader(ws: Worksheet, row: number, headers: string[], size = 9): number {
+  const hr = ws.getRow(row);
+  let maxLines = 1;
+  headers.forEach((h, i) => {
+    const c = hr.getCell(i + 1);
+    c.value = h;
+    styleCell(c, { size, bold: true, fill: HEAD_FILL });
+    maxLines = Math.max(maxLines, linesFor(h, ws.getColumn(i + 1).width ?? 9, size));
+  });
+  hr.height = heightFor(maxLines, size);
+  const nr = ws.getRow(row + 1);
+  headers.forEach((_, i) => {
+    const c = nr.getCell(i + 1);
+    c.value = i + 1;
+    styleCell(c, { size: 8, bold: true, fill: NUM_FILL });
+  });
+  nr.height = 13;
+  return row + 2;
+}
+
+/** Строка-разделитель группы внутри таблицы (на всю ширину). */
+function groupRow(ws: Worksheet, row: number, ncols: number, text: string, opts: { bold?: boolean; fill?: ExcelJSNS.Fill } = {}) {
+  ws.mergeCells(row, 1, row, ncols);
+  const c = ws.getCell(row, 1);
+  c.value = text;
+  for (let i = 1; i <= ncols; i++) styleCell(ws.getCell(row, i), { size: 10, bold: opts.bold ?? true, fill: opts.fill ?? GROUP_FILL });
+  ws.getRow(row).height = heightFor(linesFor(text, colsWidth(ws, 1, ncols), 10), 10);
+}
+
+// ─── Таблицы устойчивости ────────────────────────────────────────────────────
+interface ColDef { header: string; width: number; numFmt?: string; align?: "left" | "center" | "justify" }
+
+// Графы 1–13 совпадают с образцом; 14–18 — расчётные показатели по нормативу
+// (тепловая/критическая депрессия, запас, p_у), которых в образце нет, но
+// которые обосновывают вывод об устойчивости. «Пожарная нагрузка» — последняя.
+const TABLE_COLS: ColDef[] = [
+  { header: "№ п/п", width: 4.5 },
+  { header: "№ ветви", width: 6.5 },
+  { header: "Пози-ция", width: 6 },
+  { header: "Наименование ветви", width: 24, align: "left" },
+  { header: "Угол наклона, град", width: 7, numFmt: "0.00" },
+  { header: "Длина, м", width: 8, numFmt: "0.00" },
+  { header: "Сечение, м²", width: 7, numFmt: "0.0" },
+  { header: "Скорость движения воздуха, м/с", width: 8.5, numFmt: "0.000" },
+  { header: "Расход воздуха в выработке, м³/с", width: 9, numFmt: "0.000" },
+  { header: "Скорость движения воздуха при пожаре, м/с", width: 8.5, numFmt: "0.000" },
+  { header: "Расход воздуха в выработке при пожаре, м³/с", width: 9, numFmt: "0.000" },
+  { header: "Расчётная мощность пожара, МВт", width: 8.5, numFmt: "0.00" },
+  { header: "Расчётная темпера-тура пожара, °С", width: 9, numFmt: "0" },
+  { header: "Тепловая депрессия hт, Па", width: 9, numFmt: "0.0" },
+  { header: "Критическая депрессия hкр, Па", width: 9.5, numFmt: "0.0" },
+  { header: "Запас до опрокиды-вания, Па", width: 9.5, numFmt: "0.0" },
+  { header: "Показатель устойчи-вости pу", width: 9, numFmt: "0.00" },
+  { header: "Степень устойчивости", width: 12 },
+  { header: "Пожарная нагрузка", width: 34, align: "justify" },
 ];
 
-// Подпись листа + вводная строка над таблицей для каждой категории
-const CATEGORY_META: Record<StabilityCategory, { sheet: string; title: string }> = {
-  "descending-incline":  { sheet: "нисх накл.", title: "а) для наклонных выработок (с углом наклона 5° и более и длиной 30м. и более) с нисходящим проветриванием" },
-  "descending-vertical": { sheet: "нисх верт.", title: "б) для вертикальных выработок с нисходящим проветриванием" },
-  "ascending-incline":   { sheet: "восх накл.", title: "в) для наклонных выработок (с углом наклона 5° и более и длиной 30м. и более) с восходящим проветриванием" },
-  "ascending-vertical":  { sheet: "восх верт.", title: "г) для вертикальных выработок с восходящим проветриванием" },
+const CATEGORY_META: Record<StabilityCategory, { sheet: string; title: string; table: number; group: string }> = {
+  "descending-incline":  { sheet: "нисх накл.", table: 1, group: "Наклонные выработки с нисходящим проветриванием", title: "а) для наклонных выработок (с углом наклона 5° и более и длиной 30 м и более) с нисходящим проветриванием;" },
+  "descending-vertical": { sheet: "нисх верт.", table: 2, group: "Вертикальные выработки с нисходящим проветриванием", title: "б) для вертикальных выработок с нисходящим проветриванием;" },
+  "ascending-incline":   { sheet: "восх накл.", table: 3, group: "Наклонные выработки с восходящим проветриванием", title: "в) для наклонных выработок (с углом наклона 5° и более и длиной 30 м и более) с восходящим проветриванием;" },
+  "ascending-vertical":  { sheet: "восх верт.", table: 4, group: "Вертикальные выработки с восходящим проветриванием", title: "г) для вертикальных выработок с восходящим проветриванием;" },
 };
 
 const CATEGORY_ORDER: StabilityCategory[] = [
   "descending-incline", "descending-vertical", "ascending-incline", "ascending-vertical",
 ];
 
-// ─── Стили ───────────────────────────────────────────────────────────────────
-function headerStyle(): XLSX.CellStyle {
-  return {
-    font: { bold: true, sz: 9, color: { rgb: "1F3864" } },
-    fill: { fgColor: { rgb: "DCE6F1" }, patternType: "solid" },
-    alignment: { horizontal: "center", vertical: "center", wrapText: true },
-    border: {
-      top:    { style: "thin", color: { rgb: "8EA9C1" } },
-      bottom: { style: "thin", color: { rgb: "8EA9C1" } },
-      left:   { style: "thin", color: { rgb: "8EA9C1" } },
-      right:  { style: "thin", color: { rgb: "8EA9C1" } },
-    },
-  };
-}
+const r2 = (v: number | null | undefined) => (v == null || !isFinite(v) ? null : v);
 
-function cellStyle(rowIdx: number, unstable = false): XLSX.CellStyle {
-  return {
-    font: { sz: 9, color: { rgb: unstable ? "9C0006" : "000000" }, bold: unstable },
-    fill: { fgColor: { rgb: unstable ? "FFC7CE" : (rowIdx % 2 === 0 ? "FFFFFF" : "F2F5FB") }, patternType: "solid" },
-    alignment: { vertical: "center", wrapText: true },
-    border: {
-      top:    { style: "thin", color: { rgb: "D0D8E8" } },
-      bottom: { style: "thin", color: { rgb: "D0D8E8" } },
-      left:   { style: "thin", color: { rgb: "D0D8E8" } },
-      right:  { style: "thin", color: { rgb: "D0D8E8" } },
-    },
-  };
-}
-
-function titleStyle(): XLSX.CellStyle {
-  return { font: { bold: true, sz: 11 }, alignment: { horizontal: "center", vertical: "center", wrapText: true } };
-}
-
-// ─── Титульный лист ──────────────────────────────────────────────────────────
-function buildTitleSheet(meta: ActMeta): XLSX.WorkSheet {
-  const rows: (string)[][] = [
-    ["", "", "", "", "", "", "", "", "", "", "", "УТВЕРЖДАЮ:"],
-    ["", "", "", "", "", "", "", "", "", "", "", meta.approverTitle],
-    ["", "", "", "", "", "", "", "", "", "", "", meta.orgName],
-    ["", "", "", "", "", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", "", "", "", "", `_______________ ${meta.approverName}`],
-    ["", "", "", "", "", "", "", "", "", "", "", ""],
-    ["", "", "", "", "", "", "", "", "", "", "", `«____»___________ ${new Date().getFullYear()} г.`],
-    [""],
-    ["АКТ"],
-    ["проверки устойчивости вентиляционных режимов в горных выработках"],
-    [`«${meta.projectName}» ${meta.orgName} при воздействии тепловой депрессии`],
-    ["и оценка эффективности принятых мер по предотвращению самопроизвольного опрокидывания"],
-    ["вентиляционной струи при пожаре"],
-    [`(к ПМЛЛПА на ${meta.period})`],
-    [""],
-    ["Определение устойчивости проветривания горных выработок производилось на основе топологии горных"],
-    [`выработок рудника «${meta.projectName}» с использованием программного обеспечения «ПВ-Система».`],
-    [`Дата: ${meta.date}`],
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws["!cols"] = Array.from({ length: TABLE_HEADERS.length }, () => ({ wch: 10 }));
-  // Объединения заголовков АКТ (строки 9-14 в 1-based → индексы 8-13)
-  ws["!merges"] = [
-    { s: { r: 8, c: 0 }, e: { r: 8, c: TABLE_HEADERS.length - 1 } },
-    { s: { r: 9, c: 0 }, e: { r: 9, c: TABLE_HEADERS.length - 1 } },
-    { s: { r: 10, c: 0 }, e: { r: 10, c: TABLE_HEADERS.length - 1 } },
-    { s: { r: 11, c: 0 }, e: { r: 11, c: TABLE_HEADERS.length - 1 } },
-    { s: { r: 12, c: 0 }, e: { r: 12, c: TABLE_HEADERS.length - 1 } },
-    { s: { r: 13, c: 0 }, e: { r: 13, c: TABLE_HEADERS.length - 1 } },
-    { s: { r: 15, c: 0 }, e: { r: 15, c: TABLE_HEADERS.length - 1 } },
-    { s: { r: 16, c: 0 }, e: { r: 16, c: TABLE_HEADERS.length - 1 } },
-  ];
-  // Стили заголовка АКТ
-  [8, 9, 10, 11, 12, 13].forEach(r => {
-    const ref = XLSX.utils.encode_cell({ r, c: 0 });
-    if (ws[ref]) ws[ref].s = titleStyle();
-  });
-  return ws;
-}
-
-// ─── Лист с таблицей устойчивости ────────────────────────────────────────────
-function buildTableSheet(cat: StabilityCategory, rows: StabilityRow[]): XLSX.WorkSheet {
+function buildTableSheet(wb: Workbook, cat: StabilityCategory, rows: StabilityRow[]): void {
   const meta = CATEGORY_META[cat];
-  const aoa: (string | number)[][] = [];
-  aoa.push([meta.title]);                 // строка 1 — вводная
-  aoa.push([]);                           // пустая
-  aoa.push([...TABLE_HEADERS]);           // строка 3 — заголовки
+  const ws = addSheet(wb, meta.sheet);
+  const N = TABLE_COLS.length;
+  TABLE_COLS.forEach((c, i) => { ws.getColumn(i + 1).width = c.width; });
+
+  para(ws, 1, 1, N, meta.title, { bold: true, size: 11 });
+  const t = ws.getCell(2, N);
+  t.value = `Таблица №${meta.table}`;
+  t.font = { name: FONT, size: 10, italic: true };
+  t.alignment = { horizontal: "right" };
+
+  let row = tableHeader(ws, 3, TABLE_COLS.map(c => c.header));
+  // Шапка и нумерация граф повторяются на каждой печатной странице
+  ws.pageSetup.printTitlesRow = "3:4";
+  ws.views = [{ state: "frozen", ySplit: 4, showGridLines: false }];
+
+  if (rows.length === 0) {
+    groupRow(ws, row++, N, "Выработки, удовлетворяющие условиям отбора, отсутствуют", { bold: false, fill: { type: "pattern", pattern: "none" } });
+  }
 
   rows.forEach(r => {
-    aoa.push([
-      r.index,
-      r.branchNumber,
-      r.position,
-      r.name,
-      r.angleDeg,
-      r.length,
-      r.area,
-      r.velocityNormal, // скорость движения (до пожара)
-      r.flowNormal,     // расход воздуха (до пожара)
-      r.velocity,       // скорость при пожаре
-      r.flow,           // расход при пожаре
-      r.firePower_MW,
-      r.fireTemp_C,
-      r.thermalDep_Pa,
-      // Вместо голого прочерка — короткая пометка «не опр.». Полная причина
-      // печатается ниже, под таблицей: длинный текст в узкой числовой колонке
-      // разъехался бы по всему листу и сломал вёрстку акта.
+    const values: (string | number | null)[] = [
+      r.index, r.branchNumber, r.position || "—", r.name,
+      r2(r.angleDeg), r2(r.length), r2(r.area),
+      r2(r.velocityNormal), r2(r.flowNormal), r2(r.velocity), r2(r.flow),
+      r2(r.firePower_MW), r2(r.fireTemp_C), r2(r.thermalDep_Pa),
+      // «не опр.» — коротко в узкой графе; полная причина под таблицей
       r.hKr_Pa != null ? r.hKr_Pa : "не опр.",
-      // Запас до опрокидывания: h_кр − h_т. Отрицательное значение печатаем со
-      // знаком «−» — видно, на сколько паскалей порог уже перекрыт.
       r.marginDep_Pa != null ? r.marginDep_Pa : "не опр.",
       r.p_u != null ? r.p_u : "не опр.",
       r.stability,
-      r.fireLoadDesc,
-    ]);
+      r.fireLoadDesc || "Пожарная нагрузка отсутствует",
+    ];
+    const xr = ws.getRow(row);
+    let maxLines = 1;
+    values.forEach((v, i) => {
+      const def = TABLE_COLS[i];
+      const c = xr.getCell(i + 1);
+      c.value = v ?? "—";
+      styleCell(c, {
+        size: 9,
+        align: def.align ?? "center",
+        numFmt: typeof v === "number" ? def.numFmt : undefined,
+        fill: !r.stable && i === 17 ? BAD_FILL : undefined,
+        bold: !r.stable && i === 17,
+        color: !r.stable && i === 17 ? "FF9C0006" : undefined,
+      });
+      if (typeof v === "string") maxLines = Math.max(maxLines, linesFor(v, def.width, 9));
+    });
+    xr.height = heightFor(maxLines, 9);
+    row++;
   });
 
-  // ── Пояснения к незаполненным клеткам ─────────────────────────────────────
-  // Пустая клетка в акте, уходящем в надзорный орган, выглядит как пропуск в
-  // расчёте. Поясняем, что расчёт выполнен, но норматив к этой выработке
-  // неприменим, и по какой именно причине.
+  // ── Пояснения к графам «не опр.» ───────────────────────────────────────────
   const noted = rows.filter(r => r.critNote);
   if (noted.length > 0) {
-    aoa.push([]);
-    aoa.push(["Пояснения к графам «Критическая депрессия», «Запас до опрокидывания», «Показатель устойчивости»:"]);
-    // Группируем одинаковые причины: у большинства ветвей она общая, и
-    // повторять один и тот же текст против каждой строки незачем.
+    row++;
+    para(ws, row++, 1, N, "Пояснения к графам «Критическая депрессия», «Запас до опрокидывания», «Показатель устойчивости»:", { bold: true, size: 10 });
     const byNote = new Map<string, string[]>();
     noted.forEach(r => {
-      const key = r.critNote;
-      if (!byNote.has(key)) byNote.set(key, []);
-      byNote.get(key)!.push(String(r.branchNumber));
+      if (!byNote.has(r.critNote)) byNote.set(r.critNote, []);
+      byNote.get(r.critNote)!.push(String(r.branchNumber));
     });
-    byNote.forEach((ids, note) => {
-      aoa.push([`Ветви № ${ids.join(", ")}: ${note}.`]);
-    });
-    aoa.push(["Степень устойчивости для этих выработок определена по располагаемой депрессии участка."]);
+    byNote.forEach((ids, note) => para(ws, row++, 1, N, `Ветви № ${ids.join(", ")}: ${note}.`, { size: 10, align: "justify" }));
+    para(ws, row++, 1, N, "Степень устойчивости для этих выработок определена по располагаемой депрессии участка.", { size: 10, italic: true });
   }
 
-  if (rows.length === 0) {
-    aoa.push(TABLE_HEADERS.map((_, i) => (i === 3 ? "Нет ветвей, удовлетворяющих условиям отбора" : "")));
-  }
-
-  // ── Приложение 7: расшифровка критического расхода Q₀ (восходящие) ────────
-  // Норматив даёт два ориентировочных способа: (7.3) Q₀ = Q₁ + 0,03·h₁ и
-  // (7.4) Q₀ = Q·a (a — таблица 7.1). Печатаем оба и принятое значение, чтобы
-  // проверяющий видел ход расчёта, а не только итог.
+  // ── Приложение 7: критический расход Q₀ (восходящие) ───────────────────────
   const isAscending = cat === "ascending-incline" || cat === "ascending-vertical";
   const withQ0 = rows.filter(r => r.Q0_m3s != null);
   if (isAscending && withQ0.length > 0) {
-    aoa.push([]);
-    aoa.push(["Приложение 7. Критический расход воздуха Q₀ и условие устойчивости (7.1): h_т < R·Q₀²"]);
-    aoa.push([
-      "№ ветви", "Наименование выработки",
-      "Q₁ (до пожара), м³/с", "h₁, Па", "R, Н·с²/м⁸",
-      "a (табл. 7.1)",
-      "Q₀ по (7.3), м³/с", "Q₀ по (7.4), м³/с",
-      "Q₀ принят, м³/с", "Формула",
-      "Удерж. депрессия R·Q₀², Па", "h_т, Па",
-      "R_р по (7.5)", "R_доп по (7.6)",
-    ]);
+    row++;
+    para(ws, row++, 1, N, "Приложение 7. Критический расход воздуха Q₀ и условие устойчивости (7.1): hт < R·Q₀²", { bold: true, size: 11 });
+    // Таблица Прил. 7 размещается в тех же колонках: «Наименование» — в графе 4
+    const q0Headers: (string | null)[] = [
+      null, "№ ветви", null, "Наименование выработки",
+      "Q₁ (до пожара), м³/с", "h₁, Па", "R, Н·с²/м⁸", "a (табл. 7.1)",
+      "Q₀ по (7.3), м³/с", "Q₀ по (7.4), м³/с", "Q₀ принят, м³/с", "Формула",
+      "Удерж. депрессия R·Q₀², Па", "hт, Па", "Rр по (7.5)", "Rдоп по (7.6)",
+    ];
+    const q0Cols = q0Headers.map((h, i) => ({ h, c: i + 1 })).filter(x => x.h != null) as { h: string; c: number }[];
+    const hr = ws.getRow(row);
+    let ml = 1;
+    q0Cols.forEach(({ h, c }) => {
+      const cell = hr.getCell(c);
+      cell.value = h;
+      styleCell(cell, { size: 9, bold: true, fill: HEAD_FILL });
+      ml = Math.max(ml, linesFor(h, ws.getColumn(c).width ?? 9, 9));
+    });
+    // «№ ветви» занимает графы 1–3, чтобы таблица не имела дыр
+    ws.mergeCells(row, 1, row, 3);
+    styleCell(ws.getCell(row, 1), { size: 9, bold: true, fill: HEAD_FILL });
+    ws.getCell(row, 1).value = "№ ветви";
+    hr.height = heightFor(ml, 9);
+    row++;
     withQ0.forEach(r => {
-      aoa.push([
-        r.branchNumber, r.name,
-        r.flowNormal, r.branchDep_Pa, r.R_fact != null ? r.R_fact : "—",
-        r.Q0_a != null ? r.Q0_a : "—",
-        r.Q0_73 != null ? r.Q0_73 : "—",
-        r.Q0_74 != null ? r.Q0_74 : "—",
-        r.Q0_m3s != null ? r.Q0_m3s : "—",
-        r.Q0_source ?? "—",
-        r.hKr_Pa != null ? r.hKr_Pa : "—",
-        r.thermalDep_Pa,
-        r.R_calc != null ? r.R_calc : "—",
-        r.R_dop != null ? r.R_dop : "не требуется",
-      ]);
-    });
-    aoa.push([]);
-    aoa.push(["Примечание: Q₀ определён двумя ориентировочными способами норматива; принято меньшее значение"]);
-    aoa.push(["как более строгая оценка (Q₀ входит в условие 7.1 в квадрате). Основная формула (7.2) требует"]);
-    aoa.push(["данных натурных замеров депрессии и расхода до и после изменения сопротивления выработки."]);
-  }
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-  // Ширины колонок
-  ws["!cols"] = [
-    { wch: 6 }, { wch: 9 }, { wch: 9 }, { wch: 26 }, { wch: 10 }, { wch: 9 },
-    { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
-    { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 13 }, { wch: 18 }, { wch: 40 },
-  ];
-  // Объединение вводной строки
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: TABLE_HEADERS.length - 1 } }];
-  // Высоты
-  ws["!rows"] = [{ hpx: 30 }, { hpx: 8 }, { hpx: 46 }];
-
-  // Стиль вводной строки
-  const titleRef = XLSX.utils.encode_cell({ r: 0, c: 0 });
-  if (ws[titleRef]) ws[titleRef].s = { font: { bold: true, sz: 10 }, alignment: { wrapText: true, vertical: "center" } };
-
-  // Стили заголовков (строка index 2)
-  TABLE_HEADERS.forEach((_, ci) => {
-    const ref = XLSX.utils.encode_cell({ r: 2, c: ci });
-    if (ws[ref]) ws[ref].s = headerStyle();
-  });
-
-  // Стили данных
-  rows.forEach((r, ri) => {
-    for (let ci = 0; ci < TABLE_HEADERS.length; ci++) {
-      const ref = XLSX.utils.encode_cell({ r: ri + 3, c: ci });
-      if (ws[ref]) ws[ref].s = cellStyle(ri, !r.stable);
-    }
-  });
-
-  // Закрепить заголовок
-  ws["!freeze"] = { xSplit: 0, ySplit: 3 };
-  return ws;
-}
-
-// ─── Лист «Мероприятия» ──────────────────────────────────────────────────────
-function buildMeasuresSheet(result: StabilityResult): XLSX.WorkSheet {
-  const unstable = result.rows.filter(r => !r.stable);
-  const aoa: (string | number)[][] = [];
-  aoa.push(["Мероприятия по обеспечению устойчивости проветривания при пожаре"]);
-  aoa.push([]);
-
-  if (unstable.length === 0) {
-    aoa.push(["По результатам проверки все горные выработки с наклоном 5° и более сохраняют"]);
-    aoa.push(["устойчивое проветривание при пожаре. Дополнительные мероприятия не требуются."]);
-  } else {
-    aoa.push(["Для выработок с риском опрокидывания вентиляционной струи предусмотреть:"]);
-    aoa.push([]);
-    aoa.push(["№", "№ ветви", "Наименование выработки", "Мероприятие"]);
-    unstable.forEach((r, i) => {
-      // Для восходящих выработок норматив (Прил. 7, ф. 7.6) даёт конкретное
-      // мероприятие: перемычка ниже очага с сопротивлением не менее R_доп.
-      const measure = r.R_dop != null
-        ? `Установить в 10–15 м ниже очага пожара перемычку с аэродинамическим сопротивлением не менее ${r.R_dop} Н·с²/м⁸ (расчётное R_р = ${r.R_calc}, фактическое R = ${r.R_fact} Н·с²/м⁸)`
-        : "Установка автоматических пожарных дверей / реверсирование ВГП / секционирование вентиляции для предотвращения опрокидывания струи";
-      aoa.push([i + 1, r.branchNumber, r.name, measure]);
-    });
-  }
-
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 6 }, { wch: 10 }, { wch: 30 }, { wch: 70 }];
-  ws["!merges"] = [{ s: { r: 0, c: 0 }, e: { r: 0, c: 3 } }];
-  const t = XLSX.utils.encode_cell({ r: 0, c: 0 });
-  if (ws[t]) ws[t].s = { font: { bold: true, sz: 11 } };
-  if (unstable.length > 0) {
-    ["A5", "B5", "C5", "D5"].forEach(ref => { if (ws[ref]) ws[ref].s = headerStyle(); });
-    unstable.forEach((_, i) => {
-      for (let c = 0; c < 4; c++) {
-        const ref = XLSX.utils.encode_cell({ r: i + 5, c });
-        if (ws[ref]) ws[ref].s = cellStyle(i);
+      const vals: Record<number, string | number | null> = {
+        4: r.name, 5: r2(r.flowNormal), 6: r2(r.branchDep_Pa), 7: r.R_fact,
+        8: r.Q0_a, 9: r.Q0_73, 10: r.Q0_74, 11: r.Q0_m3s, 12: r.Q0_source,
+        13: r.hKr_Pa, 14: r2(r.thermalDep_Pa), 15: r.R_calc, 16: r.R_dop ?? "не требуется",
+      };
+      ws.mergeCells(row, 1, row, 3);
+      const first = ws.getCell(row, 1);
+      first.value = r.branchNumber;
+      styleCell(first, { size: 9 });
+      for (let c = 4; c <= 16; c++) {
+        const v = vals[c];
+        const cell = ws.getCell(row, c);
+        cell.value = v ?? "—";
+        styleCell(cell, { size: 9, align: c === 4 ? "left" : "center", numFmt: typeof v === "number" ? (c === 7 || c === 15 || c === 16 ? "0.0000" : "0.000") : undefined });
       }
+      ws.getRow(row).height = heightFor(linesFor(r.name, ws.getColumn(4).width ?? 24, 9), 9);
+      row++;
     });
+    row++;
+    para(ws, row++, 1, N,
+      "Примечание: Q₀ определён двумя ориентировочными способами норматива; принято меньшее значение как более строгая оценка (Q₀ входит в условие 7.1 в квадрате). Основная формула (7.2) требует данных натурных замеров депрессии и расхода до и после изменения сопротивления выработки.",
+      { size: 10, italic: true, align: "justify" });
   }
-  return ws;
+
+  ws.pageSetup.printArea = `A1:${ws.getColumn(N).letter}${Math.max(row - 1, 5)}`;
 }
 
-// ─── Лист «Выводы» ────────────────────────────────────────────────────────────
-function buildConclusionsSheet(result: StabilityResult): XLSX.WorkSheet {
+// ─── Титульный лист ──────────────────────────────────────────────────────────
+// Сетка из 10 колонок; подпись «УТВЕРЖДАЮ» — в правых колонках 7–10.
+const TITLE_COLS = [14, 14, 14, 14, 14, 14, 14, 14, 14, 18];
+
+function buildTitleSheet(wb: Workbook, m: ActMeta, result: StabilityResult): void {
+  const ws = addSheet(wb, "Титул");
+  const N = TITLE_COLS.length;
+  TITLE_COLS.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
+
+  const right = (row: number, text: string) => para(ws, row, 7, N, text, { bold: true, align: "right" });
+  right(1, "У Т В Е Р Ж Д А Ю:");
+  right(2, m.approverTitle);
+  if (m.orgName) right(3, m.orgName);
+  right(5, `_________________ ${m.approverName || "_______________"}`);
+  right(7, `«_____» ____________________ ${new Date().getFullYear()} г.`);
+
+  let row = 9;
+  para(ws, row++, 1, N, "АКТ", { bold: true, size: 14, align: "center" });
+  para(ws, row++, 1, N, "проверки устойчивости вентиляционных режимов в горных выработках", { bold: true, size: 14, align: "center" });
+  para(ws, row++, 1, N, `«${m.projectName}»${m.orgName ? " " + m.orgName : ""} при воздействии тепловой депрессии`, { bold: true, size: 14, align: "center" });
+  para(ws, row++, 1, N, "и оценка эффективности принятых мер по предотвращению самопроизвольного опрокидывания", { bold: true, size: 14, align: "center" });
+  para(ws, row++, 1, N, "вентиляционной струи при пожаре", { bold: true, size: 14, align: "center" });
+  para(ws, row++, 1, N, `(к ПМЛЛПА на ${m.period})`, { bold: true, size: 14, align: "center" });
+  row++;
+
+  // Состав комиссии: должность слева, ФИО справа (как в образце)
+  para(ws, row++, 1, N, "Комиссия в составе:");
+  para(ws, row++, 1, N, "председателя комиссии:");
+  const person = (p?: { title: string; name: string }) => {
+    para(ws, row, 1, 8, p?.title || "_____________________________________________");
+    para(ws, row, 9, N, p?.name || "______________________");
+    row++;
+  };
+  person(m.chairman ?? (m.approverName ? { title: `${m.approverTitle}${m.orgName ? " " + m.orgName : ""}`, name: m.approverName } : undefined));
+  para(ws, row++, 1, N, "члены комиссии:");
+  const members = m.members && m.members.length > 0 ? m.members : [undefined, undefined, undefined];
+  members.forEach(p => person(p));
+  row++;
+
+  para(ws, row++, 1, N,
+    `${m.checkPeriod ? "в период " + m.checkPeriod : "в период с «___» __________ 20__ г. по «___» __________ 20__ г."} провела проверку устойчивости проветривания горных выработок, эффективности принятых мер по предотвращению самопроизвольного опрокидывания вентиляционной струи при пожаре и определение критической депрессии и установила:`,
+    { align: "justify", indent: true });
+
+  const cnt = (c: StabilityCategory) => result.byCategory[c].length;
+  para(ws, row++, 1, N, "1. На руднике определена устойчивость проветривания при пожаре в наклонных и вертикальных горных выработках, в том числе:", { bold: true, indent: true });
+  CATEGORY_ORDER.forEach(c => {
+    const cm = CATEGORY_META[c];
+    para(ws, row++, 1, N, `${cm.title.replace(/;$/, "")} — ${cnt(c)} (Таблица №${cm.table});`, { indent: true, align: "justify" });
+  });
+  para(ws, row++, 1, N,
+    `Определение устойчивости проветривания горных выработок производилось на основе топологии горных выработок рудника с подземным способом разработки «${m.projectName}»${m.orgName ? " " + m.orgName : ""}, с использованием программного обеспечения «ПВ-Система». Отбор выработок: угол наклона ${result.angleFilter}° и более, длина ${result.lengthFilter} м и более. Температура наружного воздуха, принятая в расчёте, ${result.ambientTemp} °С. Мощность пожара рассчитывалась с использованием справочника пожарной нагрузки (Документ СИТИС-СПН-1, редакция 2 от 15.05.2014 г.).`,
+    { align: "justify", indent: true });
+
+  ws.pageSetup.printArea = `A1:${ws.getColumn(N).letter}${row - 1}`;
+}
+
+// ─── Мероприятия (Таблица №5) ────────────────────────────────────────────────
+const MEASURE_COLS: ColDef[] = [
+  { header: "№ п/п", width: 6 },
+  { header: "№ ветви", width: 9 },
+  { header: "Позиция", width: 9 },
+  { header: "Наименование ветви", width: 32, align: "left" },
+  { header: "Меры по предотвращению опрокидывания вентиляционной струи воздуха", width: 95, align: "justify" },
+];
+
+function measureText(r: StabilityRow): string {
+  // Для восходящих выработок норматив (Прил. 7, ф. 7.6) даёт конкретную меру:
+  // перемычка ниже очага с сопротивлением не менее R_доп.
+  return r.R_dop != null
+    ? `Установить в 10–15 м ниже очага пожара перемычку с аэродинамическим сопротивлением не менее ${r.R_dop} Н·с²/м⁸ (расчётное Rр = ${r.R_calc}, фактическое R = ${r.R_fact} Н·с²/м⁸).`
+    : "Установка автоматических пожарных дверей / реверсирование ВГП / секционирование вентиляции для предотвращения опрокидывания струи.";
+}
+
+function writeMeasuresTable(ws: Worksheet, startRow: number, result: StabilityResult, size: number): number {
+  const N = MEASURE_COLS.length;
+  let row = tableHeader(ws, startRow, MEASURE_COLS.map(c => c.header), size === 10 ? 9 : size);
+  let n = 0;
+  CATEGORY_ORDER.forEach(cat => {
+    groupRow(ws, row++, N, CATEGORY_META[cat].group);
+    const bad = result.byCategory[cat].filter(r => !r.stable);
+    if (bad.length === 0) {
+      ws.mergeCells(row, 1, row, N);
+      const c = ws.getCell(row, 1);
+      c.value = "Устойчиво";
+      for (let i = 1; i <= N; i++) styleCell(ws.getCell(row, i), { size });
+      ws.getRow(row).height = 18;
+      row++;
+      return;
+    }
+    bad.forEach(r => {
+      const vals = [++n, r.branchNumber, r.position || "—", r.name, measureText(r)];
+      let ml = 1;
+      vals.forEach((v, i) => {
+        const c = ws.getCell(row, i + 1);
+        c.value = v;
+        styleCell(c, { size, align: MEASURE_COLS[i].align ?? "center" });
+        if (typeof v === "string") ml = Math.max(ml, linesFor(v, ws.getColumn(i + 1).width ?? 9, size));
+      });
+      ws.getRow(row).height = heightFor(ml, size);
+      row++;
+    });
+  });
+  return row;
+}
+
+function buildMeasuresSheet(wb: Workbook, result: StabilityResult): void {
+  const ws = addSheet(wb, "Мероприятия");
+  const N = MEASURE_COLS.length;
+  MEASURE_COLS.forEach((c, i) => { ws.getColumn(i + 1).width = c.width; });
+  para(ws, 1, 1, N, "2. По результатам расчётов определены категории устойчивости и разработаны меры по устойчивому проветриванию выработок.", { bold: true, size: 11 });
+  const t = ws.getCell(2, N);
+  t.value = "Таблица №5";
+  t.font = { name: FONT, size: 10, italic: true };
+  t.alignment = { horizontal: "right" };
+  const end = writeMeasuresTable(ws, 3, result, 10);
+  ws.pageSetup.printTitlesRow = "3:4";
+  ws.pageSetup.printArea = `A1:E${end - 1}`;
+}
+
+// ─── Выводы ──────────────────────────────────────────────────────────────────
+function buildConclusionsSheet(wb: Workbook, result: StabilityResult, m: ActMeta): void {
+  const ws = addSheet(wb, "Выводы");
+  const N = MEASURE_COLS.length;
+  MEASURE_COLS.forEach((c, i) => { ws.getColumn(i + 1).width = c.width; });
+
   const total = result.rows.length;
   const unstable = result.totalUnstable;
   const stable = total - unstable;
-  const descIncl = result.byCategory["descending-incline"].length;
-  const descVert = result.byCategory["descending-vertical"].length;
-  const ascIncl  = result.byCategory["ascending-incline"].length;
-  const ascVert  = result.byCategory["ascending-vertical"].length;
+  let row = 1;
 
-  const aoa: string[][] = [];
-  aoa.push(["ВЫВОДЫ"]);
-  aoa.push([]);
-  aoa.push([`1. Проверке подлежало ${total} горных выработок с углом наклона ${result.angleFilter}° и более`]);
-  aoa.push([`   и длиной ${result.lengthFilter} м и более, имеющих пожарную нагрузку, в том числе:`]);
-  aoa.push([`   • наклонные с нисходящим проветриванием — ${descIncl};`]);
-  aoa.push([`   • вертикальные с нисходящим проветриванием — ${descVert};`]);
-  aoa.push([`   • наклонные с восходящим проветриванием — ${ascIncl};`]);
-  aoa.push([`   • вертикальные с восходящим проветриванием — ${ascVert}.`]);
-  aoa.push([]);
-  aoa.push([`2. Устойчивое проветривание при пожаре сохраняют ${stable} из ${total} выработок.`]);
+  para(ws, row++, 1, N,
+    unstable > 0
+      ? "Выводы и предложения комиссии: проверка устойчивости вентиляционной струи при пожаре в наклонных и вертикальных выработках с нисходящим и восходящим проветриванием показала, что на руднике имеются выработки с неустойчивым проветриванием."
+      : "Выводы и предложения комиссии: проверка устойчивости вентиляционной струи при пожаре в наклонных и вертикальных выработках с нисходящим и восходящим проветриванием показала, что все проверенные выработки сохраняют устойчивое проветривание.",
+    { bold: true, align: "justify" });
+  row++;
+
+  const lines: string[] = [
+    `1. Проверке подлежало ${total} горных выработок с углом наклона ${result.angleFilter}° и более и длиной ${result.lengthFilter} м и более, имеющих пожарную нагрузку, в том числе: наклонные с нисходящим проветриванием — ${result.byCategory["descending-incline"].length}; вертикальные с нисходящим проветриванием — ${result.byCategory["descending-vertical"].length}; наклонные с восходящим проветриванием — ${result.byCategory["ascending-incline"].length}; вертикальные с восходящим проветриванием — ${result.byCategory["ascending-vertical"].length}.`,
+    `2. Устойчивое проветривание при пожаре сохраняют ${stable} из ${total} выработок.`,
+  ];
   if (unstable > 0) {
-    aoa.push([`3. Выявлено ${unstable} выработок с риском самопроизвольного опрокидывания`]);
-    aoa.push([`   вентиляционной струи. Для них разработаны мероприятия (см. лист «Мероприятия»).`]);
-    if (result.totalVeryUnstable > 0) {
-      aoa.push([`   Из них ${result.totalVeryUnstable} отнесены к весьма неустойчивым по направлению`]);
-      aoa.push([`   вентиляционных струй (показатель устойчивости p_у < 0,3).`]);
-    }
+    let s = `3. Выявлено ${unstable} выработок с риском самопроизвольного опрокидывания вентиляционной струи.`;
+    if (result.totalVeryUnstable > 0) s += ` Из них ${result.totalVeryUnstable} отнесены к весьма неустойчивым по направлению вентиляционных струй (показатель устойчивости pу < 0,3).`;
+    lines.push(s);
   } else {
-    aoa.push([`3. Выработок с риском опрокидывания вентиляционной струи не выявлено.`]);
-    aoa.push([`   Принятые проектные решения обеспечивают устойчивость проветривания при пожаре.`]);
+    lines.push("3. Выработок с риском опрокидывания вентиляционной струи не выявлено. Принятые проектные решения обеспечивают устойчивость проветривания при пожаре.");
   }
-  aoa.push([]);
-  // Основание вердикта: по расчёту сети при пожаре или по нормативной оценке.
   const byFact = result.rows.filter(r => r.basis === "fact").length;
-  if (byFact === total && total > 0) {
-    aoa.push([`Устойчивость определена по итеративному расчёту вентиляционной сети при пожаре для всех ${total} выработок.`]);
-  } else if (byFact > 0) {
-    aoa.push([`Устойчивость определена по итеративному расчёту сети при пожаре для ${byFact} из ${total} выработок;`]);
-    aoa.push([`   для остальных — по нормативной оценке (в графе «Степень устойчивости» отмечены «(оценка)»).`]);
-  } else {
-    aoa.push([`Устойчивость определена по нормативной оценке (Прил. 5, 7) без итеративного расчёта сети при пожаре.`]);
-  }
-  aoa.push([`Температура наружного воздуха, принятая в расчёте: ${result.ambientTemp} °C.`]);
-  aoa.push([`Расчёт выполнен в программном обеспечении «ПВ-Система».`]);
+  if (byFact === total && total > 0) lines.push(`4. Устойчивость определена по итеративному расчёту вентиляционной сети при пожаре для всех ${total} выработок.`);
+  else if (byFact > 0) lines.push(`4. Устойчивость определена по итеративному расчёту сети при пожаре для ${byFact} из ${total} выработок; для остальных — по нормативной оценке (в графе «Степень устойчивости» отмечены «(оценка)»).`);
+  else lines.push("4. Устойчивость определена по нормативной оценке (Прил. 5, 7) без итеративного расчёта сети при пожаре.");
+  lines.forEach(l => para(ws, row++, 1, N, l, { align: "justify", indent: true }));
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
-  ws["!cols"] = [{ wch: 100 }];
-  const t = XLSX.utils.encode_cell({ r: 0, c: 0 });
-  if (ws[t]) ws[t].s = { font: { bold: true, sz: 12 } };
-  return ws;
+  if (unstable > 0) {
+    row++;
+    para(ws, row++, 1, N, "Для предотвращения самопроизвольного опрокидывания вентиляционной струи воздуха в этих выработках необходимо:", { indent: true });
+    row = writeMeasuresTable(ws, row, result, 11);
+  }
+
+  // ── Подписи ────────────────────────────────────────────────────────────────
+  row += 2;
+  const sign = (label: string, p?: { title: string; name: string }) => {
+    para(ws, row, 1, 3, label, { bold: true });
+    para(ws, row, 4, 4, "____________________", { align: "center" });
+    const who = ws.getCell(row, 5);
+    who.value = `${p?.name || "______________________"}          «_____» _____________ ${new Date().getFullYear()} г.`;
+    who.font = { name: FONT, size: 12 };
+    who.alignment = { horizontal: "left", vertical: "top" };
+    row++;
+    ws.getCell(row, 4).value = "(подпись)";
+    ws.getCell(row, 4).font = { name: FONT, size: 8, italic: true };
+    ws.getCell(row, 4).alignment = { horizontal: "center", vertical: "top" };
+    row += 2;
+  };
+  sign("Председатель комиссии:", m.chairman ?? (m.approverName ? { title: m.approverTitle, name: m.approverName } : undefined));
+  const members = m.members && m.members.length > 0 ? m.members : [undefined, undefined, undefined];
+  members.forEach((p, i) => sign(i === 0 ? "Члены комиссии:" : "", p));
+
+  para(ws, row++, 1, N, `Расчёт выполнен в программном комплексе «ПВ-Система». Дата составления: ${m.date}.`, { size: 9, italic: true });
+  ws.pageSetup.printArea = `A1:E${row - 1}`;
 }
 
 // ─── Главная функция экспорта ────────────────────────────────────────────────
-export function exportStabilityAct(result: StabilityResult, meta?: Partial<ActMeta>): void {
-  const m = { ...DEFAULT_META, ...meta };
-  const wb = XLSX.utils.book_new();
+export async function exportStabilityAct(result: StabilityResult, meta?: Partial<ActMeta>): Promise<void> {
+  const m: ActMeta = { ...DEFAULT_META, ...meta };
+  const ExcelJS = (await import("exceljs")).default;
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "ПВ-Система";
+  wb.created = new Date();
 
-  XLSX.utils.book_append_sheet(wb, buildTitleSheet(m), "Титул");
+  buildTitleSheet(wb, m, result);
+  CATEGORY_ORDER.forEach(cat => buildTableSheet(wb, cat, result.byCategory[cat]));
+  buildMeasuresSheet(wb, result);
+  buildConclusionsSheet(wb, result, m);
 
-  CATEGORY_ORDER.forEach(cat => {
-    const rows = result.byCategory[cat];
-    const ws = buildTableSheet(cat, rows);
-    XLSX.utils.book_append_sheet(wb, ws, CATEGORY_META[cat].sheet);
-  });
-
-  XLSX.utils.book_append_sheet(wb, buildMeasuresSheet(result), "Мероприятия");
-  XLSX.utils.book_append_sheet(wb, buildConclusionsSheet(result), "Выводы");
-
-  const date = new Date().toISOString().slice(0, 10);
-  const filename = `Акт_устойчивости_${m.projectName || "рудник"}_${date}.xlsx`;
-  XLSX.writeFile(wb, filename);
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+  const safe = (m.projectName || "рудник").replace(/[\\/:*?"<>|]+/g, "_");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = `Акт_устойчивости_${safe}_${new Date().toISOString().slice(0, 10)}.xlsx`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }

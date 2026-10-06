@@ -131,9 +131,14 @@ export default function FireStabilityDialog({
     }
   }, [inputsKey, factsKey]);
 
-  function handleExport() {
-    exportStabilityAct(result, { projectName });
-    onClose();
+  async function handleExport() {
+    try {
+      await exportStabilityAct(result, { projectName });
+      onClose();
+    } catch (e) {
+      console.error("Ошибка выгрузки акта устойчивости", e);
+      alert("Не удалось сформировать акт устойчивости. Подробности — в консоли.");
+    }
   }
 
   return (
