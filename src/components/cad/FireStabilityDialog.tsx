@@ -2,7 +2,35 @@ import { useState, useMemo, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { Position } from "@/lib/positions";
-import { calcFireStability, type StabilityCategory, type FireStabilityFact } from "@/lib/fireStability";
+import { calcFireStability, hasFireLoad, type StabilityCategory, type FireStabilityFact } from "@/lib/fireStability";
+import { getThermalDepMethod } from "@/lib/fireCalculator";
+
+/**
+ * Отпечаток входных данных расчёта по факту. Факт опрокидывания зависит от
+ * расходов сети (после «Расчёта сети»), пожарной нагрузки, геометрии и отметок
+ * узлов. Если что-то из этого поменялось — посчитанный ранее факт устарел и в
+ * акт попадать не должен.
+ */
+function stabilityInputsKey(branches: TopoBranch[], nodes: TopoNode[]): string {
+  const parts: string[] = [getThermalDepMethod()];
+  for (const b of branches) {
+    // Расход/сопротивление/депрессия — у ВСЕХ ветвей: сеть влияет на факт целиком.
+    parts.push(`${b.id}|${b.fromId}|${b.toId}|${(b.flow ?? 0).toFixed(4)}|${b.rTotal ?? b.resistance ?? 0}|${b.dPTotal ?? b.dP ?? 0}|${b.length}|${b.area}|${b.angle}`);
+    if (hasFireLoad(b)) {
+      // Все поля пожарной нагрузки и положения очага.
+      const fl = Object.entries(b)
+        // fireComputed*/fireThermalDepression — результаты аварийного расчёта,
+        // а не исходные данные: их перезапись не делает факт устаревшим.
+        .filter(([k]) => k.startsWith("fire") && !k.startsWith("fireComputed") && k !== "fireThermalDepression")
+        .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
+        .sort()
+        .join(",");
+      parts.push(fl);
+    }
+  }
+  for (const n of nodes) parts.push(`${n.id}:${n.z ?? 0}:${n.surveyZ ?? ""}:${n.atmosphereLink ? 1 : 0}`);
+  return parts.join(";");
+}
 import { exportStabilityAct } from "@/lib/stabilityActExport";
 
 interface Props {
@@ -43,6 +71,11 @@ export default function FireStabilityDialog({
   const [computing, setComputing] = useState(false);
   // Прогресс проверки: сколько ветвей проверено из скольких
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
+  // Отпечаток данных, по которым посчитан факт. Факт показывается и уходит в акт
+  // ТОЛЬКО пока отпечаток совпадает с текущими данными схемы.
+  const inputsKey = useMemo(() => stabilityInputsKey(branches, nodes), [branches, nodes]);
+  const [factsKey, setFactsKey] = useState<string | null>(null);
+  const [factsStale, setFactsStale] = useState(false);
 
   const result = useMemo(() => {
     const angle  = parseFloat(angleFilter.replace(",", ".")) || 0;
@@ -58,6 +91,7 @@ export default function FireStabilityDialog({
   }, [branches, nodes, positions, angleFilter, lengthFilter, ambientTemp, reversalFacts]);
 
   const total = result.rows.length;
+  const failedCount = result.totalFactFailed;
 
   async function handleComputeFacts() {
     if (!computeReversalFacts) return;
@@ -67,9 +101,12 @@ export default function FireStabilityDialog({
     setProgress({ done: 0, total: Math.max(1, total) });
     try {
       const amb = parseFloat(ambientTemp.replace(",", ".")) || 20;
+      const keyAtStart = inputsKey;
       const facts = await computeReversalFacts(amb, (done, tot) =>
         setProgress(prev => ({ done: Math.max(prev?.done ?? 0, done), total: tot })));
       setReversalFacts(facts);
+      setFactsKey(keyAtStart);
+      setFactsStale(false);
     } finally {
       setComputing(false);
     }
@@ -81,9 +118,22 @@ export default function FireStabilityDialog({
   // (от неё зависит расход и депрессия), поэтому сбрасываем его.
   useEffect(() => {
     setReversalFacts(null);
+    setFactsKey(null);
     setProgress(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ambientTemp]);
+
+  // Схема изменилась после расчёта (пересчёт сети, правка нагрузки, отметок,
+  // сопротивлений) — факт устарел. Сбрасываем его и показываем предупреждение,
+  // иначе в акт ушли бы цифры от прежнего состояния схемы.
+  useEffect(() => {
+    if (factsKey != null && factsKey !== inputsKey) {
+      setReversalFacts(null);
+      setFactsKey(null);
+      setProgress(null);
+      setFactsStale(true);
+    }
+  }, [inputsKey, factsKey]);
 
   function handleExport() {
     exportStabilityAct(result, { projectName });
@@ -157,10 +207,33 @@ export default function FireStabilityDialog({
                         ? `Расчёт устойчивости… ${Math.round((progress.done / progress.total) * 100)}%`
                         : "Подготовка расчёта...")
                     : reversalFacts
-                      ? "✓ Устойчивость — по факту разворота потока (как при очаге пожара)"
+                      ? (failedCount > 0
+                          ? "Расчёт по факту выполнен частично"
+                          : "✓ Устойчивость — по факту разворота потока (как при очаге пожара)")
                       : "Предварительная оценка риска"}
                 </span>
               </div>
+
+              {/* Схема изменилась после расчёта — прежний факт сброшен */}
+              {factsStale && !computing && !reversalFacts && (
+                <div className="text-[11px] flex items-start gap-1.5 px-2 py-1.5 rounded"
+                  style={{ background: "var(--c-tint-amber, #fff4e5)", color: "var(--c-amber, #8a5a00)", border: "1px solid #f0d9b5" }}>
+                  <Icon name="RefreshCw" size={12} className="shrink-0 mt-[1px]" />
+                  <span>Схема изменилась после расчёта по факту — результат сброшен. Нажмите «Рассчитать факт опрокидывания» ещё раз.</span>
+                </div>
+              )}
+
+              {/* Расчёт сети не выполнен для части ветвей */}
+              {reversalFacts && !computing && failedCount > 0 && (
+                <div className="text-[11px] flex items-start gap-1.5 px-2 py-1.5 rounded"
+                  style={{ background: "var(--c-tint-red, #fef2f2)", color: "var(--c-red, #b91c1c)", border: "1px solid #fecaca" }}>
+                  <Icon name="TriangleAlert" size={12} className="shrink-0 mt-[1px]" />
+                  <span>
+                    Для {failedCount} ветв. расчёт сети при пожаре не выполнен (нет ответа расчётного сервера).
+                    Их устойчивость в акте — по нормативной оценке, с пометкой «(оценка)». Повторите расчёт.
+                  </span>
+                </div>
+              )}
 
               {/* Прогресс-бар проверки выработок */}
               {computing && progress && progress.total > 0 && (() => {

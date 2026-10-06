@@ -4720,6 +4720,10 @@ export function useCadPage() {
       // направлению и разогнал реверсивную струю, а не душил её.
       reversedConfirmed: boolean;
       done: boolean;
+      // Сколько раз решатель реально вернул расходы для этого сценария.
+      // 0 — расчёт сети не выполнен ни разу (сбой сервера), и «факт» нельзя
+      // выдавать за результат: в акт он пошёл бы как «Устойчиво».
+      solvedRounds: number;
     };
     const states: ScState[] = loaded.map(target => ({
       target,
@@ -4727,7 +4731,38 @@ export function useCadPage() {
       firePower: 0, fireTemp: ambientTemp, thermalDep: 0,
       reversedConfirmed: false,
       done: false,
+      solvedRounds: 0,
     }));
+
+    // T_пр, мощность и h_т по ТЕКУЩЕМУ расходу сценария. Вынесено в функцию,
+    // чтобы после последнего раунда пересчитать их по ИТОГОВОМУ расходу: иначе
+    // в строке акта расход был из последнего решения сети, а температура и
+    // депрессия — из предыдущего раунда (на другом расходе) и не сходились.
+    const evalFireState = (s: ScState) => {
+      const target = s.target;
+      const qOrig0   = Math.abs(originalFlows.get(target.id) ?? target.flow ?? 0);
+      const qActual0 = Math.abs(s.flows.get(target.id) ?? target.flow ?? 0);
+      const airQ0 = qOrig0 > 0 ? Math.max(qActual0, 0.5 * qOrig0) : qActual0;
+      const firePower = calcBranchFirePower(target, qOrig0 > 0 ? qOrig0 : airQ0);
+      const fireTemp  = calcFireTemp(firePower, airQ0, ambientTemp);
+      const fromN = nodes.find(n => n.id === target.fromId);
+      const toN   = nodes.find(n => n.id === target.toId);
+      const dz = (toN?.z ?? 0) - (fromN?.z ?? 0);
+      const geomAngle = Math.abs(target.angle ?? 0) * Math.sign(dz || 1);
+      const dirFlow = originalFlows.get(target.id) ?? target.flow ?? 0;
+      const flowSignA = dirFlow >= 0 ? 1 : -1;
+      const flowRelAngle = geomAngle * flowSignA;
+      const fireTpos = target.fireT ?? 0.5;
+      const mouthDist = (target.length ?? 0) * (flowSignA >= 0 ? (1 - fireTpos) : fireTpos);
+      const thermalDep = calcThermalDepressionUnified({
+        fireTemp_C: fireTemp, ambientTemp_C: ambientTemp,
+        length_m: target.length, angle_deg: flowRelAngle,
+        airFlow_m3s: airQ0, sectionArea_m2: target.area,
+        distanceToMouth_m: mouthDist,
+        elevationDrop_m: Math.abs(dz),
+      }, thermalDepMethod);
+      return { firePower, fireTemp, thermalDep };
+    };
 
     // Прогресс отражает РАУНДЫ итераций (каждый раунд = один пересчёт сети —
     // это и есть основная работа). Раньше прогресс считал только сошедшиеся
@@ -4812,12 +4847,15 @@ export function useCadPage() {
       //    результат от него не зависит — важна лишь топология и R).
       const baseBranches = branches.map(b => ({ ...b, flow: active[0].flows.get(b.id) ?? b.flow }));
       const results = await solveFireBatch(baseBranches, scenarios, ambientTemp);
+      // Сервер не ответил на весь раунд — дальше считать нечем. Сценарии без
+      // единого успешного решения будут помечены как несостоявшиеся (failed).
       if (results.size === 0) break;
 
       // 3) Обновляем расходы каждого сценария + проверяем сходимость.
       for (const s of active) {
         const newFlows = results.get(s.target.id);
         if (!newFlows || newFlows.size === 0) { s.done = true; continue; }
+        s.solvedRounds++;
         const qPrevTgt = s.flows.get(s.target.id) ?? 0;
         const qNewTgt  = newFlows.get(s.target.id) ?? 0;
         const signFlipped = Math.sign(qPrevTgt || 1) !== Math.sign(qNewTgt || 1);
@@ -4867,12 +4905,24 @@ export function useCadPage() {
       // встречный поток в сотые доли м³/с это шум увязки, а не опрокидывание.
       const rawReversed = isSignificantReversal(orig, now);
       const reversed = flowRelAngle2 > 1 ? false : rawReversed;
+      // Ни одного успешного решения сети — это не факт, а отсутствие расчёта.
+      if (s.solvedRounds === 0) {
+        facts.set(s.target.id, {
+          reversed: false, fireFlow: Math.abs(orig),
+          firePower: s.firePower, fireTemp: s.fireTemp,
+          thermalDep: Math.abs(s.thermalDep), failed: true,
+        });
+        continue;
+      }
+      // Мощность, температура и депрессия — по ТОМУ ЖЕ итоговому расходу,
+      // который идёт в колонку «Расход при пожаре»: строка акта согласована.
+      const fin = evalFireState(s);
       facts.set(s.target.id, {
         reversed,
         fireFlow: Math.abs(now),
-        firePower: s.firePower,
-        fireTemp: s.fireTemp,
-        thermalDep: Math.abs(s.thermalDep),
+        firePower: fin.firePower,
+        fireTemp: fin.fireTemp,
+        thermalDep: Math.abs(fin.thermalDep),
       });
     }
     onProgress?.(loaded.length, loaded.length);

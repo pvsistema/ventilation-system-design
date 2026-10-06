@@ -33,6 +33,12 @@ export interface FireStabilityFact {
   firePower: number;     // мощность пожара, МВт
   fireTemp: number;      // температура продуктов горения, °C
   thermalDep: number;    // тепловая депрессия пожара, Па (модуль)
+  /**
+   * Расчёт сети для этой ветви не выполнен (сервер не ответил / вернул ошибку).
+   * В этом случае reversed/fireFlow НЕ являются результатом расчёта, и ветвь
+   * нельзя записывать в акт как «Устойчиво» по факту.
+   */
+  failed?: boolean;
 }
 
 // Категория ветви по направлению и характеру выработки
@@ -89,6 +95,13 @@ export interface StabilityRow {
   R_dop: number | null;      // требуемое сопротивление перемычки R_доп (ф. 7.6)
   stable: boolean;           // устойчиво?
   stability: string;         // "Устойчиво" / "Неустойчиво"
+  /**
+   * Откуда вердикт: "fact" — по итеративному расчёту сети при пожаре;
+   * "estimate" — нормативная оценка (факт не считали);
+   * "fact-failed" — факт запрашивали, но расчёт сети для ветви не выполнен,
+   * вердикт взят из нормативной оценки.
+   */
+  basis: "fact" | "estimate" | "fact-failed";
   fireLoadDesc: string;      // описание пожарной нагрузки
   category: StabilityCategory;
 }
@@ -101,6 +114,8 @@ export interface StabilityResult {
   ambientTemp: number;       // °C
   totalUnstable: number;     // сколько неустойчивых ветвей
   totalVeryUnstable: number; // из них «весьма неустойчивых» (p_у < 0.3)
+  /** Ветви, для которых расчёт по факту не выполнен (сбой расчёта сети). */
+  totalFactFailed: number;
 }
 
 // Порог «вертикальная» выработка: угол ≥ этого значения считается вертикальным
@@ -250,7 +265,11 @@ export function calcFireStability(
       : (isVertical ? "ascending-vertical"  : "ascending-incline");
 
     // Факт пожара по этой ветви из реального итеративного расчёта сети (если есть).
-    const fact = opts.reversalFacts?.get(b.id);
+    // Неудавшийся расчёт НЕ считается фактом: иначе reversed=false и дожаровый
+    // расход попадали в акт как «Устойчиво по факту». Берём нормативную оценку.
+    const rawFact = opts.reversalFacts?.get(b.id);
+    const factFailed = !!opts.reversalFacts && (!rawFact || !!rawFact.failed);
+    const fact = rawFact && !rawFact.failed ? rawFact : undefined;
 
     // Расход/мощность/температура/депрессия — ПРИ ПОЖАРЕ (по факту), иначе
     // предварительная оценка на дожаровом расходе. С фактом цифры совпадают
@@ -490,7 +509,8 @@ export function calcFireStability(
       R_fact,
       R_dop,
       stable,
-      stability: STABILITY_CLASS_LABEL[stabilityClass],
+      stability: STABILITY_CLASS_LABEL[stabilityClass] + (factFailed ? " (оценка)" : ""),
+      basis: fact ? "fact" : factFailed ? "fact-failed" : "estimate",
       fireLoadDesc: describeFireLoad(b),
       category,
     };
@@ -505,6 +525,7 @@ export function calcFireStability(
 
   const totalUnstable = rows.filter(r => !r.stable).length;
   const totalVeryUnstable = rows.filter(r => r.stabilityClass === "very-unstable").length;
+  const totalFactFailed = rows.filter(r => r.basis === "fact-failed").length;
 
-  return { rows, byCategory, angleFilter, lengthFilter, ambientTemp, totalUnstable, totalVeryUnstable };
+  return { rows, byCategory, angleFilter, lengthFilter, ambientTemp, totalUnstable, totalVeryUnstable, totalFactFailed };
 }
