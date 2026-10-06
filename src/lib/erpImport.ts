@@ -359,6 +359,82 @@ function argbToHex(c: string | null): string {
   return "#3B82F6";
 }
 
+/**
+ * Номера объектов АэроСети → уникальные id нашей схемы.
+ * Номер берём как есть; повтор получает суффикс «_2», «_3»…; пустой номер —
+ * первое свободное целое. Порядок результата совпадает с порядком входа.
+ */
+function uniqueIds(numbers: string[]): { ids: string[]; duplicates: number; empty: number } {
+  const used = new Set<string>();
+  const ids: string[] = new Array(numbers.length);
+  let duplicates = 0, empty = 0;
+  // Сначала занимаем все непустые номера (первое вхождение), чтобы свободный
+  // номер для пустых не совпал с номером, который встретится позже.
+  numbers.forEach((n, i) => {
+    if (n && !used.has(n)) { used.add(n); ids[i] = n; }
+  });
+  numbers.forEach((n, i) => {
+    if (ids[i]) return;
+    if (n) {
+      duplicates++;
+      let k = 2;
+      while (used.has(`${n}_${k}`)) k++;
+      ids[i] = `${n}_${k}`;
+    } else {
+      empty++;
+      let k = 1;
+      while (used.has(String(k))) k++;
+      ids[i] = String(k);
+    }
+    used.add(ids[i]);
+  });
+  return { ids, duplicates, empty };
+}
+
+/**
+ * Для режима «Добавить к текущей»: id импорта — это номера АэроСети, и они
+ * легко совпадают с номерами уже открытой схемы. Совпавшим даём суффикс
+ * «_2», «_3»… и переписываем все ссылки (концы ветвей, позиции ПЛА).
+ */
+export function remapErpIdsForAppend(
+  result: ErpImportResult,
+  usedNodeIds: Iterable<string>,
+  usedBranchIds: Iterable<string>,
+): ErpImportResult {
+  const mk = (used: Set<string>) => (id: string): string => {
+    if (!used.has(id)) { used.add(id); return id; }
+    let k = 2;
+    while (used.has(`${id}_${k}`)) k++;
+    const nid = `${id}_${k}`;
+    used.add(nid);
+    return nid;
+  };
+  const nUsed = new Set(usedNodeIds), bUsed = new Set(usedBranchIds);
+  const nMap = new Map<string, string>(), bMap = new Map<string, string>();
+  const nNext = mk(nUsed), bNext = mk(bUsed);
+  // Сначала резервируем собственные id импорта, не конфликтующие с схемой.
+  result.nodes.forEach(n => nMap.set(n.id, nNext(n.id)));
+  result.branches.forEach(b => bMap.set(b.id, bNext(b.id)));
+  return {
+    ...result,
+    nodes: result.nodes.map(n => {
+      const id = nMap.get(n.id)!;
+      return id === n.id ? n : { ...n, id, number: id };
+    }),
+    branches: result.branches.map(b => ({
+      ...b,
+      id: bMap.get(b.id)!,
+      fromId: nMap.get(b.fromId) ?? b.fromId,
+      toId: nMap.get(b.toId) ?? b.toId,
+    })),
+    positions: result.positions.map(p => ({
+      ...p,
+      branchIds: p.branchIds.map(id => bMap.get(id) ?? id),
+      leaderBranchId: p.leaderBranchId ? (bMap.get(p.leaderBranchId) ?? p.leaderBranchId) : "",
+    })),
+  };
+}
+
 export async function parseErp(
   buffer: ArrayBuffer,
   opts: { resistanceUnit?: ErpResistanceUnit } = {},
@@ -549,11 +625,19 @@ export async function parseErp(
   };
 
   // ── Сборка узлов ──────────────────────────────────────────────────────────
+  // id узла = его НОМЕР из АэроСети (атрибут number), а не служебное
+  // «n_erp_N»: номер выводится в подписях, свойствах и строке состояния, и
+  // пользователь должен видеть те же номера, что и в АэроСети. Номера в
+  // файле бывают повторены (в БГОК — 13 повторов) или пусты — такие делаем
+  // уникальными суффиксом «_2», «_3», пустым даём первый свободный номер.
+  const nodeIds = uniqueIds(Array.from(rawNodes.values()).map(rn => rn.number.trim()));
+  if (nodeIds.duplicates > 0) warnings.push(`Повторяющихся номеров узлов в файле: ${nodeIds.duplicates} — к повторам добавлен суффикс «_2», «_3»…`);
+  if (nodeIds.empty > 0) warnings.push(`Узлов без номера: ${nodeIds.empty} — им присвоены свободные номера`);
   const idMap = new Map<string, string>();
   const nodes: TopoNode[] = [];
-  let nodeNum = 1;
+  let nodeIdx = 0;
   rawNodes.forEach(rn => {
-    const newId = `n_erp_${nodeNum}`;
+    const newId = nodeIds.ids[nodeIdx++];
     idMap.set(rn.id, newId);
     const p = toPlan(rn.x, rn.y, rn.z);
     nodes.push(makeNode(newId, {
@@ -561,12 +645,11 @@ export async function parseErp(
       y: +p.y.toFixed(2),
       z: +rn.z.toFixed(2),
       name: rn.name,
-      number: rn.number || String(nodeNum),
+      number: newId,
       atmosphereLink: rn.atm,
       airTemp: rn.t,
       reducedPressure: rn.p,
     }));
-    nodeNum++;
   });
 
   // ── Горизонты: отметка = медиана Z узлов слоя ─────────────────────────────
@@ -683,7 +766,12 @@ export async function parseErp(
   const branches: TopoBranch[] = [];
   /** GUID выработки в файле → её id на нашей схеме (нужно позициям ПЛА). */
   const branchIdMap = new Map<string, string>();
-  let fans = 0, bulkheads = 0, skipped = 0, branchNum = 1;
+  // id ветви = номер выработки в АэроСети (поле Rib.Number), как и у узлов.
+  const branchIds = uniqueIds(rawBranches.map(rb => (rb.f["Rib.Number"] ?? "").trim()));
+  if (branchIds.duplicates > 0) warnings.push(`Повторяющихся номеров выработок в файле: ${branchIds.duplicates} — к повторам добавлен суффикс «_2», «_3»…`);
+  if (branchIds.empty > 0) warnings.push(`Выработок без номера: ${branchIds.empty} — им присвоены свободные номера`);
+  const branchIdOf = new Map(rawBranches.map((rb, i) => [rb, branchIds.ids[i]] as const));
+  let fans = 0, bulkheads = 0, skipped = 0;
   const alphaStat = { surface: 0, ribType: 0, rib: 0, default: 0, none: 0 };
   let bendLengths = 0, notPassable = 0, longwalls = 0;
 
@@ -711,7 +799,16 @@ export async function parseErp(
     // По образцу: 2 = задано пользователем (UserDefinedResistance). Прочие
     // значения означают расчёт по α — тогда переносим α, а R пересчитает солвер.
     const rMode = String(f["Airflow.AirResistanceCalculationType"] ?? "");
-    const useManualR = rMode === "2" && rUser > 0;
+    // 1 = по депрессионной съёмке: R = ΔP / Q² (ΔP — UserDefinedDepressionDelta,
+    // Q — DepressionSurveyDischarge, обе в единицах файла). Сверено с БГОК:
+    // R по съёмке совпало с ΔP/Q² по давлениям узлов до 10⁻¹⁵. Раньше такая
+    // выработка шла «по α» и получала R в 8 раз меньше.
+    const surveyQ = num(f["Airflow.DepressionSurveyDischarge"], 0);
+    const surveyDP = num(f["Airflow.UserDefinedDepressionDelta"], 0);
+    const rSurvey = rMode === "1" && surveyQ > 0 && surveyDP > 0
+      ? +(surveyDP / (surveyQ * surveyQ) * rFactor).toFixed(6) : 0;
+    const useManualR = (rMode === "2" && rUser > 0) || rSurvey > 0;
+    const rManual = rSurvey > 0 ? rSurvey : rUser;
 
     // Объект на ветви опознаём по его собственным полям (надёжно на любом
     // проекте), а код itemCode — как запасной признак для известных картинок.
@@ -730,8 +827,14 @@ export async function parseErp(
     // полях самого объекта, а не ветви (на ветви они есть не всегда).
     const ff = fanItem?.f ?? {};
     const bf = bulkItem?.f ?? {};
-    const fanPressureKgs = num(ff["Airflow.FanPressure"], 0)
-      || num(ff["Airflow.IdealVentilatorPressure"], 0)
+    // Несколько вентиляторов на одной выработке (в БГОК — №309: −396,8 и
+    // +425,8) работают последовательно: напоры складываются. Раньше брался
+    // только первый, и выработка получала −3891 Па вместо +284 Па.
+    const fanItems = rb.items.filter(it =>
+      ITEM_FAN.has(it.code) || FAN_FIELDS.some(k => it.f[k] != null && it.f[k] !== ""));
+    const fanSumKgs = fanItems.reduce((s, it) =>
+      s + (num(it.f["Airflow.FanPressure"], 0) || num(it.f["Airflow.IdealVentilatorPressure"], 0)), 0);
+    const fanPressureKgs = fanSumKgs
       || num(f["Airflow.FanPressure"], 0)
       || num(f["Airflow.IdealVentilatorPressure"], 0);
     const fanPressure = +(fanPressureKgs * PA_PER_KGS_M2).toFixed(2);
@@ -744,8 +847,9 @@ export async function parseErp(
 
     // Запоминаем соответствие «GUID выработки в файле → наш id»: по нему
     // позиции ПЛА ниже находят свои выработки и точку привязки выноски.
-    branchIdMap.set(rb.id, `b_erp_${branchNum}`);
-    branches.push(makeBranch(`b_erp_${branchNum}`, fromId, toId, {
+    const branchId = branchIdOf.get(rb)!;
+    branchIdMap.set(rb.id, branchId);
+    branches.push(makeBranch(branchId, fromId, toId, {
       type: f["Rib.Name"] || rt?.name || "",
       // Сечение и периметр берём как есть — в АэроСети они уже в м² и м.
       // Форму «custom» ставим потому, что файл хранит готовые S и P, а не
@@ -759,7 +863,7 @@ export async function parseErp(
       length,
       manualLength: true,   // длина уже известна (задана в файле или по трассе с изломами)
       resistanceMode: useManualR ? "manual" : "alpha",
-      manualR: useManualR ? rUser : 0,
+      manualR: useManualR ? rManual : 0,
       alphaCoef,
       // Название крепи из справочника АэроСети — для подписи в свойствах.
       surface: g.surfaceName || "",
@@ -795,7 +899,6 @@ export async function parseErp(
         g.defaulted ? "Параметры по умолчанию АэроСети: S=10 м², P=11,21 м" : "",
       ].filter(Boolean).join("\n"),
     }));
-    branchNum++;
   }
 
   log.push(`α: по крепи выработки ${alphaStat.surface}, по крепи типа ${alphaStat.ribType}, из поля выработки ${alphaStat.rib}, по умолчанию ${alphaStat.default}, нет ${alphaStat.none}`);

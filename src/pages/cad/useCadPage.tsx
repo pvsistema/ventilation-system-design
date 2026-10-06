@@ -23,7 +23,7 @@ import { type CsvImportResult } from "@/lib/import/importCommon";
 import { guessBulkheadTypeId } from "@/lib/import/csvFieldUtils";
 import { type VentsimCsvResult } from "@/lib/import/ventsimCsvImport";
 import { type Vent2Cdf3Result } from "@/lib/import/vent2Cdf3Import";
-import { type ErpImportResult } from "@/lib/erpImport";
+import { type ErpImportResult, remapErpIdsForAppend } from "@/lib/erpImport";
 import { exportErp } from "@/lib/erpExport";
 import { exportVent2Cdf3 } from "@/lib/vent2Cdf3Export";
 import { exportVent2Hdr } from "@/lib/vent2HdrExport";
@@ -2883,7 +2883,11 @@ export function useCadPage() {
    * выгрузку и требует отдельных файлов на узлы/выработки, а этот берёт
    * исходный проект целиком — со слоями, вентиляторами и перемычками.
    */
-  const handleErpImport = (result: ErpImportResult, mode: "replace" | "append") => {
+  const handleErpImport = (rawResult: ErpImportResult, mode: "replace" | "append") => {
+    // id импорта — номера из АэроСети; при добавлении к схеме разводим совпадения.
+    const result = mode === "append"
+      ? remapErpIdsForAppend(rawResult, nodes.map(n => n.id), branchesRaw.map(b => b.id))
+      : rawResult;
     // Условные обозначения перемычек. РАНЬШЕ импорт .erp переносил перемычку
     // только в свойства выработки: в списке она была, а значка на плане не
     // появлялось. Теперь на каждую выработку с перемычкой ставим УО — вид
