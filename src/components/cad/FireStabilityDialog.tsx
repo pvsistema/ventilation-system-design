@@ -8,7 +8,7 @@ import {
   saveStabilityFacts, clearStabilityFacts, getValidStabilityFacts,
 } from "@/lib/stabilitySession";
 import { exportStabilityAct } from "@/lib/stabilityActExport";
-import { loadActTitle, saveActTitle, loadLogoDataUrl, ACT_TITLE_HINTS, type ActTitleFields } from "@/lib/stabilityActTitle";
+import { loadActTitle, saveActTitle, ACT_TITLE_HINTS, type ActTitleFields } from "@/lib/stabilityActTitle";
 
 interface Props {
   branches: TopoBranch[];
@@ -71,7 +71,8 @@ export default function FireStabilityDialog({
   // Реквизиты титульного листа акта
   const [title, setTitle] = useState<ActTitleFields>(() => loadActTitle());
   // Раздел реквизитов открыт сразу — акт оформляется вместе с заполнением титула.
-  const [titleOpen, setTitleOpen] = useState(true);
+  // По умолчанию свёрнут — чтобы были видны сводка проверки и число ветвей.
+  const [titleOpen, setTitleOpen] = useState(false);
   const titleRef = useRef<HTMLDivElement>(null);
   useEffect(() => { saveActTitle(title); }, [title]);
   const setT = <K extends keyof ActTitleFields>(k: K, v: ActTitleFields[K]) => setTitle(t => ({ ...t, [k]: v }));
@@ -140,14 +141,7 @@ export default function FireStabilityDialog({
   }, [inputsKey, factsKey]);
 
   async function handleExport() {
-    // Титул свёрнут — сначала показываем его для заполнения, выгрузка по 2-му нажатию.
-    if (!titleOpen) {
-      setTitleOpen(true);
-      setTimeout(() => titleRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }), 0);
-      return;
-    }
     try {
-      const logoDataUrl = title.useLogo ? await loadLogoDataUrl() : undefined;
       await exportStabilityAct(result, {
         projectName: title.objectTitle || projectName,
         objectTitle: title.objectTitle,
@@ -160,7 +154,6 @@ export default function FireStabilityDialog({
         checkPeriod: title.checkPeriod || undefined,
         chairman: title.chairmanTitle || title.chairmanName ? { title: title.chairmanTitle, name: title.chairmanName } : undefined,
         members: title.members.filter(m => m.title || m.name),
-        logoDataUrl,
       });
       onClose();
     } catch (e) {
@@ -287,9 +280,19 @@ export default function FireStabilityDialog({
         {/* Реквизиты титульного листа */}
         <div ref={titleRef} className="px-4 py-2" style={{ borderBottom: "1px solid #e0e4ee" }}>
           <button onClick={() => setTitleOpen(o => !o)}
-            className="w-full flex items-center justify-between text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
-            <span>Титульный лист акта</span>
-            <Icon name={titleOpen ? "ChevronUp" : "ChevronDown"} size={14} />
+            title={titleOpen ? "Свернуть реквизиты титула" : "Развернуть реквизиты титула"}
+            className="w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded border transition-colors"
+            style={titleOpen
+              ? { background: "#eef4ff", borderColor: "#9db7e8", color: "var(--c-blue, #1d4ed8)" }
+              : { background: "#f6f8fc", borderColor: "#c8d4e8", color: "#374151" }}>
+            <span className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide">
+              <Icon name="FileSignature" fallback="FileText" size={13} />
+              Титульный лист акта
+            </span>
+            <span className="flex items-center gap-1 text-[11px] font-medium" style={{ color: "var(--c-blue, #1d4ed8)" }}>
+              {titleOpen ? "Свернуть" : "Заполнить"}
+              <Icon name={titleOpen ? "ChevronUp" : "ChevronDown"} size={14} />
+            </span>
           </button>
           {titleOpen && (
             <div className="pt-2 space-y-1.5">
@@ -327,14 +330,8 @@ export default function FireStabilityDialog({
                     className="p-0.5 rounded hover:bg-gray-100 text-gray-400"><Icon name="X" size={12} /></button>
                 </div>
               ))}
-              <div className="flex items-center justify-between">
-                <button onClick={() => setT("members", [...title.members, { title: "", name: "" }])}
-                  className="text-[11px] text-blue-700 hover:underline">+ Добавить члена комиссии</button>
-                <label className="flex items-center gap-1.5 text-[11px] text-gray-600">
-                  <input type="checkbox" checked={title.useLogo} onChange={e => setT("useLogo", e.target.checked)} />
-                  Логотип организации
-                </label>
-              </div>
+              <button onClick={() => setT("members", [...title.members, { title: "", name: "" }])}
+                className="text-[11px] text-blue-700 hover:underline">+ Добавить члена комиссии</button>
             </div>
           )}
         </div>
