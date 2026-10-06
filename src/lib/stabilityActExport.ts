@@ -37,6 +37,14 @@ export interface ActMeta {
   members?: { title: string; name: string }[];
   /** Период проведения проверки, напр. «с "04" мая 2026 г. по "29" мая 2026 г.». */
   checkPeriod?: string;
+  /** Организация в блоке «УТВЕРЖДАЮ» (напр. ЮПР ООО "Башкирская медь"). */
+  approverOrg?: string;
+  /** Год в строке даты утверждения. */
+  approveYear?: string;
+  /** Наименование объекта в заголовке акта (без кавычек «»). */
+  objectTitle?: string;
+  /** Логотип (data URL png/jpeg) в левом верхнем углу титула. */
+  logoDataUrl?: string;
 }
 
 const DEFAULT_META: ActMeta = {
@@ -116,6 +124,7 @@ function colsWidth(ws: Worksheet, from: number, to: number): number {
 }
 
 interface TextOpts {
+  font?: string;
   bold?: boolean;
   italic?: boolean;
   size?: number;
@@ -130,7 +139,7 @@ function para(ws: Worksheet, row: number, c1: number, c2: number, text: string, 
   const cell = ws.getCell(row, c1);
   const value = o.indent ? `\u00A0\u00A0\u00A0\u00A0\u00A0\u00A0${text}` : text;
   cell.value = value;
-  cell.font = { name: FONT, size, bold: o.bold, italic: o.italic };
+  cell.font = { name: o.font ?? FONT, size, bold: o.bold, italic: o.italic };
   cell.alignment = { horizontal: o.align ?? "left", vertical: "top", wrapText: true };
   const lines = linesFor(value, colsWidth(ws, c1, c2), size);
   const h = heightFor(lines, size);
@@ -345,54 +354,88 @@ function buildTableSheet(wb: Workbook, cat: StabilityCategory, rows: StabilityRo
 // Сетка из 10 колонок; подпись «УТВЕРЖДАЮ» — в правых колонках 7–10.
 const TITLE_COLS = [14, 14, 14, 14, 14, 14, 14, 14, 14, 18];
 
+const BODY_FONT = "Arial";
+
 function buildTitleSheet(wb: Workbook, m: ActMeta, result: StabilityResult): void {
   const ws = addSheet(wb, "Титул");
   const N = TITLE_COLS.length;
   TITLE_COLS.forEach((w, i) => { ws.getColumn(i + 1).width = w; });
 
+  // Логотип организации — левый верхний угол (как в образце)
+  if (m.logoDataUrl) {
+    try {
+      const ext = m.logoDataUrl.startsWith("data:image/jpeg") || m.logoDataUrl.startsWith("data:image/jpg") ? "jpeg" : "png";
+      const id = wb.addImage({ base64: m.logoDataUrl, extension: ext });
+      ws.addImage(id, { tl: { col: 0.1, row: 0.1 }, ext: { width: 120, height: 76 }, editAs: "oneCell" });
+    } catch { /* логотип необязателен */ }
+  }
+
+  // Блок «УТВЕРЖДАЮ» — справа, жирный Times
   const right = (row: number, text: string) => para(ws, row, 7, N, text, { bold: true, align: "right" });
+  const year = m.approveYear || String(new Date().getFullYear());
   right(1, "У Т В Е Р Ж Д А Ю:");
   right(2, m.approverTitle);
-  if (m.orgName) right(3, m.orgName);
+  const apOrg = m.approverOrg ?? m.orgName;
+  if (apOrg) right(3, apOrg);
   right(5, `_________________ ${m.approverName || "_______________"}`);
-  right(7, `«_____» ____________________ ${new Date().getFullYear()} г.`);
+  right(7, `«_____»____________________${year} г.`);
 
+  // Заголовок акта
   let row = 9;
-  para(ws, row++, 1, N, "АКТ", { bold: true, size: 14, align: "center" });
-  para(ws, row++, 1, N, "проверки устойчивости вентиляционных режимов в горных выработках", { bold: true, size: 14, align: "center" });
-  para(ws, row++, 1, N, `«${m.projectName}»${m.orgName ? " " + m.orgName : ""} при воздействии тепловой депрессии`, { bold: true, size: 14, align: "center" });
-  para(ws, row++, 1, N, "и оценка эффективности принятых мер по предотвращению самопроизвольного опрокидывания", { bold: true, size: 14, align: "center" });
-  para(ws, row++, 1, N, "вентиляционной струи при пожаре", { bold: true, size: 14, align: "center" });
-  para(ws, row++, 1, N, `(к ПМЛЛПА на ${m.period})`, { bold: true, size: 14, align: "center" });
+  const objectTitle = m.objectTitle || m.projectName;
+  const head = (t: string, size = 14) => para(ws, row++, 1, N, t, { bold: true, size, align: "center" });
+  head("АКТ", 16);
+  head("проверки устойчивости вентиляционных режимов в горных выработках");
+  head(`«${objectTitle}»${m.orgName ? " " + m.orgName : ""}  при воздействии тепловой депрессии`);
+  head("и оценка эффективности принятых мер по предотвращению самопроизвольного опрокидывания");
+  head("вентиляционной струи при пожаре");
+  head(`(к ПМЛЛПА на ${m.period})`);
   row++;
 
-  // Состав комиссии: должность слева, ФИО справа (как в образце)
-  para(ws, row++, 1, N, "Комиссия в составе:");
-  para(ws, row++, 1, N, "председателя комиссии:");
+  // Состав комиссии: должность слева, ФИО справа
+  const body: TextOpts = { font: BODY_FONT, size: 11 };
+  para(ws, row++, 1, N, "Комиссия в составе:", body);
+  para(ws, row++, 1, N, "председателя комиссии:", { ...body, italic: true });
   const person = (p?: { title: string; name: string }) => {
-    para(ws, row, 1, 8, p?.title || "_____________________________________________");
-    para(ws, row, 9, N, p?.name || "______________________");
+    para(ws, row, 1, 8, p?.title || "_____________________________________________", body);
+    para(ws, row, 9, N, p?.name || "______________________", body);
     row++;
   };
-  person(m.chairman ?? (m.approverName ? { title: `${m.approverTitle}${m.orgName ? " " + m.orgName : ""}`, name: m.approverName } : undefined));
-  para(ws, row++, 1, N, "члены комиссии:");
+  person(m.chairman ?? (m.approverName ? { title: `${m.approverTitle.toLowerCase()}${apOrg ? " " + apOrg : ""}`, name: m.approverName } : undefined));
+  para(ws, row++, 1, N, "члены комиссии:", { ...body, italic: true });
   const members = m.members && m.members.length > 0 ? m.members : [undefined, undefined, undefined];
   members.forEach(p => person(p));
   row++;
 
   para(ws, row++, 1, N,
-    `${m.checkPeriod ? "в период " + m.checkPeriod : "в период с «___» __________ 20__ г. по «___» __________ 20__ г."} провела проверку устойчивости проветривания горных выработок, эффективности принятых мер по предотвращению самопроизвольного опрокидывания вентиляционной струи при пожаре и определение критической депрессии и установила:`,
-    { align: "justify", indent: true });
+    `${m.checkPeriod ? "в период " + m.checkPeriod : "в период с \"___\" __________ 20__ года по \"___\" __________ 20__ года"} провела проверку устойчивости проветривания горных выработок, эффективности принятых мер по предотвращению самопроизвольного опрокидывания вентиляционной струи при пожаре и определение критической депрессии и установила:`,
+    { ...body, align: "justify" });
+
+  // П. 1 — номер жирным, текст обычным (rich text)
+  {
+    const r = row++;
+    ws.mergeCells(r, 1, r, N);
+    const c = ws.getCell(r, 1);
+    const t = "  На руднике определена устойчивость проветривания при пожаре в наклонных и вертикальных горных выработках, в том числе:";
+    c.value = { richText: [
+      { text: "1.", font: { name: BODY_FONT, size: 11, bold: true } },
+      { text: t, font: { name: BODY_FONT, size: 11 } },
+    ] };
+    c.alignment = { horizontal: "left", vertical: "top", wrapText: true };
+    ws.getRow(r).height = heightFor(linesFor("1." + t, colsWidth(ws, 1, N), 11), 11);
+  }
+  para(ws, row++, 1, N,
+    `Определение устойчивости проветривания горных выработок производилось на основе топологии горных выработок рудника с подземным способом разработки «${objectTitle}»${m.orgName ? " " + m.orgName : ""}, с использованием программного обеспечения «ПВ-Система». Мощность пожара рассчитывалась с использованием справочника пожарной нагрузки (Документ СИТИС-СПН-1, редакция 2 от 15.05.2014г.).`,
+    { ...body, align: "justify" });
 
   const cnt = (c: StabilityCategory) => result.byCategory[c].length;
-  para(ws, row++, 1, N, "1. На руднике определена устойчивость проветривания при пожаре в наклонных и вертикальных горных выработках, в том числе:", { bold: true, indent: true });
   CATEGORY_ORDER.forEach(c => {
     const cm = CATEGORY_META[c];
-    para(ws, row++, 1, N, `${cm.title.replace(/;$/, "")} — ${cnt(c)} (Таблица №${cm.table});`, { indent: true, align: "justify" });
+    para(ws, row++, 1, N, `${cm.title.replace(/;$/, "")} — ${cnt(c)} (Таблица №${cm.table});`, { ...body, indent: true, align: "justify" });
   });
   para(ws, row++, 1, N,
-    `Определение устойчивости проветривания горных выработок производилось на основе топологии горных выработок рудника с подземным способом разработки «${m.projectName}»${m.orgName ? " " + m.orgName : ""}, с использованием программного обеспечения «ПВ-Система». Отбор выработок: угол наклона ${result.angleFilter}° и более, длина ${result.lengthFilter} м и более. Температура наружного воздуха, принятая в расчёте, ${result.ambientTemp} °С. Мощность пожара рассчитывалась с использованием справочника пожарной нагрузки (Документ СИТИС-СПН-1, редакция 2 от 15.05.2014 г.).`,
-    { align: "justify", indent: true });
+    `Отбор выработок: угол наклона ${result.angleFilter}° и более, длина ${result.lengthFilter} м и более. Температура наружного воздуха, принятая в расчёте, ${result.ambientTemp} °С.`,
+    { ...body, align: "justify" });
 
   ws.pageSetup.printArea = `A1:${ws.getColumn(N).letter}${row - 1}`;
 }

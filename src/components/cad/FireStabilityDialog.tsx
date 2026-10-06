@@ -8,6 +8,7 @@ import {
   saveStabilityFacts, clearStabilityFacts, getValidStabilityFacts,
 } from "@/lib/stabilitySession";
 import { exportStabilityAct } from "@/lib/stabilityActExport";
+import { loadActTitle, saveActTitle, loadLogoDataUrl, type ActTitleFields } from "@/lib/stabilityActTitle";
 
 interface Props {
   branches: TopoBranch[];
@@ -67,6 +68,11 @@ export default function FireStabilityDialog({
     });
   }, [angleFilter, lengthFilter, ambientTemp]);
   const [factsStale, setFactsStale] = useState(false);
+  // Реквизиты титульного листа акта
+  const [title, setTitle] = useState<ActTitleFields>(() => loadActTitle());
+  const [titleOpen, setTitleOpen] = useState(false);
+  useEffect(() => { saveActTitle(title); }, [title]);
+  const setT = <K extends keyof ActTitleFields>(k: K, v: ActTitleFields[K]) => setTitle(t => ({ ...t, [k]: v }));
 
   const result = useMemo(() => {
     const angle  = parseFloat(angleFilter.replace(",", ".")) || 0;
@@ -133,7 +139,21 @@ export default function FireStabilityDialog({
 
   async function handleExport() {
     try {
-      await exportStabilityAct(result, { projectName });
+      const logoDataUrl = title.useLogo ? await loadLogoDataUrl() : undefined;
+      await exportStabilityAct(result, {
+        projectName: title.objectTitle || projectName,
+        objectTitle: title.objectTitle || projectName,
+        orgName: title.orgName,
+        approverTitle: title.approverTitle,
+        approverOrg: title.approverOrg,
+        approverName: title.approverName,
+        approveYear: title.approveYear,
+        period: title.period,
+        checkPeriod: title.checkPeriod || undefined,
+        chairman: title.chairmanTitle || title.chairmanName ? { title: title.chairmanTitle, name: title.chairmanName } : undefined,
+        members: title.members.filter(m => m.title || m.name),
+        logoDataUrl,
+      });
       onClose();
     } catch (e) {
       console.error("Ошибка выгрузки акта устойчивости", e);
@@ -252,6 +272,58 @@ export default function FireStabilityDialog({
                   </div>
                 );
               })()}
+            </div>
+          )}
+        </div>
+
+        {/* Реквизиты титульного листа */}
+        <div className="px-4 py-2" style={{ borderBottom: "1px solid #e0e4ee" }}>
+          <button onClick={() => setTitleOpen(o => !o)}
+            className="w-full flex items-center justify-between text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+            <span>Титульный лист акта</span>
+            <Icon name={titleOpen ? "ChevronUp" : "ChevronDown"} size={14} />
+          </button>
+          {titleOpen && (
+            <div className="pt-2 space-y-1.5">
+              {([
+                ["approverTitle", "Утверждает: должность"],
+                ["approverOrg", "Утверждает: организация"],
+                ["approverName", "Утверждает: ФИО"],
+                ["approveYear", "Год утверждения"],
+                ["objectTitle", "Объект (в «»)"],
+                ["orgName", "Организация"],
+                ["period", "Период ПМЛЛПА"],
+                ["checkPeriod", "Период проверки"],
+                ["chairmanTitle", "Председатель: должность"],
+                ["chairmanName", "Председатель: ФИО"],
+              ] as [keyof ActTitleFields, string][]).map(([k, label]) => (
+                <div key={k} className="flex items-center gap-2">
+                  <span className="text-[11px] text-gray-600 w-40 shrink-0">{label}</span>
+                  <input value={title[k] as string} onChange={e => setT(k, e.target.value as never)}
+                    className="text-[11px] border border-gray-300 rounded px-2 py-0.5 flex-1 min-w-0" />
+                </div>
+              ))}
+              <div className="text-[11px] text-gray-600 pt-1">Члены комиссии:</div>
+              {title.members.map((m, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                  <input value={m.title} placeholder="Должность"
+                    onChange={e => setT("members", title.members.map((x, j) => j === i ? { ...x, title: e.target.value } : x))}
+                    className="text-[11px] border border-gray-300 rounded px-2 py-0.5 flex-1 min-w-0" />
+                  <input value={m.name} placeholder="ФИО"
+                    onChange={e => setT("members", title.members.map((x, j) => j === i ? { ...x, name: e.target.value } : x))}
+                    className="text-[11px] border border-gray-300 rounded px-2 py-0.5 w-28" />
+                  <button onClick={() => setT("members", title.members.filter((_, j) => j !== i))}
+                    className="p-0.5 rounded hover:bg-gray-100 text-gray-400"><Icon name="X" size={12} /></button>
+                </div>
+              ))}
+              <div className="flex items-center justify-between">
+                <button onClick={() => setT("members", [...title.members, { title: "", name: "" }])}
+                  className="text-[11px] text-blue-700 hover:underline">+ Добавить члена комиссии</button>
+                <label className="flex items-center gap-1.5 text-[11px] text-gray-600">
+                  <input type="checkbox" checked={title.useLogo} onChange={e => setT("useLogo", e.target.checked)} />
+                  Логотип «Башмедь»
+                </label>
+              </div>
             </div>
           )}
         </div>
