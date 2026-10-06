@@ -35,6 +35,8 @@ interface Props {
   projectName?: string;
   /** Состояние лицензии (ключ нужен для проверки кода доступа к отчёту) */
   license?: { status?: string; info?: { key?: string; licensed?: boolean } | null; fingerprint?: string } | null;
+  /** Ветви с полной депрессией (dPTotal/rTotal) — для раздела устойчивости. */
+  stabilityBranches?: TopoBranch[];
 }
 
 interface GvuRow {
@@ -62,7 +64,7 @@ function classify(a: number): { label: string; color: string } {
   return { label: "Легкопроветриваемая", color: "var(--c-green, #16a34a)" };
 }
 
-export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license }: Props) {
+export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches }: Props) {
   const [tab, setTab] = useState<"opening" | "report">("opening");
   // Вентиляторы (ГВУ/ВВУ), установленные в открытой схеме. ГВУ идут первыми.
   const fanBranches = useMemo(
@@ -199,6 +201,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
               bulkheads={bulkheads ?? new Map()}
               projectName={projectName}
               license={license}
+              stabilityBranches={stabilityBranches}
             />
           </div>
         ) : (

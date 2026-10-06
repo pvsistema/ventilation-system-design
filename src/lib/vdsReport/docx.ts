@@ -310,9 +310,18 @@ export async function buildVdsDocx(form: VdsReportForm, r: VdsCalcResult): Promi
   const stabRow = (x: typeof r.stabilityDown[number], i: number) => [String(i + 1), x.branchNumber, x.name, f(x.angleDeg), f(x.length, 0), f(x.area), f(x.velocityNormal), f(x.flowNormal), f(x.firePower_MW), f(x.fireTemp_C), x.stability, x.fireLoadDesc];
   if (!r.solved) children.push(p("Расчёт сети не выполнен — устойчивость при пожаре не определялась."));
   else {
-    children.push(T("Результаты расчёта максимальной тепловой депрессии для выработок с углом наклона 5° и более и длиной 30 м и более с нисходящим проветриванием"));
+    const cond = `с углом наклона ${f(r.stabilityAngle, 0)}° и более и длиной ${f(r.stabilityLength, 0)} м и более`;
+    children.push(p(
+      `Расчёт выполнен при температуре воздуха ${f(r.stabilityTemp, 0)} °C. ` +
+      (r.stabilityBasis === "fact"
+        ? "Устойчивость определена по итеративному расчёту вентиляционной сети при пожаре (очаг в каждой выработке с пожарной нагрузкой)."
+        : r.stabilityBasis === "partial"
+          ? "Устойчивость определена по итеративному расчёту сети при пожаре, для части выработок — по нормативной оценке (отмечены «(оценка)»)."
+          : "Устойчивость определена по нормативной оценке (Прил. 5, 7) без итеративного расчёта сети при пожаре."),
+    ));
+    children.push(T(`Результаты расчёта максимальной тепловой депрессии для выработок ${cond} с нисходящим проветриванием`));
     children.push(table(stabHead, r.stabilityDown.map(stabRow), [2, 11]));
-    children.push(T("Результаты расчёта максимальной тепловой депрессии для выработок с углом наклона 5° и более и длиной 30 м и более с восходящим проветриванием"));
+    children.push(T(`Результаты расчёта максимальной тепловой депрессии для выработок ${cond} с восходящим проветриванием`));
     children.push(table(stabHead, r.stabilityUp.map(stabRow), [2, 11]));
   }
 

@@ -20,7 +20,7 @@
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import { getFanById, fanQMax } from "@/lib/fanCurves";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
-import { calcFireStability, type StabilityRow } from "@/lib/fireStability";
+import { calcFireStability, type StabilityRow, type FireStabilityFact } from "@/lib/fireStability";
 import type { VdsReportForm } from "./types";
 
 const G = 9.81;
@@ -159,6 +159,23 @@ export interface VdsCalcResult {
   stabilityDown: StabilityRow[];
   stabilityUp: StabilityRow[];
   unstableCount: number;
+  /** Условия отбора и основание вердикта — те же, что в «Акте устойчивости». */
+  stabilityAngle: number;
+  stabilityLength: number;
+  stabilityTemp: number;
+  /** "fact" — по расчёту сети при пожаре; "partial" — частично; "estimate" — нормативная оценка. */
+  stabilityBasis: "fact" | "partial" | "estimate";
+}
+
+/** Данные для раздела устойчивости — общие с «Актом устойчивости». */
+export interface VdsStabilityInput {
+  /** Ветви с полной депрессией/сопротивлением (dPTotal/rTotal), как в акте. */
+  branches: TopoBranch[];
+  angleFilter: number;
+  lengthFilter: number;
+  ambientTemp: number;
+  /** Действующий расчёт по факту (null — не выполнялся или устарел). */
+  facts: Map<string, FireStabilityFact> | null;
 }
 
 function branchNo(b: TopoBranch, nodeById: Map<string, TopoNode>): string {
@@ -178,6 +195,7 @@ export function calcVdsReport(
   solved: boolean,
   form: VdsReportForm,
   bulkheads: Map<string, BranchBulkheadInfo>,
+  stability?: VdsStabilityInput,
 ): VdsCalcResult {
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   const atm = new Set(nodes.filter(n => n.atmosphereLink).map(n => n.id));
@@ -397,12 +415,26 @@ export function calcVdsReport(
   let stabilityDown: StabilityRow[] = [];
   let stabilityUp: StabilityRow[] = [];
   let unstableCount = 0;
+  // Условия и результат — те же, что в «Акте устойчивости» (вкладка
+  // «Вентиляция»). Раньше здесь были жёсткие 5° / 30 м, температура съёмки и
+  // только нормативная оценка — документы по одной схеме расходились.
+  const stabilityAngle  = stability?.angleFilter  ?? 5;
+  const stabilityLength = stability?.lengthFilter ?? 30;
+  const stabilityTemp   = stability?.ambientTemp  ?? num(form.tSurvey, 20);
+  let stabilityBasis: "fact" | "partial" | "estimate" = "estimate";
   if (solved) {
     try {
-      const st = calcFireStability(branches, nodes, { angleFilter: 5, lengthFilter: 30, ambientTemp: num(form.tSurvey, 20) });
+      const st = calcFireStability(stability?.branches ?? branches, nodes, {
+        angleFilter: stabilityAngle,
+        lengthFilter: stabilityLength,
+        ambientTemp: stabilityTemp,
+        reversalFacts: stability?.facts ?? undefined,
+      });
       stabilityDown = [...st.byCategory["descending-incline"], ...st.byCategory["descending-vertical"]];
       stabilityUp = [...st.byCategory["ascending-incline"], ...st.byCategory["ascending-vertical"]];
       unstableCount = st.totalUnstable;
+      const byFact = st.rows.filter(r => r.basis === "fact").length;
+      stabilityBasis = st.rows.length > 0 && byFact === st.rows.length ? "fact" : byFact > 0 ? "partial" : "estimate";
     } catch (e) {
       console.warn("[vds] fire stability failed", e);
     }
@@ -424,6 +456,7 @@ export function calcVdsReport(
     supplyPct: requiredAir > 0 ? (QinMine / requiredAir) * 100 : 0,
     Hmine, Nud, Aeq, ventDifficulty, openingClass,
     stabilityDown, stabilityUp, unstableCount,
+    stabilityAngle, stabilityLength, stabilityTemp, stabilityBasis,
   };
 }
 

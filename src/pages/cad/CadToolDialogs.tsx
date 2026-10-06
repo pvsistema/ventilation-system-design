@@ -463,6 +463,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           bulkheads={p.vdsBulkheads}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
           license={p.license}
+          stabilityBranches={p.branchesWithTotalDep ?? p.branches}
         />
       )}
 

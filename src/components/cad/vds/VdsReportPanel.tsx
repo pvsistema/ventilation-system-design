@@ -6,6 +6,7 @@ import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 import { emptyVdsForm, type VdsReportForm } from "@/lib/vdsReport/types";
 import { calcVdsReport, f } from "@/lib/vdsReport/calc";
+import { getStabilitySettings, getValidStabilityFacts } from "@/lib/stabilitySession";
 import { buildConclusions } from "@/lib/vdsReport/conclusions";
 import { buildVdsDocx, downloadBlob } from "@/lib/vdsReport/docx";
 import { loadVdsAccess, verifyVdsCode, clearVdsAccess, VDS_OFFLINE_GRACE_MS } from "@/lib/vdsReport/access";
@@ -24,13 +25,15 @@ interface Props {
   bulkheads: Map<string, BranchBulkheadInfo>;
   projectName: string;
   license: LicenseLike | null | undefined;
+  /** Ветви с полной депрессией/сопротивлением — как в «Акте устойчивости». */
+  stabilityBranches?: TopoBranch[];
 }
 
 type Access = "checking" | "locked" | "granted" | "nolicense";
 
 const FORM_LS = (project: string) => `pvs_vds_report_form:${project || "default"}`;
 
-export default function VdsReportPanel({ branches, nodes, solved, bulkheads, projectName, license }: Props) {
+export default function VdsReportPanel({ branches, nodes, solved, bulkheads, projectName, license, stabilityBranches }: Props) {
   const licKey = license?.info?.key && license?.info?.licensed !== false ? license.info.key : "";
   const isOfflineKey = !!licKey && licKey.startsWith("PVSO.");
   const [access, setAccess] = useState<Access>("checking");
@@ -85,10 +88,21 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
     [branches],
   );
 
-  const result = useMemo(
-    () => (access === "granted" ? calcVdsReport(branches, nodes, solved, form, bulkheads) : null),
-    [access, branches, nodes, solved, form, bulkheads],
-  );
+  // Раздел устойчивости — по тем же условиям и тому же расчёту по факту, что
+  // и «Акт устойчивости» (вкладка «Вентиляция»). Факт берётся, только если он
+  // посчитан для ТЕКУЩЕГО состояния схемы, иначе — нормативная оценка.
+  const result = useMemo(() => {
+    if (access !== "granted") return null;
+    const st = getStabilitySettings();
+    const sb = stabilityBranches ?? branches;
+    return calcVdsReport(branches, nodes, solved, form, bulkheads, {
+      branches: sb,
+      angleFilter: st.angleFilter,
+      lengthFilter: st.lengthFilter,
+      ambientTemp: st.ambientTemp,
+      facts: getValidStabilityFacts(sb, nodes, st.ambientTemp),
+    });
+  }, [access, branches, stabilityBranches, nodes, solved, form, bulkheads]);
 
   async function exportDocx() {
     if (!result) return;
@@ -199,6 +213,20 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
             вентсооружений: {r.structures.length} (с превышением утечек: {r.structures.filter(s => s.violation).length}) ·
             наклонных выработок в расчёте устойчивости: {r.stabilityDown.length + r.stabilityUp.length}
           </div>
+          {r.solved && (
+            <div className="text-[11px] px-2 py-1.5 rounded flex items-start gap-1.5"
+              style={r.stabilityBasis === "fact"
+                ? { background: "var(--c-tint-green, #f0fdf4)", color: "var(--c-green, #15803d)", border: "1px solid #bbf7d0" }
+                : { background: "var(--c-tint-amber, #fff4e5)", color: "var(--c-amber, #8a5a00)", border: "1px solid #f0d9b5" }}>
+              <Icon name={r.stabilityBasis === "fact" ? "CheckCircle2" : "Info"} size={12} className="shrink-0 mt-[1px]" />
+              <span>
+                Устойчивость при пожаре: угол ≥ {f(r.stabilityAngle, 0)}°, длина ≥ {f(r.stabilityLength, 0)} м, t = {f(r.stabilityTemp, 0)} °C —
+                {r.stabilityBasis === "fact" ? " по расчёту сети при пожаре (как в Акте устойчивости)."
+                  : r.stabilityBasis === "partial" ? " частично по расчёту сети, остальное — нормативная оценка."
+                  : " нормативная оценка. Для расчёта по факту откройте «Вентиляция → Акт устойчивости» и нажмите «Рассчитать факт опрокидывания»."}
+              </span>
+            </div>
+          )}
 
           <div>
             <div className="font-semibold text-gray-800 mb-1">Выводы (формируются автоматически)</div>

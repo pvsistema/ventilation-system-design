@@ -1,36 +1,12 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { Position } from "@/lib/positions";
-import { calcFireStability, hasFireLoad, type StabilityCategory, type FireStabilityFact } from "@/lib/fireStability";
-import { getThermalDepMethod } from "@/lib/fireCalculator";
-
-/**
- * Отпечаток входных данных расчёта по факту. Факт опрокидывания зависит от
- * расходов сети (после «Расчёта сети»), пожарной нагрузки, геометрии и отметок
- * узлов. Если что-то из этого поменялось — посчитанный ранее факт устарел и в
- * акт попадать не должен.
- */
-function stabilityInputsKey(branches: TopoBranch[], nodes: TopoNode[]): string {
-  const parts: string[] = [getThermalDepMethod()];
-  for (const b of branches) {
-    // Расход/сопротивление/депрессия — у ВСЕХ ветвей: сеть влияет на факт целиком.
-    parts.push(`${b.id}|${b.fromId}|${b.toId}|${(b.flow ?? 0).toFixed(4)}|${b.rTotal ?? b.resistance ?? 0}|${b.dPTotal ?? b.dP ?? 0}|${b.length}|${b.area}|${b.angle}`);
-    if (hasFireLoad(b)) {
-      // Все поля пожарной нагрузки и положения очага.
-      const fl = Object.entries(b)
-        // fireComputed*/fireThermalDepression — результаты аварийного расчёта,
-        // а не исходные данные: их перезапись не делает факт устаревшим.
-        .filter(([k]) => k.startsWith("fire") && !k.startsWith("fireComputed") && k !== "fireThermalDepression")
-        .map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`)
-        .sort()
-        .join(",");
-      parts.push(fl);
-    }
-  }
-  for (const n of nodes) parts.push(`${n.id}:${n.z ?? 0}:${n.surveyZ ?? ""}:${n.atmosphereLink ? 1 : 0}`);
-  return parts.join(";");
-}
+import { calcFireStability, type StabilityCategory, type FireStabilityFact } from "@/lib/fireStability";
+import {
+  stabilityInputsKey, getStabilitySettings, setStabilitySettings,
+  saveStabilityFacts, clearStabilityFacts, getValidStabilityFacts,
+} from "@/lib/stabilitySession";
 import { exportStabilityAct } from "@/lib/stabilityActExport";
 
 interface Props {
@@ -63,18 +39,33 @@ export default function FireStabilityDialog({
   branches, nodes, positions = [], projectName = "Подземный рудник", solved,
   computeReversalFacts, onClose,
 }: Props) {
-  const [angleFilter, setAngleFilter]   = useState("5");
-  const [lengthFilter, setLengthFilter] = useState("30");
-  const [ambientTemp, setAmbientTemp]   = useState("20");
-  // Факты опрокидывания из реального расчёта сети (null = ещё не считали)
-  const [reversalFacts, setReversalFacts] = useState<Map<string, FireStabilityFact> | null>(null);
+  // Условия отбора общие с «Отчётом ВДС» (stabilitySession): оба документа
+  // должны отбирать одни и те же выработки.
+  const init = getStabilitySettings();
+  const [angleFilter, setAngleFilter]   = useState(String(init.angleFilter));
+  const [lengthFilter, setLengthFilter] = useState(String(init.lengthFilter));
+  const [ambientTemp, setAmbientTemp]   = useState(String(init.ambientTemp));
+  // Факты опрокидывания из реального расчёта сети (null = ещё не считали).
+  // Если расчёт уже делали для этой же схемы — подхватываем его.
+  const [reversalFacts, setReversalFacts] = useState<Map<string, FireStabilityFact> | null>(
+    () => getValidStabilityFacts(branches, nodes, init.ambientTemp));
   const [computing, setComputing] = useState(false);
   // Прогресс проверки: сколько ветвей проверено из скольких
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null);
   // Отпечаток данных, по которым посчитан факт. Факт показывается и уходит в акт
   // ТОЛЬКО пока отпечаток совпадает с текущими данными схемы.
   const inputsKey = useMemo(() => stabilityInputsKey(branches, nodes), [branches, nodes]);
-  const [factsKey, setFactsKey] = useState<string | null>(null);
+  const [factsKey, setFactsKey] = useState<string | null>(() => (reversalFacts ? inputsKey : null));
+
+  // Условия отбора сохраняем — их же применит «Отчёт ВДС».
+  useEffect(() => {
+    const num = (v: string, d: number) => { const x = parseFloat(v.replace(",", ".")); return Number.isFinite(x) ? x : d; };
+    setStabilitySettings({
+      angleFilter: num(angleFilter, 0),
+      lengthFilter: num(lengthFilter, 0),
+      ambientTemp: num(ambientTemp, 20),
+    });
+  }, [angleFilter, lengthFilter, ambientTemp]);
   const [factsStale, setFactsStale] = useState(false);
 
   const result = useMemo(() => {
@@ -106,6 +97,7 @@ export default function FireStabilityDialog({
         setProgress(prev => ({ done: Math.max(prev?.done ?? 0, done), total: tot })));
       setReversalFacts(facts);
       setFactsKey(keyAtStart);
+      saveStabilityFacts(facts, keyAtStart, amb);
       setFactsStale(false);
     } finally {
       setComputing(false);
@@ -116,11 +108,14 @@ export default function FireStabilityDialog({
   // настраивает условия отбора (угол, длина, температура), затем считает.
   // При изменении температуры воздуха ранее посчитанный факт устаревает
   // (от неё зависит расход и депрессия), поэтому сбрасываем его.
+  const firstRender = useRef(true);
   useEffect(() => {
+    // На открытии окна не сбрасываем — там мог быть подхвачен прежний расчёт.
+    if (firstRender.current) { firstRender.current = false; return; }
     setReversalFacts(null);
     setFactsKey(null);
     setProgress(null);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    clearStabilityFacts();
   }, [ambientTemp]);
 
   // Схема изменилась после расчёта (пересчёт сети, правка нагрузки, отметок,
@@ -132,6 +127,7 @@ export default function FireStabilityDialog({
       setFactsKey(null);
       setProgress(null);
       setFactsStale(true);
+      clearStabilityFacts();
     }
   }, [inputsKey, factsKey]);
 
