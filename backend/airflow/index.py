@@ -457,8 +457,10 @@ def fan_H_display(e, Q):
 
 
 def fan_dH(e, Q):
-    """|dH/dQ_total| для curve-вентилятора (с учётом параллели)."""
-    if not e.get("hasFan"):
+    """|dH/dQ_total| для curve-вентилятора (с учётом параллели).
+    Остановленный вентилятор (fanStopped) напора не создаёт (fan_H=0), поэтому
+    и производная = 0 — иначе знаменатель поправки δQ завышается."""
+    if not e.get("hasFan") or e.get("fanStopped"):
         return 0.0
     if e.get("fanMode") == "fixed":
         return FIXED_FLOW_K if abs(Q) < _fixed_q(e) else 0.0
@@ -2644,8 +2646,11 @@ def _mkr_fan_H(e, Q):
 
 
 def _mkr_fan_dH(e, Q):
-    """|dH/dQ_total| для знаменателя δQ."""
-    if e.get("hasFan") and e.get("fanMode") == "fixed":
+    """|dH/dQ_total| для знаменателя δQ.
+    Остановленный вентилятор (fanStopped) — H=0, значит и dH/dQ=0."""
+    if not e.get("hasFan") or e.get("fanStopped"):
+        return 0.0
+    if e.get("fanMode") == "fixed":
         return FIXED_FLOW_K if abs(Q) < _fixed_q(e) else 0.0
     if not e.get("hasFan") or e.get("fanMode", "constant") != "curve":
         return 0.0
@@ -3514,14 +3519,25 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
     # выполнен), а ΔH застряла на «полке» метода. Для больших сетей с
     # перемычками (большой разброс R) это физически корректный результат —
     # метод Кросса достиг своего предела точности по давлению.
+    # «Полка» допустима только в ограниченных пределах по давлению: не более
+    # 5× допуска (≈2.5% от макс. напора сети). Иначе при малом δQ, но большой
+    # |ΔH| (2-й закон Кирхгофа не выполнен) расчёт ложно помечался «сошлось».
     q_ok = max_dq < tol_q_rel * 5.0
+    h_limit = tol_h_rel * 5.0
+    h_ok = max_dh < h_limit
     if not converged:
-        if q_ok:
-            converged = True  # результат достоверен: баланс расходов сошёлся
+        if q_ok and h_ok:
+            converged = True  # результат достоверен: баланс расходов сошёлся, ΔH в пределах
             diag.append({"level": "info", "category": "convergence",
                          "message": f"Расход сбалансирован (δQ={max_dq:.4f} м³/с). "
-                                    f"Остаточная невязка по давлению |ΔH|={max_dh:.1f} Па — "
-                                    f"предел точности метода на данной сети."})
+                                    f"Остаточная невязка по давлению |ΔH|={max_dh:.1f} Па "
+                                    f"(предел {h_limit:.1f} Па) — предел точности метода на данной сети."})
+        elif q_ok:
+            diag.append({"level": "warning", "category": "convergence",
+                         "message": f"Расход сбалансирован (δQ={max_dq:.4f} м³/с), но невязка по давлению "
+                                    f"|ΔH|={max_dh:.1f} Па превышает предел {h_limit:.1f} Па — "
+                                    f"2-й закон Кирхгофа не выполнен, результат недостоверен. "
+                                    f"Попробуйте метод Кросса или уменьшите фактор сходимости α."})
         else:
             diag.append({"level": "warning", "category": "convergence",
                          "message": f"МКР не сошлось за {max_iter} итераций. |ΔH|={max_dh:.2f} Па (допуск {tol_h_rel:.2f}), δQ={max_dq:.4f} м³/с"})
