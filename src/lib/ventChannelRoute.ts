@@ -16,7 +16,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 
-export type RouteEndKind = "surface" | "shaft" | "fork" | "dead" | "manual";
+export type RouteEndKind = "surface" | "surfaceShaft" | "shaft" | "fork" | "dead" | "manual";
 
 export interface RouteEnd {
   nodeId: string;
@@ -34,6 +34,7 @@ export interface ChannelRoute {
 
 export const END_LABEL: Record<RouteEndKind, string> = {
   surface: "поверхность",
+  surfaceShaft: "сопряжение с выходом на поверхность",
   shaft: "сопряжение со стволом",
   fork: "развилка",
   dead: "тупик",
@@ -57,6 +58,41 @@ export function buildAdjacency(branches: TopoBranch[]): Map<string, TopoBranch[]
 
 const other = (b: TopoBranch, nodeId: string) => (b.fromId === nodeId ? b.toId : b.fromId);
 
+/**
+ * Вертикальная выработка из узла выходит на поверхность: идём по цепочке
+ * вертикальных ветвей вверх и проверяем, есть ли на ней узел связи с
+ * атмосферой. Такой узел — сопряжение с выходом на поверхность (устье
+ * ствола/шурфа), а не подземное сопряжение со стволом.
+ */
+function verticalLeadsToSurface(
+  nodeId: string, vert: TopoBranch, adj: Map<string, TopoBranch[]>,
+  nodeById: Map<string, TopoNode>, thr: number,
+): boolean {
+  const seen = new Set<string>([vert.id]);
+  const stack: string[] = [other(vert, nodeId)];
+  const visitedNodes = new Set<string>([nodeId]);
+  while (stack.length) {
+    const u = stack.pop()!;
+    if (visitedNodes.has(u)) continue;
+    visitedNodes.add(u);
+    if (nodeById.get(u)?.atmosphereLink) return true;
+    for (const e of adj.get(u) ?? []) {
+      if (seen.has(e.id) || !isVertical(e, thr)) continue;
+      seen.add(e.id);
+      stack.push(other(e, u));
+    }
+  }
+  return false;
+}
+
+/** Тип узла-сопряжения с вертикальной выработкой: ствол или выход на поверхность. */
+function shaftKind(
+  nodeId: string, verts: TopoBranch[], adj: Map<string, TopoBranch[]>,
+  nodeById: Map<string, TopoNode>, thr: number,
+): RouteEndKind {
+  return verts.some(v => !verticalLeadsToSurface(nodeId, v, adj, nodeById, thr)) ? "shaft" : "surfaceShaft";
+}
+
 /** Идём от узла startNode, пришли по ветви prev. Возвращает ветви и узлы пути. */
 function walk(
   startNode: string,
@@ -74,9 +110,12 @@ function walk(
     const node = nodeById.get(u);
     if (node?.atmosphereLink) return { branches: out, nodes, end: { nodeId: u, kind: "surface" } };
     const inc = (adj.get(u) ?? []).filter(b => b.id !== cur.id && !used.has(b.id) && !b.isLeakage);
-    // Сопряжение со стволом: в узел входит вертикальная выработка, а мы пришли не по ней
-    if (!isVertical(cur, thr) && inc.some(b => isVertical(b, thr))) {
-      return { branches: out, nodes, end: { nodeId: u, kind: "shaft" } };
+    // Сопряжение с вертикальной выработкой (мы пришли не по ней): подземный
+    // ствол или выход на поверхность — различаем по тому, ведёт ли вертикаль
+    // к узлу связи с атмосферой.
+    const verts = inc.filter(b => isVertical(b, thr));
+    if (!isVertical(cur, thr) && verts.length > 0) {
+      return { branches: out, nodes, end: { nodeId: u, kind: shaftKind(u, verts, adj, nodeById, thr) } };
     }
     if (inc.length === 0) return { branches: out, nodes, end: { nodeId: u, kind: "dead" } };
     if (inc.length > 1) return { branches: out, nodes, end: { nodeId: u, kind: "fork" } };
@@ -110,7 +149,8 @@ export function traceChannelRoute(
   let end = b.end;
 
   // Ориентируем: ствол — в конце, поверхность — в начале
-  const flip = start.kind === "shaft" && end.kind !== "shaft" || (end.kind === "surface" && start.kind !== "surface");
+  const isSurf = (k: RouteEndKind) => k === "surface" || k === "surfaceShaft";
+  const flip = (start.kind === "shaft" && end.kind !== "shaft") || (isSurf(end.kind) && !isSurf(start.kind));
   if (flip) {
     ids = ids.reverse();
     nIds = nIds.reverse();
@@ -137,4 +177,74 @@ export function routeNodes(ids: string[], byId: Map<string, TopoBranch>): string
     res.push(u);
   }
   return res;
+}
+
+/**
+ * Маршрут канала между узлами А и Б, обязательно проходящий через ветвь
+ * вентилятора: путь А → (один конец вентилятора) + вентилятор + (другой
+ * конец) → Б. Каждая половина — кратчайшая по длине (Дейкстра), ветвь
+ * вентилятора и ветви первой половины во второй не используются. Из двух
+ * ориентаций вентилятора берётся более короткая. null — пути нет.
+ */
+export function routeBetweenNodes(
+  fan: TopoBranch,
+  aNode: string,
+  bNode: string,
+  branches: TopoBranch[],
+): { branchIds: string[]; nodeIds: string[] } | null {
+  const adj = buildAdjacency(branches.filter(x => !x.isLeakage));
+  const shortest = (src: string, dst: string, banned: Set<string>, bannedNodes: Set<string>) => {
+    if (src === dst) return { ids: [] as string[], nodes: [src], len: 0 };
+    const dist = new Map<string, number>([[src, 0]]);
+    const prev = new Map<string, { node: string; br: string }>();
+    const done = new Set<string>();
+    for (;;) {
+      let u: string | null = null, best = Infinity;
+      for (const [k, v] of dist) if (!done.has(k) && v < best) { best = v; u = k; }
+      if (u === null) return null;
+      if (u === dst) break;
+      done.add(u);
+      for (const e of adj.get(u) ?? []) {
+        if (banned.has(e.id)) continue;
+        const w = other(e, u);
+        if (bannedNodes.has(w) && w !== dst) continue;
+        const d = best + Math.max(0.01, e.length || 0);
+        if (d < (dist.get(w) ?? Infinity)) { dist.set(w, d); prev.set(w, { node: u, br: e.id }); }
+      }
+    }
+    const ids: string[] = [], nds: string[] = [dst];
+    let c = dst;
+    while (c !== src) { const p = prev.get(c)!; ids.unshift(p.br); nds.unshift(p.node); c = p.node; }
+    return { ids, nodes: nds, len: dist.get(dst)! };
+  };
+  const tryDir = (p: string, q: string) => {
+    const left = shortest(aNode, p, new Set([fan.id]), new Set([q]));
+    if (!left) return null;
+    const used = new Set([fan.id, ...left.ids]);
+    const right = shortest(q, bNode, used, new Set(left.nodes));
+    if (!right) return null;
+    return {
+      branchIds: [...left.ids, fan.id, ...right.ids],
+      nodeIds: [...left.nodes, ...right.nodes],
+      len: left.len + right.len,
+    };
+  };
+  const r1 = tryDir(fan.fromId, fan.toId);
+  const r2 = tryDir(fan.toId, fan.fromId);
+  const r = !r1 ? r2 : !r2 ? r1 : (r1.len <= r2.len ? r1 : r2);
+  return r ? { branchIds: r.branchIds, nodeIds: r.nodeIds } : null;
+}
+
+/** Фактический тип конца маршрута по узлу (для подписи). */
+export function classifyEnd(nodeId: string, prevBranchId: string | undefined, branches: TopoBranch[], nodes: TopoNode[], thr: number): RouteEndKind {
+  const nodeById = new Map(nodes.map(n => [n.id, n] as const));
+  if (nodeById.get(nodeId)?.atmosphereLink) return "surface";
+  const adj = buildAdjacency(branches.filter(x => !x.isLeakage));
+  const inc = (adj.get(nodeId) ?? []).filter(x => x.id !== prevBranchId);
+  const prev = branches.find(x => x.id === prevBranchId);
+  const verts = inc.filter(x => isVertical(x, thr));
+  if (prev && !isVertical(prev, thr) && verts.length > 0) return shaftKind(nodeId, verts, adj, nodeById, thr);
+  if (inc.length === 0) return "dead";
+  if (inc.length > 1) return "fork";
+  return "manual";
 }

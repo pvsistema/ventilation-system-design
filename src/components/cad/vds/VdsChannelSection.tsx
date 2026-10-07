@@ -28,7 +28,7 @@ import type { TopoBranch, TopoNode } from "@/lib/topology";
 import { getFanById, fanQMax, fanCurveAtAngle, fanHAngle, fanEfficiencyAngle, type FanCurve } from "@/lib/fanCurves";
 import { PA_PER_MM_H2O } from "@/lib/aerodynamics";
 import {
-  traceChannelRoute, routeNodes, buildAdjacency, END_LABEL, isVertical,
+  traceChannelRoute, routeNodes, buildAdjacency, END_LABEL, isVertical, routeBetweenNodes, classifyEnd,
   type RouteEndKind,
 } from "@/lib/ventChannelRoute";
 
@@ -87,6 +87,10 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const [ends, setEnds] = useState<{ start: RouteEndKind; end: RouteEndKind }>({ start: "dead", end: "dead" });
   const [showRoute, setShowRoute] = useState(true);
   const [highlight, setHighlight] = useState(true);
+  // Узлы А и Б — границы канала, выбранные пользователем ("" — не задан)
+  const [nodeA, setNodeA] = useState("");
+  const [nodeB, setNodeB] = useState("");
+  const [abError, setAbError] = useState("");
 
   const byId = useMemo(() => new Map(branches.map(x => [x.id, x] as const)), [branches]);
   const nodeById = useMemo(() => new Map(nodes.map(x => [x.id, x] as const)), [nodes]);
@@ -97,13 +101,48 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
 
   // Автотрассировка при смене вентилятора / порога вертикальности
   function autoTrace() {
+    setAbError("");
     if (!b) { setRouteIds([]); return; }
     const r = traceChannelRoute(b, branches, nodes, thr);
     setRouteIds(r.branchIds);
     setEnds({ start: r.start.kind, end: r.end.kind });
+    const nIds = r.nodeIds;
+    setNodeA(nIds[0] ?? "");
+    setNodeB(nIds[nIds.length - 1] ?? "");
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(autoTrace, [fanId, thr]);
+
+  // Маршрут между выбранными узлами А и Б (кратчайший путь через вентилятор)
+  function traceAB(a: string, bb: string) {
+    setNodeA(a); setNodeB(bb);
+    if (!b || !a || !bb) return;
+    if (a === bb) { setAbError("Узлы А и Б совпадают"); return; }
+    const r = routeBetweenNodes(b, a, bb, branches);
+    if (!r) { setAbError("Нет пути от узла А к узлу Б через ветвь вентилятора"); return; }
+    setAbError("");
+    setRouteIds(r.branchIds);
+    setEnds({
+      start: classifyEnd(a, r.branchIds[0], branches, nodes, thr),
+      end: classifyEnd(bb, r.branchIds[r.branchIds.length - 1], branches, nodes, thr),
+    });
+  }
+
+  // Узлы для выбора А/Б: связная часть сети вокруг вентилятора, по номеру
+  const nodeOptions = useMemo(() => {
+    if (!b) return [] as TopoNode[];
+    const seen = new Set<string>([b.fromId, b.toId]);
+    const stack = [b.fromId, b.toId];
+    while (stack.length && seen.size < 5000) {
+      const u = stack.pop()!;
+      for (const e of adj.get(u) ?? []) {
+        const w = e.fromId === u ? e.toId : e.fromId;
+        if (!seen.has(w)) { seen.add(w); stack.push(w); }
+      }
+    }
+    const num = (x: TopoNode) => { const v = parseFloat(x.number); return Number.isFinite(v) ? v : Infinity; };
+    return nodes.filter(x => seen.has(x.id)).sort((p, q) => num(p) - num(q) || String(p.number).localeCompare(String(q.number)));
+  }, [b, adj, nodes]);
 
   const route = useMemo(() => routeIds.map(id => byId.get(id)).filter(Boolean) as TopoBranch[], [routeIds, byId]);
 
@@ -127,17 +166,26 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const endCand = candidates(lastNode);
 
   function extend(side: "start" | "end", id: string) {
-    setRouteIds(ids => (side === "start" ? [id, ...ids] : [...ids, id]));
-    setEnds(e => ({ ...e, [side]: "manual" }));
+    const ids = side === "start" ? [id, ...routeIds] : [...routeIds, id];
+    setRouteIds(ids);
+    const nn = routeNodes(ids, byId);
+    const node = side === "start" ? nn[0] : nn[nn.length - 1];
+    setEnds(e => ({ ...e, [side]: classifyEnd(node, id, branches, nodes, thr) }));
+    if (side === "start") setNodeA(node); else setNodeB(node);
+    setAbError("");
   }
   function trim(side: "start" | "end") {
-    setRouteIds(ids => {
-      if (ids.length <= 1) return ids;
-      const cut = side === "start" ? ids[0] : ids[ids.length - 1];
-      if (cut === fanId) return ids; // ветвь вентилятора не удаляем
-      return side === "start" ? ids.slice(1) : ids.slice(0, -1);
-    });
-    setEnds(e => ({ ...e, [side]: "manual" }));
+    if (routeIds.length <= 1) return;
+    const cut = side === "start" ? routeIds[0] : routeIds[routeIds.length - 1];
+    if (cut === fanId) return; // ветвь вентилятора не удаляем
+    const ids = side === "start" ? routeIds.slice(1) : routeIds.slice(0, -1);
+    setRouteIds(ids);
+    const nn = routeNodes(ids, byId);
+    const node = side === "start" ? nn[0] : nn[nn.length - 1];
+    const edgeBr = side === "start" ? ids[0] : ids[ids.length - 1];
+    setEnds(e => ({ ...e, [side]: classifyEnd(node, edgeBr, branches, nodes, thr) }));
+    if (side === "start") setNodeA(node); else setNodeB(node);
+    setAbError("");
   }
 
   const curve = b?.fanCurveId ? getFanById(b.fanCurveId) : undefined;
@@ -207,7 +255,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const nodeNum = (id?: string) => (id ? nodeById.get(id)?.number || id : "?");
   const brName = (x: TopoBranch) => x.type || x.mineTypeName || `ветвь ${x.id}`;
   const endBadge = (k: RouteEndKind) => {
-    const c = k === "shaft" || k === "surface" ? "#16a34a" : k === "manual" ? "#2563eb" : "#d97706";
+    const c = k === "shaft" || k === "surface" || k === "surfaceShaft" ? "#16a34a" : k === "manual" ? "#2563eb" : "#d97706";
     return <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: c, border: `1px solid ${c}55`, background: `${c}10` }}>{END_LABEL[k]}</span>;
   };
 
@@ -283,6 +331,23 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
 
           {showRoute && (
             <div className="p-2">
+              {/* Выбор границ канала: узлы А и Б */}
+              <div className="flex flex-wrap items-center gap-2 mb-2 pb-2 text-[11px]" style={{ borderBottom: "1px dashed #dde3ec" }}>
+                <span className="text-gray-600 font-medium">Канал от узла</span>
+                <NodePick label="А" value={nodeA} options={nodeOptions} onChange={v => traceAB(v, nodeB)} />
+                <span className="text-gray-600">до узла</span>
+                <NodePick label="Б" value={nodeB} options={nodeOptions} onChange={v => traceAB(nodeA, v)} />
+                <button onClick={() => traceAB(nodeB, nodeA)} title="Поменять А и Б местами"
+                  className="px-1.5 py-0.5 rounded border border-gray-300 bg-white hover:bg-gray-50">
+                  <Icon name="ArrowLeftRight" size={11} />
+                </button>
+                <span className="text-gray-400">маршрут — кратчайший путь через ветвь вентилятора</span>
+              </div>
+              {abError && (
+                <div className="mb-2 text-[11px] px-2 py-1 rounded" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c" }}>
+                  {abError}
+                </div>
+              )}
               {/* Начало маршрута */}
               <RouteEndRow
                 title="Начало" node={nodeNum(firstNode)} badge={endBadge(ends.start)}
@@ -340,7 +405,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
 
               {ends.start !== "shaft" && ends.end !== "shaft" && (
                 <div className="mt-1.5 text-[11px] px-2 py-1 rounded" style={{ background: "#fff7e6", border: "1px solid #ffe0a3", color: "#9a6700" }}>
-                  Сопряжение с вертикальным стволом не найдено — продлите маршрут вручную или измените порог угла ствола.
+                  Сопряжение с подземным стволом не найдено — выберите узлы А и Б вручную.
                 </div>
               )}
             </div>
@@ -418,6 +483,24 @@ function Hdr({ children }: { children: React.ReactNode }) {
 function Check({ ok, text, bad }: { ok: boolean | null; text: string; bad: string }) {
   const c = ok === null ? undefined : ok ? "#16a34a" : "#dc2626";
   return <span className="font-medium" style={{ color: c }}>{text}{ok === true ? " — в норме" : ok === false ? ` — ${bad}` : ""}</span>;
+}
+
+function NodePick({ label, value, options, onChange }: {
+  label: string; value: string; options: TopoNode[]; onChange: (id: string) => void;
+}) {
+  return (
+    <label className="flex items-center gap-1">
+      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-white" style={{ background: label === "А" ? "#2563eb" : "#16a34a" }}>{label}</span>
+      <select className="px-1 py-0.5 text-[11px] border border-gray-300 rounded bg-white max-w-[180px]" value={value} onChange={e => onChange(e.target.value)}>
+        <option value="">—</option>
+        {options.map(o => (
+          <option key={o.id} value={o.id}>
+            {o.number || o.id}{o.name ? ` · ${o.name}` : ""}{o.atmosphereLink ? " (поверхность)" : ""}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 function RouteEndRow(props: {
