@@ -2915,15 +2915,36 @@ export function useCadPage() {
       return syms;
     };
 
+    // Вентиляторы «по характеристике» из справочника АэроСети: регистрируем
+    // кривые ДО расчёта (getFanById) и заносим в справочник рудника, чтобы
+    // они сохранились в проекте и были видны в справочнике оборудования.
+    const erpCurves = result.fanCurves ?? [];
+    if (erpCurves.length > 0) {
+      registerUserFanCurves(erpCurves);
+      setMineFans(prev => {
+        const have = new Set(prev.map(f => f.catalogId));
+        const add: MineFanExport[] = erpCurves
+          .filter(c => !have.has(c.id))
+          .map(c => ({ catalogId: c.id, name: c.name, diameter: c.diameter, rpmMin: c.rpmMin, rpmMax: c.rpmMax, userCurve: c }));
+        return mode === "replace" ? [...prev.filter(f => !f.catalogId.startsWith("user_erp_")), ...add] : [...prev, ...add];
+      });
+    }
+    // Значок вентилятора показывает направление: реверс из файла — «reverse».
+    const fanSymbolsWithDir = (existing: SchemaSymbol[]) =>
+      ensureFanSymbols(result.branches, existing).map(sym => {
+        const br = result.branches.find(b => b.id === sym.branchId);
+        return br?.fanReverse ? { ...sym, airDirection: "reverse" as const } : sym;
+      });
+
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
-      setSchemaSymbols([...ensureFanSymbols(result.branches, []), ...erpBulkheadSymbols([])]);
+      setSchemaSymbols([...fanSymbolsWithDir([]), ...erpBulkheadSymbols([])]);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
-      setSchemaSymbols(prev => [...prev, ...ensureFanSymbols(result.branches, prev), ...erpBulkheadSymbols(prev)]);
+      setSchemaSymbols(prev => [...prev, ...fanSymbolsWithDir(prev), ...erpBulkheadSymbols(prev)]);
     }
     // Слои АэроСети становятся горизонтами, «Общий вид» при этом сохраняем.
     if (result.horizons.length > 0) {

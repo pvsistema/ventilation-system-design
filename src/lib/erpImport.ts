@@ -88,6 +88,8 @@
 import JSZip from "jszip";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
+import { buildUserFanCurve } from "@/lib/userFanFit";
+import { USER_FAN_PREFIX, type FanCurve } from "@/lib/fanCurves";
 
 /**
  * Единицы сопротивления выработок в файле .erp.
@@ -145,6 +147,14 @@ export interface ErpImportResult {
   branches: TopoBranch[];
   horizons: Horizon[];
   positions: ErpPosition[];
+  /**
+   * Вентиляторы из справочника АэроСети (VentilatorTemplateService), на
+   * которые ссылаются выработки в режиме «по характеристике». Заводятся в
+   * справочник вентиляторов рудника как пользовательские.
+   */
+  fanCurves: FanCurve[];
+  /** Название режима проветривания, из которого взяты параметры объектов. */
+  ventModeName: string;
   /** Единицы R, в которых прочитан файл (после автоопределения или выбора). */
   resistanceUnit: "kmu" | "si";
   warnings: string[];
@@ -183,6 +193,11 @@ const BULKHEAD_FIELDS = [
 ];
 
 /** Число из атрибута XML. Поддерживает экспоненту («3.94E-05») и запятую. */
+/** Сравнение имени тега без учёта регистра (движки разбора XML различаются). */
+function isTag(el: Element, name: string): boolean {
+  return el.tagName.toLowerCase() === name.toLowerCase();
+}
+
 function num(v: string | null | undefined, def = 0): number {
   if (v == null || v === "") return def;
   const n = parseFloat(String(v).replace(",", "."));
@@ -220,8 +235,8 @@ function decodeXml(buf: Uint8Array): string {
  */
 function ownFields(el: Element): Record<string, string> {
   const out: Record<string, string> = {};
-  const cf = Array.from(el.children).find(c => c.tagName === "customFields");
-  const fs = cf ? Array.from(cf.children).find(c => c.tagName === "fields") : undefined;
+  const cf = Array.from(el.children).find(c => isTag(c, "customFields"));
+  const fs = cf ? Array.from(cf.children).find(c => isTag(c, "fields")) : undefined;
   if (!fs) return out;
   for (const f of Array.from(fs.children)) {
     const n = f.getAttribute("name");
@@ -241,28 +256,34 @@ function readFields(el: Element): Record<string, string> {
 }
 
 /**
- * Поля объекта на выработке: собственные + параметры ПЕРВОГО режима
- * проветривания (<ventModesData><ventModeData>).
+ * Поля объекта на выработке: собственные + параметры ВЫБРАННОГО режима
+ * проветривания (<ventModesData><ventModeData id=режим>).
  *
  * В АэроСети тип вентилятора, характеристика, способ задания R перемычки и
  * площадь окна лежат в ventModeData — по одному набору на КАЖДЫЙ режим
  * проветривания. Сплошной обход всех <field> давал значения ПОСЛЕДНЕГО
  * режима (в эталоне их 104), а не основного.
  */
-function readItemFields(el: Element): Record<string, string> {
+function readItemFields(el: Element, modeId?: string): Record<string, string> {
   const out: Record<string, string> = {};
   const put = (scope: Element | null | undefined) => {
     if (!scope) return;
-    const fields = Array.from(scope.children).find(c => c.tagName === "fields");
-    fields?.querySelectorAll(":scope > field").forEach(f => {
+    const fields = Array.from(scope.children).find(c => isTag(c, "fields"));
+    // Прямые дочерние <field> — через children, без селектора «:scope»
+    // (поддерживается не всеми движками разбора XML).
+    if (fields) for (const f of Array.from(fields.children)) {
+      if (!isTag(f, "field")) continue;
       const n = f.getAttribute("name");
       if (n) out[n] = f.getAttribute("value") ?? "";
-    });
+    }
   };
-  put(Array.from(el.children).find(c => c.tagName === "customFields"));
-  const modes = Array.from(el.children).find(c => c.tagName === "ventModesData");
-  const first = modes ? Array.from(modes.children).find(c => c.tagName === "ventModeData") : undefined;
-  if (first) put(Array.from(first.children).find(c => c.tagName === "customFields"));
+  put(Array.from(el.children).find(c => isTag(c, "customFields")));
+  const modes = Array.from(el.children).find(c => isTag(c, "ventModesData"));
+  const all = modes ? Array.from(modes.children).filter(c => isTag(c, "ventModeData")) : [];
+  // Параметры ВЫБРАННОГО режима проветривания (ErpVentModes, isSelected);
+  // если у объекта его нет — первый, как раньше.
+  const chosen = (modeId ? all.find(m => m.getAttribute("id") === modeId) : undefined) ?? all[0];
+  if (chosen) put(Array.from(chosen.children).find(c => isTag(c, "customFields")));
   return out;
 }
 
@@ -494,6 +515,109 @@ export async function parseErp(
     log.push(`типов выработок: ${ribTypes.size}, форм сечения: ${crossTypes.size}, типов крепи: ${surfaceTypes.size}`);
   }
 
+  // ── Режим проветривания (docs/ErpVentModes) ──────────────────────────────
+  // Параметры вентиляторов и перемычек хранятся ОТДЕЛЬНО для каждого режима
+  // (нормальный, реверсивный, аварийные). Берём режим, выбранный в АэроСети
+  // (isSelected="True"); раньше брался первый в списке объекта — и при
+  // выбранном реверсивном режиме вентиляторы читались из нормального.
+  let ventModeId = "";
+  let ventModeName = "";
+  let ventModeCount = 0;
+  const vmEntry = zip.file(/ErpVentModes\.DataDocument$/i)[0];
+  if (vmEntry) {
+    const vmDoc = new DOMParser().parseFromString(decodeXml(await vmEntry.async("uint8array")), "application/xml");
+    const modes = Array.from(vmDoc.querySelectorAll("ventMode"));
+    ventModeCount = modes.length;
+    const sel = modes.find(m => bool(m.getAttribute("isSelected"))) ?? modes[0];
+    if (sel) {
+      ventModeId = sel.getAttribute("id") ?? "";
+      ventModeName = sel.getAttribute("name") ?? "";
+    }
+  }
+  log.push(ventModeCount
+    ? `режимов проветривания: ${ventModeCount}, выбран «${ventModeName}»`
+    : "режимов проветривания в файле нет — берём параметры по умолчанию");
+
+  // ── Справочник вентиляторов (docs/VentilatorTemplateService) ─────────────
+  // <ventilatorTemplate id name diameter minSpeed maxSpeed>
+  //   <characteristic id bladeAngle speed discharge1..3 pressure1..3 wattage1..3 isReversed/>
+  // Напор в характеристиках — в ПАСКАЛЯХ (в отличие от напора в схеме), расход
+  // — м³/с, мощность — кВт. По трём точкам каждого угла строим нашу кривую
+  // H = h0 + h1·Q + h2·Q², как у пользовательского вентилятора.
+  interface ErpFanChar { id: string; angle: number; speed: number; reversed: boolean; pts: { q: number; h: number; eta?: number }[] }
+  interface ErpFanTpl { id: string; name: string; diameter: number; minSpeed: number; maxSpeed: number; chars: ErpFanChar[] }
+  const fanTpls = new Map<string, ErpFanTpl>();
+  const fanCharToTpl = new Map<string, string>();
+  const vtEntry = zip.file(/VentilatorTemplateService\.DataDocument$/i)[0];
+  if (vtEntry) {
+    const vtDoc = new DOMParser().parseFromString(decodeXml(await vtEntry.async("uint8array")), "application/xml");
+    vtDoc.querySelectorAll("ventilatorTemplate").forEach(t => {
+      const id = t.getAttribute("id");
+      if (!id) return;
+      const chars: ErpFanChar[] = [];
+      t.querySelectorAll("characteristic").forEach(c => {
+        const cid = c.getAttribute("id") ?? "";
+        const pts: { q: number; h: number; eta?: number }[] = [];
+        for (let k = 1; k <= 9; k++) {
+          const qa = c.getAttribute(`discharge${k}`), ha = c.getAttribute(`pressure${k}`);
+          if (qa == null || ha == null) continue;
+          const q = num(qa), h = num(ha), w = num(c.getAttribute(`wattage${k}`), 0);
+          if (!(q > 0) || !(h >= 0)) continue;
+          // КПД по мощности: η = H·Q / (N·1000)
+          const eta = w > 0 ? Math.min(0.9, Math.max(0.05, (h * q) / (w * 1000))) : undefined;
+          pts.push({ q, h, eta });
+        }
+        if (pts.length < 2) return;
+        chars.push({
+          id: cid, angle: num(c.getAttribute("bladeAngle"), 0), speed: num(c.getAttribute("speed"), 0),
+          reversed: bool(c.getAttribute("isReversed")), pts: pts.sort((a, b) => a.q - b.q),
+        });
+        if (cid) fanCharToTpl.set(cid, id);
+      });
+      fanTpls.set(id, {
+        id, name: t.getAttribute("name") ?? "Вентилятор",
+        diameter: num(t.getAttribute("diameter"), 0),
+        minSpeed: num(t.getAttribute("minSpeed"), 0), maxSpeed: num(t.getAttribute("maxSpeed"), 0),
+        chars,
+      });
+    });
+  }
+  log.push(`вентиляторов в справочнике файла: ${fanTpls.size}`);
+
+  /** Наш вентилятор (FanCurve) по шаблону АэроСети — создаётся по требованию. */
+  const fanCurveByTpl = new Map<string, FanCurve | null>();
+  const curveForTemplate = (tplId: string): FanCurve | null => {
+    if (fanCurveByTpl.has(tplId)) return fanCurveByTpl.get(tplId)!;
+    const t = fanTpls.get(tplId);
+    let curve: FanCurve | null = null;
+    if (t) {
+      const direct = t.chars.filter(c => !c.reversed);
+      const rev = t.chars.find(c => c.reversed);
+      // Один угол на значение — при повторах оставляем первую характеристику.
+      const byAngle = new Map<number, ErpFanChar>();
+      (direct.length ? direct : t.chars).forEach(c => { if (!byAngle.has(c.angle)) byAngle.set(c.angle, c); });
+      const angles = [...byAngle.values()];
+      const rpm = angles.find(c => c.speed > 0)?.speed || t.maxSpeed || t.minSpeed || 1000;
+      const built = buildUserFanCurve({
+        id: `${USER_FAN_PREFIX}erp_${tplId.replace(/[^0-9a-z]/gi, "").slice(0, 16)}`,
+        name: t.name || "Вентилятор (АэроСеть)",
+        type: "axial",
+        diameter: t.diameter,
+        rpmMin: t.minSpeed || rpm,
+        rpmMax: Math.max(t.maxSpeed || rpm, rpm),
+        rpmNominal: rpm,
+        source: {
+          angles: angles.map(c => ({ angle: c.angle, points: c.pts })),
+          ...(rev ? { reverse: { points: rev.pts } } : {}),
+        },
+      });
+      curve = built.curve;
+      if (!curve) warnings.push(`Вентилятор «${t.name}» из справочника АэроСети не перенесён: ${built.errors.join("; ")}`);
+    }
+    fanCurveByTpl.set(tplId, curve);
+    return curve;
+  };
+
   // ── Узлы ──────────────────────────────────────────────────────────────────
   // Читаем в «сырых» единицах проекции; масштаб применим ниже, когда узнаем
   // коэффициент по длинам ветвей.
@@ -523,7 +647,7 @@ export async function parseErp(
   // ── Слои → горизонты ──────────────────────────────────────────────────────
   // Слой АэроСети — это группа выработок (Стволы, Слой 1). Отметку слоя файл
   // не хранит, поэтому z горизонта вычислим ниже как медиану отметок его узлов.
-  interface RawItem { code: string; description: string; f: Record<string, string> }
+  interface RawItem { code: string; description: string; f: Record<string, string>; reversed: boolean }
   /** Точка излома выработки: экранные x/y файла и отметка z, м. */
   interface RawBend { x: number; y: number; z: number }
   interface RawBranch {
@@ -557,16 +681,19 @@ export async function parseErp(
         items.push({
           code: it.getAttribute("itemCode") ?? "",
           description: it.getAttribute("description") ?? "",
-          f: readItemFields(it),
+          f: readItemFields(it, ventModeId),
+          // Направление действия объекта: isReversed="True" — вентилятор
+          // работает против направления выработки (from → to).
+          reversed: bool(it.getAttribute("isReversed")),
         });
       });
       // Точки излома: <innerNodes><ribNode index x y><…field name="z"/>.
       // Они задают настоящую трассу выработки — длину считаем по ломаной.
       const bends: RawBend[] = [];
-      const inner = Array.from(rib.children).find(c => c.tagName === "innerNodes");
+      const inner = Array.from(rib.children).find(c => isTag(c, "innerNodes"));
       if (inner) {
         Array.from(inner.children)
-          .filter(c => c.tagName === "ribNode")
+          .filter(c => isTag(c, "ribNode"))
           .map(c => ({ el: c, i: num(c.getAttribute("index")) }))
           .sort((a, b) => a.i - b.i)
           .forEach(({ el }) => {
@@ -772,6 +899,10 @@ export async function parseErp(
   if (branchIds.empty > 0) warnings.push(`Выработок без номера: ${branchIds.empty} — им присвоены свободные номера`);
   const branchIdOf = new Map(rawBranches.map((rb, i) => [rb, branchIds.ids[i]] as const));
   let fans = 0, bulkheads = 0, skipped = 0;
+  let fansByCurve = 0, fansFixedQ = 0, fansReversed = 0, fanCurveMissing = 0;
+  const fanCurveIds = new Set<string>();
+  /** Ветви, развёрнутые при импорте (реверсный ВМП). */
+  const flippedBranches = new Set<string>();
   const alphaStat = { surface: 0, ribType: 0, rib: 0, default: 0, none: 0 };
   let bendLengths = 0, notPassable = 0, longwalls = 0;
 
@@ -837,7 +968,61 @@ export async function parseErp(
     const fanPressureKgs = fanSumKgs
       || num(f["Airflow.FanPressure"], 0)
       || num(f["Airflow.IdealVentilatorPressure"], 0);
-    const fanPressure = +(fanPressureKgs * PA_PER_KGS_M2).toFixed(2);
+    // ── Направление вентилятора ─────────────────────────────────────────
+    // Реверс: атрибут isReversed="True" у объекта (так пишет и наш экспорт).
+    // Отрицательный напор в файле — тоже работа против направления выработки:
+    // наш расчёт берёт max(0, напор), поэтому знак переводим в реверс, а напор
+    // делаем положительным. Иначе такой вентилятор просто «выключался».
+    const fanReversedAttr = !!fanItem?.reversed;
+    const fanPressureSigned = fanPressureKgs * PA_PER_KGS_M2;
+    const fanReverse = hasFan && (fanReversedAttr !== (fanPressureSigned < 0));
+    const fanPressure = +Math.abs(fanPressureSigned).toFixed(2);
+
+    // ── Режим работы вентилятора (Airflow.VentilatorType) ────────────────
+    //   0 — постоянная депрессия; 1 — по характеристике (ссылка на
+    //   справочник); 2 — постоянный расход (VentilatorFixedQ, м³/с).
+    // Раньше всё читалось как «постоянная депрессия» с напором FanPressure —
+    // а это лишь рабочая точка последнего расчёта АэроСети (часто 0 или
+    // устаревшая), и вентилятор переставал искать точку на своей кривой.
+    const vType = String(ff["Airflow.VentilatorType"] ?? "0").trim();
+    let fanMode: "constant" | "curve" | "fixed" = "constant";
+    let fanCurveId = "";
+    let fanBladeAngle = 0;
+    let fanFixedQ = 0;
+    let fanRpm = hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0;
+    if (hasFan && vType === "1") {
+      const chrId = ff["Airflow.VentilatorCharacteristicId"] ?? "";
+      const tplId = ff["Airflow.VentilatorTemplateId"] || fanCharToTpl.get(chrId) || "";
+      const curve = tplId ? curveForTemplate(tplId) : null;
+      if (curve) {
+        fanMode = "curve";
+        fanCurveId = curve.id;
+        const chr = fanTpls.get(tplId)?.chars.find(c => c.id === chrId);
+        fanBladeAngle = chr ? chr.angle : (curve.bladeAngles[Math.floor((curve.bladeAngles.length - 1) / 2)] ?? 0);
+        // Обороты характеристики — номинальные; если в объекте свои, берём их.
+        if (!(fanRpm > 0)) fanRpm = chr?.speed || curve.rpmNominal;
+        fanCurveIds.add(curve.id);
+        fansByCurve++;
+      } else {
+        fanCurveMissing++;
+      }
+    } else if (hasFan && vType === "2") {
+      const q = num(ff["Airflow.VentilatorFixedQ"], 0);
+      if (q > 0) { fanMode = "fixed"; fanFixedQ = q; fansFixedQ++; }
+    }
+    if (hasFan && fanReverse) fansReversed++;
+
+    // ВМП в нашем расчёте нагнетает ВСЕГДА от начального узла к конечному,
+    // флаг реверса для него не действует (реверс главного вентилятора не
+    // разворачивает местные). Поэтому ВМП, работающий против направления
+    // выработки, переносим перестановкой её концов — ровно так же, как
+    // кнопка «Сменить направление вентилятора». Расход меняет знак.
+    const fanTypeV: "ВМП" | "ГВУ" = hasFan && fanItem?.code === ERP_FAN_LOCAL ? "ВМП" : "ГВУ";
+    const flipVmp = hasFan && fanTypeV === "ВМП" && fanReverse;
+    const bFrom = flipVmp ? toId : fromId;
+    const bTo = flipVmp ? fromId : toId;
+    const flow0 = num(f["Airflow.Discharge"], 0);
+    if (flipVmp) flippedBranches.add(branchIdOf.get(rb)!);
     // Сопротивление перемычки: заданное пользователем, иначе расчётное.
     // Единица та же, что и у выработок, — приводим тем же коэффициентом.
     const bulkR = +((num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
@@ -849,7 +1034,7 @@ export async function parseErp(
     // позиции ПЛА ниже находят свои выработки и точку привязки выноски.
     const branchId = branchIdOf.get(rb)!;
     branchIdMap.set(rb.id, branchId);
-    branches.push(makeBranch(branchId, fromId, toId, {
+    branches.push(makeBranch(branchId, bFrom, bTo, {
       type: f["Rib.Name"] || rt?.name || "",
       // Сечение и периметр берём как есть — в АэроСети они уже в м² и м.
       // Форму «custom» ставим потому, что файл хранит готовые S и P, а не
@@ -868,20 +1053,24 @@ export async function parseErp(
       // Название крепи из справочника АэроСети — для подписи в свойствах.
       surface: g.surfaceName || "",
       resistance: rUser,
-      flow: num(f["Airflow.Discharge"], 0),
+      flow: flipVmp ? -flow0 : flow0,
       vMax: num(f["Airflow.MaxAirVelocity"], 0) || rt?.vMax || 0,
       horizonId: horizonIdMap.get(rb.horizonId) ?? "",
       lineWidth: Math.max(1, Math.round(rb.thickness / 1.5)),
       // ── Вентилятор ────────────────────────────────────────────────────
       hasFan,
-      fanMode: "constant",
+      fanMode,
+      fanCurveId,
+      fanBladeAngle,
+      fanFixedQ,
+      fanReverse: fanReverse && !flipVmp,
       fanPressure: hasFan ? fanPressure : 0,
       fanName: hasFan ? (fanItem?.description || f["Rib.Name"] || "Вентилятор") : "",
       // Код картинки 16 — вентилятор местного проветривания, 18 — главный.
-      fanType: hasFan && fanItem?.code === ERP_FAN_LOCAL ? "ВМП" : "ГВУ",
+      fanType: fanTypeV,
       fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
-      fanRpm: hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0,
+      fanRpm,
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
       // Материал и вид перемычки в АэроСети задаёт КОД картинки — по нему и
@@ -914,6 +1103,15 @@ export async function parseErp(
   }
 
   if (skipped > 0) warnings.push(`Пропущено выработок без узлов: ${skipped}`);
+  log.push(`вентиляторы: по характеристике ${fansByCurve}, постоянный расход ${fansFixedQ}, реверс ${fansReversed}`);
+  if (fanCurveIds.size > 0) {
+    warnings.push(`Вентиляторов по характеристике: ${fansByCurve}. В справочник рудника добавлено моделей: ${fanCurveIds.size}`);
+  }
+  if (fanCurveMissing > 0) {
+    warnings.push(`У ${fanCurveMissing} вентиляторов «по характеристике» не найдена кривая в справочнике файла — взят постоянный напор из рабочей точки АэроСети`);
+  }
+  if (fansReversed > 0) warnings.push(`Вентиляторов в реверсе: ${fansReversed}`);
+  if (ventModeCount > 1) warnings.push(`В проекте ${ventModeCount} режимов проветривания — вентиляторы и перемычки взяты из выбранного «${ventModeName}»`);
   if (nodes.every(n => n.z === 0)) warnings.push("У всех узлов нулевая отметка — в проекте не заданы глубины");
 
   // ── Позиции ПЛА ───────────────────────────────────────────────────────────
@@ -951,6 +1149,8 @@ export async function parseErp(
       const br = branches.find(b => b.id === leaderBranchId);
       const offset = num(rm?.getAttribute("segmentOffset"), 0) / s;
       if (br && br.length > 0) leaderT = Math.min(1, Math.max(0, offset / br.length));
+      // Ветвь реверсного ВМП развёрнута при импорте — отсчёт от другого конца.
+      if (flippedBranches.has(leaderBranchId)) leaderT = 1 - leaderT;
     }
 
     // В поле Name у АэроСети лежит НОМЕР позиции, а весь текст — в Description.
@@ -998,6 +1198,8 @@ export async function parseErp(
     branches,
     horizons,
     positions,
+    fanCurves: [...fanCurveByTpl.values()].filter((c): c is FanCurve => !!c && fanCurveIds.has(c.id)),
+    ventModeName,
     resistanceUnit: rUnit,
     warnings,
     stats: {

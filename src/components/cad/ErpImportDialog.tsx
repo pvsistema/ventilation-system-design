@@ -65,10 +65,12 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
         if (!withBulkheads && b.hasBulkhead)
           nb = { ...nb, hasBulkhead: false, bulkheadName: "", bulkheadR: 0, bulkheadManualR: 0, bulkheadResMode: "project" as const, bulkheadSurveyQ: 0 };
         if (!withFans && b.hasFan)
-          nb = { ...nb, hasFan: false, fanName: "", fanPressure: 0, fanEfficiency: 0, fanParallel: 1, fanRpm: 0 };
+          nb = { ...nb, hasFan: false, fanName: "", fanPressure: 0, fanEfficiency: 0, fanParallel: 1, fanRpm: 0,
+            fanMode: "constant" as const, fanCurveId: "", fanFixedQ: 0, fanReverse: false };
         return nb;
       }),
       positions: withPositions ? r.positions : [],
+      fanCurves: withFans ? r.fanCurves : [],
       stats: {
         ...r.stats,
         bulkheads: withBulkheads ? r.stats.bulkheads : 0,
