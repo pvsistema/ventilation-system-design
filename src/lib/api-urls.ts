@@ -31,6 +31,7 @@ export const API_URLS = {
   license:            url("license",             "/license"),
   adminLicenses:      url("admin-licenses",      "/admin-licenses"),
   computeConfig:      url("compute-config",      "/compute-config"),
+  clientLicenses:     url("client-licenses",     "/client-licenses"),
 } as const;
 
 export { isDesktop };

@@ -1,0 +1,35 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "No token returns 401",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "list_licenses"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Bad token returns 401",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "revoke_seat", "seat_id": 1, "token": "bad"},
+      "expectedStatus": 401,
+      "expectedBody": {"error": "unauthorized"},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Login without credentials returns 400",
+      "method": "POST",
+      "path": "/",
+      "body": {"action": "login"},
+      "expectedStatus": 400
+    }
+  ]
+}

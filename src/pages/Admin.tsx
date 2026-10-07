@@ -5,6 +5,7 @@ import MonitoringTab from "@/pages/admin/MonitoringTab";
 import UpdateTab from "@/pages/admin/UpdateTab";
 import ServerTab from "@/pages/admin/ServerTab";
 import EmergencyTab from "@/pages/admin/EmergencyTab";
+import ClientAccessTab from "@/pages/admin/ClientAccessTab";
 // Разделы, вынесенные из этого файла (перенос 1:1):
 //   adminTypes      — типы данных, обращение к серверу, формат дат
 //   AdminLogin      — экран входа по паролю
@@ -72,7 +73,7 @@ export default function Admin() {
   const [keyGroupDlg, setKeyGroupDlg]   = useState<string | null>(null);
 
   // Вкладки
-  const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update" | "server" | "emergency">("licenses");
+  const [activeTab, setActiveTab]       = useState<"licenses" | "monitoring" | "update" | "server" | "emergency" | "clients">("licenses");
 
   // Аварийный оффлайн-ключ
   const [emgOrg, setEmgOrg]             = useState("");
@@ -948,6 +949,10 @@ export default function Admin() {
               className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "emergency" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
               <Icon name="LifeBuoy" size={12} className="inline mr-1" />Аварийный ключ
             </button>
+            <button onClick={() => setActiveTab("clients")}
+              className={`px-3 py-1 rounded-md text-[12px] font-semibold transition-colors ${activeTab === "clients" ? "bg-white text-[#1a3a6b]" : "text-blue-200 hover:text-white"}`}>
+              <Icon name="Users" size={12} className="inline mr-1" />Кабинеты клиентов
+            </button>
           </div>
           {activeTab === "licenses" && <>
             {/* Возраст данных. Таблица обновляется сама каждые 20 секунд, но
@@ -1004,6 +1009,9 @@ export default function Admin() {
 
       {/* pb-10 — запас снизу, чтобы последний блок не упирался в край окна */}
       <div className="max-w-5xl mx-auto p-6 pb-10">
+
+        {/* ── Вкладка: Кабинеты клиентов ── */}
+        {activeTab === "clients" && <ClientAccessTab password={password} />}
 
         {/* ── Вкладка: Мониторинг ── */}
         {activeTab === "monitoring" && (

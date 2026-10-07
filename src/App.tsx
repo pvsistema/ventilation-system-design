@@ -31,6 +31,8 @@ const Docs = lazy(() => import("./pages/Docs"));
 // Страница со ссылками на презентации докладов — открывается по прямой
 // ссылке, авторизация не нужна.
 const Presentations = lazy(() => import("./pages/Presentations"));
+// Кабинет клиента: организация видит и обслуживает только свои ключи.
+const Client = lazy(() => import("./pages/Client"));
 
 // Заставка на время подгрузки страницы (доли секунды на локальном диске).
 const PageLoading = () => (
@@ -109,6 +111,7 @@ const App = () => {
             <Routes>
               <Route path="/" element={<Cad />} />
               <Route path="/admin" element={<Admin />} />
+              <Route path="/client" element={<Client />} />
               <Route path="/download" element={<Download />} />
               <Route path="/docs" element={<Docs />} />
               <Route path="/presentations" element={<Presentations />} />

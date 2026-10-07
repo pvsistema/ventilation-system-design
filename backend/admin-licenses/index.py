@@ -39,6 +39,10 @@ POST /  body: {action, password, ...params}
   set_offline_autobind — вкл/выкл автопривязку ключа к рабочему месту
                         {offline_key_id, autobind}
   reset_offline_binding — сбросить привязку (замена компьютера) {offline_key_id}
+  list_client_access   — доступы клиентов к кабинету /client + список групп
+  create_client_access — выдать доступ {org_group, login, client_password, note?}
+  set_client_password  — сменить пароль {client_access_id, client_password}
+  toggle_client_access — включить/отозвать {client_access_id, is_active}
   generate_vds_code  — сгенерировать код доступа к «Отчёту ВДС» (VDS-XXXX-XXXX)
   create_license / update_license принимают vds_code — код доступа к отчёту ВДС
                         (пусто = модуль не подключён)
@@ -1354,6 +1358,79 @@ def handler(event: dict, context) -> dict:
             cur.execute("DELETE FROM offline_keys WHERE id = %s RETURNING id", (oid,))
             if not cur.fetchone():
                 conn.rollback()
+                return resp(404, {"error": "not_found"})
+            conn.commit()
+            return resp(200, {"ok": True})
+
+        # ── Кабинет клиента: доступы групп организаций ────────────────────────────
+        if action == "list_client_access":
+            cur.execute("""
+                SELECT a.id, a.org_group, a.login, a.is_active, a.note,
+                       a.created_at, a.last_login_at,
+                       (SELECT COUNT(*) FROM licenses l WHERE l.org_group = a.org_group),
+                       (SELECT COUNT(*) FROM offline_keys o WHERE o.org_group = a.org_group)
+                FROM client_access a ORDER BY a.org_group
+            """)
+            items = [{
+                "id": r[0], "org_group": r[1], "login": r[2], "is_active": r[3],
+                "note": r[4], "created_at": str(r[5]),
+                "last_login_at": str(r[6]) if r[6] else None,
+                "licenses_count": int(r[7]), "offline_keys_count": int(r[8]),
+            } for r in cur.fetchall()]
+            cur.execute("""
+                SELECT g FROM (
+                  SELECT DISTINCT org_group AS g FROM licenses WHERE org_group IS NOT NULL AND org_group <> ''
+                  UNION SELECT DISTINCT org_group FROM offline_keys WHERE org_group IS NOT NULL AND org_group <> ''
+                ) t ORDER BY g
+            """)
+            groups = [r[0] for r in cur.fetchall()]
+            return resp(200, {"items": items, "groups": groups})
+
+        if action in ("create_client_access", "set_client_password"):
+            password_new = (body.get("client_password") or "").strip()
+            if len(password_new) < 8:
+                return resp(400, {"error": "password_too_short",
+                                  "detail": "Пароль клиента — не короче 8 символов"})
+            salt = os.urandom(16).hex()
+            phash = hashlib.pbkdf2_hmac("sha256", password_new.encode(),
+                                        bytes.fromhex(salt), 200_000).hex()
+            if action == "create_client_access":
+                org_group = (body.get("org_group") or "").strip()
+                login = (body.get("login") or "").strip().lower()
+                note = (body.get("note") or "").strip()
+                if not org_group or not login:
+                    return resp(400, {"error": "fields_required",
+                                      "detail": "Укажите группу и логин"})
+                cur.execute("SELECT 1 FROM client_access WHERE org_group = %s OR login = %s",
+                            (org_group, login))
+                if cur.fetchone():
+                    return resp(409, {"error": "exists",
+                                      "detail": "Для этой группы или с этим логином доступ уже есть"})
+                cur.execute("""
+                    INSERT INTO client_access (org_group, login, password_hash, password_salt, note)
+                    VALUES (%s, %s, %s, %s, %s) RETURNING id
+                """, (org_group, login, phash, salt, note))
+                new_id = cur.fetchone()[0]
+                conn.commit()
+                return resp(200, {"ok": True, "id": new_id})
+            cid = int(body.get("client_access_id") or 0)
+            cur.execute("""
+                UPDATE client_access SET password_hash = %s, password_salt = %s
+                WHERE id = %s RETURNING id
+            """, (phash, salt, cid))
+            if not cur.fetchone():
+                return resp(404, {"error": "not_found"})
+            # Токены клиента подписаны хэшем пароля — после смены пароля
+            # все открытые сессии перестают действовать сами.
+            conn.commit()
+            return resp(200, {"ok": True})
+
+        if action == "toggle_client_access":
+            cid = int(body.get("client_access_id") or 0)
+            active = bool(body.get("is_active"))
+            cur.execute("UPDATE client_access SET is_active = %s WHERE id = %s RETURNING id",
+                        (active, cid))
+            if not cur.fetchone():
                 return resp(404, {"error": "not_found"})
             conn.commit()
             return resp(200, {"ok": True})
