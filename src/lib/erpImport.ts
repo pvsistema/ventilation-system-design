@@ -927,6 +927,8 @@ export async function parseErp(
   let fansByCurve = 0, fansFixedQ = 0, fansReversed = 0, fanCurveMissing = 0;
   const fanCurveIds = new Set<string>();
   const bulkheadItems: ErpBulkhead[] = [];
+  let fansInBulkhead = 0;
+  const fanBulkheadNotes: string[] = [];
   let bulkMulti = 0, bulkWithFan = 0;
   /** Ветви, развёрнутые при импорте (реверсный ВМП). */
   const flippedBranches = new Set<string>();
@@ -1047,6 +1049,31 @@ export async function parseErp(
     }
     if (hasFan && fanReverse) fansReversed++;
 
+    // ── Способ установки вентилятора (Airflow.VentilatorInstallationType) ─
+    // Наш экспорт пишет 0 и при этом кладёт сопротивление окна ГВУ прямо в R
+    // выработки (fanInstallR) — и АэроСеть считает такую сеть так же, как мы.
+    // Значит, при 0 (и когда поля нет вовсе — как в проектах без режимов)
+    // АэроСеть никакого добавочного сопротивления окна НЕ вводит.
+    //
+    // Раньше импорт всегда ставил «Внутри перемычки». После переноса
+    // характеристик у вентилятора появился диаметр колеса, и программа
+    // сама добавляла R окна π·D²/4 — сверх R выработки из файла. Сопротивление
+    // ветви ГВУ завышалось, а при повторном импорте нашего же файла окно
+    // учитывалось дважды.
+    //
+    // Ненулевой способ — вентилятор в перемычке. Сопротивление этой
+    // перемычки (VentilatorBulkheadResistance) в АэроСети по умолчанию 1000
+    // кМюрг — это путь УТЕЧЕК в обход вентилятора (параллельно ему), а не
+    // последовательное сопротивление: подставлять его в fanCrossingR
+    // (последовательное) нельзя — расход через ГВУ упал бы почти до нуля.
+    const installRaw = String(ff["Airflow.VentilatorInstallationType"] ?? "").trim();
+    const fanInBulkhead = hasFan && installRaw !== "" && installRaw !== "0";
+    if (fanInBulkhead) {
+      fansInBulkhead++;
+      const rb0 = num(ff["Airflow.VentilatorBulkheadResistance"], 0);
+      if (rb0 > 0) fanBulkheadNotes.push(`${fanItem?.description || "вентилятор"} (выработка ${branchIdOf.get(rb)}): R перемычки ${rb0}`);
+    }
+
     // ВМП в нашем расчёте нагнетает ВСЕГДА от начального узла к конечному,
     // флаг реверса для него не действует (реверс главного вентилятора не
     // разворачивает местные). Поэтому ВМП, работающий против направления
@@ -1141,6 +1168,9 @@ export async function parseErp(
       fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
       fanRpm,
+      fanInstall: fanInBulkhead ? "Внутри перемычки" : "Без перемычки",
+      fanCrossingR: 0,
+      fanWindowArea: 0,
       // ── Перемычка ─────────────────────────────────────────────────────
       hasBulkhead,
       // Материал и вид перемычки в АэроСети задаёт КОД картинки — по нему и
@@ -1185,6 +1215,14 @@ export async function parseErp(
     warnings.push(`У ${fanCurveMissing} вентиляторов «по характеристике» не найдена кривая в справочнике файла — взят постоянный напор из рабочей точки АэроСети`);
   }
   if (fansReversed > 0) warnings.push(`Вентиляторов в реверсе: ${fansReversed}`);
+  if (fans > 0) {
+    warnings.push(fansInBulkhead > 0
+      ? `Вентиляторов, установленных в перемычке: ${fansInBulkhead} — R окна считается по колесу (π·D²/4); остальным установка «без перемычки», как в АэроСети`
+      : "Вентиляторы перенесены с установкой «без перемычки»: сопротивление окна в АэроСети уже входит в сопротивление выработки");
+  }
+  if (fanBulkheadNotes.length > 0) {
+    warnings.push(`Сопротивление перемычки вентилятора из АэроСети (путь утечек в обход вентилятора) не перенесено — в программе такого параметра нет: ${fanBulkheadNotes.slice(0, 5).join("; ")}${fanBulkheadNotes.length > 5 ? " …" : ""}`);
+  }
   if (bulkMulti > 0) warnings.push(`Выработок с несколькими перемычками: ${bulkMulti} — перенесены все, сопротивления складываются`);
   if (bulkWithFan > 0) warnings.push(`Выработок с вентилятором и перемычкой: ${bulkWithFan} — перемычки сохранены`);
   if (ventModeCount > 1) warnings.push(`В проекте ${ventModeCount} режимов проветривания — вентиляторы и перемычки взяты из выбранного «${ventModeName}»`);
