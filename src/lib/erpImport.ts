@@ -142,11 +142,30 @@ export interface ErpPosition {
   comment: string;
 }
 
+/** Перемычка/дверь/окно на выработке — отдельный объект АэроСети. */
+export interface ErpBulkhead {
+  /** Наш id выработки. */
+  branchId: string;
+  name: string;
+  /** Код картинки АэроСети (вид и материал). */
+  code: string;
+  /** Сопротивление, кМюрг. */
+  r: number;
+  /** Положение вдоль выработки, 0…1 (от начального узла нашей ветви). */
+  t: number;
+  surveyQ: number;
+}
+
 export interface ErpImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
   horizons: Horizon[];
   positions: ErpPosition[];
+  /**
+   * ВСЕ перемычки по выработкам — каждая отдельным объектом. Раньше на ветвь
+   * переносилась только первая, а на ветви с вентилятором — ни одной.
+   */
+  bulkheadItems: ErpBulkhead[];
   /**
    * Вентиляторы из справочника АэроСети (VentilatorTemplateService), на
    * которые ссылаются выработки в режиме «по характеристике». Заводятся в
@@ -647,7 +666,11 @@ export async function parseErp(
   // ── Слои → горизонты ──────────────────────────────────────────────────────
   // Слой АэроСети — это группа выработок (Стволы, Слой 1). Отметку слоя файл
   // не хранит, поэтому z горизонта вычислим ниже как медиану отметок его узлов.
-  interface RawItem { code: string; description: string; f: Record<string, string>; reversed: boolean }
+  interface RawItem {
+    code: string; description: string; f: Record<string, string>; reversed: boolean;
+    /** Звено ломаной и смещение от его начала (единицы экрана файла). */
+    segIndex: number; segOffset: number;
+  }
   /** Точка излома выработки: экранные x/y файла и отметка z, м. */
   interface RawBend { x: number; y: number; z: number }
   interface RawBranch {
@@ -685,6 +708,8 @@ export async function parseErp(
           // Направление действия объекта: isReversed="True" — вентилятор
           // работает против направления выработки (from → to).
           reversed: bool(it.getAttribute("isReversed")),
+          segIndex: num(it.getAttribute("segmentIndex"), 0),
+          segOffset: num(it.getAttribute("segmentOffset"), -1),
         });
       });
       // Точки излома: <innerNodes><ribNode index x y><…field name="z"/>.
@@ -901,6 +926,8 @@ export async function parseErp(
   let fans = 0, bulkheads = 0, skipped = 0;
   let fansByCurve = 0, fansFixedQ = 0, fansReversed = 0, fanCurveMissing = 0;
   const fanCurveIds = new Set<string>();
+  const bulkheadItems: ErpBulkhead[] = [];
+  let bulkMulti = 0, bulkWithFan = 0;
   /** Ветви, развёрнутые при импорте (реверсный ВМП). */
   const flippedBranches = new Set<string>();
   const alphaStat = { surface: 0, ribType: 0, rib: 0, default: 0, none: 0 };
@@ -945,12 +972,20 @@ export async function parseErp(
     // проекте), а код itemCode — как запасной признак для известных картинок.
     const fanItem = rb.items.find(it =>
       ITEM_FAN.has(it.code) || FAN_FIELDS.some(k => it.f[k] != null && it.f[k] !== ""));
-    const bulkItem = rb.items.find(it =>
-      ITEM_BULKHEAD.has(it.code) || BULKHEAD_FIELDS.some(k => it.f[k] != null && it.f[k] !== ""));
+    // ВСЕ перемычки выработки (объект-вентилятор перемычкой не считаем, даже
+    // если у него есть поле сопротивления «своей» перемычки).
+    const bulkItemsAll = rb.items.filter(it => it !== fanItem && !ITEM_FAN.has(it.code)
+      && !FAN_FIELDS.some(k => it.f[k] != null && it.f[k] !== "")
+      && (ITEM_BULKHEAD.has(it.code) || BULKHEAD_FIELDS.some(k => it.f[k] != null && it.f[k] !== "")));
+    const bulkItem = bulkItemsAll[0];
     const hasFan = !!fanItem;
-    const hasBulkhead = !!bulkItem && !hasFan;   // ВМП стоит «в» перемычке — это вентилятор
+    // Перемычка на ветви с вентилятором больше НЕ теряется: в АэроСети
+    // ГВУ часто стоит рядом с ляда/дверью, и их сопротивление последовательно.
+    const hasBulkhead = bulkItemsAll.length > 0;
     if (hasFan) fans++;
-    if (hasBulkhead) bulkheads++;
+    if (hasBulkhead) bulkheads += bulkItemsAll.length;
+    if (bulkItemsAll.length > 1) bulkMulti++;
+    if (hasBulkhead && hasFan) bulkWithFan++;
 
     // Депрессия вентилятора. АэроСеть пишет её в кгс/м² (мм вод. ст.), а наше
     // поле fanPressure — в паскалях, поэтому переводим (обоснование в шапке
@@ -1025,14 +1060,49 @@ export async function parseErp(
     if (flipVmp) flippedBranches.add(branchIdOf.get(rb)!);
     // Сопротивление перемычки: заданное пользователем, иначе расчётное.
     // Единица та же, что и у выработок, — приводим тем же коэффициентом.
-    const bulkR = +((num(bf["Airflow.BulkheadUserDefinedResistance"], 0)
-      || num(bf["Airflow.BulkheadCalculatedResistance"], 0)
-      || num(f["Airflow.BulkheadUserDefinedResistance"], 0)
-      || num(f["Airflow.BulkheadCalculatedResistance"], 0)) * rFactor).toFixed(6);
+    const itemR = (it: RawItem) => (num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
+      || num(it.f["Airflow.BulkheadCalculatedResistance"], 0)) * rFactor;
+    // Несколько сооружений на одной выработке стоят последовательно: R
+    // складываются. Поле самой выработки — запасной вариант, если у
+    // объектов сопротивление не записано.
+    const sumItemsR = bulkItemsAll.reduce((acc, it) => acc + itemR(it), 0);
+    const bulkR = +(sumItemsR
+      || (num(f["Airflow.BulkheadUserDefinedResistance"], 0)
+        || num(f["Airflow.BulkheadCalculatedResistance"], 0)) * rFactor).toFixed(6);
+
+    // Положение объекта вдоль выработки (0…1) — по звену ломаной и смещению
+    // в экранных единицах файла (так же пишет наш экспорт).
+    const tOfItem = (it: RawItem): number => {
+      const na = rawNodes.get(rb.fromId), nb = rawNodes.get(rb.toId);
+      if (!na || !nb || it.segOffset < 0) return 0.5;
+      const pts = [na, ...rb.bends, nb];
+      const segLen = (i: number) => Math.hypot(pts[i + 1].x - pts[i].x, pts[i + 1].y - pts[i].y);
+      let total = 0;
+      for (let i = 0; i < pts.length - 1; i++) total += segLen(i);
+      if (total <= 0) return 0.5;
+      const si = Math.min(Math.max(0, Math.round(it.segIndex)), pts.length - 2);
+      let before = 0;
+      for (let i = 0; i < si; i++) before += segLen(i);
+      const t = Math.min(1, Math.max(0, (before + Math.min(it.segOffset, segLen(si))) / total));
+      return t;
+    };
 
     // Запоминаем соответствие «GUID выработки в файле → наш id»: по нему
     // позиции ПЛА ниже находят свои выработки и точку привязки выноски.
     const branchId = branchIdOf.get(rb)!;
+    bulkItemsAll.forEach(it => {
+      const t0 = tOfItem(it);
+      // Без собственного R у объекта берём поле выработки (делим поровну).
+      const r = itemR(it) || (sumItemsR > 0 ? 0 : bulkR / bulkItemsAll.length);
+      bulkheadItems.push({
+        branchId,
+        name: it.description || erpBulkheadName(it.code) || "Перемычка",
+        code: it.code,
+        r: +r.toFixed(6),
+        t: +(flipVmp ? 1 - t0 : t0).toFixed(4),
+        surveyQ: num(it.f["Airflow.BulkheadDepressionSurveyDischarge"], 0),
+      });
+    });
     branchIdMap.set(rb.id, branchId);
     branches.push(makeBranch(branchId, bFrom, bTo, {
       type: f["Rib.Name"] || rt?.name || "",
@@ -1075,7 +1145,11 @@ export async function parseErp(
       hasBulkhead,
       // Материал и вид перемычки в АэроСети задаёт КОД картинки — по нему и
       // называем, если у объекта нет своего описания.
-      bulkheadName: hasBulkhead ? (bulkItem?.description || erpBulkheadName(bulkItem?.code ?? "") || "Перемычка") : "",
+      bulkheadName: hasBulkhead
+        ? (bulkItemsAll.length > 1
+          ? `${bulkItem?.description || erpBulkheadName(bulkItem?.code ?? "") || "Перемычка"} и ещё ${bulkItemsAll.length - 1}`
+          : (bulkItem?.description || erpBulkheadName(bulkItem?.code ?? "") || "Перемычка"))
+        : "",
       // АэроСеть хранит сопротивление перемычки в кМюрг, а поле bulkheadR —
       // в базовых Мюрг (как при импорте CSV/.cdf3), поэтому умножаем на 1000.
       bulkheadR: hasBulkhead ? bulkR * 1000 : 0,
@@ -1111,6 +1185,8 @@ export async function parseErp(
     warnings.push(`У ${fanCurveMissing} вентиляторов «по характеристике» не найдена кривая в справочнике файла — взят постоянный напор из рабочей точки АэроСети`);
   }
   if (fansReversed > 0) warnings.push(`Вентиляторов в реверсе: ${fansReversed}`);
+  if (bulkMulti > 0) warnings.push(`Выработок с несколькими перемычками: ${bulkMulti} — перенесены все, сопротивления складываются`);
+  if (bulkWithFan > 0) warnings.push(`Выработок с вентилятором и перемычкой: ${bulkWithFan} — перемычки сохранены`);
   if (ventModeCount > 1) warnings.push(`В проекте ${ventModeCount} режимов проветривания — вентиляторы и перемычки взяты из выбранного «${ventModeName}»`);
   if (nodes.every(n => n.z === 0)) warnings.push("У всех узлов нулевая отметка — в проекте не заданы глубины");
 
@@ -1198,6 +1274,7 @@ export async function parseErp(
     branches,
     horizons,
     positions,
+    bulkheadItems,
     fanCurves: [...fanCurveByTpl.values()].filter((c): c is FanCurve => !!c && fanCurveIds.has(c.id)),
     ventModeName,
     resistanceUnit: rUnit,

@@ -71,6 +71,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
       }),
       positions: withPositions ? r.positions : [],
       fanCurves: withFans ? r.fanCurves : [],
+      bulkheadItems: withBulkheads ? r.bulkheadItems : [],
       stats: {
         ...r.stats,
         bulkheads: withBulkheads ? r.stats.bulkheads : 0,

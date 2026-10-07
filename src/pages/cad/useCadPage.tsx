@@ -2895,6 +2895,27 @@ export function useCadPage() {
     const erpBulkheadSymbols = (existing: SchemaSymbol[]) => {
       const stamp = Date.now();
       const syms: SchemaSymbol[] = [];
+      // Каждая перемычка из файла — свой значок на своём месте выработки.
+      // Расчёт сети суммирует R значков ветви, поэтому несколько сооружений
+      // на одной выработке работают последовательно, как в АэроСети.
+      const items = result.bulkheadItems ?? [];
+      if (items.length > 0) {
+        items.forEach((it, i) => {
+          if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === it.branchId)) return;
+          syms.push({
+            id: `SYM_BK_ERP_${stamp}_${i}`,
+            typeId: guessBulkheadTypeId(it.name || "Перемычка"),
+            x: 0, y: 0,
+            branchId: it.branchId,
+            t: it.t,
+            bkResMode: "manual" as const,
+            bkManualR: it.r,
+            bkBulkheadR: it.r * 1000,
+            bkBulkheadName: it.name || "Перемычка",
+          });
+        });
+        return syms;
+      }
       result.branches.forEach((b, i) => {
         if (!b.hasBulkhead) return;
         if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === b.id)) return;
