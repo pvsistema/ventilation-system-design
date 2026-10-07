@@ -24,6 +24,7 @@ import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 import VdsReportPanel from "@/components/cad/vds/VdsReportPanel";
+import VdsChannelSection from "@/components/cad/vds/VdsChannelSection";
 
 interface Props {
   branches: TopoBranch[];
@@ -358,6 +359,8 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
             отверстие шахты не характеризует фактического состояния её
             проветривания.
           </div>
+
+          <VdsChannelSection fans={fanBranches} label={fanLabel} />
         </div>
 
         )}
