@@ -37,6 +37,8 @@ interface Props {
   label: (b: TopoBranch) => string;
   branches: TopoBranch[];
   nodes: TopoNode[];
+  /** Подсветка ветвей маршрута на схеме. */
+  onHighlight?: (ids: string[]) => void;
 }
 
 const RHO = 1.2;
@@ -72,7 +74,7 @@ function n(s: string): number {
   return Number.isFinite(v) ? v : 0;
 }
 
-export default function VdsChannelSection({ fans, label, branches, nodes }: Props) {
+export default function VdsChannelSection({ fans, label, branches, nodes, onHighlight }: Props) {
   const gvu = useMemo(() => fans.filter(f => f.fanType === "ГВУ"), [fans]);
   const list = gvu.length ? gvu : fans;
   const [fanId, setFanId] = useState<string>(list[0]?.id ?? "");
@@ -84,6 +86,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes }: Prop
   const [routeIds, setRouteIds] = useState<string[]>([]);
   const [ends, setEnds] = useState<{ start: RouteEndKind; end: RouteEndKind }>({ start: "dead", end: "dead" });
   const [showRoute, setShowRoute] = useState(true);
+  const [highlight, setHighlight] = useState(true);
 
   const byId = useMemo(() => new Map(branches.map(x => [x.id, x] as const)), [branches]);
   const nodeById = useMemo(() => new Map(nodes.map(x => [x.id, x] as const)), [nodes]);
@@ -103,6 +106,16 @@ export default function VdsChannelSection({ fans, label, branches, nodes }: Prop
   useEffect(autoTrace, [fanId, thr]);
 
   const route = useMemo(() => routeIds.map(id => byId.get(id)).filter(Boolean) as TopoBranch[], [routeIds, byId]);
+
+  // Подсветка маршрута на схеме — синхронно с составом маршрута.
+  // При размонтировании блока (закрытие окна / смена вкладки) снимаем.
+  const routeKey = routeIds.join("|");
+  useEffect(() => {
+    onHighlight?.(highlight ? routeIds : []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routeKey, highlight]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => onHighlight?.([]), []);
   const rNodes = useMemo(() => routeNodes(routeIds, byId), [routeIds, byId]);
   const firstNode = rNodes[0];
   const lastNode = rNodes[rNodes.length - 1];
@@ -256,6 +269,12 @@ export default function VdsChannelSection({ fans, label, branches, nodes }: Prop
                 ствол ≥
                 <input className="w-10 px-1 py-0.5 text-[11px] border border-gray-300 rounded" value={vertThr} onChange={e => setVertThr(e.target.value)} />°
               </label>
+              <button onClick={() => setHighlight(h => !h)}
+                title={highlight ? "Снять подсветку маршрута на схеме" : "Подсветить маршрут на схеме"}
+                className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border"
+                style={highlight ? { borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" } : { borderColor: "#d1d5db", background: "#fff", color: "#4b5563" }}>
+                <Icon name={highlight ? "Eye" : "EyeOff"} size={12} /> На схеме
+              </button>
               <button onClick={autoTrace} className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-gray-300 bg-white hover:bg-gray-50">
                 <Icon name="Wand2" size={12} /> Авто
               </button>

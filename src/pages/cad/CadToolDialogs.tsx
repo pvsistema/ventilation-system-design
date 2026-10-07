@@ -459,7 +459,8 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           branches={p.branches}
           nodes={p.nodes}
           solved={!!p.solveResult}
-          onClose={() => p.setShowVds(false)}
+          onClose={() => { p.setDepressogramHighlight([]); p.setShowVds(false); }}
+          onHighlightBranches={p.setDepressogramHighlight}
           bulkheads={p.vdsBulkheads}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
           license={p.license}

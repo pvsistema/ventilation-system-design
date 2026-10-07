@@ -39,6 +39,8 @@ interface Props {
   license?: { status?: string; info?: { key?: string; licensed?: boolean } | null; fingerprint?: string } | null;
   /** Ветви с полной депрессией (dPTotal/rTotal) — для раздела устойчивости. */
   stabilityBranches?: TopoBranch[];
+  /** Подсветить ветви на схеме (маршрут вентканала); [] — снять подсветку. */
+  onHighlightBranches?: (ids: string[]) => void;
 }
 
 interface GvuRow {
@@ -66,7 +68,7 @@ function classify(a: number): { label: string; color: string } {
   return { label: "Легкопроветриваемая", color: "var(--c-green, #16a34a)" };
 }
 
-export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches }: Props) {
+export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches, onHighlightBranches }: Props) {
   const [tab, setTab] = useState<"opening" | "report">("opening");
   // Окно перетаскивается за шапку, положение запоминается между открытиями.
   // Ограничение по краю экрана считаем по большей ширине (вкладка «Отчёт ВДС»).
@@ -198,7 +200,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
             ["opening", "Эквивалентное отверстие", "Gauge"],
             ["report", "Отчёт ВДС", "FileLock2"],
           ] as const).map(([id, label, icon]) => (
-            <button key={id} onClick={() => setTab(id)}
+            <button key={id} onClick={() => { setTab(id); if (id === "report") onHighlightBranches?.([]); }}
               className={`px-3 py-1.5 text-[12px] rounded-t border border-b-0 flex items-center gap-1.5 ${tab === id ? "bg-white text-blue-700 font-semibold border-gray-300" : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100"}`}
               style={tab === id ? { marginBottom: -1 } : undefined}>
               <Icon name={icon} size={13} />{label}
@@ -373,7 +375,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
             проветривания.
           </div>
 
-          <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} />
+          <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} />
         </div>
 
         )}
