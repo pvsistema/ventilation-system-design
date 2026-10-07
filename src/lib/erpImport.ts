@@ -89,7 +89,36 @@ import JSZip from "jszip";
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
 import { buildUserFanCurve } from "@/lib/userFanFit";
-import { USER_FAN_PREFIX, type FanCurve } from "@/lib/fanCurves";
+import { USER_FAN_PREFIX, FAN_CATALOG, fanHAngle, type FanCurve } from "@/lib/fanCurves";
+
+/**
+ * Поиск вентилятора в НАШЕМ заводском каталоге по названию из АэроСети.
+ * Нужен, когда в файле вентилятор «по характеристике», но самой кривой в
+ * справочнике файла нет — тогда берём кривую из каталога, а не постоянный напор.
+ * Латиница-двойник (A, B, M, …) приводится к кириллице, пробелы/дефисы/точки
+ * убираются. При нескольких совпадениях берётся самое длинное название
+ * (чтобы «ВОД-21М» не подменялся «ВОД-21»). Слишком короткие названия
+ * (≤ 3 символов) не сопоставляются — иначе «ВМ» совпадёт с чем угодно.
+ */
+function findCatalogFanByName(...names: (string | undefined | null)[]): FanCurve | undefined {
+  const LAT2CYR: Record<string, string> = { a: "а", b: "в", c: "с", e: "е", h: "н", k: "к", m: "м", o: "о", p: "р", t: "т", x: "х", y: "у" };
+  const norm = (s: string) => s.toLowerCase().replace(/[abcehkmoptxy]/g, ch => LAT2CYR[ch] ?? ch).replace(/[\s\-_./,№#()«»"']/g, "");
+  for (const raw of names) {
+    if (!raw) continue;
+    const q = norm(raw);
+    if (q.length < 4) continue;
+    const exact = FAN_CATALOG.find(f => norm(f.name) === q);
+    if (exact) return exact;
+    let best: FanCurve | undefined;
+    let bestLen = 0;
+    for (const f of FAN_CATALOG) {
+      const fn = norm(f.name);
+      if (fn.length >= 4 && q.includes(fn) && fn.length > bestLen) { best = f; bestLen = fn.length; }
+    }
+    if (best) return best;
+  }
+  return undefined;
+}
 
 /**
  * Единицы сопротивления выработок в файле .erp.
@@ -926,6 +955,10 @@ export async function parseErp(
   let fans = 0, bulkheads = 0, skipped = 0;
   let fansByCurve = 0, fansFixedQ = 0, fansReversed = 0, fanCurveMissing = 0;
   const fanCurveIds = new Set<string>();
+  /** Вентиляторы, для которых кривая взята из нашего каталога по названию. */
+  let fansByCatalog = 0;
+  const catalogFanNames = new Set<string>();
+  const missingFanNames = new Set<string>();
   const bulkheadItems: ErpBulkhead[] = [];
   let fansInBulkhead = 0;
   const fanBulkheadNotes: string[] = [];
@@ -1041,7 +1074,36 @@ export async function parseErp(
         fanCurveIds.add(curve.id);
         fansByCurve++;
       } else {
-        fanCurveMissing++;
+        // Кривой в справочнике файла нет — ищем модель по названию в нашем
+        // каталоге (ВМЭ-12А, ВМ-8М, ВМ-6М …), чтобы вентилятор работал по
+        // характеристике, а не с постоянным напором из старой рабочей точки.
+        const tplName = tplId ? fanTpls.get(tplId)?.name : "";
+        const cat = findCatalogFanByName(tplName, fanItem?.description, f["Rib.Name"]);
+        if (cat) {
+          fanMode = "curve";
+          fanCurveId = cat.id;
+          if (!(fanRpm > 0)) fanRpm = cat.rpmNominal;
+          // Угол лопаток — тот, чья кривая ближе всего проходит через рабочую
+          // точку АэроСети (Q, H). Без рабочей точки — средний угол каталога.
+          const qOp = Math.abs(num(f["Airflow.Discharge"], 0)) / Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1)));
+          if (cat.bladeAngles.length === 0) {
+            fanBladeAngle = 0;
+          } else if (qOp > 0 && fanPressure > 0) {
+            let bestA = cat.bladeAngles[0], bestD = Infinity;
+            for (const a of cat.bladeAngles) {
+              const d = Math.abs(fanHAngle(cat, qOp, a, fanRpm) - fanPressure);
+              if (d < bestD) { bestD = d; bestA = a; }
+            }
+            fanBladeAngle = bestA;
+          } else {
+            fanBladeAngle = cat.bladeAngles[Math.floor((cat.bladeAngles.length - 1) / 2)];
+          }
+          fansByCatalog++;
+          catalogFanNames.add(cat.name);
+        } else {
+          fanCurveMissing++;
+          if (fanItem?.description || tplName) missingFanNames.add(tplName || fanItem?.description || "");
+        }
       }
     } else if (hasFan && vType === "2") {
       const q = num(ff["Airflow.VentilatorFixedQ"], 0);
@@ -1207,12 +1269,16 @@ export async function parseErp(
   }
 
   if (skipped > 0) warnings.push(`Пропущено выработок без узлов: ${skipped}`);
-  log.push(`вентиляторы: по характеристике ${fansByCurve}, постоянный расход ${fansFixedQ}, реверс ${fansReversed}`);
+  log.push(`вентиляторы: по характеристике ${fansByCurve}, из каталога по названию ${fansByCatalog}, постоянный расход ${fansFixedQ}, реверс ${fansReversed}`);
   if (fanCurveIds.size > 0) {
     warnings.push(`Вентиляторов по характеристике: ${fansByCurve}. В справочник рудника добавлено моделей: ${fanCurveIds.size}`);
   }
+  if (fansByCatalog > 0) {
+    warnings.push(`У ${fansByCatalog} вентиляторов «по характеристике» кривой нет в справочнике файла — характеристика взята из каталога программы по названию (${[...catalogFanNames].join(", ")}); угол лопаток подобран по рабочей точке АэроСети, проверьте его`);
+  }
   if (fanCurveMissing > 0) {
-    warnings.push(`У ${fanCurveMissing} вентиляторов «по характеристике» не найдена кривая в справочнике файла — взят постоянный напор из рабочей точки АэроСети`);
+    const names = [...missingFanNames].filter(Boolean);
+    warnings.push(`У ${fanCurveMissing} вентиляторов «по характеристике» не найдена кривая ни в справочнике файла, ни в каталоге программы — взят постоянный напор из рабочей точки АэроСети${names.length ? ` (${names.slice(0, 5).join(", ")}${names.length > 5 ? " …" : ""})` : ""}`);
   }
   if (fansReversed > 0) warnings.push(`Вентиляторов в реверсе: ${fansReversed}`);
   if (fans > 0) {
