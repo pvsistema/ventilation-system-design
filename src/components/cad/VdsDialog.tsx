@@ -25,6 +25,7 @@ import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 import VdsReportPanel from "@/components/cad/vds/VdsReportPanel";
 import VdsChannelSection from "@/components/cad/vds/VdsChannelSection";
+import { useDraggableWindow } from "@/hooks/useDraggableWindow";
 
 interface Props {
   branches: TopoBranch[];
@@ -67,6 +68,10 @@ function classify(a: number): { label: string; color: string } {
 
 export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches }: Props) {
   const [tab, setTab] = useState<"opening" | "report">("opening");
+  // Окно перетаскивается за шапку, положение запоминается между открытиями.
+  // Ограничение по краю экрана считаем по большей ширине (вкладка «Отчёт ВДС»).
+  const winWidth = tab === "report" ? 920 : 680;
+  const { pos, dragHandleProps } = useDraggableWindow({ width: 920, height: 700, storageKey: "pvs_vds_dialog_pos" });
   // Вентиляторы (ГВУ/ВВУ), установленные в открытой схеме. ГВУ идут первыми.
   const fanBranches = useMemo(
     () =>
@@ -151,7 +156,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
 
   return (
     <div
-      className="fixed inset-0 z-[200] flex items-start justify-center pt-16"
+      className="fixed inset-0 z-[200]"
       style={{ background: "rgba(0,0,0,0.35)" }}
       onMouseDown={e => {
         if (e.target === e.currentTarget) onClose();
@@ -159,12 +164,20 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
     >
       <div
         className="bg-white rounded shadow-2xl flex flex-col"
-        style={{ width: tab === "report" ? 920 : 680, maxWidth: "96vw", maxHeight: "88vh", border: "1px solid #b0b8cc" }}
+        style={{
+          position: "fixed",
+          left: Math.min(pos.x, Math.max(0, window.innerWidth - winWidth)),
+          top: pos.y,
+          width: winWidth, maxWidth: "96vw",
+          maxHeight: `calc(100vh - ${pos.y + 12}px)`,
+          border: "1px solid #b0b8cc",
+        }}
       >
-        {/* Заголовок */}
+        {/* Заголовок — за него окно перетаскивается */}
         <div
           className="flex items-center justify-between px-4 py-2.5"
-          style={{ background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}
+          {...dragHandleProps}
+          style={{ ...dragHandleProps.style, background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}
         >
           <span className="text-[13px] font-semibold text-gray-800 flex items-center gap-2">
             <Icon name="Gauge" size={16} />
