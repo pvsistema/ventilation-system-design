@@ -266,6 +266,11 @@ def handler(event: dict, context) -> dict:
         # Админ указывает версию, ниже которой работать небезопасно. Программы
         # со старой сборкой покажут блокирующее окно с кнопкой «Обновить».
         # Пустая строка снимает требование.
+        # Полная запись version.json — для резервного зеркала (sync_from_cloud.py).
+        if action == "export_info":
+            return {"statusCode": 200, "headers": CORS,
+                    "body": json.dumps(get_version_info(s3), ensure_ascii=False)}
+
         if action == "set_min_secure":
             info = get_version_info(s3)
             ver  = (body.get("min_secure_version") or "").strip()

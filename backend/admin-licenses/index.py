@@ -210,6 +210,37 @@ def handler(event: dict, context) -> dict:
         if action == "generate_key":
             return resp(200, {"key": generate_key()})
 
+        # ── Выгрузка базы для резервного зеркала (Beget и др.) ─────────────────
+        # Только чтение. Зеркало забирает таблицы постранично скриптом
+        # mirror-server/sync_from_cloud.py и складывает в свою базу.
+        if action == "export_tables":
+            cur.execute(
+                "SELECT table_name FROM information_schema.tables "
+                "WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' "
+                "ORDER BY table_name")
+            tables = []
+            for (t,) in cur.fetchall():
+                cur.execute(f'SELECT COUNT(*) FROM "{t}"')
+                cnt = cur.fetchone()[0]
+                tables.append({"table": t, "rows": cnt})
+            return resp(200, {"tables": tables})
+
+        if action == "export_table":
+            table = str(body.get("table") or "")
+            cur.execute(
+                "SELECT 1 FROM information_schema.tables "
+                "WHERE table_schema = current_schema() AND table_name = %s", (table,))
+            if not cur.fetchone():
+                return resp(404, {"error": "no_such_table"})
+            offset = max(0, int(body.get("offset") or 0))
+            limit = min(5000, max(1, int(body.get("limit") or 2000)))
+            cur.execute(f'SELECT * FROM "{table}" ORDER BY 1 OFFSET %s LIMIT %s',
+                        (offset, limit))
+            cols = [d[0] for d in cur.description]
+            rows = [list(r) for r in cur.fetchall()]
+            return resp(200, {"table": table, "columns": cols, "rows": rows,
+                              "offset": offset, "done": len(rows) < limit})
+
         if action == "generate_vds_code":
             return resp(200, {"code": generate_vds_code()})
 

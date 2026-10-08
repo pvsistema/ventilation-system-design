@@ -4,8 +4,9 @@
 
 // URL функции версий: отдаёт { version, notes, download_url } и по ?file=exe —
 // 302-редирект на свежий установщик с именем PVS-Setup-{версия}.exe.
-export const VERSION_URL =
-  "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
+import { APP_VERSION_URL } from "@/lib/api-urls";
+
+export const VERSION_URL = APP_VERSION_URL;
 
 // Прямая ссылка на скачивание установщика (одинаковая для веба и десктопа).
 export const INSTALLER_URL = `${VERSION_URL}?file=exe`;

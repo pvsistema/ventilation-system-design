@@ -16,6 +16,7 @@ import {
   type MonitoringData, adminApi, toInputDate, emptyForm,
 } from "@/pages/admin/adminTypes";
 import { invalidateRemoteVersion } from "@/lib/updater";
+import { APP_VERSION_URL } from "@/lib/api-urls";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import LicensesTab from "@/pages/admin/LicensesTab";
 import LicenseDialogs from "@/pages/admin/LicenseDialogs";
@@ -140,7 +141,7 @@ export default function Admin() {
   const [secStatus, setSecStatus]       = useState<"idle"|"uploading"|"ok"|"err">("idle");
   const [secErr, setSecErr]             = useState("");
 
-  const VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
+  const VERSION_URL = APP_VERSION_URL;
 
   const loadLicenses = useCallback(async (pwd: string) => {
     setLoading(true);

@@ -1,0 +1,15 @@
+[Unit]
+Description=PV-Sistema mirror (site + API + admin)
+After=network.target postgresql.service
+
+[Service]
+User=pvs
+Group=pvs
+WorkingDirectory=/opt/pvs/mirror-server
+ExecStart=/opt/pvs/mirror-server/.venv/bin/python /opt/pvs/mirror-server/server.py
+Restart=always
+RestartSec=3
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target
