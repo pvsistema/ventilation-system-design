@@ -28,9 +28,6 @@ const Download = lazy(() => import("./pages/Download"));
 // Публичная страница документации — её адрес указывается в заявлении
 // в реестр российского ПО, эксперт открывает её без авторизации.
 const Docs = lazy(() => import("./pages/Docs"));
-// Страница со ссылками на презентации докладов — открывается по прямой
-// ссылке, авторизация не нужна.
-const Presentations = lazy(() => import("./pages/Presentations"));
 // Кабинет клиента: организация видит и обслуживает только свои ключи.
 const Client = lazy(() => import("./pages/Client"));
 
@@ -114,7 +111,6 @@ const App = () => {
               <Route path="/client" element={<Client />} />
               <Route path="/download" element={<Download />} />
               <Route path="/docs" element={<Docs />} />
-              <Route path="/presentations" element={<Presentations />} />
               <Route path="/legacy" element={<Index />} />
               {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
               <Route path="*" element={<NotFound />} />
