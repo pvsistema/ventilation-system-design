@@ -1,0 +1,2 @@
+INSERT INTO t_p47851478_ventilation_system_d.licenses (key, owner_name, owner_email, max_seats, is_active, expires_at, notes, org_group)
+VALUES ('PVS-JQFJ-YTD5-G2VV-U5NU', 'Эксперт реестра российского ПО (Минцифры России)', NULL, 3, TRUE, '2027-01-10 23:59:59+05', 'Демонстрационный ключ для экспертной проверки при включении в Единый реестр российских программ для ЭВМ. Выдан 10.10.2026 на 90 дней, 3 рабочих места.', 'Реестр ПО');
