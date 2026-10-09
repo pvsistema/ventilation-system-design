@@ -159,14 +159,17 @@ export default function Docs() {
         </div>
 
         {/* Пояснение */}
-        <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-[13px] text-amber-900 leading-relaxed">
+        <div className="rounded-lg border border-slate-200 bg-slate-50 p-4 text-[13px] text-slate-700 leading-relaxed">
           <div className="flex gap-2.5">
             <Icon name="Info" size={17} className="flex-shrink-0 mt-0.5" />
             <div>
-              <b>Перед подачей заявления</b> заполните в документах поля,
-              отмеченные как «____________»: наименование правообладателя, ИНН,
-              ОГРН, контакты технической поддержки. Порядок подготовки комплекта
-              описан в документе «Опись комплекта».
+              <b>Правообладатель:</b> Ипатов Сергей Генадьевич, ИНН 026706779625.
+              Свидетельство о государственной регистрации программы для ЭВМ
+              № 2026681414 от 14.07.2026.
+              <br />
+              <b>Техническая поддержка:</b>{" "}
+              <a href="mailto:votapise@mail.ru" className="text-blue-600 hover:underline">votapise@mail.ru</a>,{" "}
+              <a href="tel:+79625244698" className="text-blue-600 hover:underline">+7 962 524-46-98</a>
             </div>
           </div>
         </div>
