@@ -194,6 +194,7 @@ export async function parseDwg(
   buffer: ArrayBuffer,
   epsilon?: number,
   onlyLayers?: string[],
+  axisOverride?: string[],
 ): Promise<DwgImportResult> {
   // Библиотека тяжёлая (~10 МБ), поэтому грузим её только сейчас — в момент,
   // когда пользователь действительно открыл файл DWG.
@@ -254,7 +255,7 @@ export async function parseDwg(
     );
   }
 
-  const result = parseDxf(dxf, epsilon, onlyLayers);
+  const result = parseDxf(dxf, epsilon, onlyLayers, axisOverride);
 
   return {
     ...result,

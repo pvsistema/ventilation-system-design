@@ -75,6 +75,11 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const [picked, setPicked] = useState<Set<string>>(new Set());
   /** Показывать все слои или только те, где есть геометрия */
   const [showAllLayers, setShowAllLayers] = useState(false);
+  /**
+   * Слои выработок, заданные пользователем. Каждый такой слой при импорте
+   * становится горизонтом. Пусто = программа определяет слои сама.
+   */
+  const [axisSel, setAxisSel] = useState<Set<string>>(new Set());
   const fileTextRef = useRef<string>("");
   const fileBufRef = useRef<ArrayBuffer | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -84,9 +89,12 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
    * Список слоёв берём из первого разбора и больше не трогаем — иначе он
    * «схлопывался» бы до отмеченных, и вернуть снятую галочку было бы нельзя.
    */
-  const reparse = (text: string, eps: number, sel: Set<string>, useAutoEpsilon = false) => {
+  const reparse = (
+    text: string, eps: number, sel: Set<string>, useAutoEpsilon = false,
+    axis: Set<string> = axisSel,
+  ) => {
     const only = sel.size > 0 ? [...sel] : undefined;
-    const parsed = parseDxf(text, useAutoEpsilon ? undefined : eps, only);
+    const parsed = parseDxf(text, useAutoEpsilon ? undefined : eps, only, axis.size > 0 ? [...axis] : undefined);
     setResult(parsed);
     if (useAutoEpsilon && parsed.epsilonUsed !== undefined) {
       setEpsilon(parsed.epsilonUsed);
@@ -98,6 +106,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const initLayers = (parsed: DxfImportResult) => {
     const list = parsed.layers ?? [];
     setLayers(list);
+    setAxisSel(new Set());
     // По умолчанию отмечаем то, что программа распознала сама: осевые слои
     // (по ним строятся ветви) плюс слои с узлами-окружностями и подписями —
     // без них потеряются номера и названия выработок.
@@ -114,6 +123,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     setDwgMode(isDwg);
     setLayers([]);
     setPicked(new Set());
+    setAxisSel(new Set());
     try {
       const buf = await f.arrayBuffer();
       fileBufRef.current = buf;
@@ -133,7 +143,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
         fileTextRef.current = text;
         setFilePreview(text.split("\n").slice(0, 60).join("\n"));
         // Первый разбор — без фильтра слоёв и с автоподбором точности
-        initLayers(reparse(text, epsilon, new Set(), true));
+        initLayers(reparse(text, epsilon, new Set(), true, new Set()));
       }
     } catch (e) {
       setError(`Ошибка чтения файла: ${e instanceof Error ? e.message : String(e)}`);
@@ -151,7 +161,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     const text = decodeDxfBytes(fileBufRef.current, enc);
     fileTextRef.current = text;
     setFilePreview(text.split("\n").slice(0, 60).join("\n"));
-    initLayers(reparse(text, epsilon, new Set(), true));
+    initLayers(reparse(text, epsilon, new Set(), true, new Set()));
   };
 
   const handleEpsilonChange = (val: number) => {
@@ -168,6 +178,26 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
     else next.add(name);
     setPicked(next);
     if (fileTextRef.current) reparse(fileTextRef.current, epsilon, next);
+  };
+
+  /**
+   * Пометка «выработки»: слой становится осевым (по нему строятся ветви) и
+   * при импорте превращается в отдельный горизонт. Помеченный слой
+   * автоматически включается в импорт.
+   */
+  const toggleAxis = (name: string) => {
+    const base = axisSel.size > 0 ? axisSel : new Set(layers.filter(l => l.isAxis).map(l => l.name));
+    const nextAxis = new Set(base);
+    if (nextAxis.has(name)) nextAxis.delete(name);
+    else nextAxis.add(name);
+    const nextPicked = new Set(picked);
+    if (nextAxis.has(name)) nextPicked.add(name);
+    setAxisSel(nextAxis);
+    setPicked(nextPicked);
+    if (!fileTextRef.current) return;
+    const parsed = reparse(fileTextRef.current, epsilon, nextPicked, false, nextAxis);
+    const axisNow = new Set((parsed.layers ?? []).filter(l => l.isAxis).map(l => l.name));
+    setLayers(prev => prev.map(l => ({ ...l, isAxis: axisNow.has(l.name) })));
   };
 
   /** Отметить все слои / снять все, кроме распознанных программой */
@@ -364,11 +394,18 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                           <span className="text-[11px] text-gray-800 truncate flex-1" title={l.name}>
                             {l.name || "(без имени)"}
                           </span>
-                          {l.isAxis && (
-                            <span className="text-[9px] px-1 rounded flex-shrink-0"
-                              style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue, #1d4ed8)" }}>
-                              выработки
-                            </span>
+                          {l.segments > 0 && (
+                            <button type="button"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); toggleAxis(l.name); }}
+                              title={l.isAxis
+                                ? "Слой выработок: по нему строятся ветви, при импорте станет горизонтом. Нажмите, чтобы снять"
+                                : "Сделать слоем выработок — станет отдельным горизонтом"}
+                              className="text-[9px] px-1 rounded flex-shrink-0 border"
+                              style={l.isAxis
+                                ? { background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue, #1d4ed8)", borderColor: "transparent" }
+                                : { background: "transparent", color: "var(--c-t3, #9ca3af)", borderColor: "var(--c-b1, #e0e0e0)" }}>
+                              {l.isAxis ? "выработки · горизонт" : "+ выработки"}
+                            </button>
                           )}
                           <span className="text-[10px] text-gray-400 flex-shrink-0 tabular-nums">
                             {l.segments > 0 && `${l.segments} лин.`}
@@ -383,6 +420,8 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
                       style={{ borderColor: "var(--c-b1, #e0e0e0)" }}>
                       Отмечены слои, распознанные как выработки, узлы и подписи. Снимите
                       галочки со слоёв крепления, геологии и сетки — на схему сети они не идут.
+                      Кнопкой «+ выработки» отметьте слои с выработками (например, «г.-720м.»,
+                      «Гор420») — каждый такой слой станет отдельным горизонтом.
                       {hiddenCount > 0 && (
                         <button onClick={() => setShowAllLayers(v => !v)}
                           className="ml-1 text-blue-600 underline hover:text-blue-800">

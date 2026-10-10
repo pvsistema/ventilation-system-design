@@ -22,7 +22,13 @@
 //   CIRCLE             — узлы сети (центр + Z = координаты узла)
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { makeNode, makeBranch, type TopoNode, type TopoBranch } from "@/lib/topology";
+import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
+
+/** Цвета горизонтов, создаваемых из слоёв чертежа */
+const HORIZON_COLORS = [
+  "#2563eb", "#dc2626", "#16a34a", "#ca8a04", "#9333ea", "#0891b2",
+  "#ea580c", "#4f46e5", "#059669", "#be123c", "#7c3aed", "#0d9488",
+];
 
 /** Слой чертежа и что на нём нарисовано — для выбора слоёв при импорте */
 export interface DxfLayerInfo {
@@ -51,6 +57,11 @@ export interface DxfImportResult {
   /** Обнаруженный коэффициент косоугольной проекции (0 = нет проекции / плоский файл) */
   obliqueFactor?: number;
   zRange?: { min: number; max: number; hasZ: boolean };
+  /**
+   * Горизонты: каждый слой чертежа, по которому построены выработки, —
+   * отдельный горизонт. Ветви привязаны к ним через horizonId.
+   */
+  horizons?: Horizon[];
 }
 
 interface Pt3 { x: number; y: number; z: number }
@@ -118,6 +129,7 @@ export function parseDxf(
   content: string,
   epsilonOverride?: number,
   onlyLayers?: string[],
+  axisOverride?: string[],
 ): DxfImportResult {
   const warnings: string[] = [];
   const debugLines: string[] = [];
@@ -423,7 +435,12 @@ export function parseDxf(
   // 5. Если всего один слой — берём его (все сегменты — оси)
   // 6. Fallback: исключаем декоративные слои (*_dim, *_hatch, *_border, dimensions, hatch)
   //    и берём слой с наибольшим числом сегментов
-  let axisLayers = allLayers.filter(l =>
+  // Слои выработок, отмеченные пользователем в окне импорта, важнее автоопределения.
+  const manualAxis = axisOverride && axisOverride.length > 0
+    ? allLayers.filter(l => axisOverride.includes(l))
+    : [];
+  if (manualAxis.length > 0) debugLines.push(`Слои выработок заданы вручную: ${manualAxis.join(", ")}`);
+  let axisLayers = manualAxis.length > 0 ? manualAxis : allLayers.filter(l =>
     /_c$/i.test(l) || /\baxis\b/i.test(l) || /ось/i.test(l)
   );
   if (axisLayers.length === 0) {
@@ -442,7 +459,7 @@ export function parseDxf(
   // линии и ветвей не находится вовсе. Порог: хотя бы 5% всех сегментов.
   {
     const named = axisLayers.reduce((s, l) => s + (cntByLayer.get(l) ?? 0), 0);
-    if (axisLayers.length > 0 && segments.length >= 50 && named < segments.length * 0.05) {
+    if (manualAxis.length === 0 && axisLayers.length > 0 && segments.length >= 50 && named < segments.length * 0.05) {
       debugLines.push(`Слои по имени (${axisLayers.join(", ")}) содержат ${named} из ${segments.length} сегментов — пропущены`);
       axisLayers = [];
     }
@@ -671,8 +688,11 @@ export function parseDxf(
   // 1. CIRCLE (АэроСеть) — если их >= 80% от числа концов
   // 2. TEXT с числами (Вентиляция 2.0) — если их >= 50% от числа концов
   // 3. Концы LINE
-  const useCircles = circles.length > 0 && circles.length >= roughClusters.length * 0.8;
-  const useTexts   = !useCircles && numericTexts.length >= roughClusters.length * 0.5;
+  // Слои выработок выбраны вручную — это чертёж-картинка, а не выгрузка
+  // АэроСети/Вентиляции 2.0: кружки и числа на нём — условные знаки и
+  // подписи, а не узлы. Узлы строим по концам линий.
+  const useCircles = manualAxis.length === 0 && circles.length > 0 && circles.length >= roughClusters.length * 0.8;
+  const useTexts   = manualAxis.length === 0 && !useCircles && numericTexts.length >= roughClusters.length * 0.5;
   debugLines.push(`CIRCLE=${circles.length}, TEXT#=${numericTexts.length}, roughEP=${roughClusters.length}, useCircles=${useCircles}, useTexts=${useTexts}`);
 
   const allPts: Pt3[] = [];
@@ -800,6 +820,10 @@ export function parseDxf(
   const seen = new Set<string>();
   let bi = 0;
 
+  // ── Горизонты: один слой выработок = один горизонт ──────────────────────
+  const horizonIdByLayer = new Map<string, string>();
+  axisLayers.forEach((l, i) => horizonIdByLayer.set(l, `HD${ts}_${i}`));
+
   for (let si = 0; si < workSegs.length; si++) {
     const seg = workSegs[si];
     const w1 = toWorld(seg.x1, seg.y1, seg.z1);
@@ -828,6 +852,7 @@ export function parseDxf(
       manualLength: true,
       angle: realAngle,
       manualAngle: true,
+      horizonId: horizonIdByLayer.get(seg.layer) ?? "",
     }));
   }
 
@@ -1006,6 +1031,31 @@ export function parseDxf(
 
   debugLines.push(`Ветвей: ${branches.length}, узлов: ${nodes.length}`);
 
+  const horizonZ = new Map<string, number[]>();
+  {
+    const nodeById = new Map(nodes.map(n => [n.id, n]));
+    for (const b of branches) {
+      if (!b.horizonId) continue;
+      const a = horizonZ.get(b.horizonId) ?? [];
+      a.push(nodeById.get(b.fromId)?.z ?? 0, nodeById.get(b.toId)?.z ?? 0);
+      horizonZ.set(b.horizonId, a);
+    }
+  }
+  const horizons: Horizon[] = axisLayers
+    .map(l => ({ layer: l, id: horizonIdByLayer.get(l)! }))
+    .filter(h => horizonZ.has(h.id))
+    .map((h, i) => {
+      const zs = horizonZ.get(h.id)!;
+      return {
+        id: h.id,
+        name: h.layer === "0" ? "Слой 0" : h.layer,
+        z: Math.round((zs.reduce((s, v) => s + v, 0) / zs.length) * 10) / 10,
+        color: HORIZON_COLORS[i % HORIZON_COLORS.length],
+        visible: true,
+      };
+    });
+  if (horizons.length > 0) warnings.push(`Горизонтов создано по слоям чертежа: ${horizons.length}.`);
+
   // Список слоёв для окна импорта: сначала осевые (по ним строятся ветви),
   // дальше — по убыванию количества геометрии.
   const layerList: DxfLayerInfo[] = [...layerStat.entries()]
@@ -1024,5 +1074,6 @@ export function parseDxf(
     scaleUsed: scale,
     obliqueFactor,
     zRange: { min: zMin * scale, max: zMax * scale, hasZ },
+    horizons,
   };
 }

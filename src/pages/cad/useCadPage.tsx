@@ -3286,15 +3286,31 @@ export function useCadPage() {
     setActiveRibbon("home");
   };
   const handleDxfImport = (result: DxfImportResult, mode: "replace" | "append") => {
+    // Горизонты из слоёв чертежа. Горизонт с тем же именем уже есть на схеме —
+    // ветви привязываются к нему, новый не создаётся.
+    const base = mode === "replace" ? horizons.filter(h => h.id === OVERVIEW_HORIZON_ID) : horizons;
+    const byName = new Map(base.map(h => [h.name.trim().toLowerCase(), h.id]));
+    const remap = new Map<string, string>();
+    const added: Horizon[] = [];
+    for (const h of result.horizons ?? []) {
+      const same = byName.get(h.name.trim().toLowerCase());
+      if (same) { remap.set(h.id, same); continue; }
+      added.push(h);
+      byName.set(h.name.trim().toLowerCase(), h.id);
+    }
+    const dxfBranches = remap.size === 0 ? result.branches : result.branches.map(b =>
+      b.horizonId && remap.has(b.horizonId) ? { ...b, horizonId: remap.get(b.horizonId)! } : b);
+    if (mode === "replace" || added.length > 0) setHorizons([...base, ...added]);
+
     if (mode === "replace") {
       setNodes(result.nodes);
-      setBranches(result.branches);
+      setBranches(dxfBranches);
       setSchemaSymbols([]);
       setSelectedNodeId(null);
       setSelectedBranchId(null);
     } else {
       setNodes((prev) => [...prev, ...result.nodes]);
-      setBranches((prev) => [...prev, ...result.branches]);
+      setBranches((prev) => [...prev, ...dxfBranches]);
     }
     // Переключаем вид на план (сверху) и вписываем схему в экран через useEffect
     setImportNonce((n) => n + 1);
