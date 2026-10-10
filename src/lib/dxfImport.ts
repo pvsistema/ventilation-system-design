@@ -436,6 +436,17 @@ export function parseDxf(
       /aeroset|aero_/i.test(l) || /выработ/i.test(l) || /горн.*выраб/i.test(l)
     );
   }
+  // Слой распознан по имени, но на нём почти ничего нет (например, в чертеже
+  // есть слой «Выработки» с одной случайной линией, а вся сеть лежит на «0»).
+  // Такой слой не может быть осью сети — иначе схема собирается из одной
+  // линии и ветвей не находится вовсе. Порог: хотя бы 5% всех сегментов.
+  {
+    const named = axisLayers.reduce((s, l) => s + (cntByLayer.get(l) ?? 0), 0);
+    if (axisLayers.length > 0 && segments.length >= 50 && named < segments.length * 0.05) {
+      debugLines.push(`Слои по имени (${axisLayers.join(", ")}) содержат ${named} из ${segments.length} сегментов — пропущены`);
+      axisLayers = [];
+    }
+  }
   if (axisLayers.length === 0 && circles.length > 0) {
     // Есть CIRCLE-узлы: ищем слой с наибольшим % сегментов, соединяющих пары CIRCLE
     const hitsByLayer = new Map<string, number>();
@@ -448,10 +459,14 @@ export function parseDxf(
       if (hit1 && hit2) hitsByLayer.set(s.layer, (hitsByLayer.get(s.layer) ?? 0) + 1);
     }
     if (hitsByLayer.size > 0) {
+      // Слои, где лежит меньше 5% всех линий, в расчёт не берём: две линии
+      // между кружками легенды дают «100% попаданий», но это не сеть.
+      const minSegs = segments.length >= 50 ? segments.length * 0.05 : 0;
       const best = [...hitsByLayer.entries()]
+        .filter(([l]) => (totalByLayer.get(l) ?? 0) >= minSegs)
         .map(([l, hits]) => ({ l, ratio: hits / (totalByLayer.get(l) ?? 1) }))
         .sort((a, b2) => b2.ratio - a.ratio);
-      if (best[0].ratio > 0.3) {
+      if (best.length > 0 && best[0].ratio > 0.3) {
         axisLayers = [best[0].l];
         debugLines.push(`Осевой слой по CIRCLE: ${best[0].l} (попаданий ${(best[0].ratio*100).toFixed(0)}%)`);
       }
