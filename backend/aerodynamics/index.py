@@ -81,7 +81,8 @@ def resistance_from_alpha(alpha, P, L, S):
     return min(r, 1000.0) if math.isfinite(r) else 0.0
 
 
-def resistance_from_roughness(delta_mm, S, P, L, Re=None):
+def resistance_from_roughness(delta_mm, S, P, L, Re=None, rho=1.2):
+    """Дарси–Вейсбах: R = λ·ρ·L·P/(8·S³), Н·с²/м⁸; λ — по Альтшулю."""
     if S <= 0.05 or P <= 0 or L <= 0:
         return 0.0
     Dh = (4 * S) / P
@@ -90,7 +91,7 @@ def resistance_from_roughness(delta_mm, S, P, L, Re=None):
     rel_r = max(0.0, (delta_mm / 1000.0) / Dh)
     lam = 0.11 * ((rel_r + 68 / Re) ** 0.25) if Re and Re > 0 else \
           0.11 * (max(1e-9, rel_r) ** 0.25)
-    r = (lam * L * P) / (8 * S ** 3)
+    r = (lam * rho * L * P) / (8 * S ** 3)
     return min(r, 1000.0) if math.isfinite(r) else 0.0
 
 
@@ -115,7 +116,7 @@ def calc_resistance(b: dict, S: float, P: float, L: float, rho: float, Q: float)
     if mode in ("alpha", "surface"):
         r_friction = resistance_from_alpha(alpha, P, L, S) * rho_factor
     elif mode == "roughness":
-        r_friction = resistance_from_roughness(roughness, S, P, L, Re)
+        r_friction = resistance_from_roughness(roughness, S, P, L, Re, rho)
         rel_r = (roughness / 1000.0) / (Dh or 1)
         lam = 0.11 * ((rel_r + 68 / Re) ** 0.25 if Re and Re > 0 else max(1e-9, rel_r) ** 0.25)
     elif mode == "manual":

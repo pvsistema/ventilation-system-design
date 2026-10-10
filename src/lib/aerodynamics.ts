@@ -172,10 +172,12 @@ export function resistanceFromAlpha(alpha: number, P: number, L: number, S: numb
   return isFinite(r) ? Math.min(r, 1000) : 0;
 }
 
-// Расчёт через шероховатость: R = λ·L·P / (8·S³)
-// λ — коэффициент Дарси, по Альтшулю: λ = 0.11·(Δ/Dh + 68/Re)^0.25
-// Для развитой турбулентности в выработках Re→∞: λ = 0.11·(Δ/Dh)^0.25
-export function resistanceFromRoughness(deltaMm: number, S: number, P: number, L: number, Re?: number): number {
+// Расчёт через шероховатость (Дарси–Вейсбах): R = λ·ρ·L·P / (8·S³), Н·с²/м⁸.
+// λ — коэффициент гидравлического трения по Альтшулю: λ = 0.11·(Δ/Dh + 68/Re)^0.25
+// Для развитой турбулентности Re→∞: λ = 0.11·(Δ/Dh)^0.25
+// Результат возвращается в кМюрг (кгс·с²/м⁸) — в тех же единицах, что и
+// resistanceFromAlpha(), поэтому делится на g.
+export function resistanceFromRoughness(deltaMm: number, S: number, P: number, L: number, Re?: number, rho: number = 1.2): number {
   if (S <= 0.05 || P <= 0 || L <= 0) return 0;
   const Dh = (4 * S) / P;
   if (Dh <= 0) return 0;
@@ -186,9 +188,11 @@ export function resistanceFromRoughness(deltaMm: number, S: number, P: number, L
   } else {
     lambda = 0.11 * Math.pow(Math.max(1e-9, relRoughness), 0.25);
   }
-  const r = (lambda * L * P) / (8 * Math.pow(S, 3));
+  const rSi = (lambda * rho * L * P) / (8 * Math.pow(S, 3));
+  const r = rSi / PA_PER_MM_H2O_CONST;
   return isFinite(r) ? Math.min(r, 1000) : 0;
 }
+const PA_PER_MM_H2O_CONST = 9.81;
 
 // ─── Производные параметры потока ──────────────────────────────────────────
 export function velocity(Q: number, S: number): number {
@@ -261,7 +265,7 @@ export function calcResistance(i: ResistanceInput): {
       Rfriction = resistanceFromAlpha(i.alpha, i.P, i.L, i.S);
       break;
     case "roughness": {
-      Rfriction = resistanceFromRoughness(i.roughness, i.S, i.P, i.L, Re);
+      Rfriction = resistanceFromRoughness(i.roughness, i.S, i.P, i.L, Re, i.rho ?? 1.2);
       const relR = (i.roughness / 1000) / (Dh || 1);
       lambda = 0.11 * Math.pow(relR + (Re ? 68 / Re : 0), 0.25);
       break;
