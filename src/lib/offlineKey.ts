@@ -281,6 +281,12 @@ export function verifyOfflineKey(key: string): OfflineKeyInfo {
 
 /** Сохранить аварийный ключ на устройстве (для повторных запусков без сети). */
 export function saveOfflineKey(key: string): void {
+  // Новый ключ взамен прежнего — прежняя сверка к нему не относится. Без этого
+  // новый ключ считался бы «сверенным» по результату старого и не выходил бы
+  // на связь до конца квартала.
+  let prev: string | null = null;
+  try { prev = localStorage.getItem(STORAGE_KEY); } catch { /* ignore */ }
+  if (prev && prev.trim() !== key.trim()) persist(VERDICT_KEY, null);
   persist(STORAGE_KEY, key.trim());
 }
 

@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { UseLicenseReturn } from "@/hooks/useLicense";
 import Icon from "@/components/ui/icon";
+import { loadOfflineVerdict } from "@/lib/offlineKey";
 
 interface Props {
   license: UseLicenseReturn;
@@ -107,6 +108,10 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
   const revokeReason     = license.info?.revokeReason;
   // Аварийный ключ выпущен для другого компьютера (привязка по коду места)
   const isWrongComputer  = license.info?.wrongComputer;
+  // Аварийный ключ работает по подписи и без сервера. Пока программа ни разу
+  // не сверилась с сервером, правообладатель не видит этот компьютер в
+  // кабинете — говорим об этом прямо, чтобы на площадке вышли на связь.
+  const notSynced        = isEmergency && !isRevoked && !loadOfflineVerdict();
   const warnDaysLeft     = (isOffline || isEmergency) && typeof daysLeft === "number" && daysLeft <= 3;
 
   const mi = license.machineInfo;
@@ -291,6 +296,53 @@ export default function LicenseDialog({ license, onClose, required }: Props) {
                   </div>
                 )}
               </div>
+              {notSynced && (
+                <div className="mt-3 p-2.5 rounded-lg border border-amber-300 bg-white">
+                  <div className="flex items-center gap-1.5 text-[12px] font-semibold text-amber-800">
+                    <Icon name="WifiOff" size={13} className="text-amber-600" />
+                    Ключ ещё не сверен с сервером
+                  </div>
+                  <div className="mt-1 text-[11px] text-gray-600 leading-snug">
+                    Программа работает, расчёты доступны. Но правообладатель пока не видит
+                    этот компьютер. Подключитесь к интернету и нажмите кнопку ниже — это
+                    займёт несколько секунд и нужно один раз.
+                  </div>
+                  <button
+                    onClick={handleRecheck}
+                    disabled={recheckState === "run"}
+                    className="mt-2 w-full py-1.5 rounded-md text-[12px] font-semibold border transition-colors disabled:opacity-50
+                               border-amber-400 text-amber-800 hover:bg-amber-50">
+                    {recheckState === "run" ? (
+                      <span className="flex items-center justify-center gap-1.5">
+                        <Icon name="Loader2" size={12} className="animate-spin" />Связываемся с сервером…
+                      </span>
+                    ) : (
+                      <span className="flex items-center justify-center gap-1.5">
+                        <Icon name="RefreshCw" size={12} />Сверить с сервером
+                      </span>
+                    )}
+                  </button>
+                  {recheckState === "fail" && (
+                    <div className="mt-1.5 text-[11px] text-amber-700 flex gap-1">
+                      <Icon name="Info" size={12} className="shrink-0 mt-[1px]" />
+                      <span>
+                        {license.error
+                          ?? "Сверка не удалась. Проверьте подключение к интернету и попробуйте ещё раз."}
+                        {" "}Работать можно и дальше — программа сама сверится при следующем запуске с интернетом.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              )}
+              {isEmergency && !notSynced && !isRevoked && recheckState === "idle" && license.info.emergency && (() => {
+                const v = loadOfflineVerdict();
+                return v?.valid ? (
+                  <div className="mt-2 text-[11px] text-amber-700 flex items-center gap-1">
+                    <Icon name="CheckCircle2" size={11} />
+                    Сверен с сервером {new Date(v.checkedAt).toLocaleDateString("ru-RU")}
+                  </div>
+                ) : null;
+              })()}
               {workplaceRow}
               {deactState === "idle" ? (
                 <button onClick={() => { setDeactState("confirm"); setDeactErr(null); }}
