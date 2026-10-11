@@ -16,7 +16,7 @@ export const HELP_GROUPS: { title: string; ids: string[] }[] = [
   { title: "Расчёты",       ids: ["ventilation", "ventpipe", "analysis"] },
   { title: "Аварии и ПЛА",  ids: ["accidents", "waterpipes", "rescue"] },
   { title: "Оформление",    ids: ["view", "refs", "print"] },
-  { title: "Справка",       ids: ["scenarios", "shortcuts", "tips", "faq"] },
+  { title: "Справка",       ids: ["scenarios", "shortcuts", "tips", "faq", "license-sync"] },
 ];
 
 /** Все разделы в порядке оглавления. Раздел вне групп не теряется — идёт в конец. */
