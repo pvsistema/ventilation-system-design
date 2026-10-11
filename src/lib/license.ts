@@ -1,4 +1,4 @@
-import { API_URLS } from "@/lib/api-urls";
+import { API_URLS, CLOUD_LICENSE_URL } from "@/lib/api-urls";
 import { APP_VERSION } from "@/lib/appVersion";
 import {
   isOfflineKey, verifyOfflineKey, saveOfflineKey, loadOfflineKey, clearOfflineKey,
@@ -8,6 +8,46 @@ import {
 } from "@/lib/offlineKey";
 import { checkClock, trustServerTime, takePendingClockReport, restorePendingClockReport } from "@/lib/clockGuard";
 const LICENSE_URL = API_URLS.license;
+
+/** Последняя причина, по которой встроенный модуль не достучался до сервера. */
+let lastNetError = "";
+export function getLastLicenseNetError(): string { return lastNetError; }
+
+/**
+ * Запрос к серверу лицензий с запасным путём.
+ *
+ * ЗАЧЕМ. В программе запрос идёт через встроенный модуль, а он в корпоративной
+ * сети (прокси с авторизацией, подмена SSL-сертификатов) может не выйти в
+ * интернет, хотя браузерная часть программы интернет видит. Человек получал
+ * «Нет связи с сервером лицензий» при живом интернете — так было на площадке
+ * Новопетровское. Теперь при обрыве через модуль пробуем напрямую.
+ */
+async function licenseFetch(init: RequestInit): Promise<Response> {
+  const direct = () => fetch(CLOUD_LICENSE_URL, init);
+  if (!IS_DESKTOP || !CLOUD_LICENSE_URL || CLOUD_LICENSE_URL === LICENSE_URL) return fetch(LICENSE_URL, init);
+  let res: Response;
+  try {
+    res = await fetch(LICENSE_URL, init);
+  } catch (e) {
+    if (init.signal?.aborted) throw e;
+    lastNetError = e instanceof Error ? e.message : String(e);
+    return direct();
+  }
+  if (res.status === 503 || res.status === 502 || res.status === 504) {
+    try {
+      const d = await res.clone().json();
+      lastNetError = String(d?.error ?? `HTTP ${res.status}`);
+    } catch { lastNetError = `HTTP ${res.status}`; }
+    try {
+      const r2 = await direct();
+      return r2;
+    } catch (e) {
+      if (init.signal?.aborted) throw e;
+      return res;
+    }
+  }
+  return res;
+}
 
 // ── Версия расчётного ядра (server.exe) ───────────────────────────────────────
 // Доступна только в десктопе — там локальный сервер отдаёт её через /api/status.
@@ -823,7 +863,7 @@ export async function releaseLicenseSeat(
   const timer = setTimeout(() => ctrl.abort(), ACTIVATE_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(LICENSE_URL, {
+    res = await licenseFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: ctrl.signal,
@@ -947,7 +987,7 @@ export async function recheckOfflineKey(fingerprint: string,
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
   try {
-    const res = await fetch(LICENSE_URL, {
+    const res = await licenseFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: ctrl.signal,
@@ -1022,7 +1062,7 @@ export function clearFingerprintCache() {
 // само ретранслирует его в облако, и «подвисание» ощущается как зависание окна.
 const CHECK_TIMEOUT_MS = IS_DESKTOP ? 4000 : 8000;
 // Активация ключа — действие человека, он готов подождать дольше, но не вечно.
-const ACTIVATE_TIMEOUT_MS = 15000;
+const ACTIVATE_TIMEOUT_MS = 30000;
 
 export async function checkLicense(fingerprint: string, machineInfo?: MachineInfo): Promise<LicenseInfo> {
   const coreVersion = await getCoreVersion();
@@ -1031,7 +1071,7 @@ export async function checkLicense(fingerprint: string, machineInfo?: MachineInf
   const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(LICENSE_URL, {
+    res = await licenseFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       signal: ctrl.signal,
@@ -1158,7 +1198,7 @@ export async function activateLicense(
       const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
       let data: { ok?: boolean; valid?: boolean; reason?: string; org?: string; server_now?: number };
       try {
-        const res = await fetch(LICENSE_URL, {
+        const res = await licenseFetch({
           method: "POST",
           headers: { "Content-Type": "application/json" },
           signal: ctrl.signal,
@@ -1225,7 +1265,7 @@ export async function activateLicense(
   const timer = setTimeout(() => ctrl.abort(), ACTIVATE_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(LICENSE_URL, {
+    res = await licenseFetch({
     method: "POST",
     headers: { "Content-Type": "application/json" },
     signal: ctrl.signal,
@@ -1244,15 +1284,18 @@ export async function activateLicense(
       is_desktop: IS_DESKTOP,
     }),
     });
-  } catch {
+  } catch (e) {
+    const why = lastNetError || (e instanceof Error ? e.message : "");
     throw new Error(ctrl.signal.aborted
-      ? "Сервер лицензий не ответил за 15 секунд. Проверьте интернет и повторите попытку"
-      : "Нет связи с сервером лицензий. Проверьте интернет и повторите попытку");
+      ? "Сервер лицензий не ответил за 30 секунд. Проверьте интернет и повторите попытку"
+      : "Нет связи с сервером лицензий. Проверьте интернет и повторите попытку"
+        + (why ? `. Причина: ${why.slice(0, 160)}` : ""));
   } finally {
     clearTimeout(timer);
   }
   if (res.status >= 500) {
-    throw new Error("Нет связи с сервером лицензий. Проверьте интернет и повторите попытку");
+    throw new Error("Нет связи с сервером лицензий. Проверьте интернет и повторите попытку"
+      + (lastNetError ? `. Причина: ${lastNetError.slice(0, 160)}` : ""));
   }
   let data: Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   try {
@@ -1311,7 +1354,7 @@ function reportPendingClockRollback(fingerprint: string, machineInfo?: MachineIn
   const pending = takePendingClockReport();
   if (!pending) return;
   try {
-    fetch(LICENSE_URL, {
+    licenseFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1338,7 +1381,7 @@ export async function sendHeartbeat(
 ): Promise<void> {
   try {
     const coreVersion = await getCoreVersion();
-    await fetch(LICENSE_URL, {
+    await licenseFetch({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

@@ -48,4 +48,12 @@ export const API_URLS = {
   clientLicenses:     url("client-licenses",     "/client-licenses"),
 } as const;
 
+/**
+ * Прямой адрес сервера лицензий в облаке. В программе запросы идут через
+ * встроенный модуль, но в корпоративных сетях (прокси с авторизацией, проверка
+ * SSL) он может не достучаться, хотя браузерная часть программы интернет видит.
+ * Тогда используем этот адрес как запасной путь.
+ */
+export const CLOUD_LICENSE_URL: string = (FUNC2URL as Record<string, string>)["license"] ?? "";
+
 export { isDesktop, isMirror };
