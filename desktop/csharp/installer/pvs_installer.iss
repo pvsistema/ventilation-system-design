@@ -56,11 +56,16 @@ Source: "{#DocIcon}"; DestDir: "{app}"; DestName: "vproj.ico"; Flags: ignorevers
 ; Flask-сервер
 Source: "{#SourceDir}\server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs createallsubdirs
 
+; Тексты лицензий сторонних компонентов (требование MIT/BSD/Apache/GPL/LGPL
+; и реестра российского ПО): перечень — THIRD-PARTY-NOTICES.txt.
+Source: "licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
+
 ; WebView2 Runtime (если нужен на Windows 10)
 ; Source: "redist\MicrosoftEdgeWebview2Setup.exe"; DestDir: "{tmp}"; Flags: deleteafterinstall
 
 [Icons]
 Name: "{autoprograms}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\pvs.ico"
+Name: "{autoprograms}\{#AppName} — лицензии компонентов"; Filename: "{app}\licenses\THIRD-PARTY-NOTICES.txt"
 Name: "{autodesktop}\{#AppName}"; Filename: "{app}\{#AppExeName}"; IconFilename: "{app}\pvs.ico"; Tasks: desktopicon
 
 [Registry]
