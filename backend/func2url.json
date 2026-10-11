@@ -7,5 +7,8 @@
   "explosion-calculator": "https://functions.poehali.dev/c9d97d78-bfd7-48f2-960f-1cb0ba8ddafc",
   "make-ico": "https://functions.poehali.dev/30b2dc5d-fb36-4f5b-bf25-0c74d47327f4",
   "icon-pack": "https://functions.poehali.dev/5b9c9835-a6d1-408d-a95c-90e9cf03c64c",
-  "airflow": "https://functions.poehali.dev/6f3b59d0-8ac9-4085-a3d0-720f0e0d30bd"
+  "airflow": "https://functions.poehali.dev/6f3b59d0-8ac9-4085-a3d0-720f0e0d30bd",
+  "license": "https://functions.poehali.dev/a1965362-df5e-40d6-ab62-0b523b49b023",
+  "compute-config": "https://functions.poehali.dev/96070984-d91f-47aa-a686-7a69a01d2de5",
+  "app-version": "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16"
 }
