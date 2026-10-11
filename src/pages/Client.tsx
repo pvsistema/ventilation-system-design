@@ -331,7 +331,17 @@ export default function Client() {
                     <td className="px-3 py-2 text-gray-600">
                       {k.bound_host || (k.bound ? "привязан" : k.autobind ? <span className="text-gray-400">ждёт первого ПК</span> : "—")}
                     </td>
-                    <td className="px-3 py-2 text-gray-600">{fmtDateTime(k.last_seen_at)}</td>
+                    <td className="px-3 py-2 text-gray-600">
+                      {k.last_seen_at
+                        ? fmtDateTime(k.last_seen_at)
+                        : k.is_active && !k.expired && !k.revoked_at
+                          ? <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] font-medium"
+                              style={{ background: "#fffbeb", color: "#92400e" }}
+                              title="Ключ работает без интернета. Компьютер появится здесь, когда программа впервые отметится на сервере.">
+                              <Icon name="WifiOff" size={11} />Ждёт первой связи
+                            </span>
+                          : "—"}
+                    </td>
                   </tr>
                 ))}
                 {offKeys.length === 0 && <tr><td colSpan={5} className="px-5 py-6 text-center text-gray-400">{loading ? "Загрузка…" : "Нет аварийных ключей"}</td></tr>}
@@ -393,7 +403,16 @@ export default function Client() {
                   </div>
                 </div>
                 {(offSeats[k.id] || []).length === 0
-                  ? <div className="px-5 py-2 text-[12px] text-gray-400">{loading ? "Загрузка…" : "Ключ ещё не отмечался ни на одном ПК"}</div>
+                  ? <div className="px-5 py-2 text-[12px] text-gray-500">
+                      {loading ? "Загрузка…" : (
+                        <>
+                          <span className="font-medium" style={{ color: "#92400e" }}>Ждёт первой связи.</span>{" "}
+                          Ключ работает и без интернета, поэтому мог быть уже введён. Компьютер появится здесь,
+                          когда программа отметится на сервере: запустите её с интернетом и нажмите
+                          «Проверить снова» в окне «Лицензия».
+                        </>
+                      )}
+                    </div>
                   : (offSeats[k.id] || []).map(s => (
                     <div key={s.id} className={`px-5 py-2 flex items-center gap-4 text-[12px] border-t border-gray-100 ${s.is_blocked ? "opacity-60" : ""}`}>
                       <div className="flex-1 min-w-0">

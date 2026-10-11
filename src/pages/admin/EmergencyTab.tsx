@@ -280,6 +280,7 @@ export default function EmergencyTab(props: EmergencyTabProps) {
           const activeCnt = g.items.filter(k => k.is_active && !k.expired).length;
           const seatsUsed = g.items.reduce((s, k) => s + (k.used_seats ?? 0), 0);
           const seatsMax  = g.items.reduce((s, k) => s + k.seats, 0);
+          const waitingCnt = g.items.filter(k => k.is_active && !k.expired && !k.last_seen_at).length;
           return (
             <div key={g.name} className="rounded-lg border border-blue-100 overflow-hidden">
               {/* Заголовок — div, а не button: внутри него своя кнопка
@@ -300,6 +301,11 @@ export default function EmergencyTab(props: EmergencyTabProps) {
                   <span>Ключей: <b className="text-gray-700">{g.items.length}</b></span>
                   <span>Активных: <b className="text-green-600">{activeCnt}</b></span>
                   <span>ПК: <b className={seatsUsed >= seatsMax ? "text-red-600" : "text-green-600"}>{seatsUsed}/{seatsMax}</b></span>
+                  {waitingCnt > 0 && (
+                    <span title="Ключи, по которым ни один компьютер ещё не выходил на связь">
+                      Ждут связи: <b style={{ color: "var(--c-amber-ink, #b45309)" }}>{waitingCnt}</b>
+                    </span>
+                  )}
                 </span>
                 {openGroup && (
                   <button onClick={e => { e.stopPropagation(); openGroup(g.name); }}
@@ -443,11 +449,29 @@ function KeyCard({
                         Заменён ключом #{k.replaced_by_id}
                       </div>
                     )}
-                    <div className="text-[11px] text-gray-400 mt-0.5">
-                      {k.last_seen_at
-                        ? `Последняя связь: ${k.last_seen_at.slice(0, 10)}`
-                        : "Ни разу не выходил на связь"}
-                    </div>
+                    {k.last_seen_at ? (
+                      <div className="text-[11px] text-gray-400 mt-0.5">
+                        Последняя связь: {k.last_seen_at.slice(0, 10)}
+                      </div>
+                    ) : k.is_active && !k.expired ? (
+                      // Ключ проверяется по подписи и работает без сервера, поэтому
+                      // «не выходил на связь» не значит «не введён»: его могли
+                      // ввести на руднике без интернета. Показываем это явно.
+                      <div className="mt-1 px-2 py-1 rounded text-[11px] leading-snug"
+                        style={{ background: "var(--c-tint-amber, #fffbeb)", color: "var(--c-amber-ink, #92400e)" }}
+                        title="Ключ работает без сервера. Компьютер появится здесь, когда программа отметится на сервере: при запуске с интернетом или по кнопке «Проверить снова» в окне «Лицензия».">
+                        <div className="flex items-center gap-1 font-semibold">
+                          <Icon name="WifiOff" size={11} />
+                          Ждёт первой связи
+                        </div>
+                        <div className="text-[10px] opacity-80">
+                          Ключ мог быть уже введён без интернета. Попросите запустить программу с
+                          интернетом и нажать «Проверить снова» в окне «Лицензия».
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="text-[11px] text-gray-400 mt-0.5">Ни разу не выходил на связь</div>
+                    )}
                     {k.notes && <div className="text-[11px] text-gray-500 mt-0.5">{k.notes}</div>}
                   </div>
                   <div className="flex items-center gap-1 shrink-0">
