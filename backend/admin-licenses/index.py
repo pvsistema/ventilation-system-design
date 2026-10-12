@@ -241,6 +241,15 @@ def handler(event: dict, context) -> dict:
             return resp(200, {"table": table, "columns": cols, "rows": rows,
                               "offset": offset, "done": len(rows) < limit})
 
+        # Ключ подписи для резервного зеркала. Отдаётся только по паролю
+        # администратора — тому же, что позволяет выпускать ключи, поэтому
+        # новых прав это не даёт. Без него зеркало не сможет выдавать лицензии.
+        if action == "export_signing_key":
+            priv = os.environ.get("OFFLINE_KEY_PRIVATE", "").strip()
+            if not priv:
+                return resp(404, {"error": "offline_key_private_not_set"})
+            return resp(200, {"offline_key_private": priv})
+
         if action == "generate_vds_code":
             return resp(200, {"code": generate_vds_code()})
 

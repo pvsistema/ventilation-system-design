@@ -42,6 +42,10 @@ def main():
             continue
         with open(os.path.join(MIGR, f), encoding="utf-8") as fh:
             sql = fh.read()
+        # Часть миграций написана с именем облачной схемы (t_p…_ventilation…).
+        # В базе зеркала такой схемы нет — убираем префикс, таблицы берутся
+        # из обычной схемы public.
+        sql = re.sub(r'\bt_p\d+_[A-Za-z0-9_]+\.', "", sql)
         try:
             cur.execute(sql)
             cur.execute("INSERT INTO _mirror_migrations(name) VALUES (%s)", (f,))

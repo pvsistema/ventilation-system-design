@@ -104,6 +104,26 @@ def load_into_mirror(data: dict) -> None:
         conn.close()
 
 
+def sync_signing_key() -> None:
+    """Если в .env пуст OFFLINE_KEY_PRIVATE — забирает его из облака и вписывает."""
+    if os.environ.get("OFFLINE_KEY_PRIVATE", "").strip():
+        return
+    try:
+        key = call(ADMIN_URL, {"action": "export_signing_key",
+                               "password": PASSWORD})["offline_key_private"]
+    except Exception as ex:  # noqa: BLE001
+        print("  ключ подписи не получен:", ex)
+        return
+    env = os.path.join(HERE, ".env")
+    lines = open(env, encoding="utf-8").read().splitlines() if os.path.isfile(env) else []
+    lines = [ln for ln in lines if not ln.startswith("OFFLINE_KEY_PRIVATE=")]
+    lines.append(f"OFFLINE_KEY_PRIVATE={key}")
+    with open(env, "w", encoding="utf-8") as f:
+        f.write("\n".join(lines) + "\n")
+    os.environ["OFFLINE_KEY_PRIVATE"] = key
+    print("  ключ подписи OFFLINE_KEY_PRIVATE записан в .env")
+
+
 def sync_version() -> None:
     if not VERSION_URL:
         return
@@ -133,6 +153,7 @@ def main() -> int:
         return 0
     load_into_mirror(data)
     sync_version()
+    sync_signing_key()
     print("Готово.")
     return 0
 
