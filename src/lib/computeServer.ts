@@ -78,6 +78,11 @@ export function activeComputeUrl(): string {
   return PRIMARY_URL;
 }
 
+/** Адрес резервного сервера из админ-панели (пусто, если не задан). */
+export function backupServerUrl(): string {
+  return cfg.backupUrl;
+}
+
 /** Сейчас расчёт идёт на резервном сервере? */
 export function isOnBackup(): boolean {
   if (isDesktop) return false;

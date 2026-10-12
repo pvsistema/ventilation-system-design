@@ -26,6 +26,15 @@
 
 import { parseDxf, type DxfImportResult } from "@/lib/dxfImport";
 import { DWG_CONVERT_URL } from "@/lib/api-urls";
+import { backupServerUrl } from "@/lib/computeServer";
+
+/** Резервный сервер на случай, если облако не справилось с большим чертежом */
+const DEFAULT_BACKUP = "https://pvsistema.ru/";
+
+function backupDwgUrl(): string {
+  const base = (backupServerUrl() || DEFAULT_BACKUP).replace(/\/+$/, "");
+  return `${base}/api/dwg-convert`;
+}
 
 /** Результат импорта DWG — тот же, что у DXF, плюс сведения о самом файле */
 export interface DwgImportResult extends DxfImportResult {
@@ -73,14 +82,27 @@ export async function parseDwg(
 ): Promise<DwgImportResult> {
   if (!DWG_CONVERT_URL) throw new Error("Сервис чтения DWG недоступен. Сохраните чертёж в формате DXF.");
 
-  let resp: Response;
+  const body = JSON.stringify({ fileGzip: await gzipToBase64(buffer) });
+  const send = (url: string) =>
+    fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+
+  // Сначала облако. Большие чертежи облаку не хватает памяти (ошибка 5xx) —
+  // тогда переводим на своём резервном сервере, где памяти достаточно.
+  let resp: Response | null = null;
   try {
-    resp = await fetch(DWG_CONVERT_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fileGzip: await gzipToBase64(buffer) }),
-    });
+    resp = await send(DWG_CONVERT_URL);
   } catch {
+    resp = null;
+  }
+  const backup = backupDwgUrl();
+  if ((!resp || resp.status >= 500) && backup !== DWG_CONVERT_URL) {
+    try {
+      resp = await send(backup);
+    } catch {
+      /* резерв тоже недоступен — сообщим ниже */
+    }
+  }
+  if (!resp) {
     throw new Error(
       "Нет связи с сервером чтения DWG. Проверьте интернет или сохраните чертёж в формате DXF.",
     );
@@ -94,7 +116,9 @@ export async function parseDwg(
       data.error ||
       (resp.status === 413
         ? "Файл DWG слишком большой для передачи. Сохраните чертёж в формате DXF."
-        : "Не удалось прочитать файл DWG. Сохраните чертёж в формате DXF и импортируйте его."),
+        : resp.status >= 500
+          ? "Чертёж слишком большой для сервера чтения DWG. Сохраните его в формате DXF и импортируйте."
+          : "Не удалось прочитать файл DWG. Сохраните чертёж в формате DXF и импортируйте его."),
     );
   }
 
