@@ -36,6 +36,14 @@ export const APP_VERSION_URL: string = isMirror
   ? url("app-version", "/app-version")
   : ((FUNC2URL as Record<string, string>)["app-version"] ?? "");
 
+/**
+ * Перевод чертежей DWG в DXF. На резервном сервере — своя копия функции,
+ * в остальных случаях (сайт и десктоп) — облачная.
+ */
+export const DWG_CONVERT_URL: string = isMirror
+  ? url("dwg-convert", "/dwg-convert")
+  : ((FUNC2URL as Record<string, string>)["dwg-convert"] ?? "");
+
 export const API_URLS = {
   aerodynamics:       url("aerodynamics",        "/aerodynamics"),
   airflow:            url("airflow",             "/airflow"),

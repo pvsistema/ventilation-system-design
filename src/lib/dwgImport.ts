@@ -13,7 +13,8 @@
 // поправить логику разбора, исправление автоматически подхватит и DWG.
 //
 // КАК ЧИТАЕТСЯ DWG.
-// Чертёж переводится в DXF на сервере (облачная функция dwg-convert).
+// Чертёж переводится в DXF на сервере (облачная функция dwg-convert;
+// на резервном сервере — её копия, см. mirror-server/dwg_runner.cjs).
 // В саму программу библиотека чтения DWG не входит: файл уходит на сервер
 // в сжатом виде, обратно приходит сжатый текст DXF.
 //
@@ -24,9 +25,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { parseDxf, type DxfImportResult } from "@/lib/dxfImport";
-import FUNC2URL from "../../backend/func2url.json";
-
-const DWG_CONVERT_URL = (FUNC2URL as Record<string, string>)["dwg-convert"] ?? "";
+import { DWG_CONVERT_URL } from "@/lib/api-urls";
 
 /** Результат импорта DWG — тот же, что у DXF, плюс сведения о самом файле */
 export interface DwgImportResult extends DxfImportResult {

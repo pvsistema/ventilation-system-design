@@ -66,6 +66,7 @@ echo "== 4/7 Таблицы базы =="
 
 echo "== 5/7 Сборка сайта =="
 bash "$MS/build_site.sh"
+(cd "$(dirname "$MS")/backend/dwg-convert" && npm install --omit=dev --no-audit --no-fund)
 
 echo "== 6/7 Служба pvs-mirror =="
 id pvs >/dev/null 2>&1 || useradd --system --home "$APP" --shell /usr/sbin/nologin pvs

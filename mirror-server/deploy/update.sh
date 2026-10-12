@@ -8,5 +8,6 @@ MS=/opt/pvs/mirror-server
 "$MS/.venv/bin/pip" install -q -r "$MS/requirements.txt"
 "$MS/.venv/bin/python" "$MS/init_db.py"
 bash "$MS/build_site.sh"
+(cd /opt/pvs/backend/dwg-convert && npm install --omit=dev --no-audit --no-fund)
 systemctl restart pvs-mirror
 echo "Зеркало обновлено."

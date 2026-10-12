@@ -107,13 +107,43 @@ sys.modules["boto3"] = _fake_boto3
 FUNCTIONS = [
     "license", "admin-licenses", "client-licenses", "compute-config", "app-version",
     "airflow", "aerodynamics", "rescue-calculator", "explosion-calculator",
-    "water-hydraulics",
+    "water-hydraulics", "dwg-convert",
 ]
 _HANDLERS = {}
+
+# Функции на Node.js (облачные TypeScript/JS-функции) — запускаются отдельным
+# процессом node через mirror-server/dwg_runner.cjs.
+NODE_FUNCTIONS = {"dwg-convert": "dwg_runner.cjs"}
+
+
+def _node_handler(name: str):
+    runner = os.path.join(os.path.dirname(os.path.abspath(__file__)), NODE_FUNCTIONS[name])
+    fdir = os.path.join(BACKEND, name)
+    if not os.path.isfile(os.path.join(fdir, "index.js")):
+        return None
+    if not os.path.isdir(os.path.join(fdir, "node_modules")):
+        raise RuntimeError(f"не установлены библиотеки: cd {fdir} && npm install --omit=dev")
+
+    def handler(event, _context):
+        import subprocess
+        payload = dict(event)
+        payload["headers"] = dict(event.get("headers") or {})
+        proc = subprocess.run(["node", runner], input=json.dumps(payload),
+                              capture_output=True, text=True, timeout=180, cwd=fdir)
+        out = proc.stdout or ""
+        mark = out.rfind("@@PVS_RESULT@@")
+        if mark < 0:
+            raise RuntimeError((proc.stderr or out or "node error")[-300:])
+        return json.loads(out[mark + len("@@PVS_RESULT@@"):])
+
+    return handler
 
 
 def load_handler(name: str):
     if name in _HANDLERS:
+        return _HANDLERS[name]
+    if name in NODE_FUNCTIONS:
+        _HANDLERS[name] = _node_handler(name)
         return _HANDLERS[name]
     fdir = os.path.join(BACKEND, name)
     path = os.path.join(fdir, "index.py")
@@ -239,7 +269,7 @@ def health():
             c.close()
         except Exception as ex:  # noqa: BLE001
             db = f"error: {ex}"
-    ok = all(v is True for v in state.values()) and db.startswith("ok")
+    ok = all(v is True for k, v in state.items() if k not in NODE_FUNCTIONS) and db.startswith("ok")
     return Response(json.dumps({
         "ok": ok, "role": "mirror", "service": "pvs-full",
         "site": os.path.isfile(os.path.join(DIST, "index.html")),
