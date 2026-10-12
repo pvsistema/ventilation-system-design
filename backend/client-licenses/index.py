@@ -20,6 +20,7 @@ POST /  body: {action, token?, ...}
   list_offline_seats    — ПК на аварийном ключе {offline_key_id}
   block_offline_seat    — отключить/вернуть ПК {seat_id, is_blocked}
   reset_offline_binding — сбросить привязку аварийного ключа {offline_key_id}
+  request_offline_ping  — запросить проверку связи с ПК на аварийном ключе {offline_key_id}
   list_events           — журнал событий по ключам группы {limit?}
 """
 import json
@@ -227,7 +228,8 @@ def handler(event: dict, context) -> dict:
                          WHERE s.offline_key_id = o.id AND s.is_blocked = FALSE
                            AND s.bound_at IS NOT NULL
                          ORDER BY s.bound_at ASC LIMIT 1),
-                       o.revoked_at
+                       o.revoked_at,
+                       o.ping_requested_at
                 FROM offline_keys o
                 WHERE o.org_group = %s
                 ORDER BY o.org
@@ -239,6 +241,7 @@ def handler(event: dict, context) -> dict:
                 "autobind": bool(r[7]), "used_seats": int(r[8] or 0),
                 "last_seen_at": str(r[9]) if r[9] else None,
                 "bound_host": r[10], "revoked_at": str(r[11]) if r[11] else None,
+                "ping_requested_at": str(r[12]) if r[12] else None,
             } for r in cur.fetchall()]
             return resp(200, {"keys": items})
 
@@ -295,6 +298,24 @@ def handler(event: dict, context) -> dict:
                        f"ключ закрепится заново (мест {row[1]})", ip=ip)
             conn.commit()
             return resp(200, {"ok": True})
+
+        # ── request_offline_ping ─────────────────────────────────────────────
+        # Запрос проверки связи с ПК на аварийном ключе. Сервер не может сам
+        # достучаться до компьютера на руднике, поэтому ставит отметку; программа
+        # с интернетом увидит её в течение нескольких минут и сверит ключ.
+        if action == "request_offline_ping":
+            oid = int(body.get("offline_key_id") or 0)
+            cur.execute("SELECT org FROM offline_keys WHERE id = %s AND org_group = %s", (oid, group))
+            row = cur.fetchone()
+            if not row:
+                return resp(404, {"error": "not_found"})
+            cur.execute("UPDATE offline_keys SET ping_requested_at = NOW() WHERE id = %s "
+                        "RETURNING ping_requested_at", (oid,))
+            at = cur.fetchone()[0]
+            log_client(cur, login, "offline_ping_requested",
+                       f"запрошена проверка связи по аварийному ключу «{row[0]}» (key_id={oid})", ip=ip)
+            conn.commit()
+            return resp(200, {"ok": True, "ping_requested_at": str(at)})
 
         # ── list_events ──────────────────────────────────────────────────────
         if action == "list_events":

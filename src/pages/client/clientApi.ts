@@ -32,7 +32,7 @@ export interface ClientOfflineKey {
   id: number; org: string; seats: number; expires_at: string | null;
   is_active: boolean; expired: boolean; bound: boolean; autobind: boolean;
   used_seats: number; last_seen_at: string | null; bound_host: string | null;
-  revoked_at: string | null;
+  revoked_at: string | null; ping_requested_at?: string | null;
 }
 export interface ClientOfflineSeat {
   id: number; hostname: string | null; platform: string | null;
@@ -73,6 +73,7 @@ export const EVENT_LABELS: Record<string, string> = {
   offline_binding_reset: "Сброшена привязка аварийного ключа",
   offline_autobind_enabled: "Включена автопривязка",
   offline_wrong_computer: "Аварийный ключ на чужом ПК",
+  offline_ping_requested: "Запрошена проверка связи",
   offline_seats_exhausted: "Не хватило мест аварийного ключа",
   offline_key_revoked_hit: "Запуск с отозванным аварийным ключом",
   offline_key_deleted_hit: "Запуск с удалённым аварийным ключом",

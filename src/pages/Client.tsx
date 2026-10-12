@@ -221,6 +221,16 @@ export default function Client() {
     run: async () => { await clientApi({ action: "reset_offline_binding", offline_key_id: k.id }); flash("Привязка сброшена"); },
   });
 
+  const pingKey = async (k: ClientOfflineKey) => {
+    setBusy(true);
+    try {
+      await clientApi({ action: "request_offline_ping", offline_key_id: k.id });
+      flash("Запрос отправлен. Компьютер отметится в течение 10 минут, если программа запущена и есть интернет");
+      await reload();
+    } catch (e) { handleErr(e); }
+    finally { setBusy(false); }
+  };
+
   if (checking) return <div className="h-screen flex items-center justify-center text-gray-400 text-[14px]">Загрузка…</div>;
   if (!authed) return <Login onDone={(group, login) => setAuthed({ group, login })} />;
 
@@ -402,6 +412,17 @@ export default function Client() {
                   <span className="font-semibold text-gray-800">{k.org}</span>
                   <div className="flex items-center gap-4">
                     <SeatsBar used={k.used_seats} total={k.seats} />
+                    {k.ping_requested_at
+                      ? <span className="inline-flex items-center gap-1 text-amber-700"
+                          title={`Запрошено ${fmtDateTime(k.ping_requested_at)}. Ждём, когда программа на ПК выйдет на связь.`}>
+                          <Icon name="Loader" size={12} className="animate-spin" />ждём ответа ПК
+                        </span>
+                      : null}
+                    <button onClick={() => pingKey(k)} disabled={busy}
+                      className="px-2.5 py-1 rounded border border-blue-200 text-blue-700 hover:bg-blue-50 disabled:opacity-50"
+                      title="Программа с интернетом отметится на сервере в течение 10 минут">
+                      <Icon name="RadioTower" size={12} className="inline mr-1" />Проверить связь
+                    </button>
                     <button onClick={() => askReset(k)}
                       className="px-2.5 py-1 rounded border border-amber-300 text-amber-800 hover:bg-amber-50"
                       title="При замене компьютера">
@@ -414,9 +435,9 @@ export default function Client() {
                       {loading ? "Загрузка…" : (
                         <>
                           <span className="font-medium" style={{ color: "#92400e" }}>Ждёт первой связи.</span>{" "}
-                          Ключ работает и без интернета, поэтому мог быть уже введён. Компьютер появится здесь,
-                          когда программа отметится на сервере: запустите её с интернетом и нажмите
-                          «Проверить снова» в окне «Лицензия».
+                          Ключ работает и без интернета, поэтому мог быть уже введён. Нажмите «Проверить связь»:
+                          если программа запущена и есть интернет, компьютер появится здесь в течение 10 минут.
+                          Сразу — кнопка «Проверить снова» в окне «Лицензия» на самом ПК. Работает с версии 2.198.
                         </>
                       )}
                     </div>

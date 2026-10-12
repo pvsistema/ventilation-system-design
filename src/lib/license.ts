@@ -984,8 +984,12 @@ export async function recheckOfflineKey(fingerprint: string,
   // изменилось прямо сейчас, и ждать очередной сверки бессмысленно.
   if (!force && !isOfflineRecheckDue()) return null;
 
+  // Сверка идёт фоном и ничего не задерживает, поэтому ждём ответа дольше,
+  // чем при обычной проверке: в корпоративной сети через прокси первый
+  // запрос нередко идёт 5–15 секунд, и при 4 секундах сверка не доходила
+  // никогда — в кабинете ключ навсегда оставался «ждёт первой связи».
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), CHECK_TIMEOUT_MS);
+  const timer = setTimeout(() => ctrl.abort(), OFFLINE_SYNC_TIMEOUT_MS);
   try {
     const res = await licenseFetch({
       method: "POST",
@@ -1046,6 +1050,38 @@ export async function recheckOfflineKey(fingerprint: string,
   }
 }
 
+/**
+ * ПРОВЕРКА СВЯЗИ ПО ЗАПРОСУ ИЗ КАБИНЕТА ОРГАНИЗАЦИИ.
+ *
+ * Сервер не может сам достучаться до компьютера на руднике, поэтому кабинет
+ * ставит отметку «проверить связь», а программа с интернетом время от времени
+ * спрашивает, нет ли такой отметки. Если есть — сразу делает полную сверку
+ * аварийного ключа: компьютер появляется в кабинете, привязка подтверждается.
+ * Нет связи — молча ничего не делаем.
+ */
+export async function pollOfflinePing(fingerprint: string,
+                                      machineInfo?: MachineInfo): Promise<LicenseInfo | null> {
+  const loaded = loadOfflineKey();
+  if (!loaded?.info.valid || !loaded.info.kid) return null;
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), OFFLINE_SYNC_TIMEOUT_MS);
+  try {
+    const res = await licenseFetch({
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: ctrl.signal,
+      body: JSON.stringify({ action: "offline_ping", fingerprint, kid: loaded.info.kid }),
+    });
+    const data = await res.json();
+    if (!data?.ping) return null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+  return recheckOfflineKey(fingerprint, machineInfo, true);
+}
+
 export function clearFingerprintCache() {
   try { storage.remove(HW_FP_KEY); } catch { /* ignore */ }
 }
@@ -1063,6 +1099,8 @@ export function clearFingerprintCache() {
 const CHECK_TIMEOUT_MS = IS_DESKTOP ? 4000 : 8000;
 // Активация ключа — действие человека, он готов подождать дольше, но не вечно.
 const ACTIVATE_TIMEOUT_MS = 30000;
+// Фоновая сверка аварийного ключа — программа уже работает и не ждёт.
+const OFFLINE_SYNC_TIMEOUT_MS = 30000;
 
 export async function checkLicense(fingerprint: string, machineInfo?: MachineInfo): Promise<LicenseInfo> {
   const coreVersion = await getCoreVersion();

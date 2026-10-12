@@ -754,6 +754,27 @@ def handler(event: dict, context) -> dict:
         conn.close()
         return resp(200, {"ok": True})
 
+    # ── offline_ping — лёгкий опрос «просили ли проверить связь» ──────────────
+    # Кабинет организации может запросить проверку связи с ПК на аварийном
+    # ключе. Программа с интернетом раз в несколько минут спрашивает здесь,
+    # нет ли такого запроса, и если есть — сразу делает полную сверку ключа.
+    if action == "offline_ping":
+        try:
+            kid = int(body.get("kid") or 0)
+        except (TypeError, ValueError):
+            kid = 0
+        ping = False
+        if kid:
+            cur.execute("""
+                SELECT ping_requested_at IS NOT NULL
+                       AND ping_requested_at > NOW() - INTERVAL '1 day'
+                FROM offline_keys WHERE id = %s
+            """, (kid,))
+            row = cur.fetchone()
+            ping = bool(row and row[0])
+        conn.close()
+        return resp(200, {"ok": True, "ping": ping})
+
     # ── offline_check — мягкая проверка аварийного ключа (раз в квартал) ───────
     #
     # ЗАЧЕМ. Аварийный ключ проверяется на компьютере локально, по подписи, и
@@ -819,6 +840,10 @@ def handler(event: dict, context) -> dict:
                               "server_now": srv_now_ms})
 
         okey_id, org, max_seats, expires_at, is_active, bound_fp, autobind = krow
+
+        # Программа вышла на связь — запрос проверки из кабинета выполнен.
+        cur.execute("UPDATE offline_keys SET ping_requested_at = NULL WHERE id = %s",
+                    (okey_id,))
 
         # Ключ отозван администратором — программа перейдёт в демо-режим.
         if not is_active:

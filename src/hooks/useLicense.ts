@@ -10,6 +10,7 @@ import {
   isCheckDue,
   sendHeartbeat,
   recheckOfflineKey,
+  pollOfflinePing,
   storageReady,
   type LicenseInfo,
   type MachineInfo,
@@ -55,6 +56,7 @@ export function useLicense(): UseLicenseReturn {
 
   useEffect(() => {
     let cancelled = false;
+    let pingTimer: ReturnType<typeof setInterval> | undefined;
     (async () => {
       // ── ШАГ 0. МГНОВЕННЫЙ СТАРТ ПО СОХРАНЁННОЙ ЛИЦЕНЗИИ ───────────────────
       // Раньше первым делом шли ожидания: чтение лицензии с диска и опрос
@@ -130,12 +132,25 @@ export function useLicense(): UseLicenseReturn {
       // Нет связи — ничего не происходит, работа продолжается по подписи.
       // Идёт фоном: программа уже открыта и ничего не ждёт.
       if (emergency?.licensed) {
+        // Первая сверка ключа на этом ПК (ответа сервера ещё не было) идёт
+        // сразу; иначе — по расписанию раз в квартал.
         recheckOfflineKey(mi.fingerprint, mi).then((verdict) => {
           if (cancelled || !verdict) return;
           // Сервер ответил, что ключ больше не действует.
           setInfo(verdict);
           setStatus("demo");
         });
+
+        // Проверка связи по запросу из кабинета организации: раз в 10 минут
+        // программа спрашивает, не просили ли отметиться. Сразу при запуске
+        // и затем по таймеру.
+        const ping = () => pollOfflinePing(mi.fingerprint, mi).then((verdict) => {
+          if (cancelled || !verdict) return;
+          setInfo(verdict);
+          setStatus("demo");
+        });
+        setTimeout(ping, 15000);
+        pingTimer = setInterval(ping, 10 * 60 * 1000);
       }
 
       // 1г. Аварийный ключ отозван или выпущен для другого компьютера —
@@ -213,7 +228,7 @@ export function useLicense(): UseLicenseReturn {
         }
       }
     })();
-    return () => { cancelled = true; };
+    return () => { cancelled = true; if (pingTimer) clearInterval(pingTimer); };
   }, []);
 
   // ─── Периодический heartbeat («я на связи») ────────────────────────────────

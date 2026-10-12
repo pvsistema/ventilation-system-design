@@ -1,0 +1,1 @@
+ALTER TABLE offline_keys ADD COLUMN IF NOT EXISTS ping_requested_at TIMESTAMPTZ NULL;
