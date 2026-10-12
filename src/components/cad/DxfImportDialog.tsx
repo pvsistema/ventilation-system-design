@@ -263,7 +263,7 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
             ) : (
               <>
                 <div className="text-sm font-medium text-gray-700">Перетащите файл DXF либо нажмите для выбора</div>
-                <div className="text-xs text-gray-400">НаноКАД, АэроСеть, AutoCAD, КОМПАС — чертёж в формате DXF</div>
+                <div className="text-xs text-gray-400">НаноКАД, AutoCAD, КОМПАС — чертёж в формате DXF</div>
               </>
             )}
             <input ref={inputRef} type="file" accept=".dxf,.DXF,.dwg,.DWG" className="hidden"

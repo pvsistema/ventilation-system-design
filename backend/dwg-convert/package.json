@@ -1,0 +1,8 @@
+{
+  "name": "dwg-convert",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "@mlightcad/libredwg-web": "0.7.17"
+  }
+}
