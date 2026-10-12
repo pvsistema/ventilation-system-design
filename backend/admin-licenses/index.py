@@ -145,6 +145,14 @@ CORS = {
 }
 
 
+# Таблицы, которые копируются в резервное зеркало.
+EXPORT_TABLES = [
+    "licenses", "license_seats", "license_events", "license_usage_daily",
+    "compute_license_daily", "offline_keys", "offline_key_seats",
+    "client_access", "client_sessions", "app_settings",
+]
+
+
 def get_conn():
     dsn = os.environ["DATABASE_URL"]
     schema = os.environ.get("MAIN_DB_SCHEMA", "public")
@@ -214,23 +222,26 @@ def handler(event: dict, context) -> dict:
         # Только чтение. Зеркало забирает таблицы постранично скриптом
         # mirror-server/sync_from_cloud.py и складывает в свою базу.
         if action == "export_tables":
-            cur.execute(
-                "SELECT table_name FROM information_schema.tables "
-                "WHERE table_schema = current_schema() AND table_type = 'BASE TABLE' "
-                "ORDER BY table_name")
+            # Служебный каталог базы в облаке вместо имён таблиц отдаёт имя
+            # схемы, поэтому список копируемых таблиц задан явно.
+            cur.execute("SELECT unnest(%s::text[])", (EXPORT_TABLES,))
+            # В списке схемы бывают служебные объекты, к которым у функции нет
+            # прав. Раньше первая же такая таблица роняла всю выгрузку —
+            # теперь недоступные просто пропускаются.
             tables = []
             for (t,) in cur.fetchall():
-                cur.execute(f'SELECT COUNT(*) FROM "{t}"')
-                cnt = cur.fetchone()[0]
-                tables.append({"table": t, "rows": cnt})
+                try:
+                    cur.execute(f'SELECT COUNT(*) FROM "{t}"')
+                    cnt = cur.fetchone()[0]
+                    tables.append({"table": t, "rows": cnt})
+                except Exception as ex:  # noqa: BLE001
+                    conn.rollback()
+                    print(f"[admin] export skip {t}: {ex}")
             return resp(200, {"tables": tables})
 
         if action == "export_table":
             table = str(body.get("table") or "")
-            cur.execute(
-                "SELECT 1 FROM information_schema.tables "
-                "WHERE table_schema = current_schema() AND table_name = %s", (table,))
-            if not cur.fetchone():
+            if table not in EXPORT_TABLES:
                 return resp(404, {"error": "no_such_table"})
             offset = max(0, int(body.get("offset") or 0))
             limit = min(5000, max(1, int(body.get("limit") or 2000)))
