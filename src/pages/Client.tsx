@@ -69,11 +69,18 @@ function Login({ onDone }: { onDone: (group: string, login: string) => void }) {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "login", login, password }),
       });
-      const d = await res.json();
+      const d = await res.json().catch(() => null);
+      if (!d) {
+        setErr(`Ответ перехвачен сетью организации (код ${res.status}). Попросите ИТ-службу разрешить HTTPS-доступ (порт 443) к адресу ${new URL(API_URLS.clientLicenses).host}`);
+        return;
+      }
       if (!res.ok) { setErr(res.status === 401 ? "Неверный логин или пароль" : "Не удалось войти"); return; }
       sessionStorage.setItem(TOKEN_KEY, d.token);
       onDone(d.org_group, d.login);
-    } catch { setErr("Нет связи с сервером"); }
+    } catch {
+      const host = (() => { try { return new URL(API_URLS.clientLicenses).host; } catch { return "сервера лицензий"; } })();
+      setErr(`Нет связи с сервером лицензий. Вероятно, сеть организации блокирует адрес ${host}. Попросите ИТ-службу разрешить к нему HTTPS-доступ (порт 443) или войдите с другой сети`);
+    }
     finally { setLoading(false); }
   };
 
