@@ -22,6 +22,18 @@ fi
 if [ "$(id -u)" != "0" ]; then echo "Запускайте от root"; exit 1; fi
 if [ ! -f "$MS/server.py" ]; then echo "Программа должна лежать в $APP (git clone ... $APP)"; exit 1; fi
 
+# На VPS с 2 ГБ памяти сборка сайта падает без файла подкачки — создаём его.
+if ! swapon --show | grep -q . ; then
+  echo "== Файл подкачки 2 ГБ (для сборки сайта) =="
+  fallocate -l 2G /swapfile && chmod 600 /swapfile && mkswap /swapfile && swapon /swapfile
+  grep -q '^/swapfile' /etc/fstab || echo '/swapfile none swap sw 0 0' >> /etc/fstab
+fi
+
+# Межсетевой экран Ubuntu: открываем веб-порты, если он включён.
+if command -v ufw >/dev/null 2>&1 && ufw status | grep -q "Status: active"; then
+  ufw allow 22/tcp; ufw allow 80/tcp; ufw allow 443/tcp
+fi
+
 echo "== 1/7 Системные пакеты =="
 apt-get update -y
 apt-get install -y python3 python3-venv python3-pip postgresql nginx certbot python3-certbot-nginx git curl
@@ -80,6 +92,7 @@ echo "════════════════════════�
 echo " Готово. Проверка:  https://$DOMAIN/health"
 echo " Программа:         https://$DOMAIN/"
 echo " Админ-панель:      https://$DOMAIN/admin"
+echo " Резерв расчётов (Админ-панель → Сервер расчёта): https://$DOMAIN/"
 echo " Далее: заполнить $MS/.env и выполнить"
 echo "   $MS/.venv/bin/python $MS/sync_from_cloud.py && systemctl restart pvs-mirror"
 echo "═══════════════════════════════════════════════════════════════"

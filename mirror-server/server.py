@@ -248,6 +248,23 @@ def health():
         headers={"Access-Control-Allow-Origin": "*"})
 
 
+# ─── Резерв расчётов ─────────────────────────────────────────────────────────
+# Программа отправляет расчёт POST-запросом прямо на адрес резервного сервера.
+# Благодаря этому адрес зеркала (https://домен/) можно вписать в админ-панели
+# как «Адрес аварийного сервера» — так же, как отдельный расчётный резерв.
+@app.route("/", methods=["POST", "OPTIONS"])
+def compute_root():
+    return api("airflow")
+
+
+@app.route("/<name>", methods=["POST"])
+def compute_by_name(name: str):
+    if name not in FUNCTIONS:
+        return Response(json.dumps({"error": "unknown_function"}), 404,
+                        content_type="application/json")
+    return api(name)
+
+
 # ─── Сайт (если nginx не настроен — раздаём сами) ────────────────────────────
 @app.route("/", defaults={"path": ""})
 @app.route("/<path:path>")

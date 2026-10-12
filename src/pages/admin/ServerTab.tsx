@@ -356,6 +356,11 @@ export default function ServerTab({
           Обновление резерва после правок — одна команда
           <span className="font-mono"> update.sh</span> или задание в планировщике Beget.
         </div>
+        <div className="text-[10.5px] text-blue-900/70 mt-2 pt-2 border-t border-blue-200">
+          Полный резерв (сайт, расчёты, лицензии, админ-панель, кабинет организации) — на VPS
+          Beget, инструкция <span className="font-mono">mirror-server\УСТАНОВКА_НА_SAGE_REMY.md</span>.
+          Адрес зеркала тоже можно вписать сюда как аварийный сервер расчётов.
+        </div>
       </div>
 
       <div className="rounded-lg border border-green-300 bg-green-50 px-3.5 py-3 mb-3">
