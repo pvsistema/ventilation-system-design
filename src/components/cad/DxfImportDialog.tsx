@@ -1,6 +1,7 @@
 // Диалог импорта DXF-файла вентиляционной схемы
 import { useState, useRef } from "react";
 import { parseDxf, type DxfImportResult, type DxfLayerInfo } from "@/lib/dxfImport";
+import { parseDwg } from "@/lib/dwgImport";
 import Icon from "@/components/ui/icon";
 
 interface DxfImportDialogProps {
@@ -66,8 +67,8 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   const [filePreview, setFilePreview] = useState<string>("");
   const [epsilon, setEpsilon] = useState<number>(0.05);
   const [encoding, setEncoding] = useState<EncodingId>("auto");
-  /** Выбран чертёж DWG — показываем, как пересохранить его в DXF */
-  const [dwgHint, setDwgHint] = useState(false);
+  /** Открыт файл DWG — выбор кодировки не нужен, её определяет сам формат */
+  const [dwgMode, setDwgMode] = useState(false);
   /** Все слои чертежа — список для галочек */
   const [layers, setLayers] = useState<DxfLayerInfo[]>([]);
   /** Отмеченные слои. Пустое множество = «берём всё», как до появления выбора */
@@ -114,21 +115,12 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
   };
 
   const handleFile = async (f: File) => {
-    // DWG — закрытый двоичный формат. Встроенное чтение DWG убрано: библиотека
-    // LibreDWG распространяется по GNU GPL 3.0, что несовместимо с закрытой
-    // лицензией программы. Чертёж сохраняется в DXF средствами любой САПР.
-    if (f.name.toLowerCase().endsWith(".dwg")) {
-      setFile(null);
-      setResult(null);
-      setError(null);
-      setDwgHint(true);
-      return;
-    }
-    setDwgHint(false);
     setFile(f);
     setResult(null);
     setError(null);
     setLoading(true);
+    const isDwg = f.name.toLowerCase().endsWith(".dwg");
+    setDwgMode(isDwg);
     setLayers([]);
     setPicked(new Set());
     setAxisSel(new Set());
@@ -136,11 +128,23 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
       const buf = await f.arrayBuffer();
       fileBufRef.current = buf;
 
-      const text = decodeDxfBytes(buf, encoding);
-      fileTextRef.current = text;
-      setFilePreview(text.split("\n").slice(0, 60).join("\n"));
-      // Первый разбор — без фильтра слоёв и с автоподбором точности
-      initLayers(reparse(text, epsilon, new Set(), true, new Set()));
+      if (isDwg) {
+        // DWG — двоичный формат: его читает отдельный модуль и отдаёт уже
+        // разобранную схему. Кодировку выбирать не нужно, библиотека всегда
+        // возвращает текст в UTF-8.
+        const parsed = await parseDwg(buf);
+        fileTextRef.current = parsed.dxfText;
+        setFilePreview(parsed.dxfText.split("\n").slice(0, 60).join("\n"));
+        setResult(parsed);
+        if (parsed.epsilonUsed !== undefined) setEpsilon(parsed.epsilonUsed);
+        initLayers(parsed);
+      } else {
+        const text = decodeDxfBytes(buf, encoding);
+        fileTextRef.current = text;
+        setFilePreview(text.split("\n").slice(0, 60).join("\n"));
+        // Первый разбор — без фильтра слоёв и с автоподбором точности
+        initLayers(reparse(text, epsilon, new Set(), true, new Set()));
+      }
     } catch (e) {
       setError(`Ошибка чтения файла: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
@@ -266,21 +270,10 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
               onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFile(f); }} />
           </div>
 
-          {dwgHint && (
-            <div className="px-3 py-2.5 rounded text-xs leading-relaxed"
-              style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc", color: "var(--c-t2, #1e3a5f)" }}>
-              <div className="font-semibold mb-1">Чертёж DWG нужно сохранить в формате DXF</div>
-              Откройте файл в своей САПР и сохраните копию в DXF, затем перетащите её сюда:
-              <ul className="list-disc pl-5 mt-1 space-y-0.5">
-                <li><b>НаноКАД, AutoCAD</b> — «Файл → Сохранить как», тип файла «DXF».</li>
-                <li><b>КОМПАС-3D</b> — «Файл → Сохранить как», тип файла «DXF».</li>
-              </ul>
-              Слои, линии, окружности и подписи переносятся без потерь.
-            </div>
-          )}
-
-          {/* Кодировка файла — как в АэроСеть / Вентиляция 2.0. */}
-          {file && (
+          {/* Кодировка файла — как в АэроСеть / Вентиляция 2.0.
+              Для DWG не показываем: имена слоёв приходят из чертежа уже
+              в UTF-8, выбирать пользователю нечего. */}
+          {file && !dwgMode && (
             <div className="flex items-center gap-2">
               <span className="text-xs font-medium text-gray-600 flex-shrink-0">Кодировка файла:</span>
               <select
@@ -303,7 +296,9 @@ export default function DxfImportDialog({ onImport, onClose }: DxfImportDialogPr
           {loading && (
             <div className="flex items-center gap-2 text-sm text-blue-600">
               <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
-              Анализ файла...
+              {dwgMode
+                ? "Чтение чертежа — это занимает несколько секунд..."
+                : "Анализ файла..."}
             </div>
           )}
 

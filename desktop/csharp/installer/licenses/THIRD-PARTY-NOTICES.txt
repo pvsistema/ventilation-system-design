@@ -5,14 +5,14 @@
 их правообладателями безвозмездно на условиях открытых (свободных) лицензий.
 Ниже — перечень компонентов; полные тексты лицензий лежат в этой же папке.
 
-Компонент svglib (GNU LGPL 3.0) используется без изменений как отдельная
-библиотека. Его исходный текст доступен у правообладателя:
-  svglib — https://github.com/deeplook/svglib
-По запросу пользователя исходный текст этого компонента предоставляется
-в соответствии с условиями лицензии. Полный текст: LGPL-3.0.txt
-(LGPL 3.0 дополняет GPL 3.0, её текст — GPL-3.0.txt).
-Загрузчик PyInstaller распространяется по GPL 2.0 с исключением, прямо
-разрешающим распространение собранных им программ на любых условиях.
+Компоненты под лицензиями GNU GPL 3.0 и GNU LGPL 3.0 (LibreDWG / libredwg-web,
+svglib) используются без изменений. Их исходный текст доступен у правообладателей:
+  libredwg-web — https://github.com/mlightcad/libredwg-web
+  LibreDWG     — https://www.gnu.org/software/libredwg/
+  svglib       — https://github.com/deeplook/svglib
+По запросу пользователя исходный текст этих компонентов предоставляется
+правообладателем «ПВ-Система» в соответствии с условиями указанных лицензий.
+Полные тексты: GPL-3.0.txt, LGPL-3.0.txt.
 
 Исключительное право на программу «ПВ-Система» принадлежит её правообладателю.
 
@@ -25,6 +25,7 @@
 @fontsource/ibm-plex-sans                  5.2.8          OFL-1.1                            fontsource__ibm-plex-sans.txt
 @fontsource/jetbrains-mono                 5.3.0          OFL-1.1                            fontsource__jetbrains-mono.txt
 @hookform/resolvers                        3.10.0         MIT                                hookform__resolvers.txt
+@mlightcad/libredwg-web                    0.7.10         GPL-3.0                            mlightcad__libredwg-web.txt
 @noble/ed25519                             2.1.0          MIT                                noble__ed25519.txt
 @noble/hashes                              1.4.0          MIT                                noble__hashes.txt
 @radix-ui/react-accordion                  1.2.12         MIT                                radix-ui__react-accordion.txt

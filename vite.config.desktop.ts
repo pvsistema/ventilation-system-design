@@ -28,6 +28,18 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // Заглушка для «node:module».
+      //
+      // Библиотека чтения чертежей DWG (libredwg-web) собрана сразу для двух
+      // сред — браузера и Node. Ветка для Node запрашивает «node:module»,
+      // и сборщик писал предупреждение «Module node:module has been
+      // externalized for browser compatibility».
+      //
+      // В программе эта ветка никогда не выполняется: и десктоп, и сайт
+      // работают в браузерном движке, где библиотека сама выбирает
+      // браузерный путь. Подставляем пустую заглушку — предупреждение
+      // уходит, поведение не меняется.
+      "node:module": path.resolve(__dirname, "./src/lib/emptyNodeModule.ts"),
     },
   },
   base: "./",
