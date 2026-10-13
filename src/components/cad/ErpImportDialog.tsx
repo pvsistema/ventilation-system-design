@@ -129,7 +129,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
                       setRUnit(u);
                       if (bufRef.current) runParse(bufRef.current, u);
                     }} />
-                  {u === "auto" ? "Авто (рекомендуется)" : u === "kmu" ? "кМюрг" : "Н·с²/м⁸ (СИ)"}
+                  {u === "auto" ? "Авто (рекомендуется)" : u === "kmu" ? "кгс·с²/м⁸ (кМюрг)" : "Н·с²/м⁸ (СИ)"}
                 </label>
               ))}
             </div>
@@ -137,8 +137,8 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
               <div className="mt-1 px-2 py-0.5 rounded text-[10px] inline-block"
                 style={{ background: "var(--c-tint-blue2, #dbeafe)", color: "var(--c-blue-ink, #1e40af)" }}>
                 {result.resistanceUnit === "si"
-                  ? "СИ — сопротивления пересчитаны в кМюрг (÷9,81)"
-                  : "кМюрг — сопротивления перенесены без пересчёта"}
+                  ? "СИ (Н·с²/м⁸) — сопротивления перенесены без пересчёта"
+                  : "кгс·с²/м⁸ — сопротивления пересчитаны в Н·с²/м⁸ (×9,81)"}
               </div>
             )}
           </div>

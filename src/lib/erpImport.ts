@@ -73,10 +73,10 @@
 // хотя в самом файле это нигде не подписано. Признаки, по которым определено:
 //   • AirControl.VentilatorMaxPressure = 10.1972 — это ровно 100 Па / 9,80665;
 //   • сопротивления ветвей лежат как 0,010197 = 0,1/9,80665;
-//   • паспорта вентиляторов (VentilatorTemplateService) записаны в паскалях —
-//     напор ВЦ-25 в них 200…490 Па, тогда как рабочая точка той же машины
-//     в схеме = 108,4. После ×9,80665 получаем 1063 Па — правдоподобный
-//     напор ГВУ, тогда как 108 Па для ВЦ-25 физически заниженно.
+//   • паспорта вентиляторов (VentilatorTemplateService) — тоже в кгс/м²:
+//     рабочая точка FanPressure лежит ровно на паспортной кривой (ВО-30/18АРС:
+//     196,35 и там, и там), а КПД Q·p·g/N получается 0,68…0,9 только при p
+//     в кгс/м² (в паскалях вышло бы 0,05…0,09).
 // Поэтому напор переводим в паскали умножением на 9,80665 — без этого он
 // занижался ровно в 9,8 раза.
 //
@@ -349,12 +349,6 @@ function readItemFields(el: Element, modeId?: string): Record<string, string> {
 }
 
 /**
- * Множитель перевода сопротивления из СИ (Н·с²/м⁸) в кМюрг (кгс·с²/м⁸).
- * Наши поля R хранятся в кМюрг — см. depression() в aerodynamics.ts.
- */
-const SI_TO_KMU = 1 / 9.81;
-
-/**
  * КОЭФФИЦИЕНТ α В АэроСети — в СИ (кг/м³, Н·с²/м⁴), а у нас — в рудничных
  * единицах (кгс·с²/м⁴ ×10⁻⁴): resistanceFromAlpha() даёт R сразу в кМюрг.
  * Поэтому α из файла делим на g. Проверено на проекте ЮПР: сопротивление,
@@ -499,7 +493,7 @@ function balanceResidual(
  */
 export function detectErpUnitByBalance(
   list: ErpBalanceBranch[], atm: Set<string>,
-): { unit: "kmu" | "si"; kmu: number; si: number } | null {
+): { unit: "kmu" | "si" | null; kmu: number; si: number } | null {
   const withQ = list.filter(b => Math.abs(b.q) > 1e-6);
   const withR = list.filter(b => b.rFile > 0 && Math.abs(b.q) > 1e-3);
   if (atm.size === 0 || withQ.length < 10 || withR.length < 3) return null;
@@ -507,9 +501,11 @@ export function detectErpUnitByBalance(
   const kmu = balanceResidual(list, atm, 1);
   const si = balanceResidual(list, atm, 1 / G);
   if (!isFinite(kmu) || !isFinite(si)) return null;
-  if (si < kmu * 0.5) return { unit: "si", kmu, si };
-  if (kmu < si * 0.5) return { unit: "kmu", kmu, si };
-  return null;
+  // Порог 0,75: в выгрузках, где почти все R заданы через α, невязки при
+  // обоих вариантах малы (Джусинский: 0,99 против 1,73), но различимы.
+  if (si < kmu * 0.75) return { unit: "si", kmu, si };
+  if (kmu < si * 0.75) return { unit: "kmu", kmu, si };
+  return { unit: null, kmu, si };
 }
 
 /**
@@ -712,7 +708,7 @@ export async function parseErp(
   // ── Справочник вентиляторов (docs/VentilatorTemplateService) ─────────────
   // <ventilatorTemplate id name diameter minSpeed maxSpeed>
   //   <characteristic id bladeAngle speed discharge1..3 pressure1..3 wattage1..3 isReversed/>
-  // Напор в характеристиках — в ПАСКАЛЯХ (в отличие от напора в схеме), расход
+  // Напор в характеристиках — в кгс/м² (как и напор в схеме), расход
   // — м³/с, мощность — кВт. По трём точкам каждого угла строим нашу кривую
   // H = h0 + h1·Q + h2·Q², как у пользовательского вентилятора.
   interface ErpFanChar { id: string; angle: number; speed: number; reversed: boolean; pts: { q: number; h: number; eta?: number }[] }
@@ -731,15 +727,33 @@ export async function parseErp(
       const id = t.getAttribute("id");
       if (!id) return;
       const chars: ErpFanChar[] = [];
+      // Единицы напора паспорта определяем по КПД η = Q·p/N: в кгс/м² (как
+      // пишет АэроСеть) η = Q·p·g/N выходит 0,3…0,9; если же паспорт записан
+      // в паскалях (так писали прежние версии нашего экспорта), то с g η
+      // получается больше единицы — тогда напор не переводим.
+      const etaKgf: number[] = [];
+      t.querySelectorAll("characteristic").forEach(c => {
+        for (let k = 1; k <= 9; k++) {
+          const q = num(c.getAttribute(`discharge${k}`) ?? undefined), p = num(c.getAttribute(`pressure${k}`) ?? undefined);
+          const w = num(c.getAttribute(`wattage${k}`) ?? undefined, 0);
+          if (q > 0 && p > 0 && w > 0) etaKgf.push(q * p * PA_PER_KGS_M2 / (w * 1000));
+        }
+      });
+      etaKgf.sort((a, b) => a - b);
+      const pScale = etaKgf.length > 0 && etaKgf[Math.floor(etaKgf.length / 2)] > 1.2 ? 1 : PA_PER_KGS_M2;
+      if (pScale === 1) log.push(`вентилятор «${t.getAttribute("name") ?? ""}»: паспорт записан в Па (старый экспорт ПВ-Системы) — без пересчёта`);
       t.querySelectorAll("characteristic").forEach(c => {
         const cid = c.getAttribute("id") ?? "";
         const pts: { q: number; h: number; eta?: number }[] = [];
         for (let k = 1; k <= 9; k++) {
           const qa = c.getAttribute(`discharge${k}`), ha = c.getAttribute(`pressure${k}`);
           if (qa == null || ha == null) continue;
-          const q = num(qa), h = num(ha), w = num(c.getAttribute(`wattage${k}`), 0);
+          // Напор в паспорте — в кгс/м² (как рабочая точка FanPressure),
+          // переводим в паскали. Раньше читали как паскали, и характеристика
+          // вентилятора из файла АэроСети выходила заниженной в 9,8 раза.
+          const q = num(qa), h = num(ha) * pScale, w = num(c.getAttribute(`wattage${k}`), 0);
           if (!(q > 0) || !(h >= 0)) continue;
-          // КПД по мощности: η = H·Q / (N·1000)
+          // КПД по мощности: η = H·Q / (N·1000), H в Па, N в кВт
           const eta = w > 0 ? Math.min(0.9, Math.max(0.05, (h * q) / (w * 1000))) : undefined;
           pts.push({ q, h, eta });
         }
@@ -1087,7 +1101,7 @@ export async function parseErp(
       }), new Set([...rawNodes.values()].filter(nd => nd.atm).map(nd => nd.id)))
     : null;
   const rUnit: "kmu" | "si" = requestedUnit !== "auto" ? requestedUnit
-    : balanceUnit ? balanceUnit.unit
+    : balanceUnit?.unit ? balanceUnit.unit
     : detectErpResistanceUnit(rawBranches.map(rb => {
         const g = geoms.get(rb)!;
         return {
@@ -1098,14 +1112,18 @@ export async function parseErp(
           length: g.length,
         };
       }));
-  // Наши поля R — в кМюрг. Значения из СИ делим на 9,81, кМюрг берём как есть.
-  const rFactor = rUnit === "si" ? SI_TO_KMU : 1;
-  const unitText = rUnit === "si" ? "СИ (Н·с²/м⁸), делим на 9,81" : "кМюрг, без пересчёта";
+  // Наш расчёт применяет R как Н·с²/м⁸ (R·Q² сразу в паскалях, как и напор
+  // вентилятора). АэроСеть штатно хранит кгс·с²/м⁸ — умножаем на g; если
+  // проект АэроСети переведён в СИ — берём как есть. Раньше было наоборот
+  // (кгс — как есть, СИ — делить на 9,81): все сопротивления выходили в 9,8
+  // раза меньше, и расходы после импорта завышались примерно в 3 раза.
+  const rFactor = rUnit === "si" ? 1 : G;
+  const unitText = rUnit === "si" ? "СИ (Н·с²/м⁸), без пересчёта" : "кгс·с²/м⁸, умножаем на 9,81";
   log.push(requestedUnit !== "auto"
     ? `Единицы R: задано вручную → ${unitText}`
-    : balanceUnit
-      ? `Единицы R: по сходимости давлений в сети → ${unitText} (невязка: СИ ${balanceUnit.si.toFixed(2)}, кМюрг ${balanceUnit.kmu.toFixed(2)} кгс/м²)`
-      : `Единицы R: по сравнению с геометрией → ${unitText}`);
+    : balanceUnit?.unit
+      ? `Единицы R: по сходимости давлений в сети → ${unitText} (невязка: СИ ${balanceUnit.si.toFixed(2)}, кгс ${balanceUnit.kmu.toFixed(2)} кгс/м²)`
+      : `Единицы R: по сравнению с геометрией → ${unitText}${balanceUnit ? ` (сходимость не различила: СИ ${balanceUnit.si.toFixed(2)}, кгс ${balanceUnit.kmu.toFixed(2)})` : ""}`);
 
   const branches: TopoBranch[] = [];
   /** GUID выработки в файле → её id на нашей схеме (нужно позициям ПЛА). */
@@ -1147,8 +1165,9 @@ export async function parseErp(
     if (isNotPassable) notPassable++;
     const isLongwall = bool(f["Rib.IsLongwall"]);
     if (isLongwall) longwalls++;
-    // α: из СИ (файл) в наши рудничные единицы ×10⁻⁴ — см. константу G.
-    const alphaCoef = g.alphaSi > 0 ? +(g.alphaSi / G * 1e4).toFixed(4) : 0;
+    // α: в файле кг/м³, у нас ×10⁻⁴ кг/м³ — без деления на g (наш расчёт
+    // применяет R = α·P·L/S³ сразу как Н·с²/м⁸, см. rFactor).
+    const alphaCoef = g.alphaSi > 0 ? +(g.alphaSi * 1e4).toFixed(4) : 0;
     // Сопротивление приводим к нашим единицам (кМюрг) — см. rFactor выше.
     const rUser = +(num(f["Airflow.UserDefinedResistance"], 0) * rFactor).toFixed(6);
     const rt = ribTypes.get(f["Airflow.RibTypeId"] ?? "");

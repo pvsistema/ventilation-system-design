@@ -27,8 +27,10 @@
 // записанный в UTF-8, она открыть не сможет.
 //
 // ЕДИНИЦЫ. Записываем ровно то, что ждёт АэроСеть, обращая пересчёт импорта:
-//   • напор вентилятора — в кгс/м² (делим паскали на 9,80665);
-//   • сопротивления     — в кМюрг, как у нас, без пересчёта.
+//   • напор вентилятора и паспорт — в кгс/м² (делим паскали на 9,80665);
+//   • сопротивления     — в кгс·с²/м⁸ (наше R расчёт применяет как Н·с²/м⁸,
+//                         поэтому тоже делим на 9,80665);
+//   • α                 — в кг/м³ (наш коэффициент ×10⁻⁴, без g).
 //
 // КООРДИНАТЫ. АэроСеть хранит не план, а уже спроецированные («экранные»)
 // координаты косоугольной проекции. Поэтому здесь обращена формула из
@@ -267,13 +269,16 @@ function bulkheadItemXml(p: {
   // Площадь окна: у открытой двери без площади — проём во всё сечение.
   const winA = windowed ? (p.windowArea > 0.001 ? p.windowArea : p.branchArea) : 0;
   // Воздухопроницаемость A = 1/(S·√(R·1000)) — обратная к solidBulkheadRkMurg.
+  // R перемычки — в единицах нашего расчёта (Н·с²/м⁸), в файл — кгс·с²/м⁸.
+  // Воздухопроницаемость по формуле АэроСети R_кгс = 1/(A·S)²/g → A = 1/(S·√R_Си).
+  const rKgf = p.r / PA_PER_KGS_M2;
   const perm = blind && p.r > 0 && p.branchArea > 0
-    ? 1 / (p.branchArea * Math.sqrt(p.r * 1000)) : 0;
+    ? 1 / (p.branchArea * Math.sqrt(p.r)) : 0;
 
   const own = `<field name="AirControl.IsUnderControl" value="False" />`
     + `<field name="AirControl.BulkheadMinQ" value="0" />`
     + `<field name="Notes" value="${esc(p.name)}" />`
-    + `<field name="Airflow.BulkheadCalculatedResistance" value="${nr(p.r)}" />`
+    + `<field name="Airflow.BulkheadCalculatedResistance" value="${nr(rKgf)}" />`
     + (blind ? `<field name="Position.BulkheadIsNotPassable" value="${p.code.kind === "solid" ? "True" : "False"}" />`
       + `<field name="SealDefinitionType" value="0" /><field name="SealQ" value="0" />`
       + `<field name="SealDeltaP" value="0.509858106488964" /><field name="SealType" value="0" />`
@@ -283,7 +288,7 @@ function bulkheadItemXml(p: {
     + (windowed ? `<field name="Airflow.VentWindowArea" value="${n(winA, 4)}" />` : "")
     + (blind ? `<field name="Airflow.BlindBulkheadPermeabilityIsUserDefined" value="${perm > 0 ? "True" : "False"}" />`
       + `<field name="Airflow.BlindBulkheadUserDefinedPermeability" value="${nr(perm)}" />` : "")
-    + `<field name="Airflow.BulkheadUserDefinedResistance" value="${nr(p.r)}" />`
+    + `<field name="Airflow.BulkheadUserDefinedResistance" value="${nr(rKgf)}" />`
     + `<field name="Airflow.BulkheadDepressionSurveyDischarge" value="0" />`
     + `<field name="Airflow.BulkheadDepressionDelta" value="0" />`;
 
@@ -334,11 +339,17 @@ function ventilatorTemplatesXml(): string {
       let qEnd = e.qMax;
       while (qEnd > e.qMin * 1.2 && fanHAngle(curve, qEnd, a) < h0 * 0.1) qEnd -= (e.qMax - e.qMin) / 50;
       const qs = [e.qMin, (e.qMin + qEnd) / 2, qEnd];
+      // Напор в паспорте АэроСеть хранит в кгс/м² — как и рабочую точку
+      // FanPressure (проверено по файлу АэроСети: рабочая точка ВО-30/18АРС
+      // 196,35 лежит ровно на паспортной кривой, а КПД Q·p·g/N выходит
+      // 0,68…0,9 только при p в кгс/м²). Раньше писали паскали, и в АэроСети
+      // напор вентилятора по характеристике оказывался завышен в 9,8 раза.
+      // Мощность — в кВт, считаем по напору в паскалях.
       const pts = qs.map((q, i) => {
         const h = Math.max(0, fanHAngle(curve, q, a));
         const eta = Math.max(0.05, fanEfficiencyAngle(curve, q, a));
         const kw = h * q / eta / 1000;
-        return `discharge${i + 1}="${n(q, 4)}" pressure${i + 1}="${n(h, 4)}" wattage${i + 1}="${n(kw, 3)}"`;
+        return `discharge${i + 1}="${n(q, 4)}" pressure${i + 1}="${n(h / PA_PER_KGS_M2, 4)}" wattage${i + 1}="${n(kw, 3)}"`;
       }).join(" ");
       return `<characteristic id="${guidFrom(`fanchr:${curve.id}:${angle}`)}" bladeAngle="${n(angle, 2)}" speed="${n(curve.rpmNominal || curve.rpmMax, 0)}" ${pts} isReversed="False" />`;
     }).join("");
@@ -654,10 +665,15 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       + `<field name="Airflow.PerimeterIsUserDefined" value="True" />`
       + `<field name="Airflow.UserDefinedRibLength" value="${n(br.length, 2)}" />`
       + `<field name="Airflow.RibLengthIsUserDefined" value="True" />`
-      // α у нас в рудничных единицах (кгс·с²/м⁴), а АэроСеть хранит его в СИ
-      // (кг/м³) — домножаем на g. Парно с делением в erpImport.ts.
-      + `<field name="Airflow.Alpha" value="${n((br.alphaCoef ?? 0) * 1e-4 * 9.80665)}" />`
-      + `<field name="Airflow.UserDefinedResistance" value="${manualR ? nr(ribR) : "0"}" />`
+      // ЕДИНИЦЫ. Наш расчёт считает R·Q² сразу в паскалях (напор вентилятора
+      // тоже в Па), т.е. наше R фактически в Н·с²/м⁸. АэроСеть же хранит R в
+      // кгс·с²/м⁸ и давления в кгс/м², а α — в кг/м³ и сама делит его на g.
+      // Чтобы АэроСеть посчитала ТУ ЖЕ сеть: R делим на g, α пишем как есть
+      // (×10⁻⁴). Раньше R писали без перевода, а α ещё и умножали на g —
+      // сеть в АэроСети становилась в 9,8 раза «туже», расход падал, и
+      // вентилятор по характеристике уходил в точку с завышенным напором.
+      + `<field name="Airflow.Alpha" value="${n((br.alphaCoef ?? 0) * 1e-4, 8)}" />`
+      + `<field name="Airflow.UserDefinedResistance" value="${manualR ? nr(ribR / PA_PER_KGS_M2) : "0"}" />`
       + `<field name="Airflow.AirResistanceCalculationType" value="${manualR ? 2 : 0}" />`
       + `<field name="Airflow.Discharge" value="${n(withResults ? (br.flow ?? 0) : 0, 4)}" />`
       + `<field name="Airflow.MaxAirVelocity" value="${n(br.vMax ?? 0, 2)}" />`
