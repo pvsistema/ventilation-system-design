@@ -300,9 +300,17 @@ interface FanTemplateRef { templateId: string; characteristicId: string }
 const fanTemplates = new Map<string, { curve: FanCurve; angles: Set<number> }>();
 
 function fanTemplateFor(curve: FanCurve, br: TopoBranch): FanTemplateRef {
-  const angle = curve.bladeAngles.length > 0
-    ? (curve.bladeAngles.includes(br.fanBladeAngle) ? br.fanBladeAngle
-      : curve.bladeAngles.reduce((a, c) => Math.abs(c - br.fanBladeAngle) < Math.abs(a - br.fanBladeAngle) ? c : a))
+  // Угол лопаток переносим ТОЧНО, а не округляем до ближайшего паспортного:
+  // промежуточный угол (например, 22,5° между 20° и 25°) — обычная настройка
+  // ГВУ, и наша кривая для него интерполируется между соседними углами.
+  // Раньше угол «перескакивал» на паспортный, и АэроСеть считала вентилятор
+  // по другой характеристике. Вне диапазона паспорта — ближайший край.
+  const a0 = Number(br.fanBladeAngle);
+  const list = curve.bladeAngles;
+  const angle = list.length > 0
+    ? (isFinite(a0)
+      ? +Math.min(Math.max(...list), Math.max(Math.min(...list), a0)).toFixed(2)
+      : list[Math.floor((list.length - 1) / 2)])
     : 0;
   const entry = fanTemplates.get(curve.id) ?? { curve, angles: new Set<number>() };
   entry.angles.add(angle);
@@ -382,6 +390,20 @@ function guidFrom(seed: string): string {
   ].join("-");
 }
 
+/**
+ * Отпечаток schema.xml. Если АэроСеть пересохранит файл, схема изменится,
+ * и импорт поймёт, что вложенная копия проекта устарела.
+ */
+export function hashText(text: string): string {
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    h1 = Math.imul(h1 ^ c, 0x01000193);
+    h2 = Math.imul(h2 ^ c, 0x5bd1e995);
+  }
+  return (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0") + ":" + text.length;
+}
+
 /** Текст → UTF-16LE с BOM: в этой кодировке АэроСеть хранит части архива. */
 function toUtf16le(text: string): Uint8Array {
   const out = new Uint8Array(2 + text.length * 2);
@@ -421,7 +443,17 @@ export interface ErpExportOptions {
   schemaSymbols?: SchemaSymbol[];
   /** Справочник перемычек рудника — нужен для R значков «по проекту». */
   mineBulkheads?: BulkheadRef[];
+  /**
+   * Полный проект ПВ-Системы (то же, что пишется в .vproj). Если задан,
+   * кладётся в архив отдельной частью — АэроСеть её не читает, а наш импорт
+   * восстанавливает по ней схему без потерь: водопровод, пожар, люди,
+   * подписи, текстовые блоки и всё, чего в формате АэроСети нет.
+   */
+  fullProject?: unknown;
 }
+
+/** Имя части архива с полной копией проекта ПВ-Системы. */
+export const ERP_PVS_PROJECT_ENTRY = "pvs/project.vproj.json";
 
 /**
  * Сопротивление окна ГВУ «внутри перемычки» + перемычки вентилятора, кМюрг.
@@ -735,6 +767,16 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
   zip.file("schema.xml", toUtf16le(schema));
   zip.file("documents.xml", toUtf16le(documentsXml));
   for (const [f, xml] of dataDocs) zip.file("docs/" + f, toUtf16le(xml));
+  // Полная копия проекта: в [Content_Types] и documents.xml её не объявляем,
+  // поэтому АэроСеть файл не замечает, а при сохранении в АэроСети он просто
+  // пропадёт — и импорт тогда работает по обычной схеме.
+  if (opts.fullProject != null) {
+    zip.file(ERP_PVS_PROJECT_ENTRY, JSON.stringify({
+      format: "pvs-erp-embed", version: 1,
+      schemaHash: hashText(schema),
+      project: opts.fullProject,
+    }));
+  }
 
   return zip.generateAsync({ type: "blob", compression: "DEFLATE" });
 }

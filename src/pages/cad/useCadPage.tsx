@@ -2884,6 +2884,14 @@ export function useCadPage() {
    * исходный проект целиком — со слоями, вентиляторами и перемычками.
    */
   const handleErpImport = (rawResult: ErpImportResult, mode: "replace" | "append") => {
+    // Файл выгружен ПВ-Системой и не менялся в АэроСети: в нём лежит полная
+    // копия проекта. При замене схемы открываем её как обычный проект — так
+    // сохраняются водопровод, пожар, подписи и всё, чего в .erp нет.
+    if (mode === "replace" && rawResult.pvsProject) {
+      applyProjectDataRef.current?.(rawResult.pvsProject, String(rawResult.pvsProject.name || "Проект из АэроСети"));
+      addLog("info", "Импорт .erp: найдена полная копия проекта ПВ-Системы — схема восстановлена без потерь");
+      return;
+    }
     // id импорта — номера из АэроСети; при добавлении к схеме разводим совпадения.
     const result = mode === "append"
       ? remapErpIdsForAppend(rawResult, nodes.map(n => n.id), branchesRaw.map(b => b.id))
@@ -3626,6 +3634,7 @@ export function useCadPage() {
           projectName: name, fileName: name,
           withFans: o.fans, withBulkheads: o.bulkheads,
           withPositions: o.positions, withResults: o.results,
+          fullProject: o.fullCopy ? { ...buildProjectData(), name: name + ".vproj" } : undefined,
         });
         const fans = o.fans ? branches.filter(b => b.hasFan).length : 0;
         const bulks = o.bulkheads

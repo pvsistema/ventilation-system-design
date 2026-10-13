@@ -90,6 +90,7 @@ import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } fr
 import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
 import { buildUserFanCurve } from "@/lib/userFanFit";
 import { USER_FAN_PREFIX, FAN_CATALOG, fanHAngle, type FanCurve } from "@/lib/fanCurves";
+import { ERP_PVS_PROJECT_ENTRY, hashText } from "@/lib/erpExport";
 
 /**
  * Поиск вентилятора в НАШЕМ заводском каталоге по названию из АэроСети.
@@ -205,6 +206,12 @@ export interface ErpImportResult {
   ventModeName: string;
   /** Единицы R, в которых прочитан файл (после автоопределения или выбора). */
   resistanceUnit: "kmu" | "si";
+  /**
+   * Полная копия проекта ПВ-Системы, вложенная нашим экспортом. Есть только
+   * у файлов, выгруженных ПВ-Системой и НЕ пересохранённых в АэроСети
+   * (иначе схема в файле уже другая, и копия устарела).
+   */
+  pvsProject?: Record<string, unknown>;
   warnings: string[];
   stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number };
   debug: string;
@@ -389,6 +396,114 @@ export function detectErpResistanceUnit(
   ratios.sort((a, b) => a - b);
   const median = ratios[Math.floor(ratios.length / 2)];
   return median > Math.sqrt(9.81) ? "si" : "kmu";
+}
+
+/** Выработка для проверки единиц по закону депрессий. */
+export interface ErpBalanceBranch {
+  from: string;
+  to: string;
+  /** Расход из файла (последний расчёт АэроСети), м³/с. */
+  q: number;
+  /** Сопротивление, вычисленное по α и геометрии, кМюрг (от единиц R не зависит). */
+  rGeom: number;
+  /** Сопротивление, записанное числом (выработка + перемычки), в единицах файла. */
+  rFile: number;
+  /** Напор вентиляторов по направлению выработки, кгс/м². */
+  h: number;
+}
+
+/**
+ * Среднеквадратичная невязка второго закона сети, кгс/м².
+ *
+ * Для каждой выработки p_from − p_to = R·Q·|Q| − H. Давления узлов подбираются
+ * методом наименьших квадратов (атмосферные узлы закреплены на нуле), и
+ * остаток показывает, насколько сопротивления согласованы с расходами и
+ * напорами из того же файла. Система — лапласиан графа, решаем сопряжёнными
+ * градиентами: на схемах в тысячи выработок это доли секунды.
+ */
+function balanceResidual(
+  list: ErpBalanceBranch[], atm: Set<string>, rFileFactor: number,
+): number {
+  const idx = new Map<string, number>();
+  const id = (k: string) => {
+    if (atm.has(k)) return -1;
+    let i = idx.get(k);
+    if (i == null) { i = idx.size; idx.set(k, i); }
+    return i;
+  };
+  const edges = list.map(b => ({
+    a: id(b.from), c: id(b.to),
+    d: (b.rGeom + b.rFile * rFileFactor) * b.q * Math.abs(b.q) - b.h,
+  }));
+  const n = idx.size;
+  const p = new Float64Array(n);
+  if (n > 0) {
+    const mul = (x: Float64Array, out: Float64Array) => {
+      out.fill(0);
+      for (const e of edges) {
+        const xa = e.a >= 0 ? x[e.a] : 0, xc = e.c >= 0 ? x[e.c] : 0;
+        const t = xa - xc;
+        if (e.a >= 0) out[e.a] += t;
+        if (e.c >= 0) out[e.c] -= t;
+      }
+      for (let i = 0; i < n; i++) out[i] += 1e-9 * x[i];
+    };
+    const rhs = new Float64Array(n);
+    for (const e of edges) {
+      if (e.a >= 0) rhs[e.a] += e.d;
+      if (e.c >= 0) rhs[e.c] -= e.d;
+    }
+    const r = rhs.slice(), dir = rhs.slice(), ad = new Float64Array(n);
+    let rr = r.reduce((s, v) => s + v * v, 0);
+    const stop = rr * 1e-20;
+    for (let it = 0; it < 4 * n + 50 && rr > stop; it++) {
+      mul(dir, ad);
+      const dAd = dir.reduce((s, v, i) => s + v * ad[i], 0);
+      if (!(dAd > 0)) break;
+      const alpha = rr / dAd;
+      for (let i = 0; i < n; i++) { p[i] += alpha * dir[i]; r[i] -= alpha * ad[i]; }
+      const rr2 = r.reduce((s, v) => s + v * v, 0);
+      const beta = rr2 / rr;
+      rr = rr2;
+      for (let i = 0; i < n; i++) dir[i] = r[i] + beta * dir[i];
+    }
+  }
+  let sum = 0;
+  for (const e of edges) {
+    const pa = e.a >= 0 ? p[e.a] : 0, pc = e.c >= 0 ? p[e.c] : 0;
+    const res = pa - pc - e.d;
+    sum += res * res;
+  }
+  return Math.sqrt(sum / Math.max(1, edges.length));
+}
+
+/**
+ * Единицы сопротивления по согласованности сети (второй закон).
+ *
+ * Сравнение заданного R с геометрическим (detectErpResistanceUnit) ошибается,
+ * когда заданные R по природе не равны геометрическим — вентрубопроводы,
+ * местные сопротивления. На «Якутском» 59 нитей става сбивали медиану, и
+ * файл в СИ читался как кМюрг: все R выходили в 9,8 раза больше.
+ *
+ * Здесь проверяем другое: при каких единицах потери давления в сети
+ * сходятся с напором вентиляторов и расходами из того же файла. На
+ * «Якутском»: СИ — невязка 0,96 кгс/м², кМюрг — 47,9 кгс/м².
+ * Возвращает null, если расходов в файле нет или разница неубедительна —
+ * тогда работает прежний способ.
+ */
+export function detectErpUnitByBalance(
+  list: ErpBalanceBranch[], atm: Set<string>,
+): { unit: "kmu" | "si"; kmu: number; si: number } | null {
+  const withQ = list.filter(b => Math.abs(b.q) > 1e-6);
+  const withR = list.filter(b => b.rFile > 0 && Math.abs(b.q) > 1e-3);
+  if (atm.size === 0 || withQ.length < 10 || withR.length < 3) return null;
+  if (!list.some(b => b.h !== 0)) return null;
+  const kmu = balanceResidual(list, atm, 1);
+  const si = balanceResidual(list, atm, 1 / G);
+  if (!isFinite(kmu) || !isFinite(si)) return null;
+  if (si < kmu * 0.5) return { unit: "si", kmu, si };
+  if (kmu < si * 0.5) return { unit: "kmu", kmu, si };
+  return null;
 }
 
 /**
@@ -926,8 +1041,39 @@ export async function parseErp(
   // ── Сборка ветвей ─────────────────────────────────────────────────────────
   // Единицы сопротивления: либо заданы пользователем, либо определяются по
   // данным. Считаем ДО сборки ветвей — коэффициент нужен каждой из них.
-  const rUnit: "kmu" | "si" = requestedUnit === "auto"
-    ? detectErpResistanceUnit(rawBranches.map(rb => {
+  // Сначала — по согласованности сети (надёжно, если в файле есть расходы
+  // последнего расчёта), иначе — прежним сравнением с геометрией.
+  const balanceUnit = requestedUnit === "auto"
+    ? detectErpUnitByBalance(rawBranches.map(rb => {
+        const g = geoms.get(rb)!;
+        const f = rb.f;
+        const mode = String(f["Airflow.AirResistanceCalculationType"] ?? "");
+        const sq = num(f["Airflow.DepressionSurveyDischarge"], 0);
+        const sdp = num(f["Airflow.UserDefinedDepressionDelta"], 0);
+        const rUserFile = mode === "2" ? num(f["Airflow.UserDefinedResistance"], 0)
+          : mode === "1" && sq > 0 && sdp > 0 ? sdp / (sq * sq) : 0;
+        const rGeom = rUserFile > 0 || !(g.area > 0)
+          ? 0 : (g.alphaSi / G) * g.perimeter * g.length / Math.pow(g.area, 3);
+        let rBulk = 0, h = 0;
+        for (const it of rb.items) {
+          const isFan = ITEM_FAN.has(it.code) || FAN_FIELDS.some(k => it.f[k] != null && it.f[k] !== "");
+          if (isFan) {
+            const hk = num(it.f["Airflow.FanPressure"], 0) || num(it.f["Airflow.IdealVentilatorPressure"], 0);
+            h += it.reversed ? -hk : hk;
+          } else {
+            rBulk += num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
+              || num(it.f["Airflow.BulkheadCalculatedResistance"], 0);
+          }
+        }
+        return {
+          from: rb.fromId, to: rb.toId, q: num(f["Airflow.Discharge"], 0),
+          rGeom, rFile: rUserFile + rBulk, h,
+        };
+      }), new Set([...rawNodes.values()].filter(nd => nd.atm).map(nd => nd.id)))
+    : null;
+  const rUnit: "kmu" | "si" = requestedUnit !== "auto" ? requestedUnit
+    : balanceUnit ? balanceUnit.unit
+    : detectErpResistanceUnit(rawBranches.map(rb => {
         const g = geoms.get(rb)!;
         return {
           r: num(rb.f["Airflow.UserDefinedResistance"], 0),
@@ -936,13 +1082,15 @@ export async function parseErp(
           perimeter: g.perimeter,
           length: g.length,
         };
-      }))
-    : requestedUnit;
+      }));
   // Наши поля R — в кМюрг. Значения из СИ делим на 9,81, кМюрг берём как есть.
   const rFactor = rUnit === "si" ? SI_TO_KMU : 1;
-  log.push(requestedUnit === "auto"
-    ? `Единицы R: автоопределение → ${rUnit === "si" ? "СИ (Н·с²/м⁸), делим на 9,81" : "кМюрг, без пересчёта"}`
-    : `Единицы R: задано вручную → ${rUnit === "si" ? "СИ (Н·с²/м⁸), делим на 9,81" : "кМюрг, без пересчёта"}`);
+  const unitText = rUnit === "si" ? "СИ (Н·с²/м⁸), делим на 9,81" : "кМюрг, без пересчёта";
+  log.push(requestedUnit !== "auto"
+    ? `Единицы R: задано вручную → ${unitText}`
+    : balanceUnit
+      ? `Единицы R: по сходимости давлений в сети → ${unitText} (невязка: СИ ${balanceUnit.si.toFixed(2)}, кМюрг ${balanceUnit.kmu.toFixed(2)} кгс/м²)`
+      : `Единицы R: по сравнению с геометрией → ${unitText}`);
 
   const branches: TopoBranch[] = [];
   /** GUID выработки в файле → её id на нашей схеме (нужно позициям ПЛА). */
@@ -1373,7 +1521,28 @@ export async function parseErp(
 
   log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans}, перемычек ${bulkheads}, позиций ${positions.length}`);
 
+  // ── Вложенная копия проекта ПВ-Системы ────────────────────────────────────
+  // Её кладёт наш экспорт. Берём, только если схема в файле та же, что была
+  // при выгрузке: если проект пересохранили в АэроСети и что-то поменяли,
+  // копия устарела, и верна уже схема из файла.
+  let pvsProject: Record<string, unknown> | undefined;
+  const embedEntry = zip.file(ERP_PVS_PROJECT_ENTRY);
+  if (embedEntry) {
+    try {
+      const emb = JSON.parse(await embedEntry.async("string")) as { schemaHash?: string; project?: Record<string, unknown> };
+      if (emb.project && emb.schemaHash === hashText(xmlText)) {
+        pvsProject = emb.project;
+        log.push("найдена полная копия проекта ПВ-Системы — схема восстанавливается без потерь");
+      } else if (emb.project) {
+        warnings.push("Файл выгружен из ПВ-Системы, но после этого изменён в АэроСети — данные, которых нет в формате АэроСети (водопровод, пожар, подписи), восстановить нельзя.");
+      }
+    } catch {
+      log.push("вложенная копия проекта повреждена — пропущена");
+    }
+  }
+
   return {
+    pvsProject,
     nodes,
     branches,
     horizons,

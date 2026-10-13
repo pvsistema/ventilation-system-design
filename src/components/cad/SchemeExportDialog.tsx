@@ -32,6 +32,8 @@ export interface SchemeExportOptions {
   water: boolean;
   /** Выгрузить только выработки с трубопроводом ППЗ — только для .hdr. */
   onlyPipes: boolean;
+  /** Вложить полную копию проекта ПВ-Системы — только для .erp. */
+  fullCopy: boolean;
 }
 
 interface Props {
@@ -70,7 +72,7 @@ export default function SchemeExportDialog(p: Props) {
   const f = FORMATS[p.format];
   const [opts, setOpts] = useState<SchemeExportOptions>({
     fans: true, bulkheads: true, positions: true, horizons: true, results: true,
-    water: true, onlyPipes: false,
+    water: true, onlyPipes: false, fullCopy: true,
   });
 
   const fanCount = p.branches.filter(b => b.hasFan).length;
@@ -110,7 +112,10 @@ export default function SchemeExportDialog(p: Props) {
         { key: "results" as const, label: "Расходы воздуха", count: flowCount, supported: true,
           hint: "Расчётный расход воздуха выработок" },
       ]
-    : rows;
+    : p.format === "erp"
+      ? [...rows, { key: "fullCopy" as const, label: "Полная копия проекта ПВ-Системы", count: 0, supported: true,
+          hint: "Водопровод, пожар, люди, подписи, текстовые блоки. АэроСеть её не видит, а ПВ-Система при открытии файла восстановит проект без потерь" }]
+      : rows;
 
   const ready = p.branches.length > 0;
 
