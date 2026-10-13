@@ -91,6 +91,10 @@ import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpIte
 import { buildUserFanCurve } from "@/lib/userFanFit";
 import { USER_FAN_PREFIX, FAN_CATALOG, fanHAngle, type FanCurve } from "@/lib/fanCurves";
 import { ERP_PVS_PROJECT_ENTRY, hashText } from "@/lib/erpExport";
+import {
+  erpNodeWater, erpBranchWater, parsePipeTemplates, parsePumpTemplates,
+  pumpHeadFromName, pumpParallelFromName, ERP_ITEM_PUMP, type ErpPumpOnBranch,
+} from "@/lib/erpWater";
 
 /**
  * Поиск вентилятора в НАШЕМ заводском каталоге по названию из АэроСети.
@@ -196,6 +200,8 @@ export interface ErpImportResult {
    * переносилась только первая, а на ветви с вентилятором — ни одной.
    */
   bulkheadItems: ErpBulkhead[];
+  /** Насосы водопровода по выработкам — из них ставятся значки «Насос». */
+  pumpItems: ErpPumpOnBranch[];
   /**
    * Вентиляторы из справочника АэроСети (VentilatorTemplateService), на
    * которые ссылаются выработки в режиме «по характеристике». Заводятся в
@@ -213,7 +219,7 @@ export interface ErpImportResult {
    */
   pvsProject?: Record<string, unknown>;
   warnings: string[];
-  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number };
+  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number; waterPipes: number; hydrants: number };
   debug: string;
 }
 
@@ -616,6 +622,8 @@ export function remapErpIdsForAppend(
       branchIds: p.branchIds.map(id => bMap.get(id) ?? id),
       leaderBranchId: p.leaderBranchId ? (bMap.get(p.leaderBranchId) ?? p.leaderBranchId) : "",
     })),
+    bulkheadItems: result.bulkheadItems.map(it => ({ ...it, branchId: bMap.get(it.branchId) ?? it.branchId })),
+    pumpItems: (result.pumpItems ?? []).map(it => ({ ...it, branchId: bMap.get(it.branchId) ?? it.branchId })),
   };
 }
 
@@ -711,6 +719,11 @@ export async function parseErp(
   interface ErpFanTpl { id: string; name: string; diameter: number; minSpeed: number; maxSpeed: number; chars: ErpFanChar[] }
   const fanTpls = new Map<string, ErpFanTpl>();
   const fanCharToTpl = new Map<string, string>();
+  // Справочники водопровода: трубы (диаметр, стенка) и насосы (Q–p).
+  const ptEntry = zip.file(/PipeTemplateService\.DataDocument$/i)[0];
+  const pipeTemplates = ptEntry ? parsePipeTemplates(decodeXml(await ptEntry.async("uint8array"))) : new Map();
+  const pmEntry = zip.file(/PumpTemplateService\.DataDocument$/i)[0];
+  const pumpTemplates = pmEntry ? parsePumpTemplates(decodeXml(await pmEntry.async("uint8array"))) : [];
   const vtEntry = zip.file(/VentilatorTemplateService\.DataDocument$/i)[0];
   if (vtEntry) {
     const vtDoc = new DOMParser().parseFromString(decodeXml(await vtEntry.async("uint8array")), "application/xml");
@@ -784,7 +797,7 @@ export async function parseErp(
   // ── Узлы ──────────────────────────────────────────────────────────────────
   // Читаем в «сырых» единицах проекции; масштаб применим ниже, когда узнаем
   // коэффициент по длинам ветвей.
-  interface RawNode { id: string; x: number; y: number; z: number; name: string; number: string; atm: boolean; t: number; p: number }
+  interface RawNode { id: string; x: number; y: number; z: number; name: string; number: string; atm: boolean; t: number; p: number; f: Record<string, string> }
   const rawNodes = new Map<string, RawNode>();
   doc.querySelectorAll("ribEndNode").forEach(n => {
     const id = n.getAttribute("id");
@@ -802,6 +815,7 @@ export async function parseErp(
       atm: bool(f["HasAtmosphereConnection"]),
       t: num(f["RibTemperatureField"], 20),
       p: num(f["ModelAirPressure"]),
+      f,
     });
   });
   log.push(`узлов: ${rawNodes.size}`);
@@ -945,6 +959,7 @@ export async function parseErp(
       atmosphereLink: rn.atm,
       airTemp: rn.t,
       reducedPressure: rn.p,
+      ...(erpNodeWater(rn.f) ?? {}),
     }));
   });
 
@@ -1108,6 +1123,8 @@ export async function parseErp(
   const catalogFanNames = new Set<string>();
   const missingFanNames = new Set<string>();
   const bulkheadItems: ErpBulkhead[] = [];
+  const pumpItems: ErpPumpOnBranch[] = [];
+  const waterStat = { pipes: 0, gates: 0, gatesClosed: 0, reducers: 0, air: 0 };
   let fansInBulkhead = 0;
   const fanBulkheadNotes: string[] = [];
   let bulkMulti = 0, bulkWithFan = 0;
@@ -1341,7 +1358,29 @@ export async function parseErp(
       });
     });
     branchIdMap.set(rb.id, branchId);
+    // ── Водопровод и воздухопровод ──────────────────────────────────────
+    const water = erpBranchWater(f, rb.items, pipeTemplates);
+    if (water.hasWaterPipe) waterStat.pipes++;
+    if (water.wpHasGate) { waterStat.gates++; if (water.wpGateClosed) waterStat.gatesClosed++; }
+    if (water.wpHasReducer) waterStat.reducers++;
+    if (water.hasAirPipe) waterStat.air++;
+    // Если ВМП развернули, «прямо/обратно» у объектов тоже меняется местами.
+    if (flipVmp && water.wpComputedFlow) water.wpComputedFlow = -water.wpComputedFlow;
+    rb.items.filter(it => it.code === ERP_ITEM_PUMP).forEach(it => {
+      const name = (it.description || "").replace(/\s*\(?\d+\s*шт\.?\)?\s*$/i, "").trim() || "Насос";
+      const tpl = pumpTemplates.find(p => p.name && name.toUpperCase().startsWith(p.name.toUpperCase()));
+      const tplHead = tpl && tpl.pts.length ? Math.max(...tpl.pts.map(p => p.p)) / (1000 * 9.81) : 0;
+      const t0 = tOfItem(it);
+      pumpItems.push({
+        branchId, name,
+        parallel: pumpParallelFromName(it.description || ""),
+        reversed: it.reversed !== flipVmp,
+        head: +(pumpHeadFromName(name) || tplHead).toFixed(1),
+        t: +(flipVmp ? 1 - t0 : t0).toFixed(4),
+      });
+    });
     branches.push(makeBranch(branchId, bFrom, bTo, {
+      ...water,
       type: f["Rib.Name"] || rt?.name || "",
       // Сечение и периметр берём как есть — в АэроСети они уже в м² и м.
       // Форму «custom» ставим потому, что файл хранит готовые S и P, а не
@@ -1404,6 +1443,15 @@ export async function parseErp(
     }));
   }
 
+  log.push(`водопровод: труб ${waterStat.pipes}, задвижек ${waterStat.gates} (закрыто ${waterStat.gatesClosed}), редукционных клапанов ${waterStat.reducers}, насосов ${pumpItems.length}; воздухопровод: ${waterStat.air}`);
+  {
+    const ns = nodes.filter(nd => nd.fireNodeType && nd.fireNodeType !== "none");
+    const cons = ns.filter(nd => nd.fireNodeType === "consumer").length;
+    const res = ns.filter(nd => nd.fireNodeType === "reservoir").length;
+    log.push(`водопровод, узлы: кранов ${cons}, резервуаров ${res}, соединений ${ns.length - cons - res}`);
+    const noHead = pumpItems.filter(p => !(p.head > 0));
+    if (noHead.length > 0) warnings.push(`Насосов без известного напора: ${noHead.length} — задайте модель насоса в свойствах значка, иначе расчёт водопровода их не учтёт`);
+  }
   log.push(`α: по крепи выработки ${alphaStat.surface}, по крепи типа ${alphaStat.ribType}, из поля выработки ${alphaStat.rib}, по умолчанию ${alphaStat.default}, нет ${alphaStat.none}`);
   log.push(`длина по трассе с изломами: ${bendLengths}; непроходимых: ${notPassable}; лав: ${longwalls}`);
   if (alphaStat.default > 0) {
@@ -1548,6 +1596,7 @@ export async function parseErp(
     horizons,
     positions,
     bulkheadItems,
+    pumpItems,
     fanCurves: [...fanCurveByTpl.values()].filter((c): c is FanCurve => !!c && fanCurveIds.has(c.id)),
     ventModeName,
     resistanceUnit: rUnit,
@@ -1555,6 +1604,8 @@ export async function parseErp(
     stats: {
       nodes: nodes.length, branches: branches.length, fans, bulkheads,
       horizons: horizons.length, positions: positions.length,
+      waterPipes: waterStat.pipes,
+      hydrants: nodes.filter(nd => nd.fireNodeType === "consumer").length,
     },
     debug: log.join("\n"),
   };

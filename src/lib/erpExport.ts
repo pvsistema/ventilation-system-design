@@ -51,6 +51,7 @@ import { getFanById, fanCurveAtAngle, fanHAngle, fanEfficiencyAngle, type FanCur
 import { resistanceFromAlpha } from "@/lib/aerodynamics";
 import { OVERVIEW_HORIZON_ID } from "@/lib/topology";
 import { LEGEND_TYPES } from "@/lib/schemaSymbols";
+import { erpNodeWaterXml, erpBranchWaterXml, erpBranchWaterItemsXml } from "@/lib/erpWater";
 import {
   ERP_FAN_MAIN, ERP_FAN_LOCAL, erpCodeForSymbol, erpCodeForName,
   isBlindKind, isWindowKind, type ErpBulkheadCode,
@@ -511,6 +512,7 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       + `<field name="Heat.WallTemperature" value="${n(nd.airTemp ?? 20, 2)}" />`
       + `<field name="ReducedAirPressure" value="${n(nd.reducedPressure ?? 0, 3)}" />`
       + `<field name="Accident.ExplosionPressure" value="0" />`
+      + erpNodeWaterXml(nd)
       + `</fields></customFields></ribEndNode>`;
   };
 
@@ -611,6 +613,29 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
         );
       });
 
+    // ── Водопровод: задвижка, редукционный клапан, насос ────────────────
+    {
+      const pumpSyms = symbols.filter(sy => sy.branchId === br.id && sy.typeId === "pump");
+      const gateSym = symbols.find(sy => sy.branchId === br.id && sy.typeId === "valve_water");
+      const redSym = symbols.find(sy => sy.branchId === br.id && sy.typeId === "valve_reduce");
+      const pumps = pumpSyms.map(sy => ({
+        name: sy.pumpName || "Насос",
+        parallel: Math.max(1, Math.round(sy.pumpParallel ?? 1)),
+        reverse: sy.airDirection === "reverse",
+        seed: sy.id,
+      }));
+      const tByItem = new Map<string, number | undefined>(pumpSyms.map(sy => [guidFrom("pump:" + br.id + ":" + sy.id), sy.t]));
+      const tOf = (code: string, id: string) => code === "46" ? gateSym?.t : code === "210" ? redSym?.t : tByItem.get(id);
+      erpBranchWaterItemsXml(br, pumps,
+        (scale, reversed) => itemAttrs(0, scale, reversed),
+        guidFrom, ventModeXml("Bulkheads", ""),
+      ).forEach(x => {
+        const code = /itemCode="(\d+)"/.exec(x)?.[1] ?? "";
+        const id = /id="([^"]+)"/.exec(x)?.[1] ?? "";
+        items.push(x.replace(/segmentOffset="[^"]*"/, `segmentOffset="${n(Math.max(0, offsetAt(tOf(code, id))), 6)}"`));
+      });
+    }
+
     return `<rib id="${guidFrom("rib:" + br.id)}" thickness="7.55905511811024" startDate="${START_DATE}" fromNode="${from}" toNode="${to}">`
       + `<customFields><fields>`
       // Название выработки у нас хранится в поле type («Ствол ЮВС») — именно
@@ -637,6 +662,7 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       + `<field name="Airflow.Discharge" value="${n(withResults ? (br.flow ?? 0) : 0, 4)}" />`
       + `<field name="Airflow.MaxAirVelocity" value="${n(br.vMax ?? 0, 2)}" />`
       + `<field name="Airflow.MaxAirVelocityIsUserDefined" value="True" />`
+      + erpBranchWaterXml(br)
       + `</fields></customFields>`
       + (items.length > 0 ? `<ribItems>${items.join("")}</ribItems>` : "")
       + `</rib>`;
@@ -751,6 +777,23 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       `<erpVentModes><ventMode id="${VENT_MODE_ID}" name="${VENT_MODE_NAME}" color="-8531740" isReversed="False" isNewFormat="True" isSelected="True" /></erpVentModes>`],
     ["VentilatorTemplateService.DataDocument", ventilatorTemplatesXml()],
   ];
+  // Справочник труб: по одной записи на каждый размер (наружный Ø × стенка).
+  {
+    const sizes = new Map<string, { d: number; w: number }>();
+    for (const br of branches) {
+      if (!br.hasWaterPipe) continue;
+      const d = (br.wpDiameter ?? 0) / 1000, w = (br.wpWallThickness ?? 0) / 1000;
+      if (d > 0) sizes.set(`${d}|${w}`, { d, w });
+    }
+    if (sizes.size > 0) {
+      let first = true;
+      dataDocs.push(["PipeTemplateService.DataDocument", `<pipeTemplates>${[...sizes.values()].map(({ d, w }) => {
+        const xml = `<pipeTemplate id="${guidFrom(`pipe:${d}:${w}`)}" name="Труба ${Math.round(d * 1000)}×${+(w * 1000).toFixed(1)}" diameter="${n(d, 4)}" wallThickness="${n(w, 5)}" maxVelocity="50000" color="-5383962" isDefault="${first ? "True" : "False"}" />`;
+        first = false;
+        return xml;
+      }).join("")}</pipeTemplates>`]);
+    }
+  }
   const documentsXml = `<documents>`
     + dataDocs.map(([f], k) =>
       `<document internalFileName="${f}" fileName="tmp${(0x4a00 + k).toString(16).toUpperCase()}.tmp" type="2"><customFields><fields /></customFields></document>`).join("")

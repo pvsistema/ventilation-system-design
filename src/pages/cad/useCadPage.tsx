@@ -2944,6 +2944,30 @@ export function useCadPage() {
       return syms;
     };
 
+    // Водопровод: значки насосов, задвижек и редукционных клапанов. Насос
+    // учитывается расчётом только через значок (withWaterPumps), поэтому без
+    // значка он бы пропал; задвижка и клапан — для наглядности на плане.
+    const erpWaterSymbols = (existing: SchemaSymbol[]) => {
+      const stamp = Date.now();
+      const syms: SchemaSymbol[] = [];
+      (result.pumpItems ?? []).forEach((p, i) => {
+        if (existing.some(s => s.typeId === "pump" && s.branchId === p.branchId)) return;
+        syms.push({
+          id: `SYM_PUMP_ERP_${stamp}_${i}`, typeId: "pump", x: 0, y: 0,
+          branchId: p.branchId, t: p.t,
+          pumpName: p.name, pumpHead: p.head, pumpParallel: p.parallel,
+          airDirection: p.reversed ? "reverse" : "forward",
+        });
+      });
+      result.branches.forEach((b, i) => {
+        if (b.wpHasGate && !existing.some(s => s.typeId === "valve_water" && s.branchId === b.id))
+          syms.push({ id: `SYM_GATE_ERP_${stamp}_${i}`, typeId: "valve_water", x: 0, y: 0, branchId: b.id, t: 0.4 });
+        if (b.wpHasReducer && !existing.some(s => s.typeId === "valve_reduce" && s.branchId === b.id))
+          syms.push({ id: `SYM_RED_ERP_${stamp}_${i}`, typeId: "valve_reduce", x: 0, y: 0, branchId: b.id, t: 0.6 });
+      });
+      return syms;
+    };
+
     // Вентиляторы «по характеристике» из справочника АэроСети: регистрируем
     // кривые ДО расчёта (getFanById) и заносим в справочник рудника, чтобы
     // они сохранились в проекте и были видны в справочнике оборудования.
@@ -2968,12 +2992,12 @@ export function useCadPage() {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
-      setSchemaSymbols([...fanSymbolsWithDir([]), ...erpBulkheadSymbols([])]);
+      setSchemaSymbols([...fanSymbolsWithDir([]), ...erpBulkheadSymbols([]), ...erpWaterSymbols([])]);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
-      setSchemaSymbols(prev => [...prev, ...fanSymbolsWithDir(prev), ...erpBulkheadSymbols(prev)]);
+      setSchemaSymbols(prev => [...prev, ...fanSymbolsWithDir(prev), ...erpBulkheadSymbols(prev), ...erpWaterSymbols(prev)]);
     }
     // Слои АэроСети становятся горизонтами, «Общий вид» при этом сохраняем.
     if (result.horizons.length > 0) {
