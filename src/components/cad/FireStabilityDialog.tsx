@@ -46,6 +46,10 @@ export default function FireStabilityDialog({
   const [angleFilter, setAngleFilter]   = useState(String(init.angleFilter));
   const [lengthFilter, setLengthFilter] = useState(String(init.lengthFilter));
   const [ambientTemp, setAmbientTemp]   = useState(String(init.ambientTemp));
+  // Мощность деревянной крепи: наибольшая за пожар или к прибытию ВГСЧ.
+  const [timberMode, setTimberMode] = useState<"peak" | "arrival">(init.timberPowerMode);
+  const [arrivalMin, setArrivalMin] = useState(String(init.arrivalMin));
+  const hasTimber = branches.some(b => b.fireLoadWoodSupport);
   // Факты опрокидывания из реального расчёта сети (null = ещё не считали).
   // Если расчёт уже делали для этой же схемы — подхватываем его.
   const [reversalFacts, setReversalFacts] = useState<Map<string, FireStabilityFact> | null>(
@@ -65,8 +69,14 @@ export default function FireStabilityDialog({
       angleFilter: num(angleFilter, 0),
       lengthFilter: num(lengthFilter, 0),
       ambientTemp: num(ambientTemp, 20),
+      timberPowerMode: timberMode,
+      arrivalMin: Math.max(1, num(arrivalMin, 30)),
     });
-  }, [angleFilter, lengthFilter, ambientTemp]);
+  }, [angleFilter, lengthFilter, ambientTemp, timberMode, arrivalMin]);
+  const timberOpts = useMemo(() => {
+    const a = parseFloat(arrivalMin.replace(",", "."));
+    return { mode: timberMode, arrivalMin: Number.isFinite(a) && a > 0 ? a : 30 };
+  }, [timberMode, arrivalMin]);
   const [factsStale, setFactsStale] = useState(false);
   // Реквизиты титульного листа акта
   const [title, setTitle] = useState<ActTitleFields>(() => loadActTitle());
@@ -87,8 +97,9 @@ export default function FireStabilityDialog({
       ambientTemp: amb,
       positions: positions.map(p => ({ branchIds: p.branchIds, number: p.number, name: p.name })),
       reversalFacts: reversalFacts ?? undefined,
+      timber: timberOpts,
     });
-  }, [branches, nodes, positions, angleFilter, lengthFilter, ambientTemp, reversalFacts]);
+  }, [branches, nodes, positions, angleFilter, lengthFilter, ambientTemp, reversalFacts, timberOpts]);
 
   const total = result.rows.length;
   const failedCount = result.totalFactFailed;
@@ -125,7 +136,7 @@ export default function FireStabilityDialog({
     setFactsKey(null);
     setProgress(null);
     clearStabilityFacts();
-  }, [ambientTemp]);
+  }, [ambientTemp, timberOpts]);
 
   // Схема изменилась после расчёта (пересчёт сети, правка нагрузки, отметок,
   // сопротивлений) — факт устарел. Сбрасываем его и показываем предупреждение,
@@ -207,6 +218,41 @@ export default function FireStabilityDialog({
             <input value={ambientTemp} onChange={e => setAmbientTemp(e.target.value)}
               className="text-[12px] border border-gray-300 rounded px-2 py-1 w-24 text-right" />
           </div>
+          {/* Мощность деревянной крепи — горящая полоса между фронтом пламени
+              и фронтом выгорания. В акт: наибольшая за пожар или к прибытию
+              горноспасателей на место аварии. */}
+          {hasTimber && (
+            <div className="space-y-1">
+              <div className="flex items-center gap-3">
+                <span className="text-[12px] text-gray-600 flex-1"
+                  title="Деревянная крепь горит «полосой»: позади фронта пламени крепь уже прогорела. Мощность сначала растёт, затем держится на наибольшем значении и падает, когда крепь выгорает.">
+                  Мощность деревянной крепи
+                </span>
+                <div className="flex rounded overflow-hidden" style={{ border: "1px solid #d1d5db" }}>
+                  {([["peak", "Наибольшая"], ["arrival", "К прибытию ВГСЧ"]] as const).map(([v, l]) => (
+                    <button key={v} type="button" onClick={() => setTimberMode(v)}
+                      className="text-[11px] px-2 py-1"
+                      style={{
+                        background: timberMode === v ? "var(--c-accent, #1e5a7a)" : "#fff",
+                        color: timberMode === v ? "#fff" : "#4b5563", border: "none", cursor: "pointer",
+                      }}>{l}</button>
+                  ))}
+                </div>
+              </div>
+              {timberMode === "arrival" && (
+                <div className="flex items-center gap-3">
+                  <span className="text-[12px] text-gray-600 flex-1">Время прибытия горноспасателей, мин</span>
+                  <input value={arrivalMin} onChange={e => setArrivalMin(e.target.value)}
+                    className="text-[12px] border border-gray-300 rounded px-2 py-1 w-24 text-right" />
+                </div>
+              )}
+              <div className="text-[10px] text-gray-400 leading-snug">
+                {timberMode === "peak"
+                  ? "Берётся наибольшая мощность за весь пожар — горящая полоса полной длины. Самый неблагоприятный случай."
+                  : "Мощность крепи на момент прибытия ВГСЧ к очагу. Если крепь к этому времени выгорела, её мощность — 0."}
+              </div>
+            </div>
+          )}
           <div className="text-[10px] text-gray-400 leading-snug pt-0.5">
             Отбираются ветви с заданной пожарной нагрузкой. Направление (нисходящее/восходящее)
             определяется по фактическому потоку воздуха после расчёта сети.

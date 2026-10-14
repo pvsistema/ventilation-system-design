@@ -101,6 +101,7 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
       lengthFilter: st.lengthFilter,
       ambientTemp: st.ambientTemp,
       facts: getValidStabilityFacts(sb, nodes, st.ambientTemp),
+      timber: { mode: st.timberPowerMode, arrivalMin: st.arrivalMin },
     });
   }, [access, branches, stabilityBranches, nodes, solved, form, bulkheads]);
 

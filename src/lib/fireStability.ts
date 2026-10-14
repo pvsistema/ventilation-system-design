@@ -134,8 +134,33 @@ export const STABILITY_CLASS_LABEL: Record<StabilityClass, string> = {
   "very-unstable": "Весьма неустойчиво",
 };
 
+// ─── Мощность деревянной крепи для акта ─────────────────────────────────────
+// Какая мощность крепи идёт в акт устойчивости:
+//   • «peak»    — наибольшая за весь пожар: горящая полоса между фронтом
+//                 пламени и фронтом выгорания полной длины v·τ (по умолчанию);
+//   • «arrival» — на момент прибытия горноспасателей (время прибытия ВГСЧ
+//                 вместо «времени расчёта» вкладки «Пож.нагрузка»).
+// Задаётся в окне акта; без параметра — «peak».
+export interface TimberPowerOpts { mode?: "peak" | "arrival"; arrivalMin?: number }
+
+/** Мощность деревянной крепи ветви, МВт — по режиму акта. */
+export function timberStabilityPower(b: TopoBranch, airFlow: number, opts: TimberPowerOpts = {}): number {
+  const branchLenStr = b.length && b.length > 0 ? String(b.length) : "";
+  const arrival = opts.mode === "arrival" && (opts.arrivalMin ?? 0) > 0 ? opts.arrivalMin! : undefined;
+  const r = calcLinearFire({
+    heatValue: b.fireWoodHeatValue ?? "13.8", burnRate: b.fireWoodBurnRate ?? "0.027",
+    density: b.fireWoodDensity ?? "500", length: b.fireWoodLength ?? (branchLenStr || "50"),
+    sectionWidth: timberPerimeterStr(b), sectionThick: timberThickStr(b),
+    flameSpeed: b.fireWoodFlameSpeed ?? "0.024",
+    calcTime: arrival !== undefined ? String(arrival) : (b.fireWoodCalcTime ?? "10"),
+  }, airFlow);
+  if (!r) return 0;
+  if (arrival !== undefined) return r.powerMW;
+  return r.peakPowerMW ?? r.powerMW;
+}
+
 // ─── Суммарная мощность пожара ветви (все источники) ────────────────────────
-export function calcBranchFirePower(b: TopoBranch, airFlow: number): number {
+export function calcBranchFirePower(b: TopoBranch, airFlow: number, timber: TimberPowerOpts = {}): number {
   let power = 0;
 
   // Длина ветви — дефолт для длины горючего материала, если поле не заполнено.
@@ -163,17 +188,10 @@ export function calcBranchFirePower(b: TopoBranch, airFlow: number): number {
     if (r) power += r.powerMW;
   }
   if (b.fireLoadWoodSupport) {
-    // ВАЖНО: flameSpeed и calcTime задают «нарастающий пожар» — площадь горения
-    // за расчётное время, а не по всей длине ветви. Без них calcLinearFire берёт
-    // полную площадь и завышает мощность. Дефолты должны совпадать с вкладкой
-    // «Пожарная нагрузка» (BranchPropsPanel), чтобы результаты не расходились.
-    const r = calcLinearFire({
-      heatValue: b.fireWoodHeatValue ?? "13.8", burnRate: b.fireWoodBurnRate ?? "0.027",
-      density: b.fireWoodDensity ?? "500", length: b.fireWoodLength ?? (branchLenStr || "50"),
-      sectionWidth: timberPerimeterStr(b), sectionThick: timberThickStr(b),
-      flameSpeed: b.fireWoodFlameSpeed ?? "0.024", calcTime: b.fireWoodCalcTime ?? "10",
-    }, airFlow);
-    if (r) power += r.powerMW;
+    // Деревянная крепь — по режиму акта: наибольшая мощность или мощность к
+    // прибытию ВГСЧ (см. timberStabilityPower). Свойства — те же, что во
+    // вкладке «Пож.нагрузка», чтобы результаты не расходились.
+    power += timberStabilityPower(b, airFlow, timber);
   }
   return power;
 }
@@ -210,6 +228,8 @@ export function calcFireStability(
     // Если переданы — устойчивость И параметры (расход/температура/депрессия)
     // берутся ПО ФАКТУ пожара, а не по локальной оценке на дожаровых расходах.
     reversalFacts?: Map<string, FireStabilityFact>;
+    /** Мощность деревянной крепи: наибольшая или к прибытию ВГСЧ. */
+    timber?: TimberPowerOpts;
   } = {},
 ): StabilityResult {
   const angleFilter  = opts.angleFilter  ?? 5;
@@ -276,7 +296,7 @@ export function calcFireStability(
     // со вкладкой «Аварии» (расход при пожаре меньше → температура выше).
     const dojarFlow = Math.abs(flow);
     const airFlow   = fact ? fact.fireFlow : dojarFlow;
-    const firePower = fact ? fact.firePower : calcBranchFirePower(b, dojarFlow);
+    const firePower = fact ? fact.firePower : calcBranchFirePower(b, dojarFlow, opts.timber);
     const fireTemp  = fact ? fact.fireTemp  : calcFireTemp(firePower, dojarFlow, ambientTemp);
 
     // Тепловая депрессия пожара. С фактом — из итеративного расчёта; без факта —

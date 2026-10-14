@@ -53,6 +53,7 @@ import { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import { useRecentFiles, saveRecentData, saveHandleToIDB } from "@/lib/useRecentFiles";
 import { fetchRemoteVersion } from "@/lib/updater";
 import { calcBranchFirePower, type FireStabilityFact } from "@/lib/fireStability";
+import { getStabilitySettings } from "@/lib/stabilitySession";
 import { refreshComputeConfig, isOnBackup } from "@/lib/computeServer";
 import { type RibbonTab, type SideTab, type CompareResult, type TextBlock, type HeatingSeason } from "./cadTypes";
 import { MIN_SHAFT_TEMP_C } from "@/lib/heaterCalculator";
@@ -4787,6 +4788,10 @@ export function useCadPage() {
     onProgress?: (done: number, total: number) => void,
   ): Promise<Map<string, FireStabilityFact>> => {
     const facts = new Map<string, FireStabilityFact>();
+    // Мощность деревянной крепи — по настройке акта (наибольшая или к
+    // прибытию ВГСЧ), чтобы расчёт по факту совпадал с оценкой в акте.
+    const stSet = getStabilitySettings();
+    const timberOpts = { mode: stSet.timberPowerMode, arrivalMin: stSet.arrivalMin };
     const loaded = branches.filter(b =>
       b.fireLoadTech || b.fireLoadConveyor || b.fireLoadCable || b.fireLoadWoodSupport);
     if (loaded.length === 0) return facts;
@@ -4842,7 +4847,7 @@ export function useCadPage() {
       const qOrig0   = Math.abs(originalFlows.get(target.id) ?? target.flow ?? 0);
       const qActual0 = Math.abs(s.flows.get(target.id) ?? target.flow ?? 0);
       const airQ0 = qOrig0 > 0 ? Math.max(qActual0, 0.5 * qOrig0) : qActual0;
-      const firePower = calcBranchFirePower(target, qOrig0 > 0 ? qOrig0 : airQ0);
+      const firePower = calcBranchFirePower(target, qOrig0 > 0 ? qOrig0 : airQ0, timberOpts);
       const fireTemp  = calcFireTemp(firePower, airQ0, ambientTemp);
       const fromN = nodes.find(n => n.id === target.fromId);
       const toN   = nodes.find(n => n.id === target.toId);
@@ -4888,7 +4893,7 @@ export function useCadPage() {
         const qOrig0   = Math.abs(originalFlows.get(target.id) ?? target.flow ?? 0);
         const qActual0 = Math.abs(s.flows.get(target.id) ?? target.flow ?? 0);
         const airQ0 = qOrig0 > 0 ? Math.max(qActual0, 0.5 * qOrig0) : qActual0;
-        s.firePower = calcBranchFirePower(target, qOrig0 > 0 ? qOrig0 : airQ0);
+        s.firePower = calcBranchFirePower(target, qOrig0 > 0 ? qOrig0 : airQ0, timberOpts);
         s.fireTemp  = calcFireTemp(s.firePower, airQ0, ambientTemp);
         const fromN = nodes.find(n => n.id === target.fromId);
         const toN   = nodes.find(n => n.id === target.toId);

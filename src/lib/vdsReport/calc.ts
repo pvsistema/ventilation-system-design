@@ -20,7 +20,7 @@
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import { getFanById, fanQMax } from "@/lib/fanCurves";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
-import { calcFireStability, type StabilityRow, type FireStabilityFact } from "@/lib/fireStability";
+import { calcFireStability, type StabilityRow, type FireStabilityFact, type TimberPowerOpts } from "@/lib/fireStability";
 import type { VdsReportForm } from "./types";
 
 const G = 9.81;
@@ -176,6 +176,8 @@ export interface VdsStabilityInput {
   ambientTemp: number;
   /** Действующий расчёт по факту (null — не выполнялся или устарел). */
   facts: Map<string, FireStabilityFact> | null;
+  /** Мощность деревянной крепи: наибольшая или к прибытию ВГСЧ — как в акте. */
+  timber?: TimberPowerOpts;
 }
 
 function branchNo(b: TopoBranch, nodeById: Map<string, TopoNode>): string {
@@ -429,6 +431,7 @@ export function calcVdsReport(
         lengthFilter: stabilityLength,
         ambientTemp: stabilityTemp,
         reversalFacts: stability?.facts ?? undefined,
+        timber: stability?.timber,
       });
       stabilityDown = [...st.byCategory["descending-incline"], ...st.byCategory["descending-vertical"]];
       stabilityUp = [...st.byCategory["ascending-incline"], ...st.byCategory["ascending-vertical"]];

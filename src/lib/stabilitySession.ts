@@ -21,12 +21,22 @@ export interface StabilitySettings {
   angleFilter: number;   // мин. угол наклона, град
   lengthFilter: number;  // мин. длина, м
   ambientTemp: number;   // температура воздуха, °C
+  /**
+   * Мощность деревянной крепи в акте:
+   *   «peak»    — наибольшая за весь пожар (горящая полоса полной длины);
+   *   «arrival» — к моменту прибытия горноспасателей (arrivalMin).
+   */
+  timberPowerMode: "peak" | "arrival";
+  /** Время прибытия ВГСЧ на место пожара, мин (для режима «arrival»). */
+  arrivalMin: number;
 }
 
 export const DEFAULT_STABILITY_SETTINGS: StabilitySettings = {
   angleFilter: 5,
   lengthFilter: 30,
   ambientTemp: 20,
+  timberPowerMode: "peak",
+  arrivalMin: 30,
 };
 
 const LS_KEY = "pvs_stability_settings";
@@ -37,7 +47,9 @@ const LS_KEY = "pvs_stability_settings";
  * Факт действителен, только пока отпечаток совпадает с текущей схемой.
  */
 export function stabilityInputsKey(branches: TopoBranch[], nodes: TopoNode[]): string {
-  const parts: string[] = [getThermalDepMethod()];
+  // Режим мощности крепи и время прибытия ВГСЧ меняют мощность очага —
+  // факт, посчитанный при других значениях, недействителен.
+  const parts: string[] = [getThermalDepMethod(), `timber:${settings.timberPowerMode}:${settings.arrivalMin}`];
   for (const b of branches) {
     parts.push(`${b.id}|${b.fromId}|${b.toId}|${(b.flow ?? 0).toFixed(4)}|${b.rTotal ?? b.resistance ?? 0}|${b.dPTotal ?? b.dP ?? 0}|${b.length}|${b.area}|${b.angle}`);
     if (hasFireLoad(b)) {
@@ -65,6 +77,8 @@ function loadSettings(): StabilitySettings {
         angleFilter: ok(v.angleFilter, DEFAULT_STABILITY_SETTINGS.angleFilter),
         lengthFilter: ok(v.lengthFilter, DEFAULT_STABILITY_SETTINGS.lengthFilter),
         ambientTemp: ok(v.ambientTemp, DEFAULT_STABILITY_SETTINGS.ambientTemp),
+        timberPowerMode: v.timberPowerMode === "arrival" ? "arrival" : "peak",
+        arrivalMin: ok(v.arrivalMin, DEFAULT_STABILITY_SETTINGS.arrivalMin),
       };
     }
   } catch { /* ignore */ }
