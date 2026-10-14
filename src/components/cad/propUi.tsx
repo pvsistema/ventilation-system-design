@@ -19,9 +19,11 @@ export const inputStyle: React.CSSProperties = {
   ["--tw-ring-color" as string]: "color-mix(in srgb, var(--c-accent, #1e5a7a) 25%, transparent)",
 };
 
-export function Card({ icon, title, tone = "accent", aside, collapsible, defaultOpen = true, children }: {
+export function Card({ icon, title, tone = "accent", aside, collapsible, defaultOpen = true, dense, children }: {
   icon: string; title: string; tone?: "accent" | "signal" | "muted";
-  aside?: ReactNode; collapsible?: boolean; defaultOpen?: boolean; children: ReactNode;
+  aside?: ReactNode; collapsible?: boolean; defaultOpen?: boolean;
+  /** Плотная карточка: меньше отступы между строками (вкладка «Топология»). */
+  dense?: boolean; children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
   const color = tone === "signal" ? "var(--c-signal, #e8a317)"
@@ -32,9 +34,9 @@ export function Card({ icon, title, tone = "accent", aside, collapsible, default
       style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-b1, #e7e4dd)" }}>
       <Head
         {...(collapsible ? { onClick: () => setOpen((v) => !v), type: "button" as const } : {})}
-        className="w-full flex items-center gap-2 px-2.5 py-2 text-left select-none"
+        className={`w-full flex items-center gap-2 px-2.5 text-left select-none ${dense ? "py-1.5" : "py-2"}`}
         style={{ background: "transparent", border: "none", cursor: collapsible ? "pointer" : "default" }}>
-        <span className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+        <span className={`${dense ? "w-5 h-5" : "w-6 h-6"} rounded-md flex items-center justify-center flex-shrink-0`}
           style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}>
           <Icon name={icon} size={13} />
         </span>
@@ -46,7 +48,7 @@ export function Card({ icon, title, tone = "accent", aside, collapsible, default
             style={{ color: "var(--c-t4, #767f8c)", transform: open ? "none" : "rotate(-90deg)", transition: "transform .15s" }} />
         )}
       </Head>
-      {open && <div className="px-2.5 pb-2.5 pt-0.5 space-y-2">{children}</div>}
+      {open && <div className={dense ? "px-2.5 pb-2 pt-0 space-y-1.5" : "px-2.5 pb-2.5 pt-0.5 space-y-2"}>{children}</div>}
     </section>
   );
 }
@@ -63,6 +65,27 @@ export function Field({ label, hint, aside, children }: {
       </div>
       {children}
       {hint && <span className="block text-[10px] mt-0.5 leading-snug" style={{ color: "var(--c-t4, #767f8c)" }}>{hint}</span>}
+    </div>
+  );
+}
+
+/**
+ * Строка «подпись слева — поле справа». Вдвое ниже, чем Field с подписью
+ * сверху; пояснение (hint) уходит во всплывающую подсказку подписи.
+ */
+export function Row({ label, hint, aside, children }: {
+  label: string; hint?: string; aside?: ReactNode; children: ReactNode;
+}) {
+  return (
+    <div className="flex items-center gap-1.5 min-w-0">
+      <span className="flex-shrink-0 text-[10px] font-medium truncate"
+        title={hint ? `${label}. ${hint}` : label}
+        style={{ width: "36%", color: "var(--c-t3, #6b7280)", cursor: hint ? "help" : "default",
+          textDecoration: hint ? "underline dotted" : "none", textUnderlineOffset: 2 }}>
+        {label}
+      </span>
+      <div className="flex-1 min-w-0">{children}</div>
+      {aside}
     </div>
   );
 }

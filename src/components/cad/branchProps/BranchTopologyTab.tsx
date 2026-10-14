@@ -12,6 +12,12 @@
 // Формулы, поля данных и подстановка марки рукава — прежние; менялись
 // оформление и состав полей.
 //
+// КОМПАКТНОСТЬ. Вкладка была растянута: у каждого поля подпись стояла над
+// ним, пояснения — отдельными строками. Теперь одиночные поля — строкой
+// «подпись слева, поле справа» (Row), пояснения — во всплывающей подсказке
+// подписи, узлы ветви — в заголовке «Геометрии», длина и угол — в одну
+// строку, «авто / вручную» — маленькая кнопка-замок. Карточки сворачиваются.
+//
 // Что убрано и почему:
 //   • Галочки у «Вычисленных параметров» — ничего не скрывали и нигде не
 //     сохранялись: строки показывались всегда.
@@ -35,7 +41,7 @@ import { G_ACCEL } from "@/lib/bulkheads";
 import { FNP494_SUPPORTS, supportName, supportOf } from "@/lib/fnp494Blast";
 import Icon from "@/components/ui/icon";
 import {
-  Card, Field, Switch, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
+  Card, Field, Row, Switch, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
 } from "@/components/cad/propUi";
 
 interface BranchTopologyTabProps {
@@ -55,16 +61,23 @@ interface BranchTopologyTabProps {
 
 const selectStyle: React.CSSProperties = { ...inputStyle, cursor: "pointer" };
 
-/** Переключатель «авто / вручную» рядом с подписью поля. */
+/**
+ * Переключатель «авто / вручную» — одна маленькая кнопка-замок рядом с
+ * подписью: замок открыт — считается по координатам, закрыт — задано вручную.
+ */
 function AutoManual({ manual, onChange }: { manual: boolean; onChange: (manual: boolean) => void }) {
   return (
-    <div style={{ width: 84 }}>
-      <Segmented size="sm" value={manual ? "m" : "a"} onChange={(v) => onChange(v === "m")}
-        options={[
-          { value: "a", label: "авто", title: "Считать по координатам узлов" },
-          { value: "m", label: "вручную", title: "Задать значение вручную" },
-        ]} />
-    </div>
+    <button type="button" onClick={() => onChange(!manual)}
+      title={manual ? "Задано вручную — нажмите, чтобы считать по координатам узлов" : "Считается по координатам узлов — нажмите, чтобы задать вручную"}
+      className="flex items-center gap-0.5 px-1 h-4 rounded text-[9px] flex-shrink-0"
+      style={{
+        border: "none", cursor: "pointer",
+        background: manual ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)" : "var(--c-s3, #f1efea)",
+        color: manual ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)",
+      }}>
+      <Icon name={manual ? "Lock" : "LockOpen"} size={9} />
+      {manual ? "ручн." : "авто"}
+    </button>
   );
 }
 
@@ -94,37 +107,40 @@ export default function BranchTopologyTab({
   const duct = b.resistanceMode === "pipe" ? getDuctBrand(b.vpBrandId) : undefined;
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* ═══ 1. Геометрия ═══════════════════════════════════════════════ */}
-      <Card icon="Ruler" title="Геометрия">
-        <div className="flex items-center gap-2 px-2 py-1.5 rounded text-[11px]"
-          style={{ background: "var(--c-s2, #f8f7f4)", color: "var(--c-t2, #3a3f45)", fontFamily: "var(--font-num)" }}>
-          <Icon name="CircleDot" size={11} style={{ color: "var(--c-t4, #767f8c)" }} />
-          <span title="Начальный узел">{shortNode(b.fromId)}</span>
-          <Icon name="ArrowRight" size={11} style={{ color: "var(--c-t4, #767f8c)" }} />
-          <span title="Конечный узел">{shortNode(b.toId)}</span>
-          <span className="ml-auto" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-ui)" }}>ветвь №{b.id}</span>
-        </div>
-
+      {/* Узлы ветви — в заголовке карточки, а не отдельной строкой. */}
+      <Card dense collapsible icon="Ruler" title="Геометрия"
+        aside={
+          <span className="flex items-center gap-1 text-[10px] normal-case"
+            title={`Ветвь №${b.id}: начальный → конечный узел`}
+            style={{ color: "var(--c-t3, #6b7280)", fontFamily: "var(--font-num)" }}>
+            {shortNode(b.fromId)}
+            <Icon name="ArrowRight" size={10} />
+            {shortNode(b.toId)}
+            <span className="pl-1" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-ui)" }}>№{b.id}</span>
+          </span>
+        }>
+        <div className="grid grid-cols-2 gap-1.5">
         <Field label="Длина" aside={<AutoManual manual={b.manualLength} onChange={(m) => onUpdate({ manualLength: m })} />}>
           {b.manualLength
             ? <NumInput value={b.length} step={0.5} min={0} unit="м" onChange={(v) => onUpdate({ length: v })} />
             : <ReadValue value={numFmt(b.length, 1)} unit="м" title="По маркшейдерским координатам узлов" />}
         </Field>
-        <Field label="Угол наклона" aside={<AutoManual manual={b.manualAngle} onChange={(m) => onUpdate({ manualAngle: m })} />}
-          hint={b.manualAngle ? "«+» — подъём от начального узла к конечному, «−» — спуск" : undefined}>
+        <Field label="Угол" aside={<AutoManual manual={b.manualAngle} onChange={(m) => onUpdate({ manualAngle: m })} />}>
           {b.manualAngle
             // Знак угла сохраняется, как у автоматического. Раньше ручной
             // ввод брал модуль, и уклон вниз задать было нельзя.
             ? <NumInput value={angle} step={1} min={-90} max={90} unit="°" onChange={(v) => onUpdate({ angle: v })} />
-            : <ReadValue value={numFmt(angle, 1)} unit="°" title="По маркшейдерским координатам узлов" />}
+            : <ReadValue value={numFmt(angle, 1)} unit="°" title="По маркшейдерским координатам узлов. «+» — подъём от начального узла к конечному, «−» — спуск" />}
         </Field>
+        </div>
       </Card>
 
       {/* ═══ 2. Сечение ═════════════════════════════════════════════════ */}
-      <Card icon="Square" title="Сечение">
-        <Field label="Форма">
+      <Card dense collapsible icon="Square" title="Сечение">
+        <Row label="Форма">
           <select className={inputCls} style={selectStyle} value={b.shape}
             onChange={(e) => {
               const s = e.target.value as TopoBranch["shape"];
@@ -140,21 +156,21 @@ export default function BranchTopologyTab({
             <option value="arch">Арочное</option>
             <option value="custom">Произвольное (S и P вручную)</option>
           </select>
-        </Field>
+        </Row>
 
         {b.shape !== "custom" && (
-          <Field label="Что задаём">
-            <Segmented value={manualSection ? "manual" : "dims"}
+          <Row label="Задаём">
+            <Segmented size="sm" value={manualSection ? "manual" : "dims"}
               onChange={(v) => onUpdate({ manualSection: v === "manual" })}
               options={[
                 { value: "dims", label: "Размеры", title: "S и P считаются по размерам сечения" },
-                { value: "manual", label: "S и P напрямую", title: "Площадь и периметр задаются вручную" },
+                { value: "manual", label: "S и P", title: "Площадь и периметр задаются вручную" },
               ]} />
-          </Field>
+          </Row>
         )}
 
         {!manualSection && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-3 gap-1.5">
             {b.shape === "round" && (
               <Field label="Диаметр D">
                 <NumInput value={b.diameter} step={0.1} min={0} unit="м"
@@ -168,13 +184,13 @@ export default function BranchTopologyTab({
               </Field>
             )}
             {hasBox && (
-              <Field label={b.shape === "arch" ? "Высота стенки b" : "Высота b"}>
+              <Field label={b.shape === "arch" ? "Стенка b" : "Высота b"}>
                 <NumInput value={b.rectHeight} step={0.1} min={0} unit="м"
                   onChange={(v) => onUpdate({ rectHeight: v, manualSection: false })} />
               </Field>
             )}
             {b.shape === "arch" && (
-              <Field label="Стрела свода h">
+              <Field label="Свод h">
                 <NumInput value={b.archHeight} step={0.05} min={0} unit="м"
                   onChange={(v) => onUpdate({ archHeight: v, manualSection: false })} />
               </Field>
@@ -208,7 +224,7 @@ export default function BranchTopologyTab({
 
         {/* Участок рудника — группа выработок для позабойного расчёта
             количества воздуха (ФНиП № 505, п. 155). */}
-        <Field label="Участок рудника">
+        <Row label="Участок">
           <div className="flex gap-1">
             <select className={`${inputCls} flex-1`} style={selectStyle}
               value={b.ventSectionId ?? ""}
@@ -226,12 +242,12 @@ export default function BranchTopologyTab({
               </button>
             )}
           </div>
-        </Field>
+        </Row>
       </Card>
 
       {/* ═══ 3. Сопротивление ═══════════════════════════════════════════ */}
-      <Card icon="Wind" title="Сопротивление">
-        <Field label="Как задать R">
+      <Card dense collapsible icon="Wind" title="Сопротивление">
+        <Row label="Как задать R">
           <select className={inputCls} style={selectStyle} value={b.resistanceMode}
             onChange={(e) => onUpdate({ resistanceMode: e.target.value as TopoBranch["resistanceMode"] })}>
             <option value="surface">По типу крепи (справочник)</option>
@@ -240,10 +256,10 @@ export default function BranchTopologyTab({
             <option value="manual">Вручную — значение R</option>
             <option value="pipe">Трубопровод (R = 6,48·α·L / D⁵)</option>
           </select>
-        </Field>
+        </Row>
 
         {b.resistanceMode === "surface" && (
-          <Field label="Тип крепи" hint={`α = ${numFmt(b.alphaCoef, 0)}·10⁻⁴ Н·с²/м⁴ — из справочника`}>
+          <Row label="Тип крепи" hint={`α = ${numFmt(b.alphaCoef, 0)}·10⁻⁴ Н·с²/м⁴ — из справочника`}>
             <select className={inputCls} style={selectStyle} value={b.surfaceId}
               onChange={(e) => {
                 const s = SURFACE_TYPES.find((x) => x.id === e.target.value);
@@ -251,35 +267,35 @@ export default function BranchTopologyTab({
               }}>
               {SURFACE_TYPES.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
-          </Field>
+          </Row>
         )}
 
         {/* Крепь для расчёта ударной волны от взрыва ВВ (ФНП № 494, прил. 29).
             Не задана — определяется по типу поверхности выработки. */}
-        <Field label="Крепь для УВВ" hint="ФНП № 494, прил. 29 — коэффициент шероховатости β при расчёте взрыва ВВ">
+        <Row label="Крепь для УВВ" hint="ФНП № 494, прил. 29 — коэффициент шероховатости β при расчёте взрыва ВВ">
           <select className={inputCls} style={selectStyle} value={b.blastSupport ?? ""}
             onChange={(e) => onUpdate({ blastSupport: e.target.value || undefined })}>
             <option value="">По типу поверхности — {supportName(supportOf({ surfaceId: b.surfaceId, alphaCoef: b.alphaCoef }))}</option>
             {FNP494_SUPPORTS.map((sp) => <option key={sp.id} value={sp.id}>{sp.name} — β {sp.min}…{sp.max}</option>)}
           </select>
-        </Field>
+        </Row>
 
         {b.resistanceMode === "alpha" && (
-          <Field label="Коэффициент α">
+          <Row label="Коэффициент α">
             <NumInput value={b.alphaCoef} step={1} min={0} unit="×10⁻⁴" onChange={(v) => onUpdate({ alphaCoef: v })} />
-          </Field>
+          </Row>
         )}
 
         {b.resistanceMode === "roughness" && (
-          <Field label="Шероховатость Δ">
+          <Row label="Шероховатость Δ">
             <NumInput value={b.roughness} step={1} min={0} unit="мм" onChange={(v) => onUpdate({ roughness: v })} />
-          </Field>
+          </Row>
         )}
 
         {b.resistanceMode === "manual" && (
-          <Field label="Сопротивление R">
+          <Row label="Сопротивление R">
             <NumInput value={b.manualR} step={0.001} min={0} unit={rs} onChange={(v) => onUpdate({ manualR: v })} />
-          </Field>
+          </Row>
         )}
 
         {b.resistanceMode === "pipe" && (
@@ -287,7 +303,7 @@ export default function BranchTopologyTab({
             {/* Марка рукава — синхронизирована с окном построения
                 вентрубопровода: выбор марки подставляет α, диаметр,
                 паспортные утечки и предельное рабочее давление. */}
-            <Field label="Марка рукава">
+            <Row label="Марка рукава">
               <select className={inputCls} style={selectStyle} value={b.vpBrandId ?? ""}
                 onChange={(e) => {
                   const brand = getDuctBrand(e.target.value);
@@ -309,12 +325,12 @@ export default function BranchTopologyTab({
                 <option value="">— без марки —</option>
                 {VENT_DUCT_BRANDS.map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select>
-            </Field>
+            </Row>
 
             {duct ? (
               <>
                 {/* У марки диаметр — только из выпускаемых типоразмеров */}
-                <Field label="Диаметр D">
+                <Row label="Диаметр D">
                   <select className={inputCls} style={selectStyle}
                     value={Math.round((b.pipeDiameter ?? 0.5) * 1000)}
                     onChange={(e) => {
@@ -330,7 +346,7 @@ export default function BranchTopologyTab({
                     }}>
                     {duct.sizes.map(sz => <option key={sz.diameter} value={sz.diameter}>Ø {sz.diameter} мм</option>)}
                   </select>
-                </Field>
+                </Row>
                 <div className="grid grid-cols-2 gap-2">
                   <Field label="Утечки на 100 м">
                     <ReadValue value={numFmt(b.vpLeakageCoeff ?? 0, 1)} unit="%" title="По паспорту марки" />
@@ -342,12 +358,12 @@ export default function BranchTopologyTab({
               </>
             ) : (
               <>
-                <Field label="Диаметр D">
+                <Row label="Диаметр D">
                   <NumInput value={b.pipeDiameter ?? 0.5} step={0.05} min={0} unit="м"
                     onChange={(d) => onUpdate({ pipeDiameter: d, vpDiameter: Math.round(d * 1000) })} />
-                </Field>
+                </Row>
                 {/* Тип трубопровода — только без марки: у марки α берётся из паспорта. */}
-                <Field label="Тип трубопровода">
+                <Row label="Тип трубопровода">
                   <select className={inputCls} style={selectStyle}
                     value={PIPE_ALPHA_TYPES.find(p => p.alpha === (b.pipeAlpha ?? 9))?.id ?? ""}
                     onChange={(e) => {
@@ -357,17 +373,17 @@ export default function BranchTopologyTab({
                     <option value="">— выбрать из справочника —</option>
                     {PIPE_ALPHA_TYPES.map(p => <option key={p.id} value={p.id}>{p.name} ({p.alphaMin}–{p.alphaMax})</option>)}
                   </select>
-                </Field>
+                </Row>
               </>
             )}
-            <Field label="Коэффициент α трубы" hint={duct ? "Правка α отвязывает рукав от паспорта марки" : undefined}>
+            <Row label="α трубы" hint={duct ? "Правка α отвязывает рукав от паспорта марки" : undefined}>
               <NumInput value={b.pipeAlpha ?? 9} step={0.05} min={0} unit="×10⁻⁴"
                 onChange={(a) => onUpdate({ pipeAlpha: a, vpPipeAlpha: a, ...(duct ? { vpBrandId: "" } : {}) })} />
-            </Field>
+            </Row>
           </>
         )}
 
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           <Field label="Местные ξ (сумма)">
             <NumInput value={b.localXi} step={0.1} min={0} onChange={(v) => onUpdate({ localXi: v })} />
           </Field>
@@ -376,15 +392,14 @@ export default function BranchTopologyTab({
           </Field>
         </div>
 
-        <div className="pt-1" style={{ borderTop: "1px dashed var(--c-b1, #e7e4dd)" }}>
+        <div title="Ветвь рисуется оранжевым и не считается путём выхода людей">
           <Switch checked={b.isLeakage ?? false} onChange={(v) => onUpdate({ isLeakage: v })}
-            label="Утечка через перемычку / целик"
-            hint="Ветвь рисуется оранжевым и не считается путём выхода людей" />
+            label="Утечка через перемычку / целик" />
         </div>
       </Card>
 
       {/* ═══ 4. Результат расчёта ═══════════════════════════════════════ */}
-      <Card icon="Activity" title="Результат расчёта" tone="signal"
+      <Card dense collapsible icon="Activity" title="Результат расчёта" tone="signal"
         aside={b.isDead ? (
           <span className="px-1.5 rounded-full text-[10px]"
             title="Расчёт сети определил ветвь как тупиковую: сквозного движения воздуха через неё нет"
@@ -400,11 +415,11 @@ export default function BranchTopologyTab({
           </div>
         )}
 
-        <div className="grid grid-cols-2 gap-1.5">
+        <div className="grid grid-cols-2 gap-1">
           <Stat label="Расход Q" value={numFmt(b.flow, 2)} unit="м³/с" />
           <Stat label="Скорость V" value={numFmt(b.velocity, 2)} unit="м/с" danger={overV}
             hint={overV ? `Выше допустимой ${b.vMax} м/с` : undefined} />
-          <Stat label="Депрессия выработки" value={numFmt(b.dP, 2)} unit="Па" />
+          <Stat label="Депрессия" value={numFmt(b.dP, 2)} unit="Па" />
           <Stat label="Общая депрессия" value={numFmt(dpTotal, 2)} unit="Па"
             hint={hasStructure ? "С учётом перемычки / окна вентилятора на ветви" : "R общее · Q² · g − напор вентилятора"} />
         </div>
@@ -419,12 +434,12 @@ export default function BranchTopologyTab({
             выработки нет значка УО, через который открывается вкладка
             «Вентилятор», и поменять напор было бы негде. */}
         {b.hasFan && (
-          <Field label="Напор вентилятора (доп. депрессия)">
+          <Row label="Напор вентилятора" hint="Дополнительная депрессия на ветви">
             <NumInput value={b.fanPressure} step={10} unit="Па" onChange={(v) => onUpdate({ fanPressure: v })} />
-          </Field>
+          </Row>
         )}
 
-        <div className="pt-1">
+        <div>
           <KV label="Аэродинамическое R" value={R(b.resistance)} unit={rs} danger={rWrong}
             title="Сопротивление самой выработки" />
           <KV label="Общее R (с сооружениями)" value={R(totalR)} unit={rs}
