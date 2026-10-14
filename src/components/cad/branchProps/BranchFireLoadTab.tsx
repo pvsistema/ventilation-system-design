@@ -27,10 +27,11 @@ import { type TopoBranch } from "@/lib/topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire, calcCableFire, cableInputsOf,
   CABLE_DEFAULT_COUNT, CABLE_DEFAULT_FLAME_SPEED, CABLE_DEFAULT_CALC_TIME,
+  timberLinedPerimeter, timberPerimMode, timberPerimeterStr, TIMBER_VERTICAL_ANGLE,
 } from "@/lib/fireCalculator";
 import Icon from "@/components/ui/icon";
 import { useVehicles, type MineVehicle } from "@/lib/mineVehicles";
-import { Card, Field, Row, NumInput, Stat, KV, inputCls, inputStyle } from "@/components/cad/propUi";
+import { Card, Field, Row, NumInput, ReadValue, Stat, KV, inputCls, inputStyle } from "@/components/cad/propUi";
 
 interface BranchFireLoadTabProps {
   branch: TopoBranch;
@@ -231,12 +232,16 @@ export default function BranchFireLoadTab({ branch: b, onUpdate, onOpenVehicleLi
   const cableRes = onCable ? calcCableFire(cableIn, airFlow) : null;
 
   // ── Деревянная крепь ──
+  // Обшитый периметр — авто по сечению и наклону ветви (горизонтальная:
+  // стенки и кровля, вертикальная: все стены) или вручную.
+  const woodAuto = timberPerimMode(b) === "auto";
+  const woodPerim = timberLinedPerimeter(b);
   const wood = {
     heatValue:    b.fireWoodHeatValue  ?? "13.8",
     burnRate:     b.fireWoodBurnRate   ?? "0.027",
     density:      b.fireWoodDensity    ?? "500",
     length:       b.fireWoodLength     ?? (branchLenStr || "50"),
-    sectionWidth: b.fireWoodWidth      ?? "8.9",
+    sectionWidth: timberPerimeterStr(b),
     sectionThick: b.fireWoodThick      ?? "0.08",
     flameSpeed:   b.fireWoodFlameSpeed ?? "0.024",
     calcTime:     b.fireWoodCalcTime   ?? "10",
@@ -442,11 +447,44 @@ export default function BranchFireLoadTab({ branch: b, onUpdate, onOpenVehicleLi
         <div className="grid grid-cols-2 gap-1.5">
           <StrNumField onUpdate={onUpdate} label="Длина участка" k="fireWoodLength" value={wood.length} unit="м"
             aside={<FromBranch len={branchLenStr} onClick={() => onUpdate({ fireWoodLength: branchLenStr })} />} />
-          <StrNumField onUpdate={onUpdate} label="Периметр крепи" k="fireWoodWidth" value={wood.sectionWidth} unit="м" step={0.1}
-            aside={<span title="Горящая ширина по контуру сечения" style={{ color: "var(--c-t4, #767f8c)", display: "inline-flex" }}><Icon name="Info" size={10} /></span>} />
+          <Field label="Обшитый периметр" aside={
+            <button type="button"
+              onClick={() => onUpdate(woodAuto
+                ? { fireWoodPerimMode: "manual", fireWoodWidth: woodPerim ? String(Math.round(woodPerim.value * 100) / 100) : (b.fireWoodWidth || "8.9") }
+                : { fireWoodPerimMode: "auto" })}
+              title={woodAuto
+                ? `По сечению ветви и наклону (≥ ${TIMBER_VERTICAL_ANGLE}° — все стены, иначе стенки и кровля). Нажмите, чтобы задать вручную`
+                : "Задано вручную — нажмите, чтобы считать по сечению и наклону ветви"}
+              className="flex items-center gap-0.5 px-1 h-4 rounded text-[9px] flex-shrink-0"
+              style={{
+                border: "none", cursor: "pointer",
+                background: woodAuto ? "var(--c-s3, #f1efea)" : "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)",
+                color: woodAuto ? "var(--c-t3, #6b7280)" : "var(--c-accent, #1e5a7a)",
+              }}>
+              <Icon name={woodAuto ? "LockOpen" : "Lock"} size={9} />
+              {woodAuto ? "авто" : "ручн."}
+            </button>
+          }>
+            {woodAuto
+              ? <ReadValue value={woodPerim ? fmt(woodPerim.value, 2) : "—"} unit="м"
+                  title={woodPerim ? woodPerim.note : "У ветви не задано сечение — задайте его на вкладке «Топология»"} />
+              : <NumInput value={toNum(b.fireWoodWidth)} min={0} step={0.1} unit="м"
+                  onChange={(v) => onUpdate({ fireWoodWidth: String(v) })} />}
+          </Field>
           <StrNumField onUpdate={onUpdate} label="Толщина элементов" k="fireWoodThick" value={wood.sectionThick} unit="м" step={0.01} />
           <StrNumField onUpdate={onUpdate} label="Скорость пламени" k="fireWoodFlameSpeed" value={wood.flameSpeed} unit="м/с" step={0.001} />
         </div>
+        {woodAuto && (
+          <div className="flex items-start gap-1.5 text-[10px] leading-snug"
+            style={{ color: woodPerim ? (woodPerim.estimated ? "var(--c-amber-ink, #865412)" : "var(--c-t4, #767f8c)") : "var(--c-red, #dc2626)" }}>
+            <Icon name={woodPerim ? (woodPerim.vertical ? "ArrowUpDown" : "ArrowLeftRight") : "TriangleAlert"} size={11} className="flex-shrink-0 mt-px" />
+            <span>
+              {woodPerim
+                ? <>{woodPerim.note}{woodPerim.estimated && " — ширина почвы оценена, задайте форму и размеры сечения на «Топологии»"}</>
+                : "У ветви не задан периметр сечения — задайте сечение на вкладке «Топология» или периметр вручную"}
+            </span>
+          </div>
+        )}
         <More title="Свойства древесины и время расчёта">
           <StrNumField onUpdate={onUpdate} label="Теплота сгорания Q_н" k="fireWoodHeatValue" value={wood.heatValue} unit="МДж/кг" />
           <StrNumField onUpdate={onUpdate} label="Скорость выгорания ψ" k="fireWoodBurnRate" value={wood.burnRate} unit="кг/м²с" step={0.001} />

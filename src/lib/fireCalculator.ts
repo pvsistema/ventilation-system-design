@@ -263,6 +263,74 @@ export function getCombustible(id: string): CombustibleProps {
   return COMBUSTIBLES.find(c => c.id === id) ?? COMBUSTIBLES[COMBUSTIBLES.length - 1];
 }
 
+// ─── Обшитый периметр деревянной крепи ────────────────────────────────────────
+// Сколько метров контура выработки обшито деревом:
+//   • вертикальная выработка (|наклон| ≥ 45°: ствол, восстающий) — обшиты
+//     все стены, горит весь периметр сечения P;
+//   • горизонтальная и наклонная (< 45°) — обшиты две стенки и кровля, почва
+//     нет: P − ширина почвы.
+// Ширина почвы — по форме сечения: прямоугольное и арочное — ширина a,
+// трапециевидное — нижнее основание a, круглое — горит ¾ периметра,
+// произвольное (заданы только S и P) — оценка √S.
+// Раньше периметр вводился вручную (по умолчанию 8,9 м) и с выработкой
+// связан не был: у ствола 10,45 м по ошибке стояло 0,15 м (толщина доски),
+// и мощность занижалась в ~70 раз.
+export const TIMBER_VERTICAL_ANGLE = 45;
+
+export interface TimberPerimeter {
+  /** Обшитый периметр, м. */
+  value: number;
+  vertical: boolean;
+  /** Пояснение для подсказки: «три стены: P − a = …». */
+  note: string;
+  /** Ширина почвы оценена (произвольное сечение). */
+  estimated: boolean;
+}
+
+export function timberLinedPerimeter(b: {
+  shape?: string; area?: number; perimeter?: number; rectWidth?: number; angle?: number;
+}): TimberPerimeter | null {
+  const P = b.perimeter ?? 0;
+  if (!(P > 0)) return null;
+  const f = (v: number) => (Math.round(v * 100) / 100).toString().replace(".", ",");
+  const vertical = Math.abs(b.angle ?? 0) >= TIMBER_VERTICAL_ANGLE;
+  if (vertical) return { value: P, vertical, note: `вертикальная — обшиты все стены: P = ${f(P)} м`, estimated: false };
+  const shape = b.shape ?? "custom";
+  if (shape === "round") {
+    return { value: P * 0.75, vertical, note: `круглое сечение — обшито ¾ периметра: 0,75 × ${f(P)} = ${f(P * 0.75)} м`, estimated: false };
+  }
+  let floor = 0, estimated = false;
+  if ((shape === "rect" || shape === "arch" || shape === "trap") && (b.rectWidth ?? 0) > 0) floor = b.rectWidth!;
+  else { floor = Math.sqrt(Math.max(0, b.area ?? 0)); estimated = true; }
+  floor = Math.min(floor, P * 0.5);
+  const v = Math.max(0, P - floor);
+  return {
+    value: v, vertical, estimated,
+    note: `горизонтальная — обшиты стенки и кровля: P − ширина почвы = ${f(P)} − ${f(floor)}${estimated ? " (≈√S)" : ""} = ${f(v)} м`,
+  };
+}
+
+/**
+ * Режим периметра крепи. Явно заданный — как есть. У старых ветвей режима
+ * нет: если периметр не вводили (пусто или «0,15» — значение, которое
+ * makeBranch подставлял по ошибке: это толщина доски) — «авто»; если ввели
+ * своё — «вручную», чтобы не менять их расчёт молча.
+ */
+export function timberPerimMode(b: FireMaterialProps): "auto" | "manual" {
+  if (b.fireWoodPerimMode) return b.fireWoodPerimMode;
+  const w = (b.fireWoodWidth ?? "").trim().replace(",", ".");
+  return !w || parseFloat(w) === 0.15 ? "auto" : "manual";
+}
+
+/** Периметр крепи для расчёта: авто по сечению или заданный вручную. */
+export function timberPerimeterStr(b: FireMaterialProps): string {
+  if (timberPerimMode(b) === "auto") {
+    const t = timberLinedPerimeter(b);
+    if (t && t.value > 0) return String(t.value);
+  }
+  return b.fireWoodWidth ?? "8.9";
+}
+
 // ─── Мощность очага пожара из свойств горючего материала ──────────────────────
 // Единый источник мощности (МВт) для ОЧАГА ПОЖАРА: считаем ровно так же, как во
 // вкладке «Пожарная нагрузка», чтобы температура продуктов совпадала.
@@ -290,6 +358,11 @@ export interface FireMaterialProps {
   fireWoodHeatValue?: string; fireWoodBurnRate?: string; fireWoodDensity?: string;
   fireWoodLength?: string; fireWoodWidth?: string; fireWoodThick?: string;
   fireWoodFlameSpeed?: string; fireWoodCalcTime?: string;
+  /** «auto» — обшитый периметр по сечению и наклону ветви (см. timberLinedPerimeter). */
+  fireWoodPerimMode?: "auto" | "manual";
+  // Сечение и наклон ветви — для автоматического обшитого периметра крепи
+  shape?: string; area?: number; perimeter?: number; rectWidth?: number;
+  trapTopWidth?: number; angle?: number;
   // Конвейерная лента
   fireBeltBurnRate?: string; fireBeltDensity?: string; fireBeltWidth?: string;
   fireBeltLength?: string; fireBeltThickness?: string; fireBeltFlameSpeed?: string;
@@ -361,7 +434,7 @@ export function calcFirePowerFromMaterial(b: FireMaterialProps): number | null {
       burnRate:     b.fireWoodBurnRate    ?? "0.027",
       density:      b.fireWoodDensity     ?? "500",
       length:       b.fireWoodLength      ?? (lenStr || "50"),
-      sectionWidth: b.fireWoodWidth       ?? "8.9",
+      sectionWidth: timberPerimeterStr(b),
       sectionThick: b.fireWoodThick       ?? "0.08",
       flameSpeed:   b.fireWoodFlameSpeed  ?? "0.024",
       calcTime:     b.fireWoodCalcTime    ?? "10",
@@ -432,7 +505,7 @@ export function calcFireMaterialSummary(
       burnRate:     b.fireWoodBurnRate    ?? "0.027",
       density:      b.fireWoodDensity     ?? "500",
       length:       b.fireWoodLength      ?? (lenStr || "50"),
-      sectionWidth: b.fireWoodWidth       ?? "8.9",
+      sectionWidth: timberPerimeterStr(b),
       sectionThick: b.fireWoodThick       ?? "0.08",
       flameSpeed:   b.fireWoodFlameSpeed  ?? "0.024",
       calcTime:     b.fireWoodCalcTime    ?? "10",

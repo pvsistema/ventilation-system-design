@@ -298,7 +298,9 @@ export interface TopoBranch {
   fireWoodBurnRate: string;        // ψ, кг/(м²·с)
   fireWoodDensity: string;         // ρ, кг/м³
   fireWoodLength: string;          // длина, м
-  fireWoodWidth: string;           // периметр сечения выработки, м
+  fireWoodWidth: string;           // периметр крепи, заданный вручную, м
+  /** «auto» — обшитый периметр по сечению и наклону; иначе — fireWoodWidth. */
+  fireWoodPerimMode?: "auto" | "manual";
   fireWoodThick: string;           // толщина доски крепи, м
   fireWoodFlameSpeed: string;      // v_пл, м/с — скорость продвижения пламени
   fireWoodCalcTime: string;        // t, мин — время расчёта (нарастающий пожар)
@@ -924,7 +926,8 @@ export function makeBranch(id: string, fromId: string, toId: string, partial?: P
     fireWoodBurnRate: "0.027",
     fireWoodDensity: "500",
     fireWoodLength: "50",
-    fireWoodWidth: "0.15",
+    fireWoodWidth: "",
+    fireWoodPerimMode: "auto",
     fireWoodThick: "0.15",
     fireSourceArea: 5,
     fireSourceBurnRate: 0,
