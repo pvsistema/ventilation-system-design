@@ -143,6 +143,8 @@ export interface ErpWaterItem {
 
 /** Насос на выработке: марка и число параллельных из описания. */
 export interface ErpPumpOnBranch {
+  /** Выработка, на которой стоит насос (id на нашей схеме). */
+  branchId: string;
   name: string;
   parallel: number;
   reversed: boolean;
