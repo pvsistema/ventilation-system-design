@@ -17,6 +17,10 @@
 //     колонке; сравнить было нельзя. Теперь везде ΔT, а t продуктов — в итоге.
 //   • Суммарный теплозапас не учитывал технику (heat: 0) — теперь берётся
 //     сумма энергии материалов техники.
+//
+// КОМПАКТНОСТЬ — как на вкладке «Топология»: плотные карточки, «Название»
+// строкой (подпись слева), поля размеров по три в ряд, результат источника —
+// одной строкой «мощность · ΔT» вместо двух плиток.
 // ─────────────────────────────────────────────────────────────────────────────
 import { useState, type ReactNode } from "react";
 import { type TopoBranch } from "@/lib/topology";
@@ -25,7 +29,7 @@ import {
   CABLE_DEFAULT_COUNT, CABLE_DEFAULT_FLAME_SPEED, CABLE_DEFAULT_CALC_TIME,
 } from "@/lib/fireCalculator";
 import Icon from "@/components/ui/icon";
-import { Card, Field, NumInput, Stat, KV, inputCls, inputStyle } from "@/components/cad/propUi";
+import { Card, Field, Row, NumInput, Stat, KV, inputCls, inputStyle } from "@/components/cad/propUi";
 
 interface BranchFireLoadTabProps {
   branch: TopoBranch;
@@ -72,8 +76,8 @@ function SourceCard({ icon, title, subtitle, enabled, onToggle, children }: {
         background: "var(--c-s1, #fff)",
         border: `1px solid ${enabled ? "color-mix(in srgb, var(--c-signal, #e8a317) 45%, transparent)" : "var(--c-b1, #e7e4dd)"}`,
       }}>
-      <div className="flex items-center gap-2 px-2.5 py-2 select-none cursor-pointer" onClick={() => onToggle(!enabled)}>
-        <span className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+      <div className="flex items-center gap-2 px-2.5 py-1.5 select-none cursor-pointer" onClick={() => onToggle(!enabled)}>
+        <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
           style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}>
           <Icon name={icon} size={13} />
         </span>
@@ -88,7 +92,7 @@ function SourceCard({ icon, title, subtitle, enabled, onToggle, children }: {
         </span>
         <Toggle checked={enabled} onChange={onToggle} title={enabled ? "Исключить источник" : "Учесть источник"} />
       </div>
-      {enabled && <div className="px-2.5 pb-2.5 pt-0.5 space-y-2">{children}</div>}
+      {enabled && <div className="px-2.5 pb-2 pt-0 space-y-1.5">{children}</div>}
     </section>
   );
 }
@@ -99,12 +103,12 @@ function More({ title, children }: { title: string; children: ReactNode }) {
   return (
     <div className="rounded" style={{ background: "var(--c-s2, #f8f7f4)" }}>
       <button type="button" onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-center gap-1 px-2 h-6 text-[10px] font-medium text-left"
+        className="w-full flex items-center gap-1 px-2 h-5 text-[10px] font-medium text-left"
         style={{ background: "transparent", border: "none", cursor: "pointer", color: "var(--c-t3, #6b7280)" }}>
         <Icon name="ChevronRight" size={11} style={{ transform: open ? "rotate(90deg)" : "none", transition: "transform .15s" }} />
         {title}
       </button>
-      {open && <div className="px-2 pb-2 grid grid-cols-2 gap-2">{children}</div>}
+      {open && <div className="px-2 pb-1.5 grid grid-cols-2 gap-1.5">{children}</div>}
     </div>
   );
 }
@@ -112,10 +116,10 @@ function More({ title, children }: { title: string; children: ReactNode }) {
 /** Поле названия источника (попадает в акт и описания). */
 function NameInput({ value, placeholder, onChange }: { value: string; placeholder: string; onChange: (v: string) => void }) {
   return (
-    <Field label="Название">
+    <Row label="Название">
       <input className={inputCls} style={inputStyle} value={value} placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)} />
-    </Field>
+    </Row>
   );
 }
 
@@ -135,7 +139,7 @@ function FromBranch({ len, onClick }: { len: string; onClick: () => void }) {
 function SourceResult({ power, dT, children }: { power?: number; dT?: number; children?: ReactNode }) {
   if (power === undefined) {
     return (
-      <div className="flex items-center gap-1.5 px-2 py-1.5 rounded text-[10px]"
+      <div className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px]"
         style={{ background: "var(--c-tint-amber, #fff7ed)", color: "var(--c-amber-ink, #9a3412)" }}>
         <Icon name="TriangleAlert" size={11} />
         Заполните все параметры — все значения должны быть больше нуля
@@ -143,12 +147,10 @@ function SourceResult({ power, dT, children }: { power?: number; dT?: number; ch
     );
   }
   return (
-    <div className="space-y-1">
-      <div className="grid grid-cols-2 gap-1.5">
-        <Stat label="Мощность" value={fmt(power, 2)} unit="МВт" />
-        <Stat label="Нагрев воздуха ΔT" value={dT && dT > 0 ? fmt(dT, 1) : "—"} unit="°C" />
-      </div>
-      {children && <div>{children}</div>}
+    <div>
+      <KV label="Мощность" value={fmt(power, 2)} unit="МВт" />
+      <KV label="Нагрев воздуха ΔT" value={dT && dT > 0 ? fmt(dT, 1) : "—"} unit="°C" />
+      {children}
     </div>
   );
 }
@@ -232,10 +234,10 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
 
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* ═══ Итог по ветви ═══════════════════════════════════════════════ */}
-      <Card icon="Flame" title="Итог по ветви" tone="signal"
+      <Card dense collapsible persistKey="fire.total" icon="Flame" title="Итог по ветви" tone="signal"
         aside={enabledCount > 0 && (
           <span className="text-[10px]" style={{ color: "var(--c-t4, #767f8c)" }}>
             источников: {enabledCount}
@@ -249,7 +251,7 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-1">
               <Stat label="Мощность пожара" value={fmt(totalPower, 2)} unit="МВт" danger />
               <Stat label="t продуктов горения" value={totalDT > 0 ? fmt(AMBIENT_C + totalDT, 0) : "—"} unit="°C"
                 hint={`${AMBIENT_C} °C + нагрев воздуха ΔT`} />
@@ -276,7 +278,7 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
         onToggle={(v) => onUpdate({ fireLoadTech: v })}>
         <NameInput value={b.fireVehicleName ?? ""} placeholder="Марка, например ПДМ LH-410"
           onChange={(v) => onUpdate({ fireVehicleName: v })} />
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           <Field label="Резина">
             <NumInput value={massRubber} min={0} step={10} unit="кг" onChange={(v) => onUpdate({ fireVehicleMassRubber: v })} />
           </Field>
@@ -303,7 +305,7 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
           : { fireLoadConveyor: false })}>
         <NameInput value={b.fireBeltName ?? "Конвейерная лента"} placeholder="Конвейерная лента"
           onChange={(v) => onUpdate({ fireBeltName: v })} />
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           <StrNumField onUpdate={onUpdate} label="Длина конвейера" k="fireBeltLength" value={belt.length} unit="м"
             aside={<FromBranch len={branchLenStr} onClick={() => onUpdate({ fireBeltLength: branchLenStr })} />} />
           <StrNumField onUpdate={onUpdate} label="Ширина ленты" k="fireBeltWidth" value={belt.width} unit="м" step={0.1} />
@@ -334,7 +336,7 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
           : { fireLoadCable: false })}>
         <NameInput value={b.fireCableName ?? "Электрокабель"} placeholder="Электрокабель"
           onChange={(v) => onUpdate({ fireCableName: v })} />
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           <StrNumField onUpdate={onUpdate} label="Длина трассы" k="fireCableLength" value={cableIn.length} unit="м"
             aside={<FromBranch len={branchLenStr} onClick={() => onUpdate({ fireCableLength: branchLenStr })} />} />
           <StrNumField onUpdate={onUpdate} label="Кабелей в пучке" k="fireCableCount" value={cableIn.count ?? CABLE_DEFAULT_COUNT} unit="шт" step={1} />
@@ -371,11 +373,11 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
           : { fireLoadWoodSupport: false })}>
         <NameInput value={b.fireWoodName ?? "Деревянная крепь"} placeholder="Деревянная крепь"
           onChange={(v) => onUpdate({ fireWoodName: v })} />
-        <div className="grid grid-cols-2 gap-2">
-          <StrNumField onUpdate={onUpdate} label="Длина закреплённого участка" k="fireWoodLength" value={wood.length} unit="м"
+        <div className="grid grid-cols-2 gap-1.5">
+          <StrNumField onUpdate={onUpdate} label="Длина участка" k="fireWoodLength" value={wood.length} unit="м"
             aside={<FromBranch len={branchLenStr} onClick={() => onUpdate({ fireWoodLength: branchLenStr })} />} />
           <StrNumField onUpdate={onUpdate} label="Периметр крепи" k="fireWoodWidth" value={wood.sectionWidth} unit="м" step={0.1}
-            hint="Горящая ширина по контуру сечения" />
+            aside={<span title="Горящая ширина по контуру сечения" style={{ color: "var(--c-t4, #767f8c)", display: "inline-flex" }}><Icon name="Info" size={10} /></span>} />
           <StrNumField onUpdate={onUpdate} label="Толщина элементов" k="fireWoodThick" value={wood.sectionThick} unit="м" step={0.01} />
           <StrNumField onUpdate={onUpdate} label="Скорость пламени" k="fireWoodFlameSpeed" value={wood.flameSpeed} unit="м/с" step={0.001} />
         </div>

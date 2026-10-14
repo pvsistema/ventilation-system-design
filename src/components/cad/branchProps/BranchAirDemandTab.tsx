@@ -3,7 +3,10 @@
 // карточка забоя по ФНиП № 505 п. 155 — потребность по каждому фактору
 // отдельно, в зачёт идёт максимум, с проверкой фактической скорости.
 //
-// Вынесено из BranchPropsPanel.tsx БЕЗ изменений разметки, формул и текстов.
+// Формулы — прежние (calcFaceDemand). Оформление переведено на общие
+// плотные карточки панели свойств (propUi), как у «Топологии»: группы
+// факторов — сворачиваемые карточки с памятью, поля — строкой «подпись
+// слева, поле справа», пояснения — во всплывающей подсказке подписи.
 // ─────────────────────────────────────────────────────────────────────────────
 import { type TopoBranch } from "@/lib/topology";
 import {
@@ -12,9 +15,8 @@ import {
 } from "@/lib/ventSections";
 import { calcFaceDemand, FACTOR_LABEL } from "@/lib/airDemand";
 import { DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
-import {
-  SectionHeader, EditInput, ComputedInput, SelectField, CheckField, InlineLabel,
-} from "@/components/cad/BranchPropsPrimitives";
+import Icon from "@/components/ui/icon";
+import { Card, Row, Field, NumInput, Switch, Stat, inputCls, inputStyle } from "@/components/cad/propUi";
 
 interface BranchAirDemandTabProps {
   branch: TopoBranch;
@@ -54,288 +56,191 @@ export default function BranchAirDemandTab({
 
   /** Предупреждение о данных, не типичных для этого типа забоя */
   const StaleNote = ({ what }: { what: string }) => (
-    <div className="mx-2 mb-1 px-2 py-1 rounded text-[9px] leading-snug"
-      style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid #fde68a", color: "var(--c-amber-ink, #92400e)" }}>
-      Для типа «{FACE_TYPE_LABEL[faceType]}» {what} обычно не учитывают,
-      но данные заданы и участвуют в расчёте. Очистите поля, если они не нужны.
+    <div className="flex items-start gap-1.5 px-2 py-1 rounded text-[10px] leading-snug"
+      style={{ background: "var(--c-tint-amber, #fffbeb)", color: "var(--c-amber-ink, #92400e)" }}>
+      <Icon name="TriangleAlert" size={11} className="flex-shrink-0 mt-px" />
+      <span>
+        Для типа «{FACE_TYPE_LABEL[faceType]}» {what} обычно не учитывают,
+        но данные заданы и участвуют в расчёте. Очистите поля, если они не нужны.
+      </span>
     </div>
   );
 
-  // Подсказка расчётного значения для полей «взять из норм»
-  const ph = (v: number) => `${v}`;
+  /** Числовое поле фактора: пусто (0) — берётся значение по умолчанию. */
+  // top — подпись над полем (для пары полей в ряд), иначе — слева.
+  const Num = ({ label, value, step, unit, def, hint, onChange, int, top }: {
+    label: string; value: number | undefined; step: number; unit?: string;
+    def?: number; hint?: string; int?: boolean; top?: boolean; onChange: (v: number) => void;
+  }) => {
+    const tip = hint ?? (def !== undefined ? `Пусто — по умолчанию ${def}` : undefined);
+    const input = (
+      <NumInput value={value || undefined} step={step} min={0} unit={unit}
+        placeholder={def !== undefined ? String(def) : undefined}
+        onChange={(v) => onChange(int ? Math.max(0, Math.round(v)) : Math.max(0, v))} />
+    );
+    return top
+      ? <div title={tip}><Field label={label}>{input}</Field></div>
+      : <Row label={label} hint={tip}>{input}</Row>;
+  };
 
-  const FactorRow = ({ label, value, active, hint }: {
-    label: string; value: number; active: boolean; hint?: string;
-  }) => (
-    <div className="flex items-center px-1 py-0.5"
+  const FactorRow = ({ label, value, active }: { label: string; value: number; active: boolean }) => (
+    <div className="flex items-baseline gap-2 px-1.5 py-0.5 rounded text-[11px]"
       style={{
-        borderBottom: "1px solid #ebebeb",
-        background: active ? "var(--c-tint-blue, #eff6ff)" : undefined,
+        background: active ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 10%, transparent)" : undefined,
+        color: active ? "var(--c-accent, #1e5a7a)" : "var(--c-t2, #3a3f45)",
+        fontWeight: active ? 600 : 400,
       }}>
-      <span className="text-[11px] flex-shrink-0"
-        style={{ width: 128, color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #4b5563)", fontWeight: active ? 600 : 400 }}>
-        {label}
-      </span>
-      <span className="text-[11px] text-right flex-1 tabular-nums"
-        style={{ color: active ? "var(--c-blue, #1d4ed8)" : "var(--c-t2, #374151)", fontWeight: active ? 700 : 400 }}>
-        {value > 0 ? value.toFixed(2) : "—"}
-      </span>
-      <span className="text-[10px] text-gray-400 flex-shrink-0" style={{ width: 34, textAlign: "right" }}>
-        м³/с
-      </span>
-      {hint && <span className="text-[9px] text-gray-400 pl-1 flex-shrink-0" title={hint}>ⓘ</span>}
+      <span className="flex-1 min-w-0 truncate">{active && "▸ "}{label}</span>
+      <span style={{ fontFamily: "var(--font-num)" }}>{value > 0 ? value.toFixed(2) : "—"}</span>
+      <span className="text-[10px] w-8" style={{ color: "var(--c-t4, #767f8c)", fontWeight: 400 }}>м³/с</span>
     </div>
   );
 
   return (
-    <div>
-      <SectionHeader title="Забой" />
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
 
-      <InlineLabel label="Тип забоя">
-        <SelectField
-          value={faceType}
-          onChange={(v) => onUpdate({ ventFaceType: v })}
-          options={FACE_TYPE_OPTIONS.map(o => ({ value: o.value, label: o.label }))}
-        />
-      </InlineLabel>
-
-      {/* Загрязнение воздуха — свойство самой выработки, не зависит
-          от того, задан тип забоя или нет. Влияет на окраску стрелок
-          направления воздуха ниже по потоку. */}
-      <label className="flex items-center gap-2 px-2 py-1.5 cursor-pointer select-none hover:bg-blue-50 transition-colors"
-        style={{ borderBottom: "1px solid #ebebeb" }}>
-        <input
-          type="checkbox"
-          checked={branch.pollutesAir ?? false}
-          onChange={(e) => onUpdate({ pollutesAir: e.target.checked })}
-          className="w-3.5 h-3.5 rounded"
-          style={{ accentColor: "#1e5a7a" }}
-        />
-        <span className="text-[11px] text-gray-700 leading-tight">Загрязняет воздух</span>
-      </label>
-      {(branch.pollutesAir ?? false) && (
-        <div className="mx-2 my-1 px-2 py-1.5 rounded text-[10px] leading-snug"
-          style={{ background: "var(--c-tint-blue, #eff6ff)", border: "1px solid #b0cfdc", color: "var(--c-blue-ink, #1e40af)" }}>
-          Выработка — источник загрязнения. Ниже по потоку доля загрязнённого
-          воздуха считается по смешению струй: свежий воздух разбавляет
-          загрязнённый пропорционально расходам.
-        </div>
-      )}
-
-      {/* Доля загрязнения — результат смешения струй в узлах. Показываем
-          всегда: инженеру важно видеть и «струя разбавилась до 7 %», и
-          «здесь уже 89 % грязного воздуха». */}
-      <InlineLabel label="Загрязнение, %">
-        <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
-          style={{
-            background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec",
-            borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px",
-            color: isPolluted ? "var(--c-blue, #1d4ed8)" : "var(--c-green, #15803d)",
-          }}
-          title={isPolluted
-            ? `Струя загрязнённая: доля ${pctText} % не ниже порога ${thresholdPct} %`
-            : `Струя свежая: доля ${pctText} % ниже порога ${thresholdPct} %`}>
-          {pctText}
-        </div>
-      </InlineLabel>
-      <div className="px-2 pb-1.5 text-[9px] leading-snug"
-        style={{ color: isPolluted ? "var(--c-blue, #1d4ed8)" : "var(--c-green, #15803d)" }}>
-        {isPolluted ? "Загрязнённая струя" : "Свежая струя"} — стрелки{" "}
-        {isPolluted ? "синие" : "красные"}. Порог {thresholdPct} %.
-      </div>
-
-      {isNone ? (
-        <div className="px-2 py-2 text-[10px] text-gray-500 leading-snug">
-          Укажите тип забоя — выработка попадёт в расчёт количества
-          воздуха. Потребность считается по людям, газам взрывных работ,
-          дизельной технике и минимальной скорости; в зачёт идёт
-          наибольшее из значений (ФНиП № 505, п. 155).
-        </div>
-      ) : (<>
-        <div className="px-2 py-1 text-[9px] text-gray-500 leading-snug"
-          style={{ background: "var(--c-s2, #f8fafc)", borderBottom: "1px solid #ebebeb" }}>
-          Учитываемые факторы: люди
-          {F.blast && ", газы взрывных работ"}
-          {F.diesel && ", дизельное оборудование"}
-          , минимальная скорость.
-        </div>
-        <InlineLabel label="Наименование">
-          <EditInput value={branch.ventDescription ?? ""}
-            onChange={(v) => onUpdate({ ventDescription: v })} />
-        </InlineLabel>
-        <InlineLabel label="Участок">
-          <select
-            value={branch.ventSectionId ?? ""}
-            onChange={(e) => onUpdate({ ventSectionId: e.target.value })}
-            className="w-full text-[11px] px-1"
-            style={{ background: "white", border: "1px solid var(--c-b2, #c8c8c8)", height: 18, outline: "none" }}>
-            <option value="">— не задан —</option>
-            {ventSections.map(s => (
-              <option key={s.id} value={s.id}>
-                {s.number ? `${s.number}. ` : ""}{s.name || "Без названия"}
-              </option>
-            ))}
+      {/* ═══ Забой ═════════════════════════════════════════════════════ */}
+      <Card dense collapsible persistKey="air.face" icon="Pickaxe" title="Забой"
+        aside={
+          <span className="px-1.5 rounded-full text-[10px] font-semibold normal-case"
+            title={isPolluted
+              ? `Струя загрязнённая: доля ${pctText} % не ниже порога ${thresholdPct} % — стрелки синие`
+              : `Струя свежая: доля ${pctText} % ниже порога ${thresholdPct} % — стрелки красные`}
+            style={{
+              fontFamily: "var(--font-num)",
+              background: isPolluted ? "var(--c-tint-blue, #eff6ff)" : "var(--c-tint-green, #f0fdf4)",
+              color: isPolluted ? "var(--c-blue, #1d4ed8)" : "var(--c-green, #15803d)",
+            }}>
+            {pctText} % загр.
+          </span>
+        }>
+        <Row label="Тип забоя"
+          hint={isNone ? "Укажите тип — выработка попадёт в расчёт количества воздуха (ФНиП № 505, п. 155): по людям, газам ВР, дизелю и мин. скорости, в зачёт идёт наибольшее" : undefined}>
+          <select className={inputCls} style={{ ...inputStyle, cursor: "pointer" }} value={faceType}
+            onChange={(e) => onUpdate({ ventFaceType: e.target.value as FaceType })}>
+            {FACE_TYPE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-        </InlineLabel>
-        <InlineLabel label="Резервный забой">
-          <CheckField checked={branch.ventReserve ?? false}
-            onChange={(v) => onUpdate({ ventReserve: v })} />
-        </InlineLabel>
-
-        {/* ── По людям ── */}
-        <SectionHeader title="По людям" />
-        <InlineLabel label="Людей в смену, чел">
-          <EditInput type="number" step="1"
-            value={branch.ventPeopleCount || ""}
-            onChange={(v) => onUpdate({ ventPeopleCount: Math.max(0, Math.round(parseFloat(v) || 0)) })} />
-        </InlineLabel>
-        <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
-          Норма {ventNorms.airPerPerson} м³/мин на человека, по максимальному
-          числу одновременно работающих.
+        </Row>
+        {/* Загрязнение — свойство выработки, не зависит от типа забоя;
+            окрашивает стрелки направления воздуха ниже по потоку. */}
+        <div title="Выработка — источник загрязнения. Ниже по потоку доля загрязнённого воздуха считается по смешению струй пропорционально расходам.">
+          <Switch checked={branch.pollutesAir ?? false} onChange={(v) => onUpdate({ pollutesAir: v })}
+            label="Загрязняет воздух" />
         </div>
-
-        {/* ── Взрывные работы ── */}
-        {showBlast && (<>
-        <SectionHeader title="Взрывные работы" />
-        {!F.blast && <StaleNote what="газы взрывных работ" />}
-        <InlineLabel label="ВВ по углю, кг">
-          <EditInput type="number" step="0.1"
-            value={branch.ventBlastMassCoal || ""}
-            onChange={(v) => onUpdate({ ventBlastMassCoal: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <InlineLabel label="ВВ по породе, кг">
-          <EditInput type="number" step="0.1"
-            value={branch.ventBlastMassRock || ""}
-            onChange={(v) => onUpdate({ ventBlastMassRock: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <InlineLabel label="Время провет., мин">
-          <EditInput type="number" step="1"
-            value={branch.ventBlastTime || ""}
-            placeholder={ph(ventNorms.blastVentTime)}
-            onChange={(v) => onUpdate({ ventBlastTime: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <InlineLabel label="Объём выраб., м³">
-          <EditInput type="number" step="1"
-            value={branch.ventBlastVolume || ""}
-            placeholder={(branch.area * branch.length).toFixed(0)}
-            onChange={(v) => onUpdate({ ventBlastVolume: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <InlineLabel label="Коэф. обводнён.">
-          <EditInput type="number" step="0.05"
-            value={branch.ventBlastWatering || ""}
-            placeholder={ph(ventNorms.wateringFactor)}
-            onChange={(v) => onUpdate({ ventBlastWatering: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
-          Газовыделение: {ventNorms.gasPerKgCoal} л/кг по углю,
-          {" "}{ventNorms.gasPerKgRock} л/кг по породе. Пустые поля —
-          значения из справочника норм.
-        </div>
+        {!isNone && (<>
+          <div className="text-[10px] leading-snug px-0.5" style={{ color: "var(--c-t4, #767f8c)" }}>
+            Факторы: люди{F.blast && ", газы ВР"}{F.diesel && ", дизель"}, мин. скорость
+          </div>
+          <Row label="Наименование">
+            <input className={inputCls} style={inputStyle} value={branch.ventDescription ?? ""}
+              onChange={(e) => onUpdate({ ventDescription: e.target.value })} />
+          </Row>
+          <Row label="Участок">
+            <select className={inputCls} style={{ ...inputStyle, cursor: "pointer" }}
+              value={branch.ventSectionId ?? ""}
+              onChange={(e) => onUpdate({ ventSectionId: e.target.value })}>
+              <option value="">— не задан —</option>
+              {ventSections.map(s => (
+                <option key={s.id} value={s.id}>{s.number ? `${s.number}. ` : ""}{s.name || "Без названия"}</option>
+              ))}
+            </select>
+          </Row>
+          <Switch checked={branch.ventReserve ?? false} onChange={(v) => onUpdate({ ventReserve: v })}
+            label="Резервный забой" />
         </>)}
+      </Card>
 
-        {/* ── Дизельное оборудование ── */}
-        {showDiesel && (<>
-        <SectionHeader title="Дизельное оборудование" />
-        {!F.diesel && <StaleNote what="дизельное оборудование" />}
-        <InlineLabel label="Число машин">
-          <EditInput type="number" step="1"
-            value={branch.ventDieselCount || ""}
-            onChange={(v) => {
-              const n = Math.max(0, Math.round(parseFloat(v) || 0));
-              onUpdate({ ventDieselCount: n });
-            }} />
-        </InlineLabel>
-        <InlineLabel label="Мощность Σ, кВт">
-          <EditInput type="number" step="1"
-            value={branch.ventDieselPower || ""}
-            onChange={(v) => onUpdate({ ventDieselPower: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <InlineLabel label="Норма, м³/мин·кВт">
-          <EditInput type="number" step="0.1"
-            value={branch.ventDieselNorm || ""}
-            placeholder={ph(ventNorms.airPerKwDiesel)}
-            onChange={(v) => onUpdate({ ventDieselNorm: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <InlineLabel label="Коэф. одноврем.">
-          <EditInput type="number" step="0.05"
-            value={branch.ventDieselSimult || ""}
-            placeholder={ph(simultaneityFactor(branch.ventDieselCount ?? 0, ventNorms))}
-            onChange={(v) => onUpdate({ ventDieselSimult: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
-          Коэффициент одновременности подставляется по числу машин;
-          можно задать своё значение.
-        </div>
-        </>)}
+      {!isNone && (<>
+        {/* ═══ Исходные данные ══════════════════════════════════════════ */}
+        <Card dense collapsible persistKey="air.inputs" icon="ClipboardList" title="Исходные данные">
+          <Num label="Людей в смену" value={branch.ventPeopleCount} step={1} unit="чел" int
+            hint={`Норма ${ventNorms.airPerPerson} м³/мин на человека, по наибольшему числу одновременно работающих`}
+            onChange={(v) => onUpdate({ ventPeopleCount: v })} />
 
-        {/* ── Коэффициенты ── */}
-        <SectionHeader title="Коэффициенты" />
-        <InlineLabel label="Коэф. запаса">
-          <EditInput type="number" step="0.05"
-            value={branch.ventReserveFactor || ""}
-            placeholder={ph(d.reserveFactor)}
-            onChange={(v) => onUpdate({ ventReserveFactor: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <InlineLabel label="Коэф. утечек">
-          <EditInput type="number" step="0.05"
-            value={branch.ventLeakFactor || ""}
-            placeholder={ph(d.leakFactor)}
-            onChange={(v) => onUpdate({ ventLeakFactor: Math.max(0, parseFloat(v) || 0) })} />
-        </InlineLabel>
-        <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
-          Пусто — берётся из участка, а если там не задано — из норм.
-        </div>
+          {showBlast && (<>
+            <div className="pt-1 text-[10px] font-semibold uppercase tracking-wider"
+              title={`Газовыделение: ${ventNorms.gasPerKgCoal} л/кг по углю, ${ventNorms.gasPerKgRock} л/кг по породе. Пустые поля — значения из справочника норм.`}
+              style={{ color: "var(--c-t3, #6b7280)" }}>Взрывные работы</div>
+            {!F.blast && <StaleNote what="газы взрывных работ" />}
+            <div className="grid grid-cols-2 gap-1.5">
+              <Num label="ВВ по углю" top value={branch.ventBlastMassCoal} step={0.1} unit="кг"
+                onChange={(v) => onUpdate({ ventBlastMassCoal: v })} />
+              <Num label="ВВ по породе" top value={branch.ventBlastMassRock} step={0.1} unit="кг"
+                onChange={(v) => onUpdate({ ventBlastMassRock: v })} />
+            </div>
+            <Num label="Время провет." value={branch.ventBlastTime} step={1} unit="мин" def={ventNorms.blastVentTime}
+              onChange={(v) => onUpdate({ ventBlastTime: v })} />
+            <Num label="Объём выраб." value={branch.ventBlastVolume} step={1} unit="м³"
+              def={+(branch.area * branch.length).toFixed(0)}
+              hint="Пусто — сечение × длина выработки"
+              onChange={(v) => onUpdate({ ventBlastVolume: v })} />
+            <Num label="Коэф. обводнён." value={branch.ventBlastWatering} step={0.05} def={ventNorms.wateringFactor}
+              onChange={(v) => onUpdate({ ventBlastWatering: v })} />
+          </>)}
 
-        {/* ── Результат ── */}
-        <SectionHeader title="Потребность по факторам" />
-        <FactorRow label="По людям"          value={d.byPeople} active={d.factor === "people"} />
-        {showBlast &&
-          <FactorRow label="По газам ВР"     value={d.byBlast}  active={d.factor === "blast"} />}
-        {showDiesel &&
-          <FactorRow label="По дизелю"       value={d.byDiesel} active={d.factor === "diesel"} />}
-        <FactorRow label="По мин. скорости"  value={d.byVMin}   active={d.factor === "vmin"} />
+          {showDiesel && (<>
+            <div className="pt-1 text-[10px] font-semibold uppercase tracking-wider"
+              style={{ color: "var(--c-t3, #6b7280)" }}>Дизельное оборудование</div>
+            {!F.diesel && <StaleNote what="дизельное оборудование" />}
+            <div className="grid grid-cols-2 gap-1.5">
+              <Num label="Число машин" top value={branch.ventDieselCount} step={1} unit="шт" int
+                onChange={(v) => onUpdate({ ventDieselCount: v })} />
+              <Num label="Мощность Σ" top value={branch.ventDieselPower} step={1} unit="кВт"
+                onChange={(v) => onUpdate({ ventDieselPower: v })} />
+            </div>
+            <Num label="Норма" value={branch.ventDieselNorm} step={0.1} unit="м³/мин·кВт" def={ventNorms.airPerKwDiesel}
+              onChange={(v) => onUpdate({ ventDieselNorm: v })} />
+            <Num label="Коэф. одноврем." value={branch.ventDieselSimult} step={0.05}
+              def={simultaneityFactor(branch.ventDieselCount ?? 0, ventNorms)}
+              hint="Подставляется по числу машин; можно задать своё значение"
+              onChange={(v) => onUpdate({ ventDieselSimult: v })} />
+          </>)}
 
-        {d.formula && (
-          <div className="px-2 py-1 text-[9px] text-gray-500 leading-snug"
-            style={{ background: "var(--c-s2, #f8fafc)", borderBottom: "1px solid #ebebeb" }}>
-            Определяющий: {FACTOR_LABEL[d.factor]} = {d.formula}
+          <div className="pt-1 text-[10px] font-semibold uppercase tracking-wider"
+            title="Пусто — берётся из участка, а если там не задано — из норм"
+            style={{ color: "var(--c-t3, #6b7280)" }}>Коэффициенты</div>
+          <div className="grid grid-cols-2 gap-1.5">
+            <Num label="Коэф. запаса" top value={branch.ventReserveFactor} step={0.05} def={d.reserveFactor}
+              hint="Пусто — из участка или норм"
+              onChange={(v) => onUpdate({ ventReserveFactor: v })} />
+            <Num label="Коэф. утечек" top value={branch.ventLeakFactor} step={0.05} def={d.leakFactor}
+              hint="Пусто — из участка или норм"
+              onChange={(v) => onUpdate({ ventLeakFactor: v })} />
           </div>
-        )}
+        </Card>
 
-        <InlineLabel label="Расчётная, м³/с">
-          <ComputedInput value={d.base > 0 ? d.base.toFixed(2) : "—"} />
-        </InlineLabel>
-        <InlineLabel label="С коэффициентами">
-          <div className="w-full text-[11px] text-right px-1 font-bold tabular-nums"
-            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px", color: "var(--c-t1, #0f172a)" }}>
-            {d.total > 0 ? `${d.total.toFixed(2)} м³/с` : "—"}
+        {/* ═══ Потребность ══════════════════════════════════════════════ */}
+        <Card dense collapsible persistKey="air.result" icon="Wind" title="Потребность в воздухе" tone="signal"
+          aside={
+            <span className="px-1.5 rounded-full text-[10px] font-semibold normal-case"
+              style={{ background: d.verdict === "Обеспечено" ? "var(--c-tint-green, #f0fdf4)" : "var(--c-tint-red, #fef2f2)", color: d.verdict === "Обеспечено" ? "var(--c-green, #15803d)" : "var(--c-red, #b91c1c)" }}>
+              {d.verdict}
+            </span>
+          }>
+          <div>
+            <FactorRow label="По людям" value={d.byPeople} active={d.factor === "people"} />
+            {showBlast && <FactorRow label="По газам ВР" value={d.byBlast} active={d.factor === "blast"} />}
+            {showDiesel && <FactorRow label="По дизелю" value={d.byDiesel} active={d.factor === "diesel"} />}
+            <FactorRow label="По мин. скорости" value={d.byVMin} active={d.factor === "vmin"} />
           </div>
-        </InlineLabel>
-        <InlineLabel label="Фактически, м³/с">
-          <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
-            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px",
-              color: d.flowOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}>
-            {d.actualFlow.toFixed(2)}
-          </div>
-        </InlineLabel>
-        <InlineLabel label="Скорость, м/с">
-          <div className="w-full text-[11px] text-right px-1 font-semibold tabular-nums"
-            style={{ background: "var(--c-s3, #eef2f7)", border: "1px solid #dde3ec", borderRadius: "var(--radius-ui)", height: 18, lineHeight: "16px",
-              color: d.velocityOk ? "var(--c-green, #15803d)" : "var(--c-red, #dc2626)" }}
-            title={`Допустимо: ${d.vMin}–${d.vMax} м/с`}>
-            {d.actualVelocity.toFixed(2)}
-          </div>
-        </InlineLabel>
-
-        <div className="px-2 py-1.5 text-[11px] font-semibold leading-snug"
-          style={{ color: d.verdict === "Обеспечено" ? "var(--c-green, #15803d)" : "var(--c-red, #b91c1c)" }}>
-          {d.verdict}
-          {d.recommendation && (
-            <div className="text-[9px] font-normal text-gray-500 pt-0.5">
-              {d.recommendation}
+          {d.formula && (
+            <div className="text-[10px] leading-snug px-0.5" style={{ color: "var(--c-t4, #767f8c)" }}>
+              Определяющий: {FACTOR_LABEL[d.factor]} = {d.formula}
             </div>
           )}
-        </div>
+          <div className="grid grid-cols-2 gap-1">
+            <Stat label="Расчётная" value={d.base > 0 ? d.base.toFixed(2) : "—"} unit="м³/с" />
+            <Stat label="С коэффициентами" value={d.total > 0 ? d.total.toFixed(2) : "—"} unit="м³/с" />
+          </div>
+          <div className="grid grid-cols-2 gap-1">
+            <Stat label="Фактически Q" value={d.actualFlow.toFixed(2)} unit="м³/с" danger={!d.flowOk} />
+            <Stat label="Скорость V" value={d.actualVelocity.toFixed(2)} unit="м/с" danger={!d.velocityOk}
+              hint={`Допустимо: ${d.vMin}–${d.vMax} м/с`} />
+          </div>
+          {d.recommendation && (
+            <div className="text-[10px] leading-snug px-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>{d.recommendation}</div>
+          )}
+        </Card>
       </>)}
     </div>
   );

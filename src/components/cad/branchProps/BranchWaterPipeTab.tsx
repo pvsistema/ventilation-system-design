@@ -8,6 +8,10 @@
 //   • «Запорный вентиль» и «Редукционный клапан» — только если они стоят
 //     на ветви (ставятся значком на схеме).
 //
+// КОМПАКТНОСТЬ — как на вкладке «Топология»: плотные карточки с памятью
+// свёрнутости, одиночные поля строкой «подпись слева», пояснения — во
+// всплывающей подсказке, «по ветви / вручную» — маленькая кнопка-замок.
+//
 // Поля ветви читает сетевой расчёт: lib/waterSolver.ts и
 // backend/water-hydraulics/solver.py.
 // ─────────────────────────────────────────────────────────────────────────────
@@ -18,7 +22,7 @@ import { SHEVELEV_MATERIALS, shevelevLambda, pipeRoughnessMode } from "@/lib/wat
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 import Icon from "@/components/ui/icon";
 import {
-  Card, Field, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
+  Card, Field, Row, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
 } from "@/components/cad/propUi";
 
 interface Props {
@@ -53,8 +57,8 @@ function PipeCard({ icon, title, subtitle, enabled, onToggle, children }: {
         background: "var(--c-s1, #fff)",
         border: `1px solid ${enabled ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 40%, transparent)" : "var(--c-b1, #e7e4dd)"}`,
       }}>
-      <div className="flex items-center gap-2 px-2.5 py-2 select-none cursor-pointer" onClick={() => onToggle(!enabled)}>
-        <span className="w-6 h-6 rounded-md flex items-center justify-center flex-shrink-0"
+      <div className="flex items-center gap-2 px-2.5 py-1.5 select-none cursor-pointer" onClick={() => onToggle(!enabled)}>
+        <span className="w-5 h-5 rounded-md flex items-center justify-center flex-shrink-0"
           style={{ background: `color-mix(in srgb, ${color} 14%, transparent)`, color }}>
           <Icon name={icon} size={13} />
         </span>
@@ -75,21 +79,25 @@ function PipeCard({ icon, title, subtitle, enabled, onToggle, children }: {
             style={{ width: 12, height: 12, left: enabled ? 14 : 2, background: "var(--c-s1, #fff)" }} />
         </button>
       </div>
-      {enabled && <div className="px-2.5 pb-2.5 pt-0.5 space-y-2">{children}</div>}
+      {enabled && <div className="px-2.5 pb-2 pt-0 space-y-1.5">{children}</div>}
     </section>
   );
 }
 
-/** Переключатель «по ветви / вручную» рядом с подписью длины. */
+/** Переключатель «по ветви / вручную» — маленькая кнопка-замок. */
 function AutoManual({ manual, onChange }: { manual: boolean; onChange: (manual: boolean) => void }) {
   return (
-    <div style={{ width: 96 }}>
-      <Segmented size="sm" value={manual ? "m" : "a"} onChange={(v) => onChange(v === "m")}
-        options={[
-          { value: "a", label: "по ветви", title: "Длина трубы = длина выработки" },
-          { value: "m", label: "вручную", title: "Задать длину трубы вручную" },
-        ]} />
-    </div>
+    <button type="button" onClick={() => onChange(!manual)}
+      title={manual ? "Задано вручную — нажмите, чтобы брать длину выработки" : "Длина трубы = длина выработки — нажмите, чтобы задать вручную"}
+      className="flex items-center gap-0.5 px-1 h-4 rounded text-[9px] flex-shrink-0"
+      style={{
+        border: "none", cursor: "pointer",
+        background: manual ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)" : "var(--c-s3, #f1efea)",
+        color: manual ? "var(--c-accent, #1e5a7a)" : "var(--c-t3, #6b7280)",
+      }}>
+      <Icon name={manual ? "Lock" : "LockOpen"} size={9} />
+      {manual ? "ручн." : "по ветви"}
+    </button>
   );
 }
 
@@ -99,11 +107,11 @@ function LengthField({ manual, value, branchLen, onManual, onChange }: {
   onManual: (v: boolean) => void; onChange: (v: number) => void;
 }) {
   return (
-    <Field label="Длина трубы" aside={<AutoManual manual={manual} onChange={onManual} />}>
+    <Row label="Длина трубы" aside={<AutoManual manual={manual} onChange={onManual} />}>
       {manual
         ? <NumInput value={value} min={0} step={1} unit="м" onChange={onChange} />
         : <ReadValue value={fmt(branchLen, 1)} unit="м" title="Берётся из длины выработки" />}
-    </Field>
+    </Row>
   );
 }
 
@@ -133,7 +141,7 @@ function StateBtn({ on, onClick, icon, label, tone }: {
   const bg = tone === "green" ? "var(--c-tint-green, #f0fdf4)" : "var(--c-tint-red, #fef2f2)";
   return (
     <button type="button" onClick={onClick}
-      className="flex-1 h-8 rounded-md flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors"
+      className="flex-1 h-7 rounded-md flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors"
       style={{
         background: on ? bg : "var(--c-s1, #fff)",
         color: on ? c : "var(--c-t3, #6b7280)",
@@ -172,28 +180,26 @@ export default function BranchWaterPipeTab({
   const solved = (r?.flow ?? 0) > 0;
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* ═══ Водопровод ППЗ ══════════════════════════════════════════════ */}
       <PipeCard icon="Droplets" title="Водопровод ППЗ" enabled={hasWater}
         subtitle={`Ø${wpDiam}×${wall} мм · ${material}`}
         onToggle={(v) => onUpdate({ hasWaterPipe: v })}>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-1.5">
           <Field label="Наружный Ø">
             <NumInput value={wpDiam} min={0} step={1} unit="мм" onChange={(v) => onUpdate({ wpDiameter: v })} />
           </Field>
-          <Field label="Толщина стенки">
+          <Field label="Стенка">
             <NumInput value={wall} min={0} step={0.5} unit="мм" onChange={(v) => onUpdate({ wpWallThickness: v })} />
           </Field>
-        </div>
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Внутренний Ø (расчётный)">
-            <ReadValue value={innerDiam > 1 ? fmt(innerDiam, 1) : "—"} unit="мм" title="Наружный − 2 × стенка" />
-          </Field>
-          <Field label="Материал">
-            <MaterialSelect value={material} onChange={(v) => onUpdate({ wpMaterial: v })} />
+          <Field label="Внутр. Ø">
+            <ReadValue value={innerDiam > 1 ? fmt(innerDiam, 1) : "—"} unit="мм" title="Расчётный: наружный − 2 × стенка" />
           </Field>
         </div>
+        <Row label="Материал">
+          <MaterialSelect value={material} onChange={(v) => onUpdate({ wpMaterial: v })} />
+        </Row>
         {innerDiam <= 1 && (
           <Hint icon="TriangleAlert">Толщина стенки больше половины наружного диаметра — проверьте данные.</Hint>
         )}
@@ -204,16 +210,16 @@ export default function BranchWaterPipeTab({
           onChange={(v) => onUpdate({ wpLength: v })} />
 
         <Field label="Сопротивление трубы">
-          <Segmented value={roughMode}
+          <Segmented size="sm" value={roughMode}
             onChange={(v) => onUpdate({ wpRoughnessMode: v })}
             options={[
-              { value: "material", label: "По материалу", title: "Сталь и чугун: λ = 0,021/d^0,3 (трубы в эксплуатации); пластик и асбестоцемент — по шероховатости" },
+              { value: "material", label: "Материал", title: "Сталь и чугун: λ = 0,021/d^0,3 (трубы в эксплуатации); пластик и асбестоцемент — по шероховатости" },
               { value: "smooth", label: "Гладкая", title: `Шероховатость ${SMOOTH_ROUGHNESS_MM} мм` },
               { value: "rough",  label: "Своя Δ", title: "Задать шероховатость стенки" },
               { value: "manual", label: "Своё R", title: "Задать сопротивление напрямую" },
             ]} />
         </Field>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           {roughMode === "rough" && (
             <Field label="Шероховатость">
               <NumInput value={b.wpRoughness ?? 0.5} min={0} step={0.05} unit="мм"
@@ -238,7 +244,11 @@ export default function BranchWaterPipeTab({
             </Field>
           )}
           {roughMode === "manual" ? (
-            <Field label="R трубы" hint="Длина, диаметр и ξ в расчёт не идут">
+            <Field label="R трубы" aside={
+              <span title="Длина, диаметр и ξ в расчёт не идут" style={{ color: "var(--c-t4, #767f8c)", display: "inline-flex" }}>
+                <Icon name="Info" size={10} />
+              </span>
+            }>
               <NumInput value={b.wpManualR ?? 0} min={0} step={0.001} unit="МН·с²/м⁸"
                 onChange={(v) => onUpdate({ wpManualR: v })} />
             </Field>
@@ -253,8 +263,8 @@ export default function BranchWaterPipeTab({
 
       {hasWater && (<>
         {/* ═══ Результат расчёта ═════════════════════════════════════════ */}
-        <Card icon="Gauge" title="Результат расчёта">
-          <div className="grid grid-cols-2 gap-1.5">
+        <Card dense collapsible persistKey="pipes.result" icon="Gauge" title="Результат расчёта">
+          <div className="grid grid-cols-2 gap-1">
             <Stat label="Расход воды" value={solved ? fmt(r?.flow, 1) : "—"} unit="м³/ч" />
             <Stat label="Скорость" value={solved ? fmt(r?.velocity, 2) : "—"} unit="м/с" />
           </div>
@@ -280,15 +290,14 @@ export default function BranchWaterPipeTab({
 
         {/* ═══ Запорный вентиль ══════════════════════════════════════════ */}
         {b.wpHasGate && (
-          <Card icon="CircleDot" title="Запорный вентиль"
+          <Card dense icon="CircleDot" title="Запорный вентиль"
             aside={onRemoveGate && <RemoveBtn title="Убрать вентиль с ветви и схемы" onClick={onRemoveGate} />}>
-            <div className="flex gap-1.5">
+            <div className="flex gap-1" title={b.wpGateClosed ? "Течение воды в этой ветви перекрыто." : "Вода свободно проходит через ветвь."}>
               <StateBtn on={!b.wpGateClosed} tone="green" icon="CircleCheck" label="Открыт"
                 onClick={() => onUpdate({ wpGateClosed: false })} />
               <StateBtn on={!!b.wpGateClosed} tone="red" icon="CircleX" label="Закрыт"
                 onClick={() => onUpdate({ wpGateClosed: true })} />
             </div>
-            <Hint>{b.wpGateClosed ? "Течение воды в этой ветви перекрыто." : "Вода свободно проходит через ветвь."}</Hint>
           </Card>
         )}
 
@@ -302,7 +311,7 @@ export default function BranchWaterPipeTab({
           const active = r?.reducerActive ?? false;
           const atm = (mpa: number | undefined) => `${fmt(mpa, 3)} МПа · ${fmt((mpa ?? 0) * MPA_TO_ATM, 1)} атм`;
           return (
-            <Card icon="Gauge" title="Редукционный клапан"
+            <Card dense collapsible persistKey="pipes.reducer" icon="Gauge" title="Редукционный клапан"
               aside={<>
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
                   title={active ? "Клапан срезает давление" : "Давление на входе ниже настройки — клапан не работает"}
@@ -314,7 +323,7 @@ export default function BranchWaterPipeTab({
                 </span>
                 {onRemoveReducer && <RemoveBtn title="Убрать клапан с ветви и схемы" onClick={onRemoveReducer} />}
               </>}>
-              <Field label="Модель"
+              <Row label="Модель"
                 hint={model && !isManual
                   ? `${model.manufacturer} · DN${model.nominalDiameter} · вход до ${fmt(model.inletPressureMax * MPA_TO_ATM, 0)} атм · до ${model.flowMax} м³/ч`
                   : undefined}>
@@ -329,9 +338,9 @@ export default function BranchWaterPipeTab({
                   }}>
                   {PRESSURE_REDUCING_VALVES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
-              </Field>
-              <div className="grid grid-cols-2 gap-2">
-                <Field label="Давление на выходе" hint={`${fmt(outMinAtm, 0)}–${fmt(outMaxAtm, 0)} атм`}>
+              </Row>
+              <div className="grid grid-cols-2 gap-1.5">
+                <Field label={`P выхода, ${fmt(outMinAtm, 0)}–${fmt(outMaxAtm, 0)}`}>
                   <NumInput value={+((b.wpReducerOutPressure ?? 0.5) * MPA_TO_ATM).toFixed(1)}
                     min={outMinAtm} max={outMaxAtm} step={0.5} unit="атм"
                     onChange={(v) => onUpdate({ wpReducerOutPressure: v / MPA_TO_ATM })} />
@@ -351,15 +360,13 @@ export default function BranchWaterPipeTab({
                 </div>
               )}
               {onReducerSymbolScale && (
-                <div>
-                  <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
-                    <span>Размер значка на схеме</span>
-                    <span style={{ fontFamily: "var(--font-num)" }}>{Math.round((reducerSymbolScale ?? 1) * 100)} %</span>
-                  </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>Значок</span>
                   <input type="range" min={5} max={400} step={5}
                     value={Math.round((reducerSymbolScale ?? 1) * 100)}
                     onChange={(e) => onReducerSymbolScale(Number(e.target.value) / 100)}
-                    className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+                    className="flex-1 min-w-0" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+                  <span className="w-9 text-right text-[10px]" style={{ color: "var(--c-t3, #6b7280)", fontFamily: "var(--font-num)" }}>{Math.round((reducerSymbolScale ?? 1) * 100)} %</span>
                 </div>
               )}
             </Card>
@@ -371,23 +378,23 @@ export default function BranchWaterPipeTab({
       <PipeCard icon="Wind" title="Воздухопровод" enabled={hasAir}
         subtitle={`Сжатый воздух · Ø${b.apDiameter ?? 100} мм · ${fmt(b.apPressure ?? 6, 1)} атм`}
         onToggle={(v) => onUpdate({ hasAirPipe: v })}>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-2 gap-1.5">
           <Field label="Диаметр">
             <NumInput value={b.apDiameter ?? 100} min={0} step={5} unit="мм" onChange={(v) => onUpdate({ apDiameter: v })} />
           </Field>
-          <Field label="Материал">
-            <MaterialSelect value={b.apMaterial ?? "Сталь"} onChange={(v) => onUpdate({ apMaterial: v })} />
+          <Field label="Давление">
+            <NumInput value={b.apPressure ?? 6} min={0} step={0.5} unit="атм" onChange={(v) => onUpdate({ apPressure: v })} />
           </Field>
         </div>
-        <Field label="Рабочее давление">
-          <NumInput value={b.apPressure ?? 6} min={0} step={0.5} unit="атм" onChange={(v) => onUpdate({ apPressure: v })} />
-        </Field>
+        <Row label="Материал">
+          <MaterialSelect value={b.apMaterial ?? "Сталь"} onChange={(v) => onUpdate({ apMaterial: v })} />
+        </Row>
         <LengthField manual={b.apLengthManual ?? false} value={b.apLength ?? 0} branchLen={branchLen}
           onManual={(v) => onUpdate(v
             ? { apLengthManual: true, apLength: b.apLength || Math.round(branchLen) }
             : { apLengthManual: false })}
           onChange={(v) => onUpdate({ apLength: v })} />
-        <Hint>Воздухопровод показывается на схеме. Параметры справочные — расчёт сжатого воздуха пока не выполняется.</Hint>
+        <Hint>Справочные параметры — расчёт сжатого воздуха не выполняется.</Hint>
       </PipeCard>
     </div>
   );
