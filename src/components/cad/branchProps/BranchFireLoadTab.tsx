@@ -27,7 +27,7 @@ import { type TopoBranch } from "@/lib/topology";
 import {
   calcVehicleFire, calcBelt, calcLinearFire, calcCableFire, cableInputsOf,
   CABLE_DEFAULT_COUNT, CABLE_DEFAULT_FLAME_SPEED, CABLE_DEFAULT_CALC_TIME,
-  timberLinedPerimeter, timberPerimMode, timberPerimeterStr, TIMBER_VERTICAL_ANGLE,
+  timberLinedPerimeter, timberPerimMode, timberPerimeterStr, timberThickStr, TIMBER_VERTICAL_ANGLE,
 } from "@/lib/fireCalculator";
 import Icon from "@/components/ui/icon";
 import { useVehicles, type MineVehicle } from "@/lib/mineVehicles";
@@ -242,7 +242,7 @@ export default function BranchFireLoadTab({ branch: b, onUpdate, onOpenVehicleLi
     density:      b.fireWoodDensity    ?? "500",
     length:       b.fireWoodLength     ?? (branchLenStr || "50"),
     sectionWidth: timberPerimeterStr(b),
-    sectionThick: b.fireWoodThick      ?? "0.08",
+    sectionThick: timberThickStr(b),
     flameSpeed:   b.fireWoodFlameSpeed ?? "0.024",
     calcTime:     b.fireWoodCalcTime   ?? "10",
   };
@@ -471,7 +471,14 @@ export default function BranchFireLoadTab({ branch: b, onUpdate, onOpenVehicleLi
               : <NumInput value={toNum(b.fireWoodWidth)} min={0} step={0.1} unit="м"
                   onChange={(v) => onUpdate({ fireWoodWidth: String(v) })} />}
           </Field>
-          <StrNumField onUpdate={onUpdate} label="Толщина элементов" k="fireWoodThick" value={wood.sectionThick} unit="м" step={0.01} />
+          <Field label="Толщина элементов" aside={
+            <span title="По умолчанию 3 см — доска обшивки" style={{ color: "var(--c-t4, #767f8c)", display: "inline-flex" }}>
+              <Icon name="Info" size={10} />
+            </span>
+          }>
+            <NumInput value={toNum(wood.sectionThick)} min={0} step={0.005} unit="м"
+              onChange={(v) => onUpdate({ fireWoodThick: String(v), fireWoodThickSet: true })} />
+          </Field>
           <StrNumField onUpdate={onUpdate} label="Скорость пламени" k="fireWoodFlameSpeed" value={wood.flameSpeed} unit="м/с" step={0.001} />
         </div>
         {woodAuto && (

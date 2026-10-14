@@ -19,7 +19,7 @@
 import type { TopoBranch, TopoNode } from "./topology";
 import { calcBranchAngle } from "./topology";
 import {
-  calcVehicleFire, calcBelt, calcLinearFire, calcCableFire, cableInputsOf, timberPerimeterStr,
+  calcVehicleFire, calcBelt, calcLinearFire, calcCableFire, cableInputsOf, timberPerimeterStr, timberThickStr,
   calcFireTemp, calcThermalDepressionUnified, calcCriticalDepression, FLAT_ANGLE_DEG,
   calcCriticalFlow, branchRTotal,
 } from "./fireCalculator";
@@ -170,7 +170,7 @@ export function calcBranchFirePower(b: TopoBranch, airFlow: number): number {
     const r = calcLinearFire({
       heatValue: b.fireWoodHeatValue ?? "13.8", burnRate: b.fireWoodBurnRate ?? "0.027",
       density: b.fireWoodDensity ?? "500", length: b.fireWoodLength ?? (branchLenStr || "50"),
-      sectionWidth: timberPerimeterStr(b), sectionThick: b.fireWoodThick ?? "0.08",
+      sectionWidth: timberPerimeterStr(b), sectionThick: timberThickStr(b),
       flameSpeed: b.fireWoodFlameSpeed ?? "0.024", calcTime: b.fireWoodCalcTime ?? "10",
     }, airFlow);
     if (r) power += r.powerMW;

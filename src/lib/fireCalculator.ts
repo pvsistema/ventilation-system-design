@@ -322,6 +322,25 @@ export function timberPerimMode(b: FireMaterialProps): "auto" | "manual" {
   return !w || parseFloat(w) === 0.15 ? "auto" : "manual";
 }
 
+/**
+ * Толщина элементов деревянной крепи по умолчанию — 3 см (доска обшивки).
+ * Раньше по умолчанию стояло 0,15 м (новые ветви) или 0,08 м (если поле
+ * пустое): масса и время выгорания завышались в 3–5 раз.
+ */
+export const TIMBER_DEFAULT_THICK = "0.03";
+
+/**
+ * Толщина крепи для расчёта. Значение «0,15», которое раньше подставлялось
+ * каждой ветви автоматически, считается незаданным — берётся 3 см. Если
+ * пользователь сам ввёл толщину (fireWoodThickSet), она берётся как есть.
+ */
+export function timberThickStr(b: FireMaterialProps): string {
+  const t = (b.fireWoodThick ?? "").trim();
+  if (b.fireWoodThickSet) return t || TIMBER_DEFAULT_THICK;
+  if (!t || parseFloat(t.replace(",", ".")) === 0.15) return TIMBER_DEFAULT_THICK;
+  return t;
+}
+
 /** Периметр крепи для расчёта: авто по сечению или заданный вручную. */
 export function timberPerimeterStr(b: FireMaterialProps): string {
   if (timberPerimMode(b) === "auto") {
@@ -357,6 +376,8 @@ export interface FireMaterialProps {
   // Деревянная крепь
   fireWoodHeatValue?: string; fireWoodBurnRate?: string; fireWoodDensity?: string;
   fireWoodLength?: string; fireWoodWidth?: string; fireWoodThick?: string;
+  /** Толщину крепи задал пользователь (иначе «0,15» — старое значение по умолчанию). */
+  fireWoodThickSet?: boolean;
   fireWoodFlameSpeed?: string; fireWoodCalcTime?: string;
   /** «auto» — обшитый периметр по сечению и наклону ветви (см. timberLinedPerimeter). */
   fireWoodPerimMode?: "auto" | "manual";
@@ -435,7 +456,7 @@ export function calcFirePowerFromMaterial(b: FireMaterialProps): number | null {
       density:      b.fireWoodDensity     ?? "500",
       length:       b.fireWoodLength      ?? (lenStr || "50"),
       sectionWidth: timberPerimeterStr(b),
-      sectionThick: b.fireWoodThick       ?? "0.08",
+      sectionThick: timberThickStr(b),
       flameSpeed:   b.fireWoodFlameSpeed  ?? "0.024",
       calcTime:     b.fireWoodCalcTime    ?? "10",
     }, airFlow);
@@ -506,7 +527,7 @@ export function calcFireMaterialSummary(
       density:      b.fireWoodDensity     ?? "500",
       length:       b.fireWoodLength      ?? (lenStr || "50"),
       sectionWidth: timberPerimeterStr(b),
-      sectionThick: b.fireWoodThick       ?? "0.08",
+      sectionThick: timberThickStr(b),
       flameSpeed:   b.fireWoodFlameSpeed  ?? "0.024",
       calcTime:     b.fireWoodCalcTime    ?? "10",
     }, airFlow);
