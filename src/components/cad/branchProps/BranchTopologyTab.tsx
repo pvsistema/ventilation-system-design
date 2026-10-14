@@ -111,7 +111,7 @@ export default function BranchTopologyTab({
 
       {/* ═══ 1. Геометрия ═══════════════════════════════════════════════ */}
       {/* Узлы ветви — в заголовке карточки, а не отдельной строкой. */}
-      <Card dense collapsible icon="Ruler" title="Геометрия"
+      <Card dense collapsible defaultOpen={false} icon="Ruler" title="Геометрия"
         aside={
           <span className="flex items-center gap-1 text-[10px] normal-case"
             title={`Ветвь №${b.id}: начальный → конечный узел`}
@@ -139,7 +139,7 @@ export default function BranchTopologyTab({
       </Card>
 
       {/* ═══ 2. Сечение ═════════════════════════════════════════════════ */}
-      <Card dense collapsible icon="Square" title="Сечение">
+      <Card dense collapsible defaultOpen={false} icon="Square" title="Сечение">
         <Row label="Форма">
           <select className={inputCls} style={selectStyle} value={b.shape}
             onChange={(e) => {
@@ -246,7 +246,7 @@ export default function BranchTopologyTab({
       </Card>
 
       {/* ═══ 3. Сопротивление ═══════════════════════════════════════════ */}
-      <Card dense collapsible icon="Wind" title="Сопротивление">
+      <Card dense collapsible defaultOpen={false} icon="Wind" title="Сопротивление">
         <Row label="Как задать R">
           <select className={inputCls} style={selectStyle} value={b.resistanceMode}
             onChange={(e) => onUpdate({ resistanceMode: e.target.value as TopoBranch["resistanceMode"] })}>
@@ -399,7 +399,7 @@ export default function BranchTopologyTab({
       </Card>
 
       {/* ═══ 4. Результат расчёта ═══════════════════════════════════════ */}
-      <Card dense collapsible icon="Activity" title="Результат расчёта" tone="signal"
+      <Card dense collapsible defaultOpen={false} icon="Activity" title="Результат расчёта" tone="signal"
         aside={b.isDead ? (
           <span className="px-1.5 rounded-full text-[10px]"
             title="Расчёт сети определил ветвь как тупиковую: сквозного движения воздуха через неё нет"
