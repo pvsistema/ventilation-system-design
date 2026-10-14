@@ -64,6 +64,8 @@ interface BranchPropsPanelProps {
   ventNorms?: VentNorms;
   /** Открыть справочник оборудования на вкладке типов выработок */
   onOpenTypesLibrary?: () => void;
+  /** Открыть справочник самоходной техники («Справочники → Транспорт») */
+  onOpenVehicleLibrary?: () => void;
   /** typeId символа перемычки на схеме (для определения типа: с окном/проёмом или глухая) */
   bulkheadSymTypeId?: string;
   /** Символ перемычки на схеме (для чтения bkManualR, bkResMode и т.д.) */
@@ -107,7 +109,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate, onOpenVehicleLibrary }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -227,7 +229,7 @@ export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, 
         )}
 
         {innerTab === "Пож.нагрузка" && (
-          <BranchFireLoadTab branch={branch} onUpdate={onUpdate} />
+          <BranchFireLoadTab branch={branch} onUpdate={onUpdate} onOpenVehicleLibrary={onOpenVehicleLibrary} />
         )}
 
         {/* ═══ КАРТОЧКА ЗАБОЯ: расчёт количества воздуха ═══════════════════

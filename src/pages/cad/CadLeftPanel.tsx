@@ -2304,6 +2304,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 onOpenTypesLibrary={() => { setShowEquipRef(true); setEquipRefTab("types"); }}
                 ventSections={ventSections}
                 onOpenSectionsLibrary={() => setShowVentSections(true)}
+                onOpenVehicleLibrary={() => { setShowEquipRef(true); setEquipRefTab("transport"); }}
                 ventNorms={ventNorms}
                 bulkheadSymTypeId={(() => {
                   const bkSym = schemaSymbols.find(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === selectedBranch.id);

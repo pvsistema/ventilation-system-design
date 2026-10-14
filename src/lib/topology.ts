@@ -261,6 +261,8 @@ export interface TopoBranch {
   fireStartTime: number;           // мин — время начала от старта расчёта
   // Параметры для горючего материала «Техника» (3 составляющих)
   fireVehicleName: string;         // название/марка техники
+  /** id модели из справочника техники («Справочники → Транспорт»); пусто — задано вручную. */
+  fireVehicleId?: string;
   /** Пользователь удалил значок техники под очагом — больше не подставлять. */
   fireVehicleSymbolOff?: boolean;
   fireVehicleMassRubber: number;   // кг — масса резины

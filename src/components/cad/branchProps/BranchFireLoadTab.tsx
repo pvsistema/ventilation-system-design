@@ -29,11 +29,14 @@ import {
   CABLE_DEFAULT_COUNT, CABLE_DEFAULT_FLAME_SPEED, CABLE_DEFAULT_CALC_TIME,
 } from "@/lib/fireCalculator";
 import Icon from "@/components/ui/icon";
+import { useVehicles, type MineVehicle } from "@/lib/mineVehicles";
 import { Card, Field, Row, NumInput, Stat, KV, inputCls, inputStyle } from "@/components/cad/propUi";
 
 interface BranchFireLoadTabProps {
   branch: TopoBranch;
   onUpdate: (patch: Partial<TopoBranch>) => void;
+  /** Открыть справочник техники («Справочники → Транспорт»). */
+  onOpenVehicleLibrary?: () => void;
 }
 
 /** Температура воздуха до очага, °C — та же база, что в расчёте техники. */
@@ -172,7 +175,8 @@ function StrNumField({ label, k, value, unit, step, aside, hint, onUpdate }: Str
 
 // ─── Вкладка ────────────────────────────────────────────────────────────────
 
-export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoadTabProps) {
+export default function BranchFireLoadTab({ branch: b, onUpdate, onOpenVehicleLibrary }: BranchFireLoadTabProps) {
+  const vehicles = useVehicles();
   // Расход для расчёта — ШТАТНЫЙ (до пожара), как в Аэросети. При активном
   // пожаре расход ветви очага может быть снижен тепловой депрессией; если
   // считать по нему, температура нефизично завышается (729°C вместо ~226°C).
@@ -190,6 +194,25 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
   const massDiesel = b.fireVehicleMassDiesel ?? 400;
   const massOil    = b.fireVehicleMassOil    ?? 200;
   const vfr = onTech ? calcVehicleFire([massRubber, massDiesel, massOil], airFlow) : null;
+
+  // Модель из справочника. Массы копируются в ветвь, поэтому их можно
+  // поправить вручную; если они разошлись со справочником — показываем
+  // «изменено» и кнопку «вернуть». Для старых схем без fireVehicleId
+  // модель узнаём по названию.
+  const vehicle: MineVehicle | undefined = b.fireVehicleId
+    ? vehicles.find(v => v.id === b.fireVehicleId)
+    : vehicles.find(v => v.name === (b.fireVehicleName ?? "").trim());
+  const vehicleEdited = !!vehicle && (vehicle.rubber !== massRubber || vehicle.diesel !== massDiesel || vehicle.oil !== massOil);
+  const pickVehicle = (id: string) => {
+    if (!id) { onUpdate({ fireVehicleId: "" }); return; }
+    const v = vehicles.find(x => x.id === id);
+    if (!v) return;
+    onUpdate({
+      fireVehicleId: v.id, fireVehicleName: v.name,
+      fireVehicleMassRubber: v.rubber, fireVehicleMassDiesel: v.diesel, fireVehicleMassOil: v.oil,
+    });
+  };
+  const vehicleGroups = [...new Set(vehicles.map(v => v.type || "Прочее"))];
   const vfrHeat = vfr ? vfr.materials.reduce((s, m) => s + m.energy_MJ, 0) : 0;
 
   // ── Конвейерная лента ──
@@ -276,8 +299,51 @@ export default function BranchFireLoadTab({ branch: b, onUpdate }: BranchFireLoa
       <SourceCard icon="Truck" title="Самоходная техника" enabled={onTech}
         subtitle={vfr ? `${fmt(vfr.power_MW, 2)} МВт` : (b.fireVehicleName || undefined)}
         onToggle={(v) => onUpdate({ fireLoadTech: v })}>
+        {/* Модель из справочника подставляет массы горючего; их можно
+            поправить вручную ниже. */}
+        <Row label="Из справочника"
+          hint="Справочники → Транспорт. Подставляет массы резины, дизеля и масла — их можно изменить вручную">
+          <div className="flex gap-1">
+            <select className={`${inputCls} flex-1 min-w-0`} style={{ ...inputStyle, cursor: "pointer" }}
+              value={vehicle?.id ?? ""}
+              onChange={(e) => pickVehicle(e.target.value)}>
+              <option value="">— вручную —</option>
+              {vehicleGroups.map(g => (
+                <optgroup key={g} label={g}>
+                  {vehicles.filter(v => (v.type || "Прочее") === g).map(v => (
+                    <option key={v.id} value={v.id}>
+                      {v.name}{v.tonnage ? ` · ${v.tonnage} т` : ""}{v.custom ? " (своя)" : ""}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+            {onOpenVehicleLibrary && (
+              <button type="button" onClick={onOpenVehicleLibrary} title="Справочник техники — добавить или изменить модель"
+                className="w-7 h-7 flex-shrink-0 flex items-center justify-center rounded"
+                style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
+                <Icon name="BookOpen" size={13} />
+              </button>
+            )}
+          </div>
+        </Row>
         <NameInput value={b.fireVehicleName ?? ""} placeholder="Марка, например ПДМ LH-410"
           onChange={(v) => onUpdate({ fireVehicleName: v })} />
+        {vehicleEdited && vehicle && (
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded text-[10px]"
+            style={{ background: "var(--c-tint-amber, #fffbeb)", color: "var(--c-amber-ink, #865412)" }}>
+            <Icon name="PencilLine" size={11} className="flex-shrink-0" />
+            <span className="flex-1 min-w-0">
+              Массы изменены вручную (в справочнике {vehicle.rubber} / {vehicle.diesel} / {vehicle.oil} кг)
+            </span>
+            <button type="button" onClick={() => pickVehicle(vehicle.id)}
+              title="Вернуть массы из справочника"
+              className="flex items-center gap-0.5 px-1.5 h-5 rounded text-[10px] flex-shrink-0"
+              style={{ background: "var(--c-s1, #fff)", border: "1px solid currentColor", color: "inherit", cursor: "pointer" }}>
+              <Icon name="RotateCcw" size={10} /> Вернуть
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-3 gap-1.5">
           <Field label="Резина">
             <NumInput value={massRubber} min={0} step={10} unit="кг" onChange={(v) => onUpdate({ fireVehicleMassRubber: v })} />
