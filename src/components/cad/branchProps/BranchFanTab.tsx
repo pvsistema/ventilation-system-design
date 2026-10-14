@@ -30,8 +30,12 @@ import { type MineFanExport } from "@/components/cad/EquipmentRefDialog";
 import { fanWindowRkMurg } from "@/lib/bulkheads";
 import Icon from "@/components/ui/icon";
 import {
-  Card, Field, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
+  Card, Field, Row, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
 } from "@/components/cad/propUi";
+
+// Компактный вид — как у «Топологии»: плотные сворачиваемые карточки с
+// памятью, одиночные поля строкой «подпись слева», пары состояний
+// (работает/остановлен, прямой/реверс) — в одну строку из четырёх кнопок.
 
 interface BranchFanTabProps {
   branch: TopoBranch;
@@ -61,7 +65,7 @@ function Note({ tone, children }: { tone: "warn" | "info" | "danger"; children: 
       ? { bg: "var(--c-tint-amber, #fffbeb)", fg: "var(--c-amber-ink, #865412)", icon: "TriangleAlert" }
       : { bg: "var(--c-s2, #f8f7f4)", fg: "var(--c-t2, #3a3f45)", icon: "Info" };
   return (
-    <div className="flex items-start gap-1.5 px-2 py-1.5 rounded text-[11px] leading-snug"
+    <div className="flex items-start gap-1.5 px-2 py-1 rounded text-[10px] leading-snug"
       style={{ background: st.bg, color: st.fg }}>
       <Icon name={st.icon} size={12} className="flex-shrink-0 mt-px" />
       <span>{children}</span>
@@ -78,14 +82,15 @@ function StateBtn({ on, onClick, disabled, icon, label, tone }: {
   const bg = tone === "green" ? "var(--c-tint-green, #f0fdf4)" : tone === "amber" ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-tint-red, #fef2f2)";
   return (
     <button type="button" onClick={onClick} disabled={disabled}
-      className="flex-1 h-8 rounded-md flex items-center justify-center gap-1.5 text-[11px] font-semibold transition-colors disabled:opacity-40"
+      title={label}
+      className="flex-1 min-w-0 h-7 px-1 rounded-md flex items-center justify-center gap-1 text-[10px] font-semibold transition-colors disabled:opacity-40"
       style={{
         background: on ? bg : "var(--c-s1, #fff)",
         color: on ? c : "var(--c-t3, #6b7280)",
         border: `1px solid ${on ? `color-mix(in srgb, ${c} 45%, transparent)` : "var(--c-b2, #d5d1c8)"}`,
         cursor: disabled ? "not-allowed" : "pointer",
       }}>
-      <Icon name={icon} size={13} /> {label}
+      <Icon name={icon} size={12} className="flex-shrink-0" /> <span className="truncate">{label}</span>
     </button>
   );
 }
@@ -104,47 +109,47 @@ export default function BranchFanTab({
   const qShown = b.fanReverse && !isVmp ? -Math.abs(b.flow) : Math.abs(b.flow);
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* ═══ 1. Паспорт ════════════════════════════════════════════════ */}
-      <Card icon="Fan" title="Вентилятор">
-        <Field label="Название (для подписи на схеме)">
+      <Card dense collapsible persistKey="fan.passport" icon="Fan" title="Вентилятор">
+        <Row label="Название" hint="Для подписи на схеме">
           <input type="text" className={inputCls} style={inputStyle}
             value={b.fanName ?? ""} placeholder="Например, ВО-22/14АР"
             onChange={(e) => onUpdate({ fanName: e.target.value })} />
-        </Field>
-        <Field label="Назначение">
-          <Segmented value={b.fanType ?? "ГВУ"}
+        </Row>
+        <Row label="Назначение">
+          <Segmented size="sm" value={b.fanType ?? "ГВУ"}
             onChange={(v) => onUpdate({ fanType: v as "ГВУ" | "ВВУ" | "ВМП" })}
             options={[
               { value: "ГВУ", label: "ГВУ", title: "Главная вентиляторная установка" },
               { value: "ВВУ", label: "ВВУ", title: "Вспомогательная вентиляторная установка" },
               { value: "ВМП", label: "ВМП", title: "Вентилятор местного проветривания" },
             ]} />
-        </Field>
-        <div className="flex gap-1.5">
+        </Row>
+        <div className="flex gap-1">
           <StateBtn on={!b.fanStopped} tone="green" icon="Play" label="Работает"
             onClick={() => onUpdate({ fanStopped: false })} />
-          <StateBtn on={!!b.fanStopped} tone="amber" icon="Square" label="Остановлен"
+          <StateBtn on={!!b.fanStopped} tone="amber" icon="Square" label="Стоп"
             onClick={() => onUpdate({ fanStopped: true })} />
+          {!isVmp && (<>
+            <span className="w-px self-stretch mx-0.5" style={{ background: "var(--c-b1, #e7e4dd)" }} />
+            <StateBtn on={!b.fanReverse} tone="green" icon="ArrowRight" label="Прямой"
+              disabled={b.fanStopped} onClick={() => onUpdate({ fanReverse: false })} />
+            <StateBtn on={!!b.fanReverse} tone="red" icon="ArrowLeft" label="Реверс"
+              disabled={b.fanStopped} onClick={() => onUpdate({ fanReverse: true })} />
+          </>)}
         </div>
         {onReverse && (
-          <Field label="Куда дует" hint={`Сейчас: от узла ${b.fromId} к узлу ${b.toId}. Режим (прямой/реверс) не меняется.`}>
-            <button type="button" onClick={onReverse}
-              className="w-full h-8 rounded-md text-[11px] font-semibold flex items-center justify-center gap-1.5"
-              style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-accent, #1e5a7a)", color: "var(--c-accent, #1e5a7a)", cursor: "pointer" }}>
-              <Icon name="ArrowLeftRight" size={13} /> Сменить направление вентилятора
-            </button>
-          </Field>
+          <button type="button" onClick={onReverse}
+            title={`Сейчас дует от узла ${b.fromId} к узлу ${b.toId}. Режим (прямой/реверс) не меняется.`}
+            className="w-full h-6 rounded-md text-[10px] font-semibold flex items-center justify-center gap-1.5"
+            style={{ background: "var(--c-s1, #fff)", border: "1px solid var(--c-accent, #1e5a7a)", color: "var(--c-accent, #1e5a7a)", cursor: "pointer" }}>
+            <Icon name="ArrowLeftRight" size={11} /> Сменить направление ({b.fromId} → {b.toId})
+          </button>
         )}
         {!isVmp ? (
           <>
-            <div className="flex gap-1.5">
-              <StateBtn on={!b.fanReverse} tone="green" icon="ArrowRight" label="Прямой"
-                disabled={b.fanStopped} onClick={() => onUpdate({ fanReverse: false })} />
-              <StateBtn on={!!b.fanReverse} tone="red" icon="ArrowLeft" label="Реверс"
-                disabled={b.fanStopped} onClick={() => onUpdate({ fanReverse: true })} />
-            </div>
             {b.fanReverse && normalFlows && Object.keys(normalFlows).length === 0 && (
               <Note tone="warn">Сначала выполните расчёт в прямом режиме — для проверки нормы ПБ (Q реверса ≥ 60 %).</Note>
             )}
@@ -155,8 +160,8 @@ export default function BranchFanTab({
       </Card>
 
       {/* ═══ 2. Режим работы ═══════════════════════════════════════════ */}
-      <Card icon="SlidersHorizontal" title="Режим работы">
-        <Segmented value={b.fanMode}
+      <Card dense collapsible persistKey="fan.mode" icon="SlidersHorizontal" title="Режим работы">
+        <Segmented size="sm" value={b.fanMode}
           onChange={(mode) => {
             // При первом переключении на «фиксированный расход» подставляем
             // текущий расход ветви — чтобы начинать с привычной рабочей точки.
@@ -174,7 +179,7 @@ export default function BranchFanTab({
 
         {b.fanMode === "constant" && (
           <>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               <Field label="Напор">
                 <NumInput value={b.fanPressure} step={10} min={0} unit="Па" onChange={(v) => onUpdate({ fanPressure: v })} />
               </Field>
@@ -189,7 +194,7 @@ export default function BranchFanTab({
 
         {b.fanMode === "fixed" && (
           <>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               <Field label="Расход">
                 <NumInput value={b.fanFixedQ ?? 0} step={0.1} min={0} unit="м³/с" onChange={(v) => onUpdate({ fanFixedQ: v })} />
               </Field>
@@ -210,27 +215,28 @@ export default function BranchFanTab({
       </Card>
 
       {/* ═══ 3. Установка ══════════════════════════════════════════════ */}
-      <Card icon="Blocks" title="Установка">
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Вентиляторов в параллели">
+      <Card dense collapsible persistKey="fan.install" icon="Blocks" title="Установка">
+        <div className="grid grid-cols-2 gap-1.5">
+          <Field label="В параллели">
             <NumInput value={b.fanParallel ?? 1} step={1} min={1} unit="шт" onChange={(v) => onUpdate({ fanParallel: Math.max(1, Math.round(v)) })} />
           </Field>
-          <Field label="Окно ΔS" hint={inBulkhead ? (b.fanWindowArea > 0.001 ? undefined : "по колесу π·D²/4") : "нет перемычки"}>
-            <ReadValue value={inBulkhead ? numFmt(dS, 2) : "—"} unit="м²" />
+          <Field label="Окно ΔS">
+            <ReadValue value={inBulkhead ? numFmt(dS, 2) : "—"} unit="м²"
+              title={inBulkhead ? (b.fanWindowArea > 0.001 ? "Площадь окна в перемычке" : "По колесу π·D²/4") : "Нет перемычки"} />
           </Field>
         </div>
-        <Field label="Где установлен">
-          <Segmented value={inBulkhead ? "in" : "out"}
+        <Row label="Где установлен">
+          <Segmented size="sm" value={inBulkhead ? "in" : "out"}
             onChange={(v) => onUpdate({ fanInstall: v === "in" ? "Внутри перемычки" : "Без перемычки" })}
             options={[
               { value: "in", label: "В перемычке", title: "Вентилятор в окне перемычки — окно добавляет сопротивление" },
               { value: "out", label: "Без перемычки" },
             ]} />
-        </Field>
+        </Row>
       </Card>
 
       {/* ═══ 4. Результат расчёта ══════════════════════════════════════ */}
-      <Card icon="Activity" title="Результат расчёта" tone="signal">
+      <Card dense collapsible persistKey="fan.result" icon="Activity" title="Результат расчёта" tone="signal">
         {b.fanStopped && <Note tone="warn">Вентилятор остановлен — напор 0, воздух идёт по естественной тяге.</Note>}
         {!b.fanStopped && b.fanReverse && !isVmp && (() => {
           const eff = curve?.reverseEfficiencyFactor ?? 0.82;
@@ -248,7 +254,7 @@ export default function BranchFanTab({
         {!solved && !b.fanStopped ? (
           <Note tone="info">Выполните «Расчёт сети» (F9), чтобы увидеть рабочую точку.</Note>
         ) : (
-          <div className="grid grid-cols-2 gap-1.5">
+          <div className="grid grid-cols-2 gap-1">
             <Stat label="Расход Q" value={numFmt(qShown, 2)} unit="м³/с" />
             <Stat label="Напор H" value={numFmt(Math.abs(b.fanPressure), 0)} unit="Па" />
             <Stat label="Мощность" value={numFmt(b.fanShaftPower / 1000, 1)} unit="кВт" />
@@ -277,23 +283,21 @@ export default function BranchFanTab({
       </Card>
 
       {/* ═══ 5. Значок на схеме ════════════════════════════════════════ */}
-      <Card icon="Shapes" title="Значок на схеме" tone="muted" collapsible defaultOpen={false}>
+      <Card dense persistKey="fan.symbol" icon="Shapes" title="Значок на схеме" tone="muted" collapsible defaultOpen={false}>
         {onFanSymbolScale && (
-          <div>
-            <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
-              <span>Размер значка</span>
-              <span style={{ fontFamily: "var(--font-num)" }}>{Math.round((fanSymbolScale ?? 1) * 100)} %</span>
-            </div>
+          <div className="flex items-center gap-1.5">
+            <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>Размер</span>
             <input type="range" min={5} max={400} step={5}
               value={Math.round((fanSymbolScale ?? 1) * 100)}
               onChange={(e) => onFanSymbolScale(Number(e.target.value) / 100)}
-              className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+              className="flex-1 min-w-0" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+            <span className="w-9 text-right text-[10px]" style={{ color: "var(--c-t3, #6b7280)", fontFamily: "var(--font-num)" }}>{Math.round((fanSymbolScale ?? 1) * 100)} %</span>
           </div>
         )}
-        <div className="grid grid-cols-1 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
           {onFanSymbolDelete && (
             <button type="button" onClick={onFanSymbolDelete}
-              className="h-7 rounded text-[11px] flex items-center justify-center gap-1"
+              className="h-6 rounded text-[11px] flex items-center justify-center gap-1"
               title="Убрать только значок — вентилятор в расчёте остаётся"
               style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
               <Icon name="EyeOff" size={12} /> Убрать значок
@@ -302,7 +306,7 @@ export default function BranchFanTab({
         </div>
         {onRemoveFan && (
           <button type="button" onClick={onRemoveFan}
-            className="w-full h-7 rounded text-[11px] flex items-center justify-center gap-1"
+            className="w-full h-6 rounded text-[11px] flex items-center justify-center gap-1"
             title="Удалить вентилятор с выработки (из расчёта тоже)"
             style={{ background: "var(--c-tint-red, #fef2f2)", border: "1px solid color-mix(in srgb, var(--c-red, #dc2626) 35%, transparent)", color: "var(--c-red, #dc2626)", cursor: "pointer" }}>
             <Icon name="Trash2" size={12} /> Удалить вентилятор
@@ -339,7 +343,7 @@ function CurveMode({ branch: b, onUpdate, mineFans, onOpenFanLibrary }: {
 
   return (
     <>
-      <Field label="Модель">
+      <Row label="Модель">
         <div className="flex gap-1">
           <select className={`${inputCls} flex-1`} style={selectStyle} value={b.fanCurveId}
             onChange={(e) => {
@@ -369,29 +373,24 @@ function CurveMode({ branch: b, onUpdate, mineFans, onOpenFanLibrary }: {
             </button>
           )}
         </div>
-      </Field>
+      </Row>
 
       {curve && (
         <>
           {curve.bladeAngles.length > 0 && (
-            <Field label="Угол лопаток">
+            <Row label="Угол лопаток">
               <select className={inputCls} style={selectStyle} value={bladeAngle}
                 onChange={(e) => onUpdate({ fanBladeAngle: Number(e.target.value) })}>
                 {curve.bladeAngles.map(a => <option key={a} value={a}>{a}°</option>)}
               </select>
-            </Field>
+            </Row>
           )}
-          <div>
-            <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
-              <span>Частота вращения</span>
-              <span style={{ fontFamily: "var(--font-num)", color: "var(--c-t1, #1f2328)" }}>{rpm} об/мин</span>
-            </div>
+          <div className="flex items-center gap-1.5" title={`Частота вращения: ${curve.rpmMin}…${curve.rpmMax} об/мин`}>
+            <span className="flex-shrink-0 text-[10px] font-medium" style={{ width: "36%", color: "var(--c-t3, #6b7280)" }}>Обороты</span>
             <input type="range" min={curve.rpmMin} max={curve.rpmMax} step={10} value={rpm}
               onChange={(e) => onUpdate({ fanRpm: Number(e.target.value) })}
-              className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
-            <div className="flex justify-between text-[9px]" style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-num)" }}>
-              <span>{curve.rpmMin}</span><span>{curve.rpmMax}</span>
-            </div>
+              className="flex-1 min-w-0" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+            <span className="text-[10px] text-right" style={{ width: 62, fontFamily: "var(--font-num)", color: "var(--c-t1, #1f2328)" }}>{rpm} об/мин</span>
           </div>
           <div className="rounded-md overflow-hidden" style={{ border: "1px solid var(--c-b1, #e7e4dd)", background: "var(--c-s1, #fff)" }}>
             <FanOpMiniChart branch={b} onPickAngle={(a) => onUpdate({ fanBladeAngle: a })} onZoom={() => setZoom(true)} />

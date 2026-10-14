@@ -49,54 +49,58 @@ export default function FanIndicatorsPanel({ branch: b, onChange, fontSize, onFo
   const anyOn = FAN_KEYS.some(k => own[k]);
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
-      <Card icon="Captions" title="Подпись у вентилятора" tone="signal">
-        <div className="rounded px-2 py-1.5 text-[11px] leading-tight min-h-[28px]"
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
+      <Card dense collapsible persistKey="fanind.preview" icon="Captions" title="Подпись у вентилятора" tone="signal"
+        aside={
+          <span className="flex gap-1" onClick={(e) => e.stopPropagation()}>
+            <button type="button" title="Показать все показатели"
+              onClick={() => onChange({ ...own, ...Object.fromEntries(FAN_KEYS.map(k => [k, true])) })}
+              className="h-5 px-1.5 rounded text-[10px] flex items-center gap-1 normal-case"
+              style={{ background: "var(--c-s3, #f1efea)", border: "none", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
+              <Icon name="CheckCheck" size={10} /> Всё
+            </button>
+            <button type="button" disabled={!anyOn} title="Скрыть подпись"
+              onClick={() => onChange({ ...own, ...Object.fromEntries(FAN_KEYS.map(k => [k, false])) })}
+              className="h-5 px-1.5 rounded text-[10px] flex items-center gap-1 normal-case disabled:opacity-40"
+              style={{ background: "var(--c-s3, #f1efea)", border: "none", color: "var(--c-t2, #3a3f45)", cursor: anyOn ? "pointer" : "default" }}>
+              <Icon name="EyeOff" size={10} /> Скрыть
+            </button>
+          </span>
+        }>
+        <div className="rounded px-2 py-1 text-[11px] leading-tight min-h-[22px]"
           style={{ background: "var(--c-s2, #f8f7f4)", border: "1px dashed var(--c-b2, #d5d1c8)",
             color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)" }}>
           {preview.length > 0
             ? preview.map((l, i) => <div key={i}>{l}</div>)
             : <span style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-ui)" }}>Подписи нет — включите показатели ниже</span>}
         </div>
-        <div className="flex gap-1.5">
-          <button type="button" onClick={() => onChange({ ...own, ...Object.fromEntries(FAN_KEYS.map(k => [k, true])) })}
-            className="flex-1 h-7 rounded text-[11px] flex items-center justify-center gap-1"
-            style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: "pointer" }}>
-            <Icon name="CheckCheck" size={12} /> Всё
-          </button>
-          <button type="button" disabled={!anyOn}
-            onClick={() => onChange({ ...own, ...Object.fromEntries(FAN_KEYS.map(k => [k, false])) })}
-            className="flex-1 h-7 rounded text-[11px] flex items-center justify-center gap-1 disabled:opacity-40"
-            style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)", color: "var(--c-t2, #3a3f45)", cursor: anyOn ? "pointer" : "default" }}>
-            <Icon name="EyeOff" size={12} /> Скрыть подпись
-          </button>
-        </div>
       </Card>
 
-      <Card icon="Gauge" title="Показатели">
-        <div className="-mx-1">
+      {/* Пояснение показателя — во всплывающей подсказке, а не строкой. */}
+      <Card dense collapsible persistKey="fanind.rows" icon="Gauge" title="Показатели">
+        <div className="-mx-1 grid grid-cols-2">
           {ROWS.map(r => (
-            <Switch key={r.key} checked={!!own[r.key]} onChange={v => set(r.key, v)} label={r.label} hint={r.hint} />
+            <div key={r.key} title={r.hint} className="min-w-0">
+              <Switch checked={!!own[r.key]} onChange={v => set(r.key, v)} label={r.label} />
+            </div>
           ))}
         </div>
       </Card>
 
       {(onFontSize || onResetOffset) && (
-        <Card icon="Type" title="Вид подписи" tone="muted" collapsible>
+        <Card dense persistKey="fanind.look" defaultOpen={false} icon="Type" title="Вид подписи" tone="muted" collapsible>
           {onFontSize && (
-            <div>
-              <div className="flex justify-between text-[10px] mb-0.5" style={{ color: "var(--c-t3, #6b7280)" }}>
-                <span>Размер текста</span>
-                <span style={{ fontFamily: "var(--font-num)" }}>{fontSize ?? 9}</span>
-              </div>
+            <div className="flex items-center gap-1.5">
+              <span className="flex-shrink-0 text-[10px]" style={{ color: "var(--c-t3, #6b7280)" }}>Размер текста</span>
               <input type="range" min={3} max={30} step={0.5} value={fontSize ?? 9}
                 onChange={e => onFontSize(Number(e.target.value))}
-                className="w-full" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+                className="flex-1 min-w-0" style={{ accentColor: "var(--c-accent, #1e5a7a)" }} />
+              <span className="w-7 text-right text-[10px]" style={{ color: "var(--c-t3, #6b7280)", fontFamily: "var(--font-num)" }}>{fontSize ?? 9}</span>
             </div>
           )}
           {onResetOffset && (
             <button type="button" onClick={onResetOffset}
-              className="w-full h-7 rounded text-[11px] flex items-center justify-center gap-1"
+              className="w-full h-6 rounded text-[11px] flex items-center justify-center gap-1"
               style={{ background: "transparent", border: "1px dashed var(--c-b2, #d5d1c8)", color: "var(--c-accent, #1e5a7a)", cursor: "pointer" }}
               title="Подпись перетаскивается мышью на схеме — кнопка вернёт её к значку">
               <Icon name="LocateFixed" size={12} /> Вернуть подпись к значку

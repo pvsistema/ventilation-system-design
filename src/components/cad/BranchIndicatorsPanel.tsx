@@ -13,6 +13,8 @@ import type { TopoBranch } from "@/lib/topology";
 import type { InfoDisplayConfig } from "@/lib/infoConfig";
 import { Card, Field, Switch, PresetSlider } from "@/components/cad/propUi";
 
+// Компактный вид — как у «Топологии»: плотные карточки с памятью свёрнутости.
+
 type Key = keyof InfoDisplayConfig;
 
 /**
@@ -87,38 +89,33 @@ export default function BranchIndicatorsPanel({ branch: b, infoConfig, onChange,
   const preview = GROUPS.flatMap(g => g.rows).filter(r => isOn(r.key)).map(r => r.sample);
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* ═══ Подпись на схеме ══════════════════════════════════════════ */}
-      <Card icon="Captions" title="Подпись на схеме" tone="signal">
-        <div className="text-[10px] leading-snug" style={{ color: "var(--c-t3, #6b7280)" }}>
-          Что показать у этой выработки. Остальные выработки подписываются по
-          общим настройкам «Панели информации».
-        </div>
-        <div className="rounded px-2 py-1.5 text-[11px] leading-tight min-h-[28px]"
+      <Card dense collapsible persistKey="ind.preview" icon="Captions" title="Подпись на схеме" tone="signal"
+        aside={
+          <button type="button" disabled={ownCount === 0}
+            onClick={(e) => { e.stopPropagation(); onChange({}); }}
+            className="h-5 px-1.5 flex items-center gap-1 rounded text-[10px] normal-case disabled:opacity-40"
+            style={{ background: "var(--c-s3, #f1efea)", border: "none",
+              color: "var(--c-t2, #3a3f45)", cursor: ownCount ? "pointer" : "default" }}
+            title={ownCount > 0
+              ? "У выработки свои настройки. Нажмите, чтобы подписывать её как остальные (по «Панели информации»)"
+              : "Подпись как на всей схеме — по «Панели информации»"}>
+            <Icon name="RotateCcw" size={10} /> Как на схеме
+          </button>
+        }>
+        <div className="rounded px-2 py-1 text-[11px] leading-tight min-h-[22px]"
           style={{ background: "var(--c-s2, #f8f7f4)", border: "1px dashed var(--c-b2, #d5d1c8)",
             color: "var(--c-t1, #1f2328)", fontFamily: "var(--font-num)" }}>
           {preview.length > 0
             ? preview.map((l, i) => <div key={i}>{l}</div>)
             : <span style={{ color: "var(--c-t4, #767f8c)", fontFamily: "var(--font-ui)" }}>Подписи нет</span>}
         </div>
-        <div className="flex items-center gap-2">
-          <span className="flex-1 text-[10px]" style={{ color: "var(--c-t4, #767f8c)" }}>
-            {ownCount > 0 ? "Есть свои настройки у этой выработки" : "Как на всей схеме"}
-          </span>
-          <button type="button" disabled={ownCount === 0}
-            onClick={() => onChange({})}
-            className="h-6 px-2 flex items-center gap-1 rounded text-[10px] disabled:opacity-40"
-            style={{ background: "var(--c-s3, #f1efea)", border: "1px solid var(--c-b2, #d5d1c8)",
-              color: "var(--c-t2, #3a3f45)", cursor: ownCount ? "pointer" : "default" }}
-            title="Убрать свои настройки — подпись как у остальных выработок">
-            <Icon name="RotateCcw" size={11} /> Как на всей схеме
-          </button>
-        </div>
       </Card>
 
       {/* ═══ Вид подписи: поворот и размер ═════════════════════════════ */}
-      <Card icon="Type" title="Вид подписи">
+      <Card dense collapsible persistKey="ind.look" defaultOpen={false} icon="Type" title="Вид подписи">
         <Field label="Поворот блока меток">
           <PresetSlider value={b.labelAngle ?? 0} min={-180} max={180} step={5}
             presets={[-90, -45, 0, 45, 90]} fmt={(v) => `${v}°`}
@@ -141,7 +138,7 @@ export default function BranchIndicatorsPanel({ branch: b, infoConfig, onChange,
       </Card>
 
       {GROUPS.map(g => (
-        <Card key={g.title} icon={g.icon} title={g.title} collapsible defaultOpen={false}
+        <Card dense key={g.title} persistKey={`ind.group.${g.title}`} icon={g.icon} title={g.title} collapsible defaultOpen={false}
           aside={g.rows.some(r => isOn(r.key)) ? (
             <span className="px-1.5 rounded-full text-[10px] font-semibold"
               style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #865412)", fontFamily: "var(--font-num)" }}
@@ -149,9 +146,9 @@ export default function BranchIndicatorsPanel({ branch: b, infoConfig, onChange,
               {g.rows.filter(r => isOn(r.key)).length}
             </span>
           ) : undefined}>
-          <div className="-mx-1">
+          <div className="-mx-1 grid grid-cols-2">
             {g.rows.map(r => (
-              <div key={r.key} className="flex items-center">
+              <div key={r.key} className="flex items-center min-w-0">
                 <div className="flex-1 min-w-0">
                   <Switch checked={isOn(r.key)} onChange={v => set(r.key, v)} label={r.label} />
                 </div>
