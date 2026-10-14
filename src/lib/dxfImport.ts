@@ -23,6 +23,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
+import { axesFromSolids, bodiesFromFaces, type SolidBody } from "@/lib/solidAxes";
 
 /** Цвета горизонтов, создаваемых из слоёв чертежа */
 const HORIZON_COLORS = [
@@ -65,7 +66,7 @@ export interface DxfImportResult {
 }
 
 interface Pt3 { x: number; y: number; z: number }
-interface Seg { x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; layer: string }
+interface Seg { x1: number; y1: number; z1: number; x2: number; y2: number; z2: number; layer: string; area?: number; perimeter?: number }
 interface CircleEnt { cx: number; cy: number; cz: number; r: number; layer: string }
 interface TextEnt { x: number; y: number; z: number; text: string; layer: string }
 
@@ -179,6 +180,14 @@ export function parseDxf(
   let vx = 0, vy = 0, vz = 0;
   let inVertex = false;
 
+  // Тела выработок: многогранные сетки (POLYLINE с флагом 64/16) и грани 3DFACE.
+  // Их вершины — не оси, а оболочка выработки; из них ниже строятся оси.
+  const solidBodies: SolidBody[] = [];
+  const faces: { layer: string; pts: Pt3[] }[] = [];
+  let polyMesh = false;
+  let vFlag = 0;
+  const fc = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
   // CIRCLE state
   let cx = 0, cy = 0, cz = 0, cr = 0;
 
@@ -215,7 +224,21 @@ export function parseDxf(
   };
 
   const flushVertex = () => {
-    if (inVertex) { polyPts.push({ x: vx, y: vy, z: vz }); vx = vy = vz = 0; inVertex = false; }
+    if (inVertex) {
+      // У сетки записи граней (флаг 128 без 64) — это индексы, а не точки.
+      if (!polyMesh || (vFlag & 64)) polyPts.push({ x: vx, y: vy, z: vz });
+      vx = vy = vz = 0; vFlag = 0; inVertex = false;
+    }
+  };
+
+  const flushFace = () => {
+    const pts: Pt3[] = [];
+    for (let k = 0; k < 4; k++) {
+      const p = { x: fc[k * 3], y: fc[k * 3 + 1], z: fc[k * 3 + 2] };
+      if (!pts.some(q => q.x === p.x && q.y === p.y && q.z === p.z)) pts.push(p);
+    }
+    if (pts.length >= 3) faces.push({ layer: entityLayer, pts });
+    fc.fill(0);
   };
 
   const flushLwPolyline = () => {
@@ -239,6 +262,12 @@ export function parseDxf(
   const flushPolyline = () => {
     flushVertex();
     const savedLayer = polyLayer;  // используем слой, сохранённый при открытии POLYLINE
+    if (polyMesh) {
+      // Тело выработки — откладываем, ось построим после разбора файла.
+      if (polyPts.length >= 4) solidBodies.push({ layer: savedLayer, pts: [...polyPts] });
+      polyPts = []; polyClosed = false; inPolyline = false; polyMesh = false;
+      return;
+    }
     if (polyPts.length >= 2) {
       // Сохраняем как линию/полигон сечения (для извлечения S и P)
       // Даже 2 точки = ребро контура (АэроСеть использует 2-точечные POLYLINE)
@@ -277,6 +306,7 @@ export function parseDxf(
         else if (entityType === "LWPOLYLINE") flushLwPolyline();
         else if (entityType === "CIRCLE") flushCircle();
         else if (entityType === "TEXT" || entityType === "MTEXT") flushText();
+        else if (entityType === "3DFACE") flushFace();
         else if (inVertex) flushVertex();
       }
 
@@ -295,7 +325,8 @@ export function parseDxf(
         else if (val === "CIRCLE") { cx = cy = cz = cr = 0; }
         else if (val === "TEXT" || val === "MTEXT") { tx = ty = tz = 0; tText = ""; }
         else if (val === "LWPOLYLINE") { flushLwPolyline(); lwPts = []; lwClosed = false; lwX = null; lwY = null; lwZ = 0; }
-        else if (val === "POLYLINE" || val === "3DPOLYLINE") { inPolyline = true; polyPts = []; polyClosed = false; polyLayer = entityLayer; }
+        else if (val === "POLYLINE" || val === "3DPOLYLINE") { if (inPolyline) flushPolyline(); inPolyline = true; polyPts = []; polyClosed = false; polyMesh = false; polyLayer = entityLayer; }
+        else if (val === "3DFACE") { fc.fill(0); }
         else if ((val === "VERTEX" || val === "3DPOLYLINE") && inPolyline) { flushVertex(); vx = vy = vz = 0; inVertex = true; }
         else if (val === "SEQEND") { flushPolyline(); entityType = ""; }
       } else {
@@ -314,7 +345,11 @@ export function parseDxf(
     if (!inEntitiesSection) continue;
 
     // Слой (код 8)
-    if (code === 8) { entityLayer = value; continue; }
+    if (code === 8) {
+      entityLayer = value;
+      if (entityType === "POLYLINE" || entityType === "3DPOLYLINE") polyLayer = value;
+      continue;
+    }
 
     const isNanNum = isNaN(num);
 
@@ -349,11 +384,21 @@ export function parseDxf(
       else if (code === 3) tText += value;
     }
 
+    // 3DFACE: четыре угла (10–13, 20–23, 30–33)
+    else if (entityType === "3DFACE") {
+      if (!isNanNum && code >= 10 && code <= 33) {
+        const k = code % 10, axis = Math.floor(code / 10) - 1;
+        if (k <= 3 && axis >= 0 && axis <= 2) fc[k * 3 + axis] = num;
+      }
+    }
+
     // LWPOLYLINE
     else if (entityType === "LWPOLYLINE") {
       if (!isNanNum) {
         if (code === 70) { lwClosed = (parseInt(value) & 1) === 1; }
         else if (code === 38) { lwZ = num; }
+        // Отметка у каждой вершины (так пишет наш конвертер DWG для 3D-полилиний).
+        else if (code === 30) { lwZ = num; }
         else if (code === 10) {
           if (lwX !== null) lwPts.push({ x: lwX, y: lwY ?? 0, z: lwZ });
           lwX = num; lwY = null;
@@ -368,12 +413,18 @@ export function parseDxf(
         if (code === 10) vx = num;
         else if (code === 20) vy = num;
         else if (code === 30) vz = num;
+        else if (code === 70) vFlag = parseInt(value) || 0;
       }
     }
 
     // POLYLINE flags
     else if (entityType === "POLYLINE" || entityType === "3DPOLYLINE") {
-      if (!isNanNum && code === 70) polyClosed = (parseInt(value) & 1) === 1;
+      if (!isNanNum && code === 70) {
+        const fl = parseInt(value) || 0;
+        polyClosed = (fl & 1) === 1;
+        // 64 — многогранная сетка (polyface), 16 — сеть M×N: это тела.
+        polyMesh = (fl & 64) !== 0 || (fl & 16) !== 0;
+      }
     }
   }
 
@@ -383,8 +434,25 @@ export function parseDxf(
     else if (entityType === "LWPOLYLINE") flushLwPolyline();
     else if (entityType === "CIRCLE") flushCircle();
     else if (entityType === "TEXT" || entityType === "MTEXT") flushText();
+    else if (entityType === "3DFACE") flushFace();
   }
   if (inPolyline) flushPolyline();
+
+  // ── Тела выработок → оси ─────────────────────────────────────────────────
+  // Чертёж горной программы (Micromine и т.п.) хранит выработки телами —
+  // сетками и гранями 3DFACE, без осевых линий. Строим оси по телам и
+  // добавляем их как обычные отрезки; слои тел становятся осевыми.
+  const solidLayers = new Set<string>();
+  if (solidBodies.length + faces.length > 0) {
+    const all = [...solidBodies, ...bodiesFromFaces(faces)];
+    const ax = axesFromSolids(all);
+    for (const sg of ax.segments) { segments.push(sg); solidLayers.add(sg.layer); }
+    debugLines.push(`Тела выработок: сеток ${solidBodies.length}, граней 3DFACE ${faces.length} → тел ${ax.bodies} (прямых ${ax.straight}, изогнутых ${ax.curved}), сопряжений ${ax.junctions}, осей ${ax.segments.length}, кусков сети ${ax.components}`);
+    if (ax.segments.length > 0) {
+      warnings.push(`Выработки в чертеже заданы 3D-телами (${ax.bodies} шт.) — оси и сечения построены по телам.`);
+      if (ax.components > 1) warnings.push(`Сеть по телам собралась из ${ax.components} несвязанных частей — проверьте сопряжения на схеме.`);
+    }
+  }
 
   debugLines.push(`LINE: ${lineCount}, POLY: ${polylineCount}, CIRCLE: ${circles.length}, TEXT: ${texts.length}`);
 
@@ -463,6 +531,11 @@ export function parseDxf(
       debugLines.push(`Слои по имени (${axisLayers.join(", ")}) содержат ${named} из ${segments.length} сегментов — пропущены`);
       axisLayers = [];
     }
+  }
+  // Слои тел выработок: оси по ним уже построены — это и есть сеть.
+  if (manualAxis.length === 0 && axisLayers.length === 0 && solidLayers.size > 0) {
+    axisLayers = allLayers.filter(l => solidLayers.has(l));
+    debugLines.push(`Осевые слои по телам выработок: ${axisLayers.join(", ")}`);
   }
   if (axisLayers.length === 0 && circles.length > 0) {
     // Есть CIRCLE-узлы: ищем слой с наибольшим % сегментов, соединяющих пары CIRCLE
@@ -643,6 +716,10 @@ export function parseDxf(
         kSamples.push(dy / dz);
       }
     }
+    // Оси по 3D-телам — настоящие мировые координаты, проекции там нет.
+    // Без этой проверки слегка наклонный восстающий (ΔY ≠ 0) давал бы
+    // ложный коэффициент, и вся схема съезжала бы по Y на десятки метров.
+    if (solidLayers.size > 0) kSamples.length = 0;
     if (kSamples.length > 0) {
       // Медиана для устойчивости
       kSamples.sort((a, b) => a - b);
@@ -755,7 +832,11 @@ export function parseDxf(
     // Epsilon = max(p10 * 2, 0.1), но не более 10м
     return Math.min(10, Math.max(0.1, p10 * 2));
   })();
-  const epsilon = epsilonOverride ?? epsilonAuto;
+  // Оси по телам выработок уже сшиты в узлах точно (общие концы), поэтому
+  // склейка нужна только от погрешности округления. Автопорог по соседним
+  // точкам на таком чертеже выходил 10 м и сливал соседние сопряжения.
+  const solidOnly = solidLayers.size > 0 && axisLayers.every(l => solidLayers.has(l));
+  const epsilon = epsilonOverride ?? (solidOnly ? 0.3 : epsilonAuto);
 
   const { clusters, map } = clusterPoints(allPts, epsilon);
   debugLines.push(`Точек: ${allPts.length}, кластеров: ${clusters.length}, eps: ${epsilon.toFixed(3)} м`);
@@ -846,7 +927,17 @@ export function parseDxf(
     const dz = Math.abs(n2.z - n1.z);
     const realAngle = realLen > 0 ? Math.round(Math.asin(Math.min(1, dz / realLen)) * 180 / Math.PI * 10) / 10 : 0;
 
+    const solidSection = seg.area && seg.area > 0.3 && seg.area < 200 && seg.perimeter
+      ? {
+        area: Math.round(seg.area * 100) / 100,
+        perimeter: Math.round(seg.perimeter * 100) / 100,
+        dh: Math.round((4 * seg.area / seg.perimeter) * 1000) / 1000,
+        manualSection: true,
+        shape: "custom" as const,
+      }
+      : {};
     branches.push(makeBranch(`B${ts}_${bi++}`, nodes[c1].id, nodes[c2].id, {
+      ...solidSection,
       layer: seg.layer.replace(/_c$/i, "") || "Стволы",
       length: realLen,
       manualLength: true,

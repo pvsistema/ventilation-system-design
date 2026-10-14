@@ -95,7 +95,10 @@ export async function parseDwg(
     resp = null;
   }
   const backup = backupDwgUrl();
-  if ((!resp || resp.status >= 500) && backup !== DWG_CONVERT_URL) {
+  // 413 — облако не принимает запросы больше 3,5 МБ (чертёж 6 МБ после сжатия
+  // занимает ~5 МБ). Раньше на этот ответ резерв не пробовали, и большой
+  // чертёж сразу отклонялся, хотя резервный сервер его читает.
+  if ((!resp || resp.status >= 500 || resp.status === 413) && backup !== DWG_CONVERT_URL) {
     try {
       resp = await send(backup);
     } catch {

@@ -10,8 +10,18 @@ function reply(status, body) {
   return { statusCode: status, headers: { ...CORS, "Content-Type": "application/json" }, body: JSON.stringify(body) };
 }
 // Экономный перевод: читаем из чертежа только слои и нужные объекты модели
-// (линии, полилинии, окружности, подписи), без полной копии чертежа в памяти.
-const T={TEXT:1,POLY2D:15,POLY3D:16,CIRCLE:18,LINE:19,MTEXT:44,LAYER:51,LWPOLY:77};
+// (линии, полилинии, окружности, подписи, тела выработок), без полной копии
+// чертежа в памяти.
+//
+// ТЕЛА. Горные программы (Micromine и др.) выгружают выработки не осями, а
+// 3D-телами: многогранными сетками (POLYLINE_PFACE) и гранями 3DFACE. Сетка
+// пишется как POLYLINE с флагом 64 и вершинами (флаг 192); оси по телам строит
+// уже разбор DXF в программе. Раньше тела пропускались — и из такого чертежа
+// не получалось ни одной ветви.
+//
+// 3D-ПОЛИЛИНИИ идут как LWPOLYLINE с отметкой (код 30) у КАЖДОЙ вершины —
+// разбор DXF её читает, поэтому наклон выработки не теряется.
+const T={TEXT:1,VERTEX_PFACE:13,POLY2D:15,POLY3D:16,CIRCLE:18,LINE:19,FACE3D:28,PFACE:29,MTEXT:44,LAYER:51,LWPOLY:77};
 const num=v=>typeof v==="number"&&isFinite(v)?v:0;
 const fmt=v=>!isFinite(v)||Math.abs(v)<1e-9?"0":v.toFixed(6).replace(/\.?0+$/,"")||"0";
 async function convert(buf){
@@ -29,12 +39,20 @@ async function convert(buf){
     const tio=w.dwg_object_to_object_tio(o); if(!tio) continue;
     try{layers.set(String(lib.dwg_object_get_handle_object(o).value), get(tio,"name")||"0");}catch{}}
   const ents=lib.dwg_getall_entities_in_model_space(dwg);
+  // Вершины сеток лежат отдельными объектами сразу за своей сеткой.
+  const pfaceVerts=new Map(); {
+    let cur=null;
+    for(let i=0;i<n;i++){const o=w.dwg_get_object(dwg,i); if(!o) continue; const t=w.dwg_object_get_fixedtype(o);
+      if(t===T.PFACE){cur=[];pfaceVerts.set(o,cur);continue;}
+      if(cur&&t===T.VERTEX_PFACE){const p=get(w.dwg_object_to_entity_tio(o),"point"); if(p) cur.push(p); continue;}
+      if(t!==14) cur=null;}
+  }
   const out=[]; const pair=(c,v)=>{out.push(String(c));out.push(typeof v==="number"?fmt(v):String(v));};
   pair(0,"SECTION");pair(2,"ENTITIES");
   let used=0;
   for(const o of ents){
     const t=w.dwg_object_get_fixedtype(o);
-    if(![T.TEXT,T.POLY2D,T.POLY3D,T.CIRCLE,T.LINE,T.MTEXT,T.LWPOLY].includes(t)) continue;
+    if(![T.TEXT,T.POLY2D,T.POLY3D,T.CIRCLE,T.LINE,T.MTEXT,T.LWPOLY,T.PFACE,T.FACE3D].includes(t)) continue;
     const e=w.dwg_object_to_entity(o), tio=w.dwg_object_to_entity_tio(o);
     if(!e||!tio) continue;
     let layer="0"; try{layer=layers.get(String(lib.dwg_object_entity_get_layer_object_ref(e).handleref.value))||"0";}catch{}
@@ -49,6 +67,13 @@ async function convert(buf){
       if(vs.length<2) continue; const flag=get(tio,"flag")||0, el=num(get(tio,"elevation"));
       pair(0,"LWPOLYLINE");pair(8,layer);pair(90,vs.length);pair(70,flag&1?1:0);
       for(const v of vs){const p=v.point||{}; pair(10,num(p.x));pair(20,num(p.y));pair(30,p.z!==undefined?num(p.z):el);} used++;continue;}
+    if(t===T.PFACE){const vs=pfaceVerts.get(o)||[]; if(vs.length<4) continue;
+      pair(0,"POLYLINE");pair(8,layer);pair(66,1);pair(70,64);
+      for(const p of vs){pair(0,"VERTEX");pair(8,layer);pair(10,num(p.x));pair(20,num(p.y));pair(30,num(p.z));pair(70,192);}
+      pair(0,"SEQEND");used++;continue;}
+    if(t===T.FACE3D){const c=["corner1","corner2","corner3","corner4"].map(f=>get(tio,f)); if(c.some(p=>!p)) continue;
+      pair(0,"3DFACE");pair(8,layer);
+      c.forEach((p,k)=>{pair(10+k,num(p.x));pair(20+k,num(p.y));pair(30+k,num(p.z));}); used++;continue;}
     if(t===T.CIRCLE){const c=get(tio,"center"); if(!c) continue;
       pair(0,"CIRCLE");pair(8,layer);pair(10,num(c.x));pair(20,num(c.y));pair(30,num(c.z));pair(40,num(get(tio,"radius")));used++;continue;}
     if(t===T.TEXT||t===T.MTEXT){const tx=get(tio,t===T.TEXT?"text_value":"text"); const p=get(tio,"ins_pt"); if(!tx||!p) continue;
