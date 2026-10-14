@@ -501,10 +501,24 @@ export default function BranchFireLoadTab({ branch: b, onUpdate, onOpenVehicleLi
         <SourceResult power={woodRes?.powerMW} dT={woodRes?.deltaT_C}>
           {woodRes && <>
             <KV label={`Площадь горения через ${wood.calcTime} мин`} value={fmt(woodRes.surfaceArea, 1)} unit="м²" />
+            {woodRes.frontLength !== undefined && (
+              <KV label="Горит / выгорело / охвачено"
+                value={`${fmt(woodRes.burningLength ?? 0, 1)} / ${fmt(woodRes.burnedLength ?? 0, 1)} / ${fmt(woodRes.frontLength, 1)}`} unit="м"
+                title="Горит полоса между фронтом пламени и фронтом выгорания: позади фронта пламени крепь уже прогорела" />
+            )}
+            {woodRes.peakPowerMW !== undefined && (
+              <KV label="Наибольшая мощность" value={fmt(woodRes.peakPowerMW, 2)} unit="МВт"
+                title="Когда горящая полоса достигает полной длины v·τ (или длины участка)" />
+            )}
             <KV label="Масса крепи" value={fmt(woodRes.mass, 0)} unit="кг" />
             <KV label="Теплозапас" value={fmt(woodRes.heatTotal, 0)} unit="МДж" />
+            {woodRes.localBurnTime_min !== undefined && (
+              <KV label="Выгорание участка τ" value={fmt(woodRes.localBurnTime_min, 1)} unit="мин"
+                title="За сколько прогорает обшивка в одном месте: τ = ρ·b / ψ" />
+            )}
             {Number.isFinite(woodRes.burnTime_min) && (
-              <KV label="Полное выгорание" value={fmt(woodRes.burnTime_min, 0)} unit="мин" />
+              <KV label="Выгорит весь участок" value={fmt(woodRes.burnTime_min, 0)} unit="мин"
+                title="Пламя проходит участок за L / v, последний метр горит ещё τ" />
             )}
           </>}
         </SourceResult>

@@ -779,6 +779,16 @@ export interface LinearFireResult {
   deltaT_C: number;       // °C — нагрев воздушного потока
   burnTime_h: number;     // ч — время горения
   burnTime_min: number;   // мин
+  /** Время выгорания одного участка крепи τ = ρ·b/ψ, мин. */
+  localBurnTime_min?: number;
+  /** Длина, охваченная пламенем к моменту расчёта, м (фронт пламени). */
+  frontLength?: number;
+  /** Длина, уже прогоревшая к моменту расчёта, м. */
+  burnedLength?: number;
+  /** Длина «полосы», горящей сейчас, м. */
+  burningLength?: number;
+  /** Наибольшая мощность за всё время пожара, МВт (полоса длиной v·τ). */
+  peakPowerMW?: number;
 }
 
 export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFireResult | null {
@@ -800,15 +810,29 @@ export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFi
   const v_пл = inp.flameSpeed ? parseFloat(inp.flameSpeed.replace(",", ".")) : null;
   const t_мин = inp.calcTime ? parseFloat(inp.calcTime.replace(",", ".")) : null;
 
-  // Площадь горения
+  // Время выгорания одного участка: на 1 м² обшивки приходится ρ·b кг
+  // древесины, сгорающей со скоростью ψ кг/(м²·с) → τ = ρ·b / ψ.
+  // (Доска 3 см, ρ = 500, ψ = 0,027 → τ ≈ 9,3 мин.)
+  const tau_s = (rho * b) / psi;
+
+  // Площадь горения — «полоса» между фронтом пламени и фронтом выгорания.
+  // Фронт пламени идёт со скоростью v_пл: x_ф = v·t. Участок, охваченный
+  // в момент t₀, прогорает к t₀ + τ, поэтому позади фронта на расстоянии v·τ
+  // крепи уже нет: x_в = v·(t − τ). Горит отрезок [x_в, x_ф] в пределах
+  // участка L. Раньше выгорание не учитывалось: при тонкой доске горящей
+  // считалась вся охваченная длина, и мощность завышалась.
   let surfaceArea: number;
+  let frontLength: number | undefined, burnedLength: number | undefined, burningLength: number | undefined;
+  let peakPowerMW: number | undefined;
   if (v_пл && v_пл > 0 && t_мин && t_мин > 0) {
-    // Нарастающий пожар: площадь горения нарастает по мере продвижения фронта пламени
-    // S(t) = Периметр × (v_пл × t_с), ограниченная длиной крепи L
-    const l_горения = Math.min(v_пл * t_мин * 60, L); // длина охваченного участка, м
-    surfaceArea = perim * l_горения;
+    const t_s = t_мин * 60;
+    frontLength  = Math.min(v_пл * t_s, L);
+    burnedLength = Math.min(Math.max(0, v_пл * (t_s - tau_s)), L);
+    burningLength = Math.max(0, frontLength - burnedLength);
+    surfaceArea = perim * burningLength;
+    peakPowerMW = psi * perim * Math.min(v_пл * tau_s, L) * Q_н;
   } else {
-    // Установившийся режим: вся крепь охвачена огнём
+    // Установившийся режим: вся крепь охвачена огнём одновременно
     surfaceArea = perim * L;
   }
 
@@ -819,13 +843,16 @@ export function calcLinearFire(inp: LinearFireInputs, airFlow: number): LinearFi
   const deltaTRaw = airFlow > 0 ? powerMW * 1_000_000 / (airFlow * 1.25 * 1005) : 0;
   const deltaT_C  = Math.min(deltaTRaw, 1200);
 
-  // Время полного выгорания: масса / (ψ × S_макс)
-  const surfaceFull  = perim * L;
-  const burnTime_s   = psi * surfaceFull > 0 ? mass / (psi * surfaceFull) : 0;
+  // Время полного выгорания всего участка: пламя проходит L за L/v_пл, и
+  // последний участок горит ещё τ. Без скорости пламени — τ (горит всё сразу).
+  const burnTime_s   = v_пл && v_пл > 0 ? L / v_пл + tau_s : tau_s;
   const burnTime_h   = burnTime_s / 3600;
   const burnTime_min = burnTime_h * 60;
 
-  return { mass, heatTotal, surfaceArea, powerMW, deltaT_C, burnTime_h, burnTime_min };
+  return {
+    mass, heatTotal, surfaceArea, powerMW, deltaT_C, burnTime_h, burnTime_min,
+    localBurnTime_min: tau_s / 60, frontLength, burnedLength, burningLength, peakPowerMW,
+  };
 }
 
 // ─── Типы результатов ─────────────────────────────────────────────────────────
