@@ -19,13 +19,43 @@ export const inputStyle: React.CSSProperties = {
   ["--tw-ring-color" as string]: "color-mix(in srgb, var(--c-accent, #1e5a7a) 25%, transparent)",
 };
 
-export function Card({ icon, title, tone = "accent", aside, collapsible, defaultOpen = true, dense, children }: {
+// ── Память свёрнутых карточек ──────────────────────────────────────────────
+// Карточка с persistKey помнит, открыта она или свёрнута: при выборе другой
+// ветви панель пересоздаётся, и без памяти разделы каждый раз сворачивались
+// обратно. Состояние общее для всех ветвей и хранится в браузере, поэтому
+// сохраняется и после перезапуска программы.
+const CARD_STORE = "pvs.propCards.v1";
+let cardMemo: Record<string, boolean> | null = null;
+function readCards(): Record<string, boolean> {
+  if (cardMemo) return cardMemo;
+  try { cardMemo = JSON.parse(localStorage.getItem(CARD_STORE) || "{}") || {}; } catch { cardMemo = {}; }
+  return cardMemo!;
+}
+function writeCard(key: string, open: boolean) {
+  const m = readCards();
+  m[key] = open;
+  try { localStorage.setItem(CARD_STORE, JSON.stringify(m)); } catch { /* хранилище недоступно — помним до перезагрузки */ }
+}
+
+export function Card({ icon, title, tone = "accent", aside, collapsible, defaultOpen = true, dense, persistKey, children }: {
   icon: string; title: string; tone?: "accent" | "signal" | "muted";
   aside?: ReactNode; collapsible?: boolean; defaultOpen?: boolean;
-  /** Плотная карточка: меньше отступы между строками (вкладка «Топология»). */
-  dense?: boolean; children: ReactNode;
+  /** Плотная карточка: меньше отступы между строками. */
+  dense?: boolean;
+  /** Ключ памяти: карточка помнит, открыта ли она (между ветвями и запусками). */
+  persistKey?: string;
+  children: ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [open, setOpenState] = useState(() => {
+    if (!persistKey) return defaultOpen;
+    const v = readCards()[persistKey];
+    return typeof v === "boolean" ? v : defaultOpen;
+  });
+  const setOpen = (f: (v: boolean) => boolean) => setOpenState((v) => {
+    const n = f(v);
+    if (persistKey) writeCard(persistKey, n);
+    return n;
+  });
   const color = tone === "signal" ? "var(--c-signal, #e8a317)"
     : tone === "muted" ? "var(--c-t3, #6b7280)" : "var(--c-accent, #1e5a7a)";
   const Head = collapsible ? "button" : "div";

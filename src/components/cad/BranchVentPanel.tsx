@@ -11,13 +11,17 @@
 //
 // Правка геометрии и сопротивления — на вкладке «Топология»; здесь только
 // выбор типа и сводка, чтобы не было двух мест для одного поля.
+//
+// КОМПАКТНОСТЬ: плотные сворачиваемые карточки с памятью (persistKey),
+// сводка сечения — двумя колонками, ссылка на «Топологию» — значком в
+// заголовке карточки.
 // ─────────────────────────────────────────────────────────────────────────────
 import Icon from "@/components/ui/icon";
 import type { TopoBranch } from "@/lib/topology";
 import type { BranchType } from "@/components/cad/EquipmentRefDialog";
 import { type UnitsConfig, getUnit } from "@/lib/unitsConfig";
 import { G_ACCEL } from "@/lib/bulkheads";
-import { Card, Field, Stat, KV, inputCls, inputStyle } from "@/components/cad/propUi";
+import { Card, Row, Stat, KV, inputCls, inputStyle } from "@/components/cad/propUi";
 
 interface Props {
   branch: TopoBranch | null;
@@ -75,15 +79,24 @@ export default function BranchVentPanel({
   const shape = SHAPE_LABEL[b.shape] ?? b.shape;
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* ═══ Тип выработки ═════════════════════════════════════════════ */}
-      <Card icon="Layers" title="Тип выработки">
+      <Card dense collapsible persistKey="vent.type" icon="Layers" title="Тип выработки"
+        aside={
+          <span role="button" tabIndex={0} title="Изменить сечение и сопротивление — вкладка «Топология»"
+            onClick={(e) => { e.stopPropagation(); onOpenTopology(); }}
+            onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); onOpenTopology(); } }}
+            className="flex items-center gap-1 px-1.5 h-5 rounded text-[10px] normal-case"
+            style={{ background: "var(--c-s3, #f1efea)", color: "var(--c-accent, #1e5a7a)", cursor: "pointer" }}>
+            <Icon name="PencilRuler" size={10} /> Топология
+          </span>
+        }>
         {mineTypes.length > 0 ? (
-          <Field label="Из справочника рудника"
+          <Row label="Тип"
             hint={editCount > 1
               ? `Тип получат все ${editCount} выбранные выработки`
-              : "Подставляет сечение, крепь, α и допустимую скорость"}>
+              : "Из справочника рудника. Подставляет сечение, крепь, α и допустимую скорость"}>
             <div className="flex gap-1">
               <select className={`${inputCls} flex-1`} style={{ ...inputStyle, cursor: "pointer" }}
                 value={typeKnown ? b.mineTypeName : ""}
@@ -97,10 +110,10 @@ export default function BranchVentPanel({
                 <Icon name="BookOpen" size={13} />
               </button>
             </div>
-          </Field>
+          </Row>
         ) : (
           <button type="button" onClick={onOpenTypesLibrary}
-            className="w-full flex items-start gap-2 px-2 py-2 rounded text-left text-[11px] leading-snug"
+            className="w-full flex items-start gap-2 px-2 py-1.5 rounded text-left text-[11px] leading-snug"
             style={{ background: "var(--c-tint-amber, #fffbeb)", color: "var(--c-amber-ink, #865412)", border: "none", cursor: "pointer" }}>
             <Icon name="BookPlus" size={14} className="flex-shrink-0 mt-px" />
             <span>
@@ -111,32 +124,27 @@ export default function BranchVentPanel({
         )}
 
         {/* Что сейчас у выработки — коротко, одной сводкой */}
-        <div className="rounded px-2 py-1.5" style={{ background: "var(--c-s2, #f8f7f4)" }}>
-          <KV label="Сечение" value={`${f(b.area, 2)} м² · P ${f(b.perimeter, 2)} м`} />
+        <div className="rounded px-2 py-1 grid grid-cols-2 gap-x-3" style={{ background: "var(--c-s2, #f8f7f4)" }}>
+          <KV label="S" value={f(b.area, 2)} unit="м²" title="Площадь сечения" />
+          <KV label="P" value={f(b.perimeter, 2)} unit="м" title="Периметр сечения" />
           <KV label="Форма" value={shape} />
-          <KV label="Длина" value={f(b.length, 1)} unit="м" />
-          <KV label="Коэффициент α" value={f(b.alphaCoef, 1)} unit="×10⁻⁴" />
-          <KV label="V допустимая" value={f(b.vMax, 1)} unit="м/с" />
+          <KV label="L" value={f(b.length, 1)} unit="м" title="Длина" />
+          <KV label="α" value={f(b.alphaCoef, 1)} unit="×10⁻⁴" title="Коэффициент аэродинамического сопротивления" />
+          <KV label="V доп." value={f(b.vMax, 1)} unit="м/с" title="Допустимая скорость" />
         </div>
-        <button type="button" onClick={onOpenTopology}
-          className="w-full h-7 flex items-center justify-center gap-1.5 rounded text-[11px]"
-          style={{ background: "transparent", border: "1px dashed var(--c-b2, #d5d1c8)", color: "var(--c-accent, #1e5a7a)", cursor: "pointer" }}>
-          <Icon name="PencilRuler" size={12} />
-          Изменить сечение и сопротивление — «Топология»
-        </button>
       </Card>
 
       {/* ═══ Воздух в выработке ════════════════════════════════════════ */}
-      <Card icon="Wind" title="Воздух в выработке" tone="signal">
+      <Card dense collapsible persistKey="vent.air" icon="Wind" title="Воздух в выработке" tone="signal">
         {!solved ? (
-          <div className="flex items-center gap-1.5 px-2 py-2 rounded text-[11px]"
+          <div className="flex items-center gap-1.5 px-2 py-1.5 rounded text-[11px]"
             style={{ background: "var(--c-s2, #f8f7f4)", color: "var(--c-t3, #6b7280)" }}>
             <Icon name="Info" size={13} />
             Выполните «Расчёт сети» (F9), чтобы увидеть расход и скорость.
           </div>
         ) : (
           <>
-            <div className="grid grid-cols-2 gap-1.5">
+            <div className="grid grid-cols-2 gap-1">
               <Stat label="Расход Q" value={f(Math.abs(Q), 2)} unit="м³/с" />
               <Stat label="Скорость V" value={f(V, 2)} unit="м/с" danger={overV} />
             </div>
@@ -159,12 +167,12 @@ export default function BranchVentPanel({
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-1.5">
-              <Stat label="Депрессия выработки" value={f(b.dP, 1)} unit="Па" />
+            <div className="grid grid-cols-2 gap-1">
+              <Stat label="Депрессия" value={f(b.dP, 1)} unit="Па" />
               <Stat label="Энергозатраты" value={f(b.power, 0)} unit="Вт" />
             </div>
 
-            <div className="pt-0.5">
+            <div>
               <KV label="Сопротивление выработки" value={rDisp(b.resistance)} unit={uR.symbol} />
               {structR > 0 && (
                 <>
@@ -180,7 +188,7 @@ export default function BranchVentPanel({
 
       {/* ═══ Замечания ═════════════════════════════════════════════════ */}
       {solved && (overV || reversed || b.isDead) && (
-        <Card icon="TriangleAlert" title="Замечания" tone="muted">
+        <Card dense icon="TriangleAlert" title="Замечания" tone="muted">
           {overV && (
             <Note danger>
               Скорость {f(V, 2)} м/с выше допустимой {f(b.vMax, 1)} м/с — уменьшите расход или увеличьте сечение.
@@ -204,7 +212,7 @@ export default function BranchVentPanel({
 
 function Note({ danger, children }: { danger?: boolean; children: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-1.5 px-2 py-1.5 rounded text-[11px] leading-snug"
+    <div className="flex items-start gap-1.5 px-2 py-1 rounded text-[11px] leading-snug"
       style={{
         background: danger ? "var(--c-tint-red, #fef2f2)" : "var(--c-s2, #f8f7f4)",
         color: danger ? "var(--c-red-ink, #991b1b)" : "var(--c-t2, #3a3f45)",

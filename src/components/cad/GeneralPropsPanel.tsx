@@ -4,9 +4,13 @@
 // рамок-fieldset и «виндовых» галочек: панель строится на палитре темы
 // (--c-accent / --c-signal, --c-s*, --c-b*, --c-t*) и одинаково читается
 // в светлой и тёмной теме.
+//
+// КОМПАКТНОСТЬ: паспорт объекта — одной строкой, одиночные поля — строкой
+// «подпись слева, поле справа» (Row), плотные карточки, которые помнят,
+// открыты ли они (persistKey), — как на вкладке «Топология».
 import { useEffect, useState } from "react";
 import Icon from "@/components/ui/icon";
-import { Card, Field, Switch, inputCls, inputStyle } from "@/components/cad/propUi";
+import { Card, Field, Row, Switch, inputCls, inputStyle } from "@/components/cad/propUi";
 import type { TopoBranch, TopoNode, Horizon } from "@/lib/topology";
 
 // ─── Примитивы ──────────────────────────────────────────────────────────────
@@ -17,7 +21,7 @@ function Stepper({ value, onChange, min, max, step, unit }: {
 }) {
   const clamp = (v: number) => Math.round(Math.max(min, Math.min(max, v)) * 100) / 100;
   const btn: React.CSSProperties = {
-    width: 24, height: 26, background: "var(--c-s3, #f1efea)", border: "none",
+    width: 22, height: 24, background: "var(--c-s3, #f1efea)", border: "none",
     color: "var(--c-t2, #3a3f45)", cursor: "pointer",
   };
   return (
@@ -28,9 +32,9 @@ function Stepper({ value, onChange, min, max, step, unit }: {
       </button>
       <input type="number" value={value} min={min} max={max} step={step}
         onChange={(e) => onChange(clamp(Number(e.target.value) || 0))}
-        className="flex-1 min-w-0 h-[26px] text-center text-xs outline-none"
+        className="flex-1 min-w-0 h-[24px] text-center text-xs outline-none"
         style={{ background: "var(--c-s1, #fff)", color: "var(--c-t1, #1f2328)", border: "none", fontFamily: "var(--font-num)" }} />
-      <span className="px-1 text-[10px]" style={{ color: "var(--c-t4, #767f8c)", background: "var(--c-s1, #fff)", lineHeight: "26px" }}>{unit}</span>
+      <span className="px-1 text-[10px]" style={{ color: "var(--c-t4, #767f8c)", background: "var(--c-s1, #fff)", lineHeight: "24px" }}>{unit}</span>
       <button type="button" style={btn} onClick={() => onChange(clamp(value + step))} title="Больше">
         <Icon name="Plus" size={11} />
       </button>
@@ -45,7 +49,7 @@ function ToggleChip({ checked, onChange, icon, label, title }: {
   return (
     <button type="button" onClick={() => onChange(!checked)} title={title}
       role="switch" aria-checked={checked}
-      className="flex-1 min-w-0 h-8 px-2 rounded-md flex items-center gap-1.5 text-[11px] transition-colors"
+      className="flex-1 min-w-0 h-7 px-2 rounded-md flex items-center gap-1.5 text-[11px] transition-colors"
       style={{
         cursor: "pointer",
         background: checked ? "color-mix(in srgb, var(--c-accent, #1e5a7a) 12%, transparent)" : "var(--c-s1, #fff)",
@@ -67,8 +71,8 @@ function LinePreview({ width, border, dashed }: { width: number; border: number;
   const dash = dashed ? `${w * 2.5} ${w * 1.5}` : undefined;
   return (
     <div className="rounded-md flex items-center justify-center"
-      style={{ height: 36, background: "var(--c-s3, #f1efea)" }} title="Так ветвь выглядит на схеме">
-      <svg width="100%" height="36" viewBox="0 0 200 36" preserveAspectRatio="none">
+      style={{ height: 24, background: "var(--c-s3, #f1efea)" }} title="Так ветвь выглядит на схеме">
+      <svg width="100%" height="24" viewBox="0 0 200 36" preserveAspectRatio="none">
         {b > 0 && (
           <line x1="14" y1="18" x2="186" y2="18" stroke="#1f2328" strokeWidth={w + b * 2}
             strokeLinecap="round" strokeDasharray={dash} />
@@ -143,10 +147,10 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
   const hasSel = !!(branch || node);
 
   return (
-    <div className="p-2 space-y-2" style={{ fontFamily: "var(--font-ui)" }}>
+    <div className="p-1.5 space-y-1.5" style={{ fontFamily: "var(--font-ui)" }}>
       {/* ── Паспорт объекта ── */}
       {hasSel && (
-        <div className="rounded-lg px-3 py-2.5 relative overflow-hidden"
+        <div className="rounded-lg px-3 py-1.5 relative overflow-hidden"
           style={{ background: "var(--c-anthracite, #2b2f33)", color: "#f4f3ef" }}>
           <span className="absolute left-0 top-0 bottom-0 w-1" style={{ background: "var(--c-signal, #e8a317)" }} />
           <div className="flex items-center gap-2">
@@ -157,7 +161,7 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
             </span>
           </div>
           {branch && (
-            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] opacity-90"
+            <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] opacity-90"
               style={{ fontFamily: "var(--font-num)" }}>
               <span className="flex items-center gap-1">{branch.fromId}<Icon name="ArrowRight" size={10} />{branch.toId}</span>
               <span>L {Math.round(branch.length * 10) / 10} м</span>
@@ -169,7 +173,7 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
             </div>
           )}
           {node && !branch && (
-            <div className="mt-1.5 text-[11px] opacity-90" style={{ fontFamily: "var(--font-num)" }}>
+            <div className="mt-0.5 text-[11px] opacity-90" style={{ fontFamily: "var(--font-num)" }}>
               X {Math.round(node.x)} · Y {Math.round(node.y)} · Z {Math.round(node.z)} м
             </div>
           )}
@@ -180,14 +184,14 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
 
       {/* ── Идентификация ── */}
       {hasSel && (
-        <Card icon="Tag" title="Идентификация">
-          <Field label="Название">
+        <Card dense collapsible persistKey="general.ident" icon="Tag" title="Идентификация">
+          <Row label="Название">
             <input type="text" className={inputCls} style={inputStyle}
               value={branch ? branch.type : node!.name}
               placeholder={branch ? "Например, Штрек вент. гор. +30" : "Имя узла"}
               onChange={(e) => branch ? p.onBranchPatch({ type: e.target.value }) : p.onNodePatch({ name: e.target.value })} />
-          </Field>
-          <div className={branch ? "grid gap-2" : undefined}
+          </Row>
+          <div className={branch ? "grid gap-1.5" : undefined}
             style={branch ? { gridTemplateColumns: "84px minmax(0,1fr)" } : undefined}>
             <Field label="Номер">
               <input type="text" className={inputCls}
@@ -214,14 +218,12 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
             <div className="text-[10px] -mt-1" style={{ color: "var(--c-red, #dc2626)" }}>{numError}</div>
           )}
           {branch && (
-            <Field label="Статус">
-              <div className="flex gap-1.5">
+            <div className="flex gap-1">
                 <ToggleChip checked={branch.capital ?? false} onChange={(v) => p.onBranchPatch({ capital: v })}
                   icon="HardHat" label="Капитальная" title="Капитальная выработка" />
                 <ToggleChip checked={branch.designed ?? false} onChange={(v) => p.onBranchPatch({ designed: v })}
                   icon="PencilRuler" label="Проектная" title="Проектируемая: контур выработки рисуется пунктиром" />
-              </div>
-            </Field>
+            </div>
           )}
         </Card>
       )}
@@ -232,7 +234,7 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
         const b = branch.lineBorder ?? p.defaultBorder;
         const custom = w !== p.defaultWidth || b !== p.defaultBorder;
         return (
-          <Card icon="PenLine" title="Линия на схеме"
+          <Card dense collapsible persistKey="general.line" icon="PenLine" title="Линия на схеме"
             aside={custom ? (
               <button type="button"
                 onClick={() => p.onBranchPatch({ lineWidth: p.defaultWidth, lineBorder: p.defaultBorder })}
@@ -243,7 +245,7 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
               </button>
             ) : undefined}>
             <LinePreview width={w} border={b} dashed={branch.designed ?? false} />
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-2 gap-1.5">
               <Field label="Толщина">
                 <Stepper value={w} min={0.5} max={20} step={0.5} unit="px"
                   onChange={(v) => p.onBranchPatch({ lineWidth: v })} />
@@ -263,9 +265,9 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
 
       {/* ── Примечание ── */}
       {branch && (
-        <Card icon="StickyNote" title="Примечание" tone="muted" collapsible defaultOpen={!!branch.comment}
+        <Card dense icon="StickyNote" title="Примечание" tone="muted" collapsible defaultOpen={!!branch.comment}
           aside={branch.comment ? <span className="w-1.5 h-1.5 rounded-full" style={{ background: "var(--c-signal, #e8a317)" }} /> : undefined}>
-          <textarea rows={3} value={branch.comment ?? ""}
+          <textarea rows={2} value={branch.comment ?? ""}
             onChange={(e) => p.onBranchPatch({ comment: e.target.value })}
             placeholder="Например: «ремонт крепи до 15.10»"
             className="w-full px-2 py-1.5 text-xs rounded outline-none"
@@ -275,7 +277,7 @@ export default function GeneralPropsPanel(p: GeneralPropsPanelProps) {
       )}
 
       {/* ── Настройки всей схемы ── */}
-      <Card icon="Map" title="Вся схема" tone="muted" collapsible defaultOpen={false}
+      <Card dense persistKey="general.scheme" icon="Map" title="Вся схема" tone="muted" collapsible defaultOpen={false}
         aside={p.movedNodeCount > 0 ? (
           <span className="px-1.5 rounded-full text-[10px] font-semibold"
             style={{ background: "var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #865412)", fontFamily: "var(--font-num)" }}
