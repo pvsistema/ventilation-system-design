@@ -1799,7 +1799,11 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     const alreadyHasFan = schemaSymbols.some(s => s.typeId === "fan" && s.branchId === branchId);
                     if (!alreadyHasFan) {
                       addSymbol(typeId, x, y, branchId, undefined, undefined, t);
-                      updateBranch(branchId, { hasFan: true, fanMode: "curve", fanType: "ВМП", fanInstall: "Без перемычки" });
+                      // В вентрубопроводе (ставе) ВМП по умолчанию стоит в перемычке:
+                      // так воздух идёт в став через вентилятор, а не в обход.
+                      const hostBranch = branches.find(bb => bb.id === branchId);
+                      const inPipe = !!hostBranch && (hostBranch.isVentPipeBranch || (hostBranch.type ?? "").startsWith("Вентрубопровод"));
+                      updateBranch(branchId, { hasFan: true, fanMode: "curve", fanType: "ВМП", fanInstall: inPipe ? "Внутри перемычки" : "Без перемычки" });
                       setSelectedBranchId(branchId);
                       setSelectedNodeId(null);
                       setActiveSide("fan");
