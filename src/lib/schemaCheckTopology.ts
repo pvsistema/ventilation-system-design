@@ -166,7 +166,11 @@ export function checkTopology(
       walked.add(next.id);
       chainB.push(next);
       total += branchLen(next);
-      if (next.isDead || next.hasVentPipe || next.hasFan) ventilated = true;
+      // isDead сюда НЕ входит: его выставляет сам расчёт сети («ветвь —
+      // тупик, расход 0»). Раньше он считался признаком проветривания, и
+      // после первого же расчёта все тупики, включая недостроенные
+      // восстающие, пропадали из проверки.
+      if (next.hasVentPipe || next.hasFan) ventilated = true;
       const other = next.fromId === cur ? next.toId : next.fromId;
       endNode = other;
       if (pipeNodes.has(other)) ventilated = true;
@@ -179,9 +183,13 @@ export function checkTopology(
     if (ventilated || chainB.length === 0 || total <= minLen) continue;
     const endN = nodeById.get(endNode);
     const type = chainB[0].type || `ветвь ${chainB[0].id}`;
+    // Недостроенный восстающий: в тупике есть вертикальная выработка (≥ 75°).
+    // Пока он не сбит с горизонтом, сквозной струи через него нет.
+    const raise = chainB.find((b) => Math.abs(b.angle ?? 0) >= 75);
     push(deadEnds, {
       title: `Узел ${n.number || n.id}${n.name ? ` (${n.name})` : ""}`,
-      note: `Тупик выработки «${type}» длиной ${fmtNum(total, 1)} м` +
+      note: (raise ? `Недостроенный восстающий (ветвь ${raise.id}): ` : "") +
+        `Тупик выработки «${type}» длиной ${fmtNum(total, 1)} м` +
         (chainB.length > 1 ? ` (${chainB.length} ветвей)` : "") +
         ` до сопряжения в узле ${endN?.number || endNode} — расход в нём будет 0`,
       nodeIds: chainN, branchIds: chainB.map((b) => b.id),
