@@ -35,6 +35,7 @@ import {
 } from "@/lib/three/mineMeasureStations";
 import { buildMineBulkheads, type MineBulkheads } from "@/lib/three/mineBulkheads";
 import { buildMineFire, type MineFire, type SmokeSegment } from "@/lib/three/mineFire";
+import { buildMineWater, type MineWater } from "@/lib/three/mineWater";
 import { BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
@@ -201,6 +202,15 @@ export default function MineView3D(p: MineView3DProps) {
   // станция это две красные линии ВДОЛЬ выработки, размечающие участок
   // замера. Натянутая на сечение карточка вставала поперёк и читалась как
   // заслонка, хотя станция ничего не перекрывает (см. mineMeasureStations.ts).
+  // ── Водопровод ППЗ и пожарные краны ────────────────────────────────────
+  // Трубы у стенки внутри выработки, краны — отводом с вентилем (mineWater.ts).
+  // Выключатель — общий с чертежом («Панель информации» → водопровод).
+  const waterRef = useRef<MineWater | null>(null);
+  const [showWater3D, setShowWater3D] = useState(true);
+  const [waterInfo, setWaterInfo] = useState({ pipes: 0, hydrants: 0 });
+  const hasWaterPipes = p.branches.some(b => b.hasWaterPipe || b.hasAirPipe);
+  const waterAllowed = !p.infoConfig || p.infoConfig.waterPipes !== false;
+
   const msRef = useRef<MineMeasureStations | null>(null);
   const [showMs3D, setShowMs3D] = useState(true);
   const [msCount, setMsCount] = useState(0);
@@ -704,6 +714,35 @@ export default function MineView3D(p: MineView3DProps) {
     };
   }, [ready, showSymbols, showMs3D, symSizeK, p.schemaSymbols, p.nodes, p.branches,
       p.xyScale, p.zScale]);
+
+  // ── Водопровод и пожарные краны ───────────────────────────────────────
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const prev = waterRef.current;
+    if (prev) { scene.remove(prev.group); prev.dispose(); waterRef.current = null; }
+    setWaterInfo({ pipes: 0, hydrants: 0 });
+    if (showWater3D && waterAllowed) {
+      const built = buildMineWater({
+        nodes: p.nodes, branches: p.branches,
+        xyScale: p.xyScale, zScale: p.zScale,
+        sizeK: symSizeK,
+      });
+      if (built) {
+        scene.add(built.group);
+        waterRef.current = built;
+        setWaterInfo({ pipes: built.pipeCount, hydrants: built.hydrantCount });
+      }
+    }
+    needsRenderRef.current = true;
+    return () => {
+      const w = waterRef.current;
+      if (!w) return;
+      scene.remove(w.group);
+      w.dispose();
+      waterRef.current = null;
+    };
+  }, [ready, showWater3D, waterAllowed, symSizeK, p.nodes, p.branches, p.xyScale, p.zScale]);
 
   // ── Объёмные вентиляторы ──────────────────────────────────────────────
   // Свой слой, как стрелки и значки: обороты, реверс и остановка меняются в
@@ -1757,6 +1796,24 @@ export default function MineView3D(p: MineView3DProps) {
           </button>
         )}
 
+        {hasWaterPipes && (
+          <button
+            onClick={() => setShowWater3D(v => !v)}
+            title={showWater3D
+              ? "Водопровод (синий) и воздухопровод (красный) у стенок выработки, пожарные краны с вентилем: синий маховик — открыт, красный — закрыт"
+              : "Показать водопровод и пожарные краны"}
+            className="text-[10px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: showWater3D ? "#1d4ed8" : "var(--c-b2, #d1d5db)",
+              color: showWater3D ? "#1d4ed8" : "var(--c-t2, #374151)",
+              background: showWater3D ? "rgba(219,234,254,0.95)" : "rgba(255,255,255,0.9)",
+              fontWeight: showWater3D ? 600 : 400,
+            }}
+          >
+            Водопровод 3D
+          </button>
+        )}
+
         {/* Объёмные замерные станции.
 
             Кнопка появляется, только когда на схеме есть замерная станция.
@@ -1890,7 +1947,9 @@ export default function MineView3D(p: MineView3DProps) {
         {symbolCount > 0 && <> · обозначений: <b>{symbolCount}</b></>}
         {bkCount > 0 && <> · перемычек: <b>{bkCount}</b></>}
         {fanCount > 0 && <> · вентиляторов: <b>{fanCount}</b></>}
-        {msCount > 0 && <> · замерных станций: <b>{msCount}</b></>} · {stats.fps} кадр/с
+        {msCount > 0 && <> · замерных станций: <b>{msCount}</b></>}
+        {waterInfo.pipes > 0 && <> · трубопроводов: <b>{waterInfo.pipes}</b></>}
+        {waterInfo.hydrants > 0 && <> · пож. кранов: <b>{waterInfo.hydrants}</b></>} · {stats.fps} кадр/с
       </div>
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"
