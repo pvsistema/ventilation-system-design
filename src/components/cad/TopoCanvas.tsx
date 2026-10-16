@@ -2675,7 +2675,10 @@ export default function TopoCanvas(props: Props) {
                 if (allLines.length === 0) return null;
 
                 // Масштаб текста пропорционален ширине ветви, с лимитом [0.3..2.5]
-                const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
+                const labelW = b.isVentPipeBranch
+                  ? symbolHostWidth(b, branchById, branchWidth)
+                  : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth);
+                const branchPxLabel = (thinLines ? 1 : labelW) * objSF;
                 const textSc = Math.max(0.3, branchPxLabel * 0.28) * (b.labelSize ?? 1);
                 const lh = 11 * textSc;
                 const bh = allLines.length * lh + 4 * textSc;

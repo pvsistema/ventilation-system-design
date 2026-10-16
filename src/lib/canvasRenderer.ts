@@ -16,6 +16,7 @@ import {
   ARROW_TIP_H, ARROW_TIP_W, ARROW_TAIL_LEN, ARROW_TAIL_W,
 } from "./flowAnim";
 import { canvasFont } from "@/lib/canvasFont";
+import { symbolHostWidth } from "@/components/cad/topoCanvas/topoCanvasUtils";
 import { CANVAS_THEME } from "@/lib/theme";
 
 /**
@@ -1513,7 +1514,12 @@ export function renderCanvas(opts: CanvasRenderOptions) {
       ctx.translate(anchorX, anchorY);
       if (labelAng !== 0) ctx.rotate(labelAng);
 
-      const branchPxLabel = (thinLines ? 1 : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth)) * objSF;
+      // Нить става рисуется узкой (20% выработки) — подпись берёт ширину
+      // хозяйской выработки, иначе индикаторы на ставе выходили мелкими.
+      const labelW = b.isVentPipeBranch
+        ? symbolHostWidth(b, getBranchById(branches), branchWidth)
+        : (b.lineWidth && b.lineWidth > 0 ? b.lineWidth : branchWidth);
+      const branchPxLabel = (thinLines ? 1 : labelW) * objSF;
       const textSc = Math.max(0.3, branchPxLabel * 0.28) * (b.labelSize ?? 1);
       const lh = 11 * textSc;
       const bh = allLines.length * lh + 4 * textSc;
