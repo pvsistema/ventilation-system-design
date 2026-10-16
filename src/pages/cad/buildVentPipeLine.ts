@@ -26,6 +26,9 @@ export interface BuildVentPipeDeps {
   setSelectedBranchIds: (v: Set<string>) => void;
   setSelectedBranchId: (v: string | null) => void;
   setSelectedNodeId: (v: string | null) => void;
+  /** Диаметр (мм) по каждой ветви става — для става из участков разного
+   *  диаметра. Если не задан, всем ветвям ставится общий vpDiameter. */
+  perBranchDiameter?: Record<string, number>;
 }
 
 /**
@@ -131,6 +134,21 @@ export function buildVentPipeLine(
       const manualOverride: Partial<TopoBranch> = editManualR > 0
         ? { resistanceMode: "manual", manualR: editManualR * ((b.length ?? 0) / mainLen) }
         : {};
+      // Свой диаметр участка (став из рукавов разного диаметра). Раньше всем
+      // ветвям ставился один диаметр из окна, и участки Ø800 молча
+      // превращались в Ø1200 — сопротивление става падало в разы.
+      const ownMm = d.perBranchDiameter?.[b.id];
+      const ownGeom: Partial<TopoBranch> = ownMm && ownMm > 0 ? (() => {
+        const dm = ownMm / 1000;
+        const sec = calcSection({ shape: "round", diameter: dm });
+        return {
+          shape: "round", diameter: dm, manualSection: false,
+          area: Math.round(sec.area * 1000) / 1000,
+          perimeter: Math.round(sec.perimeter * 1000) / 1000,
+          dh: Math.round(sec.dh * 1000) / 1000,
+          pipeDiameter: dm, vpDiameter: ownMm,
+        };
+      })() : {};
       return {
         ...b,
         // Правка существующего става не должна трогать вентилятор: если он
@@ -139,6 +157,7 @@ export function buildVentPipeLine(
         // остался бы на схеме пустышкой без характеристик.
         ...vpPatchKeepFan,
         ...editGeom,
+        ...ownGeom,
         ...manualOverride,
       };
     }));

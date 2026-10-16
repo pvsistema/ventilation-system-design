@@ -54,7 +54,8 @@ function calcVentPipeR(params: {
 interface Props {
   branches: TopoBranch[];           // выделенные ветви (одна или несколько)
   onClose: () => void;
-  onApply: (patch: Partial<TopoBranch>) => void;
+  /** perBranchDiameter — диаметры по участкам (мм) для правки готового става */
+  onApply: (patch: Partial<TopoBranch>, perBranchDiameter?: Record<string, number>) => void;
   onRemove: () => void;
 }
 
@@ -130,6 +131,62 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
     if (size) setLeakage(size.lossPer100m);
   };
 
+  // ── Участки става по диаметрам ─────────────────────────────────────────
+  // Став часто собран из рукавов разного диаметра (у вентилятора Ø1200,
+  // дальше Ø800). Сопротивление сильно зависит от диаметра (∝ 1/D⁵), поэтому
+  // считать весь став одним диаметром нельзя. Звенья упорядочиваем по
+  // направлению воздуха и объединяем подряд идущие с одинаковым диаметром.
+  const orderedBranches = (() => {
+    const byFrom = new Map<string, TopoBranch>();
+    const toIds = new Set<string>();
+    for (const b of branches) { byFrom.set(b.fromId, b); toIds.add(b.toId); }
+    const start = branches.find(b => !toIds.has(b.fromId));
+    if (!start) return branches;
+    const out: TopoBranch[] = [];
+    const seen = new Set<string>();
+    let cur: TopoBranch | undefined = start;
+    while (cur && !seen.has(cur.id)) { out.push(cur); seen.add(cur.id); cur = byFrom.get(cur.toId); }
+    for (const b of branches) if (!seen.has(b.id)) out.push(b);
+    return out;
+  })();
+  const branchDiaMm = (b: TopoBranch) =>
+    Math.round((b.pipeDiameter ?? 0) * 1000) || b.vpDiameter || diameter;
+
+  // Новые диаметры по исходному диаметру участка (мм → мм). Пустой объект —
+  // каждый участок сохраняет свой диаметр.
+  const [segDia, setSegDia] = useState<Record<number, number>>({});
+  const segments = (() => {
+    const list: { origD: number; d: number; length: number; ids: string[]; rKgf: number; exitR: number }[] = [];
+    for (const b of orderedBranches) {
+      const origD = branchDiaMm(b);
+      const d = segDia[origD] ?? origD;
+      const L = b.length ?? 0;
+      const rFr = resistanceFromPipe(pipeAlpha, L, d / 1000);
+      const S = ductArea(d);
+      const isExit = /\(выход\)/.test(b.type ?? "");
+      const exitR = isExit && S > 0 ? RHO_AIR / (2 * S * S) / 9.81 : 0;
+      const last = list[list.length - 1];
+      if (last && last.origD === origD && last.d === d) {
+        last.length += L; last.ids.push(b.id); last.rKgf += rFr; last.exitR += exitR;
+      } else {
+        list.push({ origD, d, length: L, ids: [b.id], rKgf: rFr, exitR });
+      }
+    }
+    return list;
+  })();
+  const distinctOrigD = Array.from(new Set(segments.map(x => x.origD)));
+  const segmented = editingLine && distinctOrigD.length > 1;
+  // Местные сопротивления (повороты, прочие ξ) — по диаметру первого участка
+  const segLocalR = (() => {
+    const d = segments[0]?.d ?? diameter;
+    const S = ductArea(d);
+    return S > 0 ? (Math.max(0, xiTotal) * RHO_AIR) / (2 * S * S) / 9.81 : 0;
+  })();
+  const segExitR = segments.reduce((s2, x) => s2 + x.exitR, 0);
+  const segTotalR = segments.reduce((s2, x) => s2 + x.rKgf, 0) + segExitR + segLocalR;
+  // Подача ВМП из расчёта сети — чтобы показать потери давления в ставе
+  const fanQ = Math.max(0, ...branches.map(b => Math.abs(b.flow ?? 0)));
+
   // Итоговая длина (авто или ручная)
   const effLength = lengthManual ? length : totalLength;
 
@@ -143,7 +200,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
     localXi: xiTotal,
   });
 
-  const R = manualR ? manualRVal : calc.R;
+  const R = manualR ? manualRVal : (segmented ? segTotalR : calc.R);
 
   useEffect(() => {
     if (!lengthManual) setLength(totalLength);
@@ -187,7 +244,13 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
       // увидел бы сопротивление поворотов.
       localXi: xiTotal,
     };
-    onApply(patch);
+    if (segmented) {
+      const per: Record<string, number> = {};
+      for (const sg of segments) for (const id of sg.ids) per[id] = sg.d;
+      onApply(patch, per);
+    } else {
+      onApply(patch);
+    }
     onClose();
   };
 
@@ -245,6 +308,83 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
               Суммарная длина по ветвям: <b>{totalLength.toFixed(1)} м</b>
             </div>
           </div>
+
+          {/* Участки става по диаметрам */}
+          {editingLine && segments.length > 0 && (
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              <div className="px-3 py-1.5 text-[11px] font-semibold text-gray-700 bg-gray-50 border-b border-gray-200 flex items-center gap-1">
+                <Icon name="Layers" size={12} />
+                Участки става по диаметрам
+              </div>
+              <table className="w-full text-[11px]">
+                <thead>
+                  <tr className="text-gray-500 text-left">
+                    <th className="px-3 py-1 font-medium">№</th>
+                    <th className="px-2 py-1 font-medium">Диаметр</th>
+                    <th className="px-2 py-1 font-medium text-right">Длина, м</th>
+                    <th className="px-3 py-1 font-medium text-right">R, кМюрг</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {segments.map((sg, i) => (
+                    <tr key={i} className="border-t border-gray-100">
+                      <td className="px-3 py-1 text-gray-500">{i + 1}</td>
+                      <td className="px-2 py-1">
+                        {segmented ? (
+                          <select value={sg.d}
+                            onChange={e => setSegDia(prev => ({ ...prev, [sg.origD]: Number(e.target.value) }))}
+                            className="border border-gray-300 rounded px-1 py-0.5 text-[11px] text-gray-900 bg-white">
+                            {Array.from(new Set([
+                              ...(brand ? brand.sizes.map(z => z.diameter) : VENT_PIPE_DIAMETERS.map(z => z.d)),
+                              sg.d,
+                            ])).sort((a2, b2) => a2 - b2).map(d => (
+                              <option key={d} value={d}>Ø {d} мм</option>
+                            ))}
+                          </select>
+                        ) : (
+                          <span className="text-gray-900">Ø {sg.d} мм</span>
+                        )}
+                      </td>
+                      <td className="px-2 py-1 text-right tabular-nums text-gray-900">{sg.length.toFixed(0)}</td>
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-900">{sg.rKgf.toFixed(4)}</td>
+                    </tr>
+                  ))}
+                  {segExitR > 0 && (
+                    <tr className="border-t border-gray-100 text-gray-600">
+                      <td className="px-3 py-1" />
+                      <td className="px-2 py-1" colSpan={2}>Выход струи в забой (ξ = 1)</td>
+                      <td className="px-3 py-1 text-right tabular-nums">{segExitR.toFixed(4)}</td>
+                    </tr>
+                  )}
+                  {segLocalR > 0 && (
+                    <tr className="border-t border-gray-100 text-gray-600">
+                      <td className="px-3 py-1" />
+                      <td className="px-2 py-1" colSpan={2}>Повороты и фасонные части (ξ = {xiTotal.toFixed(2)})</td>
+                      <td className="px-3 py-1 text-right tabular-nums">{segLocalR.toFixed(4)}</td>
+                    </tr>
+                  )}
+                  <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
+                    <td className="px-3 py-1" />
+                    <td className="px-2 py-1 text-gray-800">Итого став</td>
+                    <td className="px-2 py-1 text-right tabular-nums text-gray-900">
+                      {segments.reduce((s2, x) => s2 + x.length, 0).toFixed(0)}
+                    </td>
+                    <td className="px-3 py-1 text-right tabular-nums text-green-800">{segTotalR.toFixed(4)}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <div className="px-3 py-1.5 text-[10px] text-gray-500 border-t border-gray-200 bg-gray-50 leading-snug">
+                R = 6,48·α·L/D⁵ по каждому участку (α = {pipeAlpha} ×10⁻⁴).
+                {fanQ > 0.01 && (
+                  <> При подаче ВМП {fanQ.toFixed(2)} м³/с потери в ставе ≈{" "}
+                  <b className="text-gray-700">{(segTotalR * 9.81 * fanQ * fanQ).toFixed(0)} Па</b>.</>
+                )}
+                {segmented
+                  ? " Диаметр участка можно сменить здесь — общее поле «Диаметр» ниже не применяется."
+                  : ""}
+              </div>
+            </div>
+          )}
 
           {/* Марка рукава */}
           <div>
@@ -313,7 +453,9 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                 <label className={labelCls}>Диаметр</label>
                 {/* Если выбрана марка — предлагаем только её типоразмеры */}
                 <select value={diameter} onChange={e => applyDiameter(Number(e.target.value))}
-                  className={inputCls}>
+                  disabled={segmented}
+                  title={segmented ? "Став из участков разного диаметра — диаметры задаются в таблице участков выше" : undefined}
+                  className={`${inputCls} ${segmented ? "opacity-50 cursor-not-allowed" : ""}`}>
                   {(brand
                     ? brand.sizes.map(s => ({ d: s.diameter, label: `Ø ${s.diameter} мм` }))
                     : VENT_PIPE_DIAMETERS

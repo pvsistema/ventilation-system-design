@@ -204,7 +204,7 @@ export interface CadToolDialogsProps {
   showVentPipeDialog: boolean;
   setShowVentPipeDialog: (v: boolean) => void;
   ventPipeBranchIds: string[];
-  buildVentPipeLine: (branchIds: string[], vpPatch: Partial<TopoBranch>) => void;
+  buildVentPipeLine: (branchIds: string[], vpPatch: Partial<TopoBranch>, perBranchDiameter?: Record<string, number>) => void;
   /** Удаление всего става целиком — по любой его ветви */
   deleteVentPipeLine: (branchId: string) => void;
 
@@ -522,10 +522,10 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           <VentPipeDialog
             branches={vpBranches}
             onClose={() => p.setShowVentPipeDialog(false)}
-            onApply={(patch) => {
+            onApply={(patch, perBranchDiameter) => {
               // Строим РЕАЛЬНУЮ параллельную нить трубопровода по выбранным ветвям
               // (отдельные тёмно-серые ветви isVentPipeBranch со смещением вбок).
-              p.buildVentPipeLine(p.ventPipeBranchIds, patch);
+              p.buildVentPipeLine(p.ventPipeBranchIds, patch, perBranchDiameter);
             }}
             onRemove={() => {
               // Если открыта готовая нить — сносим став целиком (ветви + узлы),

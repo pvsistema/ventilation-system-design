@@ -789,8 +789,9 @@ export function useCadPage() {
   // ─── ПОСТРОЕНИЕ ВЕНТ. ТРУБОПРОВОДА КАК ПАРАЛЛЕЛЬНОЙ НИТИ ─────────────
   // Логика вынесена в buildVentPipeLine без изменений: тот же порядок шагов и
   // те же формулы. Состояние передаётся параметрами.
-  const buildVentPipeLine = (branchIds: string[], vpPatchRaw: Partial<TopoBranch>): void => {
+  const buildVentPipeLine = (branchIds: string[], vpPatchRaw: Partial<TopoBranch>, perBranchDiameter?: Record<string, number>): void => {
     buildVentPipeLineImpl(branchIds, vpPatchRaw, {
+      perBranchDiameter,
       nodes, branchesRaw, branchWidth, nextNodeId, nextBranchId, pushHistory,
       setNodes, setBranches, setSelectedBranchIds, setSelectedBranchId, setSelectedNodeId,
     });
