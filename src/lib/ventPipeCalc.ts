@@ -105,6 +105,61 @@ export interface VentPipeInput {
    * формуле для заданного диаметра и длины; при переборе длин сохраняется.
    */
   rScale?: number;
+  /**
+   * Фактический состав става по участкам, от вентилятора к забою. Если
+   * задан, сопротивление става длиной L считается по этим участкам: став
+   * короче фактического обрезается, длиннее — наращивается рукавом
+   * ПОСЛЕДНЕГО участка (так став и удлиняют при проходке). Это точнее
+   * rScale: при Ø1200 + Ø800 удлинение идёт рукавом Ø800, и сопротивление
+   * растёт быстрее, чем пропорционально длине.
+   */
+  rProfile?: DuctProfile;
+}
+
+/** Участки става: диаметр, мм, и длина, м — по ходу воздуха */
+export interface DuctProfile {
+  segments: { diameter: number; length: number }[];
+  /** Выход струи в забой учитывать (ξ = 1 по диаметру последнего участка) */
+  exitLoss: boolean;
+}
+
+/** Диаметр (мм) на расстоянии x от вентилятора; за концом — последний */
+export function profileDiameterAt(profile: DuctProfile, x: number): number {
+  let acc = 0;
+  for (const sg of profile.segments) {
+    acc += sg.length;
+    if (x <= acc) return sg.diameter;
+  }
+  return profile.segments[profile.segments.length - 1]?.diameter ?? 0;
+}
+
+/**
+ * Сопротивление става длиной L по фактическим участкам, кМюрг.
+ * Местные ξ (повороты) — по диаметру первого участка.
+ */
+export function profileResistance(
+  profile: DuctProfile, alpha: number, L: number, localXi: number, rho = RHO_DEFAULT,
+): number {
+  const segs = profile.segments.filter(x => x.diameter > 0 && x.length > 0);
+  if (segs.length === 0 || L <= 0) return 0;
+  let left = L, r = 0, lastD = segs[0].diameter;
+  for (const sg of segs) {
+    if (left <= 0) break;
+    const take = Math.min(left, sg.length);
+    r += resistanceFromPipe(alpha, take, sg.diameter / 1000);
+    left -= take; lastD = sg.diameter;
+  }
+  if (left > 0) {
+    lastD = segs[segs.length - 1].diameter;
+    r += resistanceFromPipe(alpha, left, lastD / 1000);
+  }
+  const local = (d: number, xi: number) => {
+    const S = ductArea(d);
+    return S > 0 && xi > 0 ? (xi * rho) / (2 * S * S) / 9.81 : 0;
+  };
+  r += local(segs[0].diameter, localXi);
+  if (profile.exitLoss) r += local(lastD, 1);
+  return isFinite(r) ? Math.min(r, 1e6) : 0;
 }
 
 /** Результат расчёта става */
@@ -347,13 +402,15 @@ export function calcVentPipe(input: VentPipeInput): VentPipeResult {
   // Стыки на сопротивление отдельно не влияют: они уже учтены в паспортном α
   // изготовителя (см. пояснение в ductResistance). На утечки они влияют — это
   // считается ниже, в коэффициенте доставки.
-  const R = ductResistance(
-    input.alpha,
-    input.length,
-    input.diameter,
-    input.localXi,
-    rho,
-  ) * (input.rScale && input.rScale > 0 ? input.rScale : 1);
+  const R = input.rProfile && input.rProfile.segments.length > 0
+    ? profileResistance(input.rProfile, input.alpha, input.length, input.localXi, rho)
+    : ductResistance(
+        input.alpha,
+        input.length,
+        input.diameter,
+        input.localXi,
+        rho,
+      ) * (input.rScale && input.rScale > 0 ? input.rScale : 1);
 
   // Подача вентилятора нужна заранее: таблицы изготовителя привязаны к
   // расходу В ЗАБОЕ, а он сам зависит от утечек. Разрываем эту зависимость

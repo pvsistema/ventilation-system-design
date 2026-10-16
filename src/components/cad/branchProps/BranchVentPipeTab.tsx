@@ -107,18 +107,30 @@ export default function BranchVentPipeTab({
       const arr = next.get(x.fromId) ?? [];
       arr.push(x); next.set(x.fromId, arr);
     }
+    const diaOf = (x: TopoBranch) =>
+      Math.round((x.pipeDiameter ?? 0) * 1000) || x.vpDiameter || 0;
     let rSi = branch.resistance ?? 0, len = branch.length ?? 0, links = 1;
     const seen = new Set([branch.id]);
+    const segs: { diameter: number; length: number }[] = [
+      { diameter: diaOf(branch), length: branch.length ?? 0 },
+    ];
     let cur = branch;
     for (;;) {
       const cand = (next.get(cur.toId) ?? []).filter(x => !seen.has(x.id));
       if (cand.length !== 1) break;
+      if (cand[0].hasFan) break;
       cur = cand[0]; seen.add(cur.id);
       rSi += cur.resistance ?? 0; len += cur.length ?? 0; links++;
-      if (cur.hasFan) break;
+      const d = diaOf(cur), last = segs[segs.length - 1];
+      if (last.diameter === d) last.length += cur.length ?? 0;
+      else segs.push({ diameter: d, length: cur.length ?? 0 });
     }
-    return links > 1 && rSi > 0 ? { rKgf: rSi / 9.80665, length: len, links } : null;
+    const exitLoss = /\(выход\)/.test(cur.type ?? "");
+    return links > 1 && rSi > 0
+      ? { rKgf: rSi / 9.80665, length: len, links, profile: { segments: segs.filter(x => x.length > 0 && x.diameter > 0), exitLoss } }
+      : null;
   })();
+  const multiDia = !!chain && new Set(chain.profile.segments.map(x => x.diameter)).size > 1;
 
   const baseInputRaw = {
     method,
@@ -135,7 +147,11 @@ export default function BranchVentPipeTab({
   };
   const rFormula = calcVentPipe({ ...baseInputRaw, length }).R;
   const rScale = chain && rFormula > 0 ? chain.rKgf / rFormula : 1;
-  const baseInput = { ...baseInputRaw, rScale };
+  // Сопротивление по фактическим участкам: при переборе длин став
+  // наращивается рукавом последнего участка (как при проходке).
+  const baseInput = chain && chain.profile.segments.length > 0
+    ? { ...baseInputRaw, rProfile: chain.profile }
+    : baseInputRaw;
 
   // Расход, который даёт паспортная кривая на нынешней длине става. Если он
   // сильно расходится с расчётом сети — значит, вентилятор работает вне
@@ -563,12 +579,32 @@ export default function BranchVentPipeTab({
         const xLim = limit && limit.maxLength > 0 && limit.maxLength < maxX
           ? px(limit.maxLength) : null;
         const xCur = length > 0 && length < maxX ? px(length) : null;
+        // Полосы участков става разного диаметра (за концом — наращивание
+        // рукавом последнего участка).
+        const bands: { x0: number; x1: number; d: number }[] = [];
+        if (multiDia && chain) {
+          let acc = 0;
+          chain.profile.segments.forEach((sg, i) => {
+            const last = i === chain.profile.segments.length - 1;
+            const x0 = acc, x1 = last ? maxX : Math.min(maxX, acc + sg.length);
+            if (x0 < maxX) bands.push({ x0, x1, d: sg.diameter });
+            acc += sg.length;
+          });
+        }
+        const bandColors = ["#e0f2fe", "#fef9c3", "#ede9fe", "#dcfce7"];
 
         return (
           <>
             <SectionHeader title="Расход в забое от длины става" />
             <div className="px-2 py-1">
               <svg width={W} height={H} style={{ maxWidth: "100%" }}>
+                {bands.map((bd, i) => (
+                  <g key={i}>
+                    <rect x={px(bd.x0)} y={padT} width={Math.max(0, px(bd.x1) - px(bd.x0))}
+                      height={H - padB - padT} fill={bandColors[i % bandColors.length]} />
+                    <text x={px(bd.x0) + 2} y={padT + 18} fontSize={8} fill="#475569">Ø{bd.d}</text>
+                  </g>
+                ))}
                 {/* оси */}
                 <line x1={padL} y1={padT} x2={padL} y2={H - padB} stroke="#cbd5e1" />
                 <line x1={padL} y1={H - padB} x2={W - padR} y2={H - padB} stroke="#cbd5e1" />
@@ -611,6 +647,13 @@ export default function BranchVentPipeTab({
                 <text x={padL} y={H - 4} fontSize={8} fill="#64748b">м³/с ↑ / длина →</text>
               </svg>
             </div>
+            {multiDia && chain && (
+              <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
+                Учтены участки става: {chain.profile.segments.map(x => `Ø${x.diameter} — ${numFmt(x.length, 0)} м`).join(", ")}.
+                {" "}Дальше {numFmt(chain.length, 0)} м став наращивается рукавом
+                {" "}Ø{chain.profile.segments[chain.profile.segments.length - 1].diameter}.
+              </div>
+            )}
           </>
         );
       })()}
