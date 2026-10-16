@@ -218,6 +218,35 @@ export default function BranchVentPipeTab({
   const curveMax = Math.max(length * 1.6, (limit?.maxLength ?? 0) * 1.3, 100);
   const curve = buildDeliveryCurve(input, curveMax, 44);
 
+  // ── Сравнение: став наращивается рукавом другого диаметра ─────────────
+  // Нынешний став остаётся как есть, а дальше его наращивают выбранным
+  // рукавом (по умолчанию — самым большим из уже стоящих, например Ø1200
+  // вместо Ø800). Так видно, сколько воздуха даст переход на больший диаметр.
+  const lastDia = chain?.profile.segments[chain.profile.segments.length - 1]?.diameter ?? 0;
+  const altOptions = Array.from(new Set([
+    ...(brand ? brand.sizes.map(z => z.diameter) : [600, 800, 1000, 1200]),
+    ...(chain ? chain.profile.segments.map(z => z.diameter) : []),
+  ])).filter(d => d !== lastDia).sort((a, b) => a - b);
+  const autoAlt = chain
+    ? Math.max(...chain.profile.segments.map(z => z.diameter))
+    : 0;
+  const altDia = (branch.vpAltDiameter ?? 0) > 0 && branch.vpAltDiameter !== lastDia
+    ? branch.vpAltDiameter!
+    : (autoAlt !== lastDia ? autoAlt : (altOptions.find(d => d > lastDia) ?? 0));
+  const altInput = chain && altDia > 0
+    ? {
+        ...input,
+        rProfile: {
+          ...chain.profile,
+          segments: [...chain.profile.segments, { diameter: altDia, length: 1e6 }],
+        },
+      }
+    : null;
+  const altCurve = altInput ? buildDeliveryCurve(altInput, curveMax, 44) : null;
+  const altLimit = altInput && required > 0
+    ? calcVentPipeMaxLength(altInput, required, pressureLimit, length)
+    : null;
+
   const Warn = ({ children }: { children: React.ReactNode }) => (
     <div className="mx-1 my-1 px-2 py-1 text-[11px] rounded leading-snug"
       style={{ background: "var(--c-tint-amber2, #fef3c7)", border: "1px solid var(--c-amber-lt, #f59e0b)", color: "var(--c-amber-ink, #92400e)" }}>
@@ -568,7 +597,7 @@ export default function BranchVentPipeTab({
       {required > 0 && fanFlow > 0.01 && (() => {
         const W = 300, H = 120, padL = 34, padB = 18, padT = 8, padR = 8;
         const maxX = curveMax;
-        const maxY = Math.max(fanFlow, required) * 1.1;
+        const maxY = Math.max(fanFlow, required, ...(altCurve ?? []).map(p => p.flowFace)) * 1.1;
         if (maxX <= 0 || maxY <= 0) return null;
         const px = (x: number) => padL + (x / maxX) * (W - padL - padR);
         const py = (y: number) => H - padB - (y / maxY) * (H - padB - padT);
@@ -636,6 +665,13 @@ export default function BranchVentPipeTab({
                 )}
                 {/* кривая доставки */}
                 <path d={path} fill="none" stroke="#0f766e" strokeWidth={1.6} />
+                {altCurve && (
+                  <path
+                    d={altCurve.filter(p => p.length >= length)
+                      .map((p, i) => `${i === 0 ? "M" : "L"}${px(p.length).toFixed(1)},${py(p.flowFace).toFixed(1)}`)
+                      .join(" ")}
+                    fill="none" stroke="#7c3aed" strokeWidth={1.6} strokeDasharray="5 3" />
+                )}
                 {/* подписи осей */}
                 <text x={padL - 4} y={py(maxY) + 8} fontSize={8} fill="#64748b" textAnchor="end">
                   {numFmt(maxY, 0)}
@@ -647,6 +683,39 @@ export default function BranchVentPipeTab({
                 <text x={padL} y={H - 4} fontSize={8} fill="#64748b">м³/с ↑ / длина →</text>
               </svg>
             </div>
+            {altCurve && (
+              <div className="px-2 pb-1">
+                <div className="flex items-center gap-3 text-[10px] text-gray-600 mb-1">
+                  <span className="flex items-center gap-1">
+                    <span style={{ display: "inline-block", width: 14, height: 2, background: "#0f766e" }} />
+                    наращивание Ø{lastDia}
+                  </span>
+                  <span className="flex items-center gap-1">
+                    <span style={{ display: "inline-block", width: 14, borderTop: "2px dashed #7c3aed" }} />
+                    наращивание Ø{altDia}
+                  </span>
+                </div>
+                <InlineLabel label="Сравнить с Ø, мм">
+                  <SelectField
+                    value={String(altDia)}
+                    onChange={(v) => onUpdate({ vpAltDiameter: Number(v) })}
+                    options={altOptions.map(d => ({ value: String(d), label: `Ø ${d} мм` }))}
+                  />
+                </InlineLabel>
+                {limit && altLimit && (
+                  <div className="mt-1 px-2 py-1 rounded text-[10px] leading-snug"
+                    style={{ background: "var(--c-s2, #f8fafc)", border: "1px solid var(--c-b1, #e2e8f0)", color: "var(--c-t3, #475569)" }}>
+                    Предельная длина: Ø{lastDia} — <b>{numFmt(limit.maxLength, 0)} м</b>,
+                    {" "}Ø{altDia} — <b>{numFmt(altLimit.maxLength, 0)} м</b>
+                    {altLimit.maxLength - limit.maxLength > 0.5
+                      ? <> (на {numFmt(altLimit.maxLength - limit.maxLength, 0)} м дальше)</>
+                      : altLimit.maxLength - limit.maxLength < -0.5
+                        ? <> (на {numFmt(limit.maxLength - altLimit.maxLength, 0)} м меньше)</>
+                        : null}.
+                  </div>
+                )}
+              </div>
+            )}
             {multiDia && chain && (
               <div className="px-2 pb-1 text-[9px] text-gray-400 leading-snug">
                 Учтены участки става: {chain.profile.segments.map(x => `Ø${x.diameter} — ${numFmt(x.length, 0)} м`).join(", ")}.
