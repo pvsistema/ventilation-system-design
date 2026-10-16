@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import Icon from "@/components/ui/icon";
+import { useDraggableWindow } from "@/hooks/useDraggableWindow";
 import { type TopoBranch } from "@/lib/topology";
 import { resistanceFromPipe, PIPE_ALPHA_TYPES } from "@/lib/aerodynamics";
 import { VENT_DUCT_BRANDS, getDuctBrand, getDuctSize, formatStaticResistance } from "@/lib/ventDucts";
@@ -91,6 +92,15 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
   // отдельной ветви — при правке всего става это было неудобно.
   const [linkLength, setLinkLength]   = useState(first.vpLinkLength ?? 20);
   const [requiredFlow, setRequiredFlow] = useState(first.vpRequiredFlow ?? 0);
+  // Отступ нити става от оси выработки на схеме, м. Влияет на длину входной
+  // и выходной ветвей става, а значит и на его сопротивление.
+  const [offset, setOffset] = useState(first.vpOffset ?? 2);
+
+  // Окно перемещается за шапку и меняет размер за правый нижний угол.
+  const DLG_W = 520;
+  const { pos, dragHandleProps } = useDraggableWindow({
+    width: DLG_W, height: Math.min(760, window.innerHeight * 0.9), storageKey: "pvs_ventpipe_dialog_pos",
+  });
 
   // Правка готовой нити: все выбранные ветви уже являются ветвями става.
   const editingLine = branches.every(b => b.isVentPipeBranch);
@@ -156,6 +166,7 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
       vpBrandId: brandId,
       vpWorkPressure: brandSize?.workPressure ?? 0,
       vpLinkLength: linkLength,
+      vpOffset: Math.max(0.5, offset || 2),
       vpRequiredFlow: requiredFlow,
       vpComputedR: R,
       vpComputedFlow: 0,
@@ -184,12 +195,20 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
   const labelCls = "block text-[11px] font-semibold text-gray-800 mb-0.5";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: "rgba(0,0,0,0.45)" }}>
-      <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden flex flex-col" style={{ maxHeight: "90vh" }}>
+    <div className="fixed inset-0 z-50" style={{ background: "rgba(0,0,0,0.25)" }}>
+      <div className="bg-white rounded-xl shadow-2xl overflow-hidden flex flex-col"
+        style={{
+          position: "fixed", left: pos.x, top: pos.y,
+          width: DLG_W, height: Math.min(760, window.innerHeight * 0.9),
+          minWidth: 380, minHeight: 320,
+          maxWidth: "calc(100vw - 16px)", maxHeight: "calc(100vh - 16px)",
+          resize: "both",
+        }}>
 
-        {/* Заголовок */}
+        {/* Заголовок — за него окно перетаскивается */}
         <div className="flex items-center justify-between px-5 py-3 flex-shrink-0"
-          style={{ background: "var(--c-blue-bg, #1a3a6b)" }}>
+          {...dragHandleProps}
+          style={{ ...dragHandleProps.style, background: "var(--c-blue-bg, #1a3a6b)" }}>
           <div className="flex items-center gap-2 text-white font-bold text-[14px]">
             <Icon name="Wind" size={16} />
             {editingLine
@@ -359,6 +378,19 @@ export default function VentPipeDialog({ branches, onClose, onApply, onRemove }:
                 Авто: <b>{totalLength.toFixed(1)} м</b> (по длинам ветвей)
               </div>
             )}
+          </div>
+
+          {/* Отступ нити от выработки */}
+          <div>
+            <label className={labelCls}>Шаг построения от выработки, м</label>
+            <input type="number" min={0.5} step={0.5} value={offset}
+              onChange={e => setOffset(Number(e.target.value))}
+              className={inputCls} />
+            <div className="text-[10px] text-gray-500 mt-0.5">
+              Расстояние нити става от оси выработки на схеме. Входит в длину
+              входа и выхода става — чем больше, тем выше сопротивление.
+              {editingLine ? " При применении узлы става будут сдвинуты." : ""}
+            </div>
           </div>
 
           {/* Утечки и стыки */}

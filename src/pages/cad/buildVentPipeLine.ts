@@ -85,6 +85,47 @@ export function buildVentPipeLine(
     const editManualR = vpPatchRaw.vpManualR && vpPatchRaw.vpManualR > 0 ? vpPatchRaw.vpManualR : 0;
     const mainLen = selected.reduce((s, b) => s + (b.length ?? 0), 0) || 1;
     const idSet = new Set(branchIds);
+    // Новый отступ нити от выработки: двигаем узлы става (те, к которым
+    // примыкают ТОЛЬКО ветви става) вдоль линии «узел выработки → узел
+    // става». Длины входа/выхода пересчитаются по координатам сами.
+    if (vpPatchRaw.vpOffset !== undefined) {
+      const newOff = Math.max(0.5, vpPatchRaw.vpOffset);
+      const nodeById = new Map(nodes.map((n) => [n.id, n]));
+      const pipeOnly = new Map<string, Set<string>>();
+      const blocked = new Set<string>();
+      for (const b of branchesRaw) {
+        for (const nid of [b.fromId, b.toId]) {
+          if (!b.isVentPipeBranch) { blocked.add(nid); continue; }
+          if (!idSet.has(b.id)) continue;
+          const host = b.vpHostBranchId ? brMap.get(b.vpHostBranchId) : undefined;
+          const set = pipeOnly.get(nid) ?? new Set<string>();
+          if (host) { set.add(host.fromId); set.add(host.toId); }
+          pipeOnly.set(nid, set);
+        }
+      }
+      const moved = new Map<string, { x: number; y: number }>();
+      for (const [nid, hosts] of pipeOnly) {
+        if (blocked.has(nid)) continue;
+        const pn = nodeById.get(nid);
+        if (!pn) continue;
+        let best: TopoNode | undefined; let bestD = Infinity;
+        for (const hid of hosts) {
+          const h = nodeById.get(hid);
+          if (!h) continue;
+          const dd = Math.hypot(pn.x - h.x, pn.y - h.y);
+          if (dd < bestD) { bestD = dd; best = h; }
+        }
+        if (!best || bestD < 1e-6) continue;
+        const k = newOff / bestD;
+        moved.set(nid, { x: best.x + (pn.x - best.x) * k, y: best.y + (pn.y - best.y) * k });
+      }
+      if (moved.size > 0) {
+        setNodes(nodes.map((n) => {
+          const m = moved.get(n.id);
+          return m ? { ...n, x: m.x, y: m.y } : n;
+        }));
+      }
+    }
     setBranches((prev) => prev.map((b) => {
       if (!idSet.has(b.id)) return b;
       const manualOverride: Partial<TopoBranch> = editManualR > 0
@@ -135,7 +176,10 @@ export function buildVentPipeLine(
   const dxAll = (lastN.x - firstN.x), dyAll = (lastN.y - firstN.y);
   const lenAll = Math.hypot(dxAll, dyAll) || 1;
   // Перпендикуляр (нормированный) × величина смещения (доля длины маршрута, но в разумных пределах)
-  const off = Math.max(2, Math.min(15, lenAll * 0.04));
+  // Отступ задаёт пользователь в окне става (по умолчанию 2 м). Раньше он
+  // брался как 4 % длины маршрута, до 15 м: входная и выходная ветви става
+  // выходили по 15 м и добавляли лишнее сопротивление.
+  const off = Math.max(0.5, vpPatchRaw.vpOffset ?? 2);
   const perpX = (-dyAll / lenAll) * off;
   const perpY = (dxAll / lenAll) * off;
 
