@@ -3257,6 +3257,72 @@
         "converged": true
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Cogemacoustic −9°: вершина параболы левее паспортной зоны — расчёт сходится",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "method": "mkr",
+        "nodes": [
+          {
+            "id": "A1",
+            "isAtm": true,
+            "z": 0
+          },
+          {
+            "id": "A2",
+            "isAtm": true,
+            "z": 0
+          },
+          {
+            "id": "1",
+            "z": 0
+          },
+          {
+            "id": "2",
+            "z": 0
+          }
+        ],
+        "branches": [
+          {
+            "id": "s1",
+            "fromId": "A1",
+            "toId": "1",
+            "R": 0.2,
+            "angle": 90
+          },
+          {
+            "id": "d",
+            "fromId": "1",
+            "toId": "2",
+            "R": 0.5,
+            "angle": 0
+          },
+          {
+            "id": "f",
+            "fromId": "2",
+            "toId": "A2",
+            "R": 0.05,
+            "angle": 90,
+            "hasFan": true,
+            "fanType": "ГВУ",
+            "fanMode": "curve",
+            "fanInstall": "Без перемычки",
+            "h0": 362,
+            "h1": 188.146,
+            "h2": -5.3753,
+            "qMin": 20.2,
+            "qMax": 33.4
+          }
+        ],
+        "options": {}
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "converged": true
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }

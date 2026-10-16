@@ -340,6 +340,16 @@ def _fixed_H(e, Q):
     return max(0.0, FIXED_FLOW_K * (_fixed_q(e) - abs(Q)))
 
 
+def _fan_q_top(e, h1, h2):
+    """Вершина параболы H(Q), если она лежит ЛЕВЕЕ паспортной зоны (qMin).
+    Левее неё напор считается постоянным (зона помпажа). Иначе −1."""
+    if h2 < 0 and h1 > 0:
+        q_top = -h1 / (2.0 * h2)
+        if q_top < float(e.get("qMin", 0) or 0):
+            return q_top
+    return -1.0
+
+
 def fan_H(e, Q):
     """Напор вентилятора H при суммарном расходе Q (м³/с → Па).
     Возвращает H>=0 (модуль характеристики). Знак (направление действия)
@@ -375,7 +385,11 @@ def fan_H(e, Q):
                 # иначе бисекция рабочей точки не найдёт корень.
                 if e.get("fanReverse") and e.get("reverseH0") is not None:
                     return max(0.0, float(e.get("reverseH0", 0)))
-                return max(0.0, float(e.get("h0", 0)))
+                _h0 = float(e.get("h0", 0)); _h1 = float(e.get("h1", 0)); _h2 = float(e.get("h2", 0))
+                _qt = _fan_q_top(e, _h1, _h2)
+                if _qt > 0:
+                    return max(0.0, _h0 + _h1 * _qt + _h2 * _qt * _qt)
+                return max(0.0, _h0)
             # При реверсе — используем отдельную характеристику если передана
             if e.get("fanReverse") and e.get("reverseH0") is not None:
                 q_max_rev = float(e.get("reverseQMax", e.get("qMax", 1e9)))
@@ -394,6 +408,12 @@ def fan_H(e, Q):
             h0 = float(e.get("h0", 0))
             h1 = float(e.get("h1", 0))
             h2 = float(e.get("h2", 0))
+            # Зона помпажа: левее вершины параболы, если она лежит левее
+            # паспортной зоны (qMin), напор держим постоянным — без ложной
+            # второй рабочей точки на восходящей ветви.
+            q_top = _fan_q_top(e, h1, h2)
+            if q_top > 0 and q_one < q_top:
+                return max(0.0, h0 + h1 * q_top + h2 * q_top * q_top)
             if q_one > q_max_fan:
                 # За паспортным пределом напор заваливается КВАДРАТИЧНО, а не по
                 # прямой: реальный вентилятор за срезом характеристики резко
@@ -480,7 +500,10 @@ def fan_dH(e, Q):
             h1 = float(e.get("h1", 0))
             h2 = float(e.get("h2", 0))
             q_max_fan = float(e.get("qMax", 1e9))
-            if q_one > q_max_fan:
+            q_top = _fan_q_top(e, h1, h2)
+            if q_top > 0 and q_one < q_top:
+                dh_one = 0.0
+            elif q_one > q_max_fan:
                 # Производная квадратичного завала за паспортным пределом —
                 # должна соответствовать формуле напора в fan_H(), иначе
                 # решатель ищет рабочую точку не там, где она есть.
