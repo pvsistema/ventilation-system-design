@@ -325,7 +325,7 @@ function readFields(el: Element): Record<string, string> {
  * проветривания. Сплошной обход всех <field> давал значения ПОСЛЕДНЕГО
  * режима (в эталоне их 104), а не основного.
  */
-function readItemFields(el: Element, modeId?: string): Record<string, string> {
+function readItemFields(el: Element, modeId?: string, ownOnly = false): Record<string, string> {
   const out: Record<string, string> = {};
   const put = (scope: Element | null | undefined) => {
     if (!scope) return;
@@ -339,6 +339,7 @@ function readItemFields(el: Element, modeId?: string): Record<string, string> {
     }
   };
   put(Array.from(el.children).find(c => isTag(c, "customFields")));
+  if (ownOnly) return out;
   const modes = Array.from(el.children).find(c => isTag(c, "ventModesData"));
   const all = modes ? Array.from(modes.children).filter(c => isTag(c, "ventModeData")) : [];
   // Параметры ВЫБРАННОГО режима проветривания (ErpVentModes, isSelected);
@@ -364,6 +365,83 @@ const G = 9.80665;
  * выработок одинаково 5,06·10⁻⁶ = 0,004426/g · 11,21 / 10³.
  */
 const ERP_DEFAULT_AREA = 10;
+
+/**
+ * Сопротивление перемычки (вентсооружения) в единицах файла.
+ *
+ * Сверено с давлениями узлов файла «УГОК» (R = ΔP/Q², 81 выработка с
+ * перемычками — совпадение у всех):
+ *   • способ «задано» (AirResistanceCalculationType = 2 в данных режима) —
+ *     BulkheadUserDefinedResistance;
+ *   • иначе — BulkheadCalculatedResistance САМОГО объекта (итог расчёта
+ *     АэроСети по окну). В данных режима это поле бывает устаревшим: у
+ *     выработки 68 там 16,67 вместо 0,0172 — в 970 раз больше.
+ * Раньше бралось «UserDefined || Calculated» из данных режима: перемычки с
+ * окном получали чужое R, а нулевое заданное R подменялось расчётным.
+ */
+function erpItemR(it: { f: Record<string, string>; own: Record<string, string> }): number {
+  if (String(it.f["Airflow.AirResistanceCalculationType"] ?? "").trim() === "2") {
+    return num(it.f["Airflow.BulkheadUserDefinedResistance"], 0);
+  }
+  const own = it.own["Airflow.BulkheadCalculatedResistance"];
+  return own != null && own !== "" ? num(own, 0) : num(it.f["Airflow.BulkheadCalculatedResistance"], 0);
+}
+
+/**
+ * Напор вентилятора по направлению ВЫРАБОТКИ (from → to), кгс/м².
+ *
+ * FanPressure в полях САМОГО объекта — рабочая точка последнего расчёта
+ * АэроСети, и знак в ней уже учитывает направление (isReversed повторно не
+ * применяется): на «УГОК» у всех 45 вентиляторов этот напор совпал с
+ * ΔP по давлениям узлов. FanPressure в данных режима — устаревший след
+ * прошлых расчётов: у ГВУ на выработке 40 там 508,6 кгс/м² (≈ 4988 Па) при
+ * фактическом нуле, у ВМП 2244 — 2,05 вместо 2,18.
+ * Если собственного напора нет — берём настройку режима с учётом isReversed.
+ */
+function erpFanHeadKgs(it: { f: Record<string, string>; own: Record<string, string>; reversed: boolean }): number {
+  const own = it.own["Airflow.FanPressure"];
+  if (own != null && own !== "") return num(own, 0);
+  const h = num(it.f["Airflow.FanPressure"], 0) || num(it.f["Airflow.IdealVentilatorPressure"], 0);
+  return it.reversed ? -h : h;
+}
+
+/**
+ * Сопротивление калорифера (объект «Калорифер», поля Heater.*), единицы файла.
+ * Способ 2 — задано пользователем (Heater.UserDefinedR). На «УГОК» у
+ * калориферных каналов 1958/1960 это 0,007 и 0,005 — в сотни раз больше R
+ * самой выработки; без него расход через калориферы был завышен.
+ */
+function erpHeaterR(it: { f: Record<string, string> }): number {
+  if (String(it.f["Heater.RCalculationType"] ?? "").trim() !== "2") return 0;
+  return num(it.f["Heater.UserDefinedR"], 0);
+}
+
+/**
+ * Единицы сопротивления по давлениям узлов из самого файла.
+ *
+ * АэроСеть сохраняет давления узлов (ModelAirPressure) последнего расчёта.
+ * Для выработки без объектов R = ΔP/Q², а по геометрии R = α·P·L/S³ (α в
+ * СИ). Если проект в рудничных единицах (кгс), ΔP/Q² меньше геометрического
+ * ровно в g раз; в СИ — совпадает. Это прямая проверка, она не зависит от
+ * вентиляторов и перемычек (их неверное чтение сбивало проверку по невязке:
+ * на «УГОК» она выбрала СИ, и все заданные R ушли в 9,8 раза меньше).
+ */
+export function detectErpUnitByPressures(
+  samples: { dp: number; q: number; rGeomSi: number }[],
+): "kmu" | "si" | null {
+  const ratios: number[] = [];
+  for (const s of samples) {
+    if (Math.abs(s.q) < 1 || !(s.rGeomSi > 0) || Math.abs(s.dp) < 1e-6) continue;
+    const r = s.dp / (s.q * Math.abs(s.q));
+    if (r > 0) ratios.push(r / s.rGeomSi);
+  }
+  if (ratios.length < 10) return null;
+  ratios.sort((a, b) => a - b);
+  const m = ratios[Math.floor(ratios.length / 2)];
+  if (Math.abs(m * G - 1) < 0.1) return "kmu";
+  if (Math.abs(m - 1) < 0.1) return "si";
+  return null;
+}
 const ERP_DEFAULT_PERIMETER = 11.21;
 const ERP_DEFAULT_ALPHA_SI = 0.004426;
 
@@ -653,7 +731,7 @@ export async function parseErp(
   // самой выработке — лишь устаревший след ручного ввода: у 344 выработок
   // проекта ЮПР там стояло 0,004426 при крепи с α = 0,01, и расчёт АэроСети
   // шёл именно по 0,01. Поэтому справочник поверхностей главнее.
-  const ribTypes = new Map<string, { name: string; vMax: number; surfaceTypeId: string; crossSectionTypeId: string }>();
+  const ribTypes = new Map<string, { name: string; vMax: number; surfaceTypeId: string; crossSectionTypeId: string; defaultArea: number }>();
   const surfaceTypes = new Map<string, { name: string; alpha: number }>();
   // Формы сечения: хранят отношение периметра к корню из площади (P = k·√S).
   // Нужны потому, что периметр записан лишь у части выработок, а без него
@@ -669,6 +747,9 @@ export async function parseErp(
         vMax: num(t.getAttribute("defaultMaxAirVelocity"), 0),
         surfaceTypeId: t.getAttribute("surfaceTypeId") ?? "",
         crossSectionTypeId: t.getAttribute("crossSectionTypeId") ?? "",
+        // Сечение по умолчанию: выработка, у которой своё сечение не
+        // записано, считается АэроСетью именно с ним.
+        defaultArea: num(t.getAttribute("defaultCrossSectionArea"), 0),
       });
     });
     rtDoc.querySelectorAll("surfaceType").forEach(t => {
@@ -840,6 +921,13 @@ export async function parseErp(
   // не хранит, поэтому z горизонта вычислим ниже как медиану отметок его узлов.
   interface RawItem {
     code: string; description: string; f: Record<string, string>; reversed: boolean;
+    /**
+     * Поля САМОГО объекта, без данных режима проветривания. В них АэроСеть
+     * пишет результат последнего расчёта (рабочий напор вентилятора,
+     * расчётное R перемычки), а в данных режима — исходные настройки, где
+     * эти же поля бывают устаревшими (см. erpItemR / erpFanHeadKgs).
+     */
+    own: Record<string, string>;
     /** Звено ломаной и смещение от его начала (единицы экрана файла). */
     segIndex: number; segOffset: number;
   }
@@ -877,6 +965,7 @@ export async function parseErp(
           code: it.getAttribute("itemCode") ?? "",
           description: it.getAttribute("description") ?? "",
           f: readItemFields(it, ventModeId),
+          own: readItemFields(it, ventModeId, true),
           // Направление действия объекта: isReversed="True" — вентилятор
           // работает против направления выработки (from → to).
           reversed: bool(it.getAttribute("isReversed")),
@@ -1025,7 +1114,12 @@ export async function parseErp(
     const rt = ribTypes.get(f["Airflow.RibTypeId"] ?? "");
     const hasArea = f["Airflow.CrossSectionArea"] != null && f["Airflow.CrossSectionArea"] !== "";
     const defaulted = !hasArea && !rt;
-    const area = hasArea ? num(f["Airflow.CrossSectionArea"], 0) : (defaulted ? ERP_DEFAULT_AREA : 0);
+    // Нет своего сечения — берём сечение ТИПА выработки (defaultCrossSectionArea).
+    // Раньше такие выработки получали S = 0 и R = 0: на «УГОК» это 234
+    // выработки, а сверка с давлениями узлов файла показала, что АэроСеть
+    // считает их ровно по сечению типа (19,2 м² у «Упырёвской БВР торкрет»).
+    const area = hasArea ? num(f["Airflow.CrossSectionArea"], 0)
+      : defaulted ? ERP_DEFAULT_AREA : (rt?.defaultArea ?? 0);
 
     const surfOwn = surfaceTypes.get(f["Airflow.SurfaceTypeId"] ?? "");
     const surfType = rt ? surfaceTypes.get(rt.surfaceTypeId) : undefined;
@@ -1079,19 +1173,18 @@ export async function parseErp(
         const mode = String(f["Airflow.AirResistanceCalculationType"] ?? "");
         const sq = num(f["Airflow.DepressionSurveyDischarge"], 0);
         const sdp = num(f["Airflow.UserDefinedDepressionDelta"], 0);
+        const userR = mode === "2" || (mode === "1" && sq > 0);
         const rUserFile = mode === "2" ? num(f["Airflow.UserDefinedResistance"], 0)
-          : mode === "1" && sq > 0 && sdp > 0 ? sdp / (sq * sq) : 0;
-        const rGeom = rUserFile > 0 || !(g.area > 0)
+          : mode === "1" && sq > 0 ? sdp / (sq * sq) : 0;
+        const rGeom = userR || !(g.area > 0)
           ? 0 : (g.alphaSi / G) * g.perimeter * g.length / Math.pow(g.area, 3);
         let rBulk = 0, h = 0;
         for (const it of rb.items) {
           const isFan = ITEM_FAN.has(it.code) || FAN_FIELDS.some(k => it.f[k] != null && it.f[k] !== "");
           if (isFan) {
-            const hk = num(it.f["Airflow.FanPressure"], 0) || num(it.f["Airflow.IdealVentilatorPressure"], 0);
-            h += it.reversed ? -hk : hk;
+            h += erpFanHeadKgs(it);
           } else {
-            rBulk += num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
-              || num(it.f["Airflow.BulkheadCalculatedResistance"], 0);
+            rBulk += erpItemR(it) + erpHeaterR(it);
           }
         }
         return {
@@ -1100,7 +1193,22 @@ export async function parseErp(
         };
       }), new Set([...rawNodes.values()].filter(nd => nd.atm).map(nd => nd.id)))
     : null;
+  // Прямая проверка по давлениям узлов: выработки БЕЗ объектов, R по α.
+  const pressureUnit = requestedUnit === "auto"
+    ? detectErpUnitByPressures(rawBranches.filter(rb => rb.items.length === 0).map(rb => {
+        const g = geoms.get(rb)!;
+        const mode = String(rb.f["Airflow.AirResistanceCalculationType"] ?? "");
+        const a = rawNodes.get(rb.fromId), b = rawNodes.get(rb.toId);
+        return {
+          dp: a && b ? a.p - b.p : 0,
+          q: num(rb.f["Airflow.Discharge"], 0),
+          rGeomSi: mode === "1" || mode === "2" || !(g.area > 0) ? 0
+            : g.alphaSi * g.perimeter * g.length / Math.pow(g.area, 3),
+        };
+      }))
+    : null;
   const rUnit: "kmu" | "si" = requestedUnit !== "auto" ? requestedUnit
+    : pressureUnit ? pressureUnit
     : balanceUnit?.unit ? balanceUnit.unit
     : detectErpResistanceUnit(rawBranches.map(rb => {
         const g = geoms.get(rb)!;
@@ -1121,6 +1229,8 @@ export async function parseErp(
   const unitText = rUnit === "si" ? "СИ (Н·с²/м⁸), без пересчёта" : "кгс·с²/м⁸, умножаем на 9,81";
   log.push(requestedUnit !== "auto"
     ? `Единицы R: задано вручную → ${unitText}`
+    : pressureUnit
+      ? `Единицы R: по давлениям узлов файла → ${unitText}`
     : balanceUnit?.unit
       ? `Единицы R: по сходимости давлений в сети → ${unitText} (невязка: СИ ${balanceUnit.si.toFixed(2)}, кгс ${balanceUnit.kmu.toFixed(2)} кгс/м²)`
       : `Единицы R: по сравнению с геометрией → ${unitText}${balanceUnit ? ` (сходимость не различила: СИ ${balanceUnit.si.toFixed(2)}, кгс ${balanceUnit.kmu.toFixed(2)})` : ""}`);
@@ -1150,6 +1260,7 @@ export async function parseErp(
   const flippedBranches = new Set<string>();
   const alphaStat = { surface: 0, ribType: 0, rib: 0, default: 0, none: 0 };
   let bendLengths = 0, notPassable = 0, longwalls = 0;
+  let heatersWithR = 0;
 
   for (const rb of rawBranches) {
     const fromId = idMap.get(rb.fromId);
@@ -1182,10 +1293,23 @@ export async function parseErp(
     // выработка шла «по α» и получала R в 8 раз меньше.
     const surveyQ = num(f["Airflow.DepressionSurveyDischarge"], 0);
     const surveyDP = num(f["Airflow.UserDefinedDepressionDelta"], 0);
-    const rSurvey = rMode === "1" && surveyQ > 0 && surveyDP > 0
-      ? +(surveyDP / (surveyQ * surveyQ) * rFactor).toFixed(6) : 0;
-    const useManualR = (rMode === "2" && rUser > 0) || rSurvey > 0;
-    const rManual = rSurvey > 0 ? rSurvey : rUser;
+    // Способ «задано» / «по съёмке» действует и при НУЛЕВОМ значении: так
+    // АэроСеть и считает (на «УГОК» выработки 1676 и 1754 — R = 0 по давлениям
+    // узлов). Раньше ноль игнорировался, и выработка шла по α с R в тысячи
+    // раз больше оригинала.
+    const bySurvey = rMode === "1" && surveyQ > 0;
+    const rSurvey = bySurvey ? +(surveyDP / (surveyQ * surveyQ) * rFactor).toFixed(6) : 0;
+    // Калорифер — местное сопротивление в канале. Переносим его в ξ
+    // выработки (R_мест = ξ·ρ/(2·S²) → ξ = 2·S²·R/ρ), чтобы R по α и
+    // геометрии осталось редактируемым. Без сечения или при заданном R —
+    // прибавляем к заданному R.
+    const heaterRSi = rb.items.reduce((acc, it) => acc + erpHeaterR(it), 0) * rFactor;
+    if (heaterRSi > 0) heatersWithR++;
+    const useManualRBase = rMode === "2" || bySurvey;
+    const heaterAsXi = heaterRSi > 0 && !useManualRBase && area > 0;
+    const localXi = heaterAsXi ? +(2 * area * area * heaterRSi / 1.2).toFixed(4) : 0;
+    const useManualR = useManualRBase;
+    const rManual = +((bySurvey ? rSurvey : rUser) + (heaterRSi > 0 && !heaterAsXi ? heaterRSi : 0)).toFixed(6);
 
     // Объект на ветви опознаём по его собственным полям (надёжно на любом
     // проекте), а код itemCode — как запасной признак для известных картинок.
@@ -1217,8 +1341,7 @@ export async function parseErp(
     // только первый, и выработка получала −3891 Па вместо +284 Па.
     const fanItems = rb.items.filter(it =>
       ITEM_FAN.has(it.code) || FAN_FIELDS.some(k => it.f[k] != null && it.f[k] !== ""));
-    const fanSumKgs = fanItems.reduce((s, it) =>
-      s + (num(it.f["Airflow.FanPressure"], 0) || num(it.f["Airflow.IdealVentilatorPressure"], 0)), 0);
+    const fanSumKgs = fanItems.reduce((s, it) => s + erpFanHeadKgs(it), 0);
     const fanPressureKgs = fanSumKgs
       || num(f["Airflow.FanPressure"], 0)
       || num(f["Airflow.IdealVentilatorPressure"], 0);
@@ -1227,9 +1350,17 @@ export async function parseErp(
     // Отрицательный напор в файле — тоже работа против направления выработки:
     // наш расчёт берёт max(0, напор), поэтому знак переводим в реверс, а напор
     // делаем положительным. Иначе такой вентилятор просто «выключался».
+    // Напор уже со знаком по направлению выработки (erpFanHeadKgs). Для
+    // постоянной депрессии направление задаёт этот знак. Для работы по
+    // характеристике и постоянного расхода — атрибут isReversed: рабочая
+    // точка может лежать в зоне отрицательного напора, и по знаку нельзя
+    // судить, куда вентилятор установлен.
     const fanReversedAttr = !!fanItem?.reversed;
     const fanPressureSigned = fanPressureKgs * PA_PER_KGS_M2;
-    const fanReverse = hasFan && (fanReversedAttr !== (fanPressureSigned < 0));
+    const vTypeEarly = String(ff["Airflow.VentilatorType"] ?? "0").trim();
+    const fanReverse = hasFan && (vTypeEarly === "1" || vTypeEarly === "2"
+      ? fanReversedAttr
+      : fanPressureSigned < 0);
     const fanPressure = +Math.abs(fanPressureSigned).toFixed(2);
 
     // ── Режим работы вентилятора (Airflow.VentilatorType) ────────────────
@@ -1333,8 +1464,7 @@ export async function parseErp(
     if (flipVmp) flippedBranches.add(branchIdOf.get(rb)!);
     // Сопротивление перемычки: заданное пользователем, иначе расчётное.
     // Единица та же, что и у выработок, — приводим тем же коэффициентом.
-    const itemR = (it: RawItem) => (num(it.f["Airflow.BulkheadUserDefinedResistance"], 0)
-      || num(it.f["Airflow.BulkheadCalculatedResistance"], 0)) * rFactor;
+    const itemR = (it: RawItem) => erpItemR(it) * rFactor;
     // Несколько сооружений на одной выработке стоят последовательно: R
     // складываются. Поле самой выработки — запасной вариант, если у
     // объектов сопротивление не записано.
@@ -1415,6 +1545,7 @@ export async function parseErp(
       resistanceMode: useManualR ? "manual" : "alpha",
       manualR: useManualR ? rManual : 0,
       alphaCoef,
+      localXi,
       // Название крепи из справочника АэроСети — для подписи в свойствах.
       surface: g.surfaceName || "",
       resistance: rUser,
@@ -1473,6 +1604,7 @@ export async function parseErp(
   }
   log.push(`α: по крепи выработки ${alphaStat.surface}, по крепи типа ${alphaStat.ribType}, из поля выработки ${alphaStat.rib}, по умолчанию ${alphaStat.default}, нет ${alphaStat.none}`);
   log.push(`длина по трассе с изломами: ${bendLengths}; непроходимых: ${notPassable}; лав: ${longwalls}`);
+  if (heatersWithR > 0) log.push(`калориферов с заданным сопротивлением: ${heatersWithR} — учтены как местное сопротивление выработки`);
   if (alphaStat.default > 0) {
     warnings.push(`Выработок без сечения и типа: ${alphaStat.default}. Им подставлены параметры АэроСети по умолчанию (S = 10 м², P = 11,21 м, α = 0,004426) — так их считает и сама АэроСеть`);
   }
