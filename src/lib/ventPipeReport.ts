@@ -15,6 +15,7 @@ import { VENT_DUCT_BRANDS } from "@/lib/ventDucts";
 import { getFanById, fanHAngle } from "@/lib/fanCurves";
 import {
   calcVentPipe, calcVentPipeMaxLength, totalLocalXi, type VpLeakMethod,
+  ventPipeChainFrom, pickAltDiameter, profileWithExtension,
 } from "@/lib/ventPipeCalc";
 
 /** Строка отчёта по одному ставу */
@@ -39,6 +40,18 @@ export interface VentPipeReportRow {
   maxLength: number;
   reserve: number;
   limitedBy: "flow" | "pressure" | "none";
+  /** Участки става, например «Ø1200 — 148 м, Ø800 — 528 м» */
+  segmentsText: string;
+  /** Сравнение: наращивание тем же рукавом и рукавом другого диаметра */
+  compare: {
+    lastDia: number;
+    altDia: number;
+    maxLengthLast: number;
+    maxLengthAlt: number;
+    limitedByAlt: "flow" | "pressure" | "none";
+    /** Расход в забое на длинах при наращивании тем же / другим рукавом */
+    points: { length: number; faceLast: number; faceAlt: number }[];
+  } | null;
 }
 
 const METHOD_LABEL: Record<VpLeakMethod, string> = {
@@ -66,6 +79,9 @@ export function buildVentPipeReport(
 
   for (const b of branches) {
     if (!b.hasVentPipe || !(b.vpLength ?? 0)) continue;
+    // Став из звеньев: одна строка на став — по звену с вентилятором.
+    // Иначе каждое из десятков звеньев давало бы свою строку-дубль.
+    if (b.isVentPipeBranch && !b.hasFan) continue;
 
     const brand = VENT_DUCT_BRANDS.find(x => x.id === b.vpBrandId);
     const size = brand?.sizes.find(s => s.diameter === b.vpDiameter);
@@ -103,6 +119,12 @@ export function buildVentPipeReport(
       fanFlow,
     };
 
+    // Фактические участки става (разные диаметры) — сопротивление по ним.
+    const chain = ventPipeChainFrom(b, branches);
+    if (chain && chain.profile.segments.length > 0) {
+      (input as typeof input & { rProfile?: typeof chain.profile }).rProfile = chain.profile;
+    }
+
     const res = calcVentPipe({ ...input, length });
 
     const section = ventSections.find(s => s.id === (b.ventSectionId ?? "")) ?? null;
@@ -126,7 +148,42 @@ export function buildVentPipeReport(
       ? calcVentPipeMaxLength(input, required, pressureLimit, length)
       : null;
 
+    // ── Сравнение диаметров при наращивании става ────────────────────
+    let compare: VentPipeReportRow["compare"] = null;
+    if (chain && required > 0) {
+      const pick = pickAltDiameter(
+        chain, brand ? brand.sizes.map(z => z.diameter) : [600, 800, 1000, 1200], b.vpAltDiameter,
+      );
+      if (pick.altDia > 0) {
+        const altInput = { ...input, rProfile: profileWithExtension(chain.profile, pick.altDia) };
+        const altLimit = calcVentPipeMaxLength(altInput, required, pressureLimit, length);
+        const top = Math.max(length * 1.6, (limit?.maxLength ?? 0), altLimit.maxLength, 100);
+        const step = Math.max(50, Math.round(top / 6 / 50) * 50);
+        const pts: { length: number; faceLast: number; faceAlt: number }[] = [];
+        for (let L = Math.ceil(length / step) * step; L <= top + 0.01 && pts.length < 8; L += step) {
+          if (L <= 0) continue;
+          pts.push({
+            length: L,
+            faceLast: calcVentPipe({ ...input, length: L }).flowFace,
+            faceAlt: calcVentPipe({ ...altInput, length: L }).flowFace,
+          });
+        }
+        compare = {
+          lastDia: pick.lastDia,
+          altDia: pick.altDia,
+          maxLengthLast: limit?.maxLength ?? 0,
+          maxLengthAlt: altLimit.maxLength,
+          limitedByAlt: altLimit.limitedBy,
+          points: pts,
+        };
+      }
+    }
+
     rows.push({
+      segmentsText: chain
+        ? chain.profile.segments.map(x => `Ø${x.diameter} — ${Math.round(x.length)} м`).join(", ")
+        : `Ø${b.vpDiameter ?? 0} — ${Math.round(length)} м`,
+      compare,
       branchId: b.id,
       brand: brand?.name ?? "—",
       diameter: b.vpDiameter ?? 0,
@@ -195,7 +252,7 @@ export function buildVentPipeReportHtml(
         ${rows.map(r => `
           <tr class="${r.ok ? "" : "bad"}">
             <td class="left">${r.branchId}</td>
-            <td class="left">${r.brand}</td>
+            <td class="left">${r.brand}<br><span style="font-size:7.5pt">${r.segmentsText}</span></td>
             <td>${n(r.diameter, 0)}</td>
             <td>${n(r.length, 0)}</td>
             <td>${n(r.flowFan)}</td>
@@ -209,6 +266,49 @@ export function buildVentPipeReportHtml(
           </tr>`).join("")}
       </tbody>
     </table>
+
+    ${rows.some(r => r.compare) ? `
+    <h2>Сравнение диаметров при наращивании става</h2>
+    <p class="hint">Нынешний став остаётся как есть; дальше его наращивают
+    рукавом того же диаметра, что и последний участок, или рукавом другого
+    диаметра. Показан расход воздуха в забое на разных длинах става.</p>
+    ${rows.filter(r => r.compare).map(r => {
+      const c = r.compare!;
+      const diff = c.maxLengthAlt - c.maxLengthLast;
+      return `
+      <table class="cmp">
+        <thead>
+          <tr><th colspan="${c.points.length + 1}" class="left">
+            Выработка ${r.branchId} · став: ${r.segmentsText} ·
+            требуется в забой ${n(r.required)} м³/с
+          </th></tr>
+          <tr>
+            <th class="left">Наращивание рукавом</th>
+            ${c.points.map(p => `<th>${n(p.length, 0)} м</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="left">Ø${c.lastDia} мм (как сейчас)</td>
+            ${c.points.map(p => `<td class="${p.faceLast < r.required ? "neg" : ""}">${n(p.faceLast)}</td>`).join("")}
+          </tr>
+          <tr>
+            <td class="left">Ø${c.altDia} мм</td>
+            ${c.points.map(p => `<td class="${p.faceAlt < r.required ? "neg" : ""}">${n(p.faceAlt)}</td>`).join("")}
+          </tr>
+          <tr>
+            <td class="left" colspan="${c.points.length + 1}">
+              Предельная длина: Ø${c.lastDia} — <b>${c.maxLengthLast > 0 ? n(c.maxLengthLast, 0) + " м" : "—"}</b>,
+              Ø${c.altDia} — <b>${c.maxLengthAlt > 0 ? n(c.maxLengthAlt, 0) + " м" : "—"}</b>${
+                c.maxLengthLast > 0 && c.maxLengthAlt > 0 && Math.abs(diff) > 0.5
+                  ? diff > 0 ? ` (на ${n(diff, 0)} м дальше)` : ` (на ${n(-diff, 0)} м меньше)`
+                  : ""
+              }. Ограничение для Ø${c.altDia}: ${LIMIT_LABEL[c.limitedByAlt]}.
+            </td>
+          </tr>
+        </tbody>
+      </table>`;
+    }).join("")}` : ""}
 
     <h2>Пояснения по забоям</h2>
     <table class="notes">
@@ -264,6 +364,9 @@ export function buildVentPipeReportHtml(
   tr.bad td { background: #fff2f2; }
   table.notes td.left { font-size: 8pt; }
   .empty { font-size: 11pt; color: var(--c-t3, #555); }
+  .hint { font-size: 8.5pt; color: var(--c-t2, #444); margin: 0 0 2mm; }
+  table.cmp { page-break-inside: avoid; }
+  th.left { text-align: left; }
   .foot { margin-top: 6mm; font-size: 8.5pt; color: var(--c-t2, #444); }
 </style></head>
 <body>

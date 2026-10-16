@@ -22,6 +22,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { resistanceFromPipe, depression } from "@/lib/aerodynamics";
 import { kolaVentLeak } from "@/lib/ventDuctLeakTables";
+import type { TopoBranch } from "@/lib/topology";
 
 /**
  * Методика расчёта утечек воздуха в ставе.
@@ -602,4 +603,74 @@ export function buildDeliveryCurve(
     out.push({ length: L, flowFace: r.flowFace, deltaP: r.deltaP });
   }
   return out;
+}
+
+/** Фактический став от данной ветви по ходу воздуха: участки по диаметрам. */
+export interface VentPipeChain {
+  /** Сопротивление цепочки, кМюрг (как уходит в расчёт сети, ÷g) */
+  rKgf: number;
+  length: number;
+  links: number;
+  profile: DuctProfile;
+}
+
+/**
+ * Собирает став, начиная с ветви branch, по звеньям isVentPipeBranch до
+ * следующего вентилятора или развилки. Подряд идущие звенья одного диаметра
+ * объединяются в участок. Общая функция для вкладки «Вентстав» и отчёта.
+ */
+export function ventPipeChainFrom(branch: TopoBranch, allBranches: TopoBranch[]): VentPipeChain | null {
+  if (!branch.isVentPipeBranch) return null;
+  const next = new Map<string, TopoBranch[]>();
+  for (const x of allBranches) {
+    if (!x.isVentPipeBranch) continue;
+    const arr = next.get(x.fromId) ?? [];
+    arr.push(x); next.set(x.fromId, arr);
+  }
+  const diaOf = (x: TopoBranch) =>
+    Math.round((x.pipeDiameter ?? 0) * 1000) || x.vpDiameter || 0;
+  let rSi = branch.resistance ?? 0, len = branch.length ?? 0, links = 1;
+  const seen = new Set([branch.id]);
+  const segs: { diameter: number; length: number }[] = [
+    { diameter: diaOf(branch), length: branch.length ?? 0 },
+  ];
+  let cur = branch;
+  for (;;) {
+    const cand = (next.get(cur.toId) ?? []).filter(x => !seen.has(x.id));
+    if (cand.length !== 1) break;
+    if (cand[0].hasFan) break;
+    cur = cand[0]; seen.add(cur.id);
+    rSi += cur.resistance ?? 0; len += cur.length ?? 0; links++;
+    const d = diaOf(cur), last = segs[segs.length - 1];
+    if (last.diameter === d) last.length += cur.length ?? 0;
+    else segs.push({ diameter: d, length: cur.length ?? 0 });
+  }
+  const exitLoss = /\(выход\)/.test(cur.type ?? "");
+  return links > 1 && rSi > 0
+    ? { rKgf: rSi / 9.80665, length: len, links, profile: { segments: segs.filter(x => x.length > 0 && x.diameter > 0), exitLoss } }
+    : null;
+}
+
+/**
+ * Диаметр для сравнения «наращивать другим рукавом»: заданный
+ * пользователем, иначе самый большой из уже стоящих в ставе, иначе
+ * ближайший больший из списка типоразмеров.
+ */
+export function pickAltDiameter(
+  chain: VentPipeChain, sizes: number[], userChoice?: number,
+): { lastDia: number; altDia: number; options: number[] } {
+  const segs = chain.profile.segments;
+  const lastDia = segs[segs.length - 1]?.diameter ?? 0;
+  const options = Array.from(new Set([...sizes, ...segs.map(z => z.diameter)]))
+    .filter(d => d !== lastDia).sort((a, b) => a - b);
+  const autoAlt = Math.max(...segs.map(z => z.diameter));
+  const altDia = (userChoice ?? 0) > 0 && userChoice !== lastDia
+    ? userChoice!
+    : (autoAlt !== lastDia ? autoAlt : (options.find(d => d > lastDia) ?? 0));
+  return { lastDia, altDia, options };
+}
+
+/** Профиль става, который после нынешних участков наращивается рукавом altDia */
+export function profileWithExtension(profile: DuctProfile, altDia: number): DuctProfile {
+  return { ...profile, segments: [...profile.segments, { diameter: altDia, length: 1e6 }] };
 }

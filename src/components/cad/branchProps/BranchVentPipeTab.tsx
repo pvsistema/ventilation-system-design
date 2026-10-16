@@ -21,6 +21,7 @@ import { getFanById, fanHAngle } from "@/lib/fanCurves";
 import {
   calcVentPipe, calcVentPipeMaxLength, buildDeliveryCurve, solveFanFlow,
   totalLocalXi, type VpLeakMethod,
+  ventPipeChainFrom, pickAltDiameter, profileWithExtension,
 } from "@/lib/ventPipeCalc";
 import {
   SectionHeader, NumberInput, ComputedInput, SelectField, InlineLabel,
@@ -99,37 +100,7 @@ export default function BranchVentPipeTab({
   // РАЗНЫХ диаметров звеньев и потерь на выходе в забой. Раньше вкладка
   // считала весь став по диаметру звена с вентилятором: Ø1200 на 676 м
   // вместо 148 м Ø1200 + 528 м Ø800 — сопротивление занижалось в 6 раз.
-  const chain = (() => {
-    if (!allBranches || !branch.isVentPipeBranch) return null;
-    const next = new Map<string, TopoBranch[]>();
-    for (const x of allBranches) {
-      if (!x.isVentPipeBranch) continue;
-      const arr = next.get(x.fromId) ?? [];
-      arr.push(x); next.set(x.fromId, arr);
-    }
-    const diaOf = (x: TopoBranch) =>
-      Math.round((x.pipeDiameter ?? 0) * 1000) || x.vpDiameter || 0;
-    let rSi = branch.resistance ?? 0, len = branch.length ?? 0, links = 1;
-    const seen = new Set([branch.id]);
-    const segs: { diameter: number; length: number }[] = [
-      { diameter: diaOf(branch), length: branch.length ?? 0 },
-    ];
-    let cur = branch;
-    for (;;) {
-      const cand = (next.get(cur.toId) ?? []).filter(x => !seen.has(x.id));
-      if (cand.length !== 1) break;
-      if (cand[0].hasFan) break;
-      cur = cand[0]; seen.add(cur.id);
-      rSi += cur.resistance ?? 0; len += cur.length ?? 0; links++;
-      const d = diaOf(cur), last = segs[segs.length - 1];
-      if (last.diameter === d) last.length += cur.length ?? 0;
-      else segs.push({ diameter: d, length: cur.length ?? 0 });
-    }
-    const exitLoss = /\(выход\)/.test(cur.type ?? "");
-    return links > 1 && rSi > 0
-      ? { rKgf: rSi / 9.80665, length: len, links, profile: { segments: segs.filter(x => x.length > 0 && x.diameter > 0), exitLoss } }
-      : null;
-  })();
+  const chain = allBranches ? ventPipeChainFrom(branch, allBranches) : null;
   const multiDia = !!chain && new Set(chain.profile.segments.map(x => x.diameter)).size > 1;
 
   const baseInputRaw = {
@@ -222,25 +193,14 @@ export default function BranchVentPipeTab({
   // Нынешний став остаётся как есть, а дальше его наращивают выбранным
   // рукавом (по умолчанию — самым большим из уже стоящих, например Ø1200
   // вместо Ø800). Так видно, сколько воздуха даст переход на больший диаметр.
-  const lastDia = chain?.profile.segments[chain.profile.segments.length - 1]?.diameter ?? 0;
-  const altOptions = Array.from(new Set([
-    ...(brand ? brand.sizes.map(z => z.diameter) : [600, 800, 1000, 1200]),
-    ...(chain ? chain.profile.segments.map(z => z.diameter) : []),
-  ])).filter(d => d !== lastDia).sort((a, b) => a - b);
-  const autoAlt = chain
-    ? Math.max(...chain.profile.segments.map(z => z.diameter))
-    : 0;
-  const altDia = (branch.vpAltDiameter ?? 0) > 0 && branch.vpAltDiameter !== lastDia
-    ? branch.vpAltDiameter!
-    : (autoAlt !== lastDia ? autoAlt : (altOptions.find(d => d > lastDia) ?? 0));
+  const altPick = chain
+    ? pickAltDiameter(chain, brand ? brand.sizes.map(z => z.diameter) : [600, 800, 1000, 1200], branch.vpAltDiameter)
+    : null;
+  const lastDia = altPick?.lastDia ?? 0;
+  const altDia = altPick?.altDia ?? 0;
+  const altOptions = altPick?.options ?? [];
   const altInput = chain && altDia > 0
-    ? {
-        ...input,
-        rProfile: {
-          ...chain.profile,
-          segments: [...chain.profile.segments, { diameter: altDia, length: 1e6 }],
-        },
-      }
+    ? { ...input, rProfile: profileWithExtension(chain.profile, altDia) }
     : null;
   const altCurve = altInput ? buildDeliveryCurve(altInput, curveMax, 44) : null;
   const altLimit = altInput && required > 0
