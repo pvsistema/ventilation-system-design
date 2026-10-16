@@ -87,6 +87,8 @@ interface BranchPropsPanelProps {
   /** Изменить масштаб символа УО редукционного клапана */
   onReducerSymbolScale?: (scale: number) => void;
   onRemoveGate?: () => void;
+  /** Все ветви схемы (для вкладки «Вентстав» — фактическая цепочка звеньев) */
+  allBranches?: TopoBranch[];
 }
 
 
@@ -109,7 +111,7 @@ function fmtR(rKmu: number, minDecimals = 7): string {
   return rKmu.toFixed(d);
 }
 
-export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate, onOpenVehicleLibrary }: BranchPropsPanelProps) {
+export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, pollutionFraction = 0, pollutionThreshold, defaultInnerTab, activeTab, onRemoveFan, fanSymbolScale, onFanSymbolScale, fanIndFontSize, onFanIndFontSize, onFanIndResetOffset, onFanSymbolDelete, onReverse, normalFlows, mineFans, mineBulkheads, onOpenFanLibrary, ventSections = [], onOpenSectionsLibrary, ventNorms = DEFAULT_VENT_NORMS, bulkheadSymTypeId, bulkheadSymbol, onUpdateBulkheadSym, unitsConfig = DEFAULT_UNITS_CONFIG, bulkheadRKmu = 0, nodes = [], waterBranchResult, onRemoveReducer, reducerSymbolScale, onReducerSymbolScale, onRemoveGate, onOpenVehicleLibrary, allBranches }: BranchPropsPanelProps) {
   const shortNode = (id: string): string => {
     const n = nodes.find(nn => nn.id === id);
     if (!n) return id;
@@ -249,6 +251,7 @@ export default function BranchPropsPanel({ branch, onUpdate, selectedCount = 1, 
         {innerTab === "Вентстав" && (
           <BranchVentPipeTab
             branch={branch}
+            allBranches={allBranches}
             onUpdate={onUpdate}
             ventSections={ventSections}
             ventNorms={ventNorms}

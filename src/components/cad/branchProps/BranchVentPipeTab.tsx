@@ -31,6 +31,8 @@ interface BranchVentPipeTabProps {
   onUpdate: (patch: Partial<TopoBranch>) => void;
   ventSections: VentSection[];
   ventNorms: VentNorms;
+  /** Все ветви схемы — чтобы собрать фактическую цепочку звеньев става. */
+  allBranches?: TopoBranch[];
 }
 
 function numFmt(v: number, d = 2): string {
@@ -39,7 +41,7 @@ function numFmt(v: number, d = 2): string {
 }
 
 export default function BranchVentPipeTab({
-  branch, onUpdate, ventSections, ventNorms,
+  branch, onUpdate, ventSections, ventNorms, allBranches,
 }: BranchVentPipeTabProps) {
   // ── Ставa на ветви нет — предлагаем его построить ───────────────────────
   if (!branch.hasVentPipe) {
@@ -91,7 +93,34 @@ export default function BranchVentPipeTab({
     ? (branch.vpJointCount ?? 0) / length
     : (branch.vpLinkLength ?? 20) > 0 ? 1 / (branch.vpLinkLength ?? 20) : 0;
 
-  const baseInput = {
+  // ── Фактическая цепочка звеньев става ──────────────────────────────────
+  // Звенья идут от вентилятора друг за другом (ветви isVentPipeBranch). Их
+  // сопротивление — то, что реально уходит в расчёт сети (Н·с²/м⁸), с учётом
+  // РАЗНЫХ диаметров звеньев и потерь на выходе в забой. Раньше вкладка
+  // считала весь став по диаметру звена с вентилятором: Ø1200 на 676 м
+  // вместо 148 м Ø1200 + 528 м Ø800 — сопротивление занижалось в 6 раз.
+  const chain = (() => {
+    if (!allBranches || !branch.isVentPipeBranch) return null;
+    const next = new Map<string, TopoBranch[]>();
+    for (const x of allBranches) {
+      if (!x.isVentPipeBranch) continue;
+      const arr = next.get(x.fromId) ?? [];
+      arr.push(x); next.set(x.fromId, arr);
+    }
+    let rSi = branch.resistance ?? 0, len = branch.length ?? 0, links = 1;
+    const seen = new Set([branch.id]);
+    let cur = branch;
+    for (;;) {
+      const cand = (next.get(cur.toId) ?? []).filter(x => !seen.has(x.id));
+      if (cand.length !== 1) break;
+      cur = cand[0]; seen.add(cur.id);
+      rSi += cur.resistance ?? 0; len += cur.length ?? 0; links++;
+      if (cur.hasFan) break;
+    }
+    return links > 1 && rSi > 0 ? { rKgf: rSi / 9.80665, length: len, links } : null;
+  })();
+
+  const baseInputRaw = {
     method,
     diameter: branch.vpDiameter ?? 0,
     alpha: brand?.alpha ?? branch.vpPipeAlpha ?? 0,
@@ -104,6 +133,9 @@ export default function BranchVentPipeTab({
     jointsPerMeter,
     fanFlow,
   };
+  const rFormula = calcVentPipe({ ...baseInputRaw, length }).R;
+  const rScale = chain && rFormula > 0 ? chain.rKgf / rFormula : 1;
+  const baseInput = { ...baseInputRaw, rScale };
 
   // Расход, который даёт паспортная кривая на нынешней длине става. Если он
   // сильно расходится с расчётом сети — значит, вентилятор работает вне
@@ -310,6 +342,14 @@ export default function BranchVentPipeTab({
       <InlineLabel label="Длина става, м">
         <ComputedInput value={numFmt(length, 0)} />
       </InlineLabel>
+      {chain && Math.abs(rScale - 1) > 0.05 && (
+        <div className="px-2 pb-1 text-[10px] leading-snug" style={{ color: "var(--c-t3, #475569)" }}>
+          Сопротивление взято по фактическим звеньям става ({chain.links} шт.,
+          {" "}{numFmt(chain.length, 0)} м, с разными диаметрами и выходом в забой):
+          {" "}в {numFmt(rScale, 1)} раза {rScale > 1 ? "больше" : "меньше"}, чем у става
+          {" "}целиком Ø{numFmt(branch.vpDiameter ?? 0, 0)} мм.
+        </div>
+      )}
       <InlineLabel label="Подача ВМП, м³/с">
         <ComputedInput value={numFmt(fanFlow, 2)} />
       </InlineLabel>

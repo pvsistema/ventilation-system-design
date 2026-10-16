@@ -2252,6 +2252,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
             {(["topology","fan","waterpipes","conveyor","fireload","params","bulkhead","airdemand","ventpipe"].includes(activeSide)) && !selectedNode && selectedBranch && (
               <BranchPropsPanel
                 branch={selectedBranch}
+                allBranches={branches}
                 horizons={horizons}
                 pollutionFraction={pollutionFractions.get(selectedBranch.id) ?? 0}
                 pollutionThreshold={pollutionThreshold}

@@ -1311,12 +1311,15 @@ export function recalcBranchAero(b: TopoBranch, rho = 1.2): TopoBranch {
 
   // 2) Сопротивление с учётом плотности воздуха
   // manualR хранится в кМюрг (ввод пользователя). 1 кМюрг = 1 Н·с²/м⁸ в системе расчёта.
+  // Выход става в забой: струя теряет весь скоростной напор (ξ = 1). При
+  // 20–60 м/с в рукаве это сотни паскалей — без них подача ВМП завышена.
+  const ventPipeExitXi = b.isVentPipeBranch && /\(выход\)/.test(b.type ?? "") ? 1 : 0;
   const r = calcResistance({
     mode: b.resistanceMode,
     alpha: b.alphaCoef,
     roughness: b.roughness,
     manualR: b.manualR,
-    localXi: b.localXi,
+    localXi: (b.localXi ?? 0) + ventPipeExitXi,
     S: area,
     P: perimeter,
     L: b.length,

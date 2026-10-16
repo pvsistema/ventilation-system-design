@@ -164,6 +164,9 @@ export function resistanceFromPipe(alphaPipe: number, L: number, D: number): num
   return isFinite(rKmurg) ? Math.min(rKmurg, 1e6) : 0;
 }
 
+/** Перевод R трубопровода из кгс·с²/м⁸ (формула 6,48·α·L/D⁵) в Н·с²/м⁸. */
+export const PIPE_R_TO_SI = 9.80665;
+
 export function resistanceFromAlpha(alpha: number, P: number, L: number, S: number): number {
   if (S <= 0.05 || L <= 0 || P <= 0) return 0;
   const a = alpha * 1e-4;
@@ -274,7 +277,14 @@ export function calcResistance(i: ResistanceInput): {
       Rfriction = i.manualR;
       break;
     case "pipe":
-      Rfriction = resistanceFromPipe(i.pipeAlpha ?? 9, i.L, i.pipeDiameter ?? 0.5);
+      // Формула 6,48·α·L/D⁵ с паспортным α рукава (0,00024 кгс·с²/м⁴) даёт R
+      // в РУДНИЧНЫХ единицах (кгс·с²/м⁸), а расчёт сети применяет R как
+      // Н·с²/м⁸ (R·Q² сразу в паскалях, как и напор вентилятора, и R выработок
+      // по α). Поэтому переводим ×g. Без перевода сопротивление става уходило
+      // в расчёт в 9,8 раза меньше: ВМП Cogemacoustic на ставе 676 м давал
+      // 29,3 м³/с вместо ~10 м³/с (замер в забое — 6 м³/с). Проверка по
+      // Дарси (λ ≈ 0,015) даёт для этого става те же ~28 Н·с²/м⁸.
+      Rfriction = resistanceFromPipe(i.pipeAlpha ?? 9, i.L, i.pipeDiameter ?? 0.5) * PIPE_R_TO_SI;
       break;
   }
 
