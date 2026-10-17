@@ -40,7 +40,7 @@ import { BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
-import { type WaterBranchResult } from "@/lib/waterHydraulics";
+import { type WaterBranchResult, type WaterNodeResult } from "@/lib/waterHydraulics";
 import { flowTime } from "@/lib/flowAnim";
 import Icon from "@/components/ui/icon";
 import { onCanvasFontsReady } from "@/lib/canvasFont";
@@ -67,6 +67,8 @@ export interface MineView3DProps {
   unitsConfig?: UnitsConfig;
   /** Результаты расчёта водопровода — для показаний редуктора в подписи. */
   waterBranchResults?: Map<string, WaterBranchResult>;
+  /** Результаты расчёта водопровода по узлам — опорожнение резервуаров. */
+  waterNodeResults?: Map<string, WaterNodeResult>;
   /**
    * Условные обозначения схемы — те же, что на чертеже.
    *
@@ -734,6 +736,7 @@ export default function MineView3D(p: MineView3DProps) {
         xyScale: p.xyScale, zScale: p.zScale,
         sizeK: symSizeK,
         waterBranchResults: p.waterBranchResults,
+        waterNodeResults: p.waterNodeResults,
         animSpeed: p.animSpeed,
         flowArrows: waterDirAllowed,
         symbols: p.schemaSymbols,
@@ -757,7 +760,7 @@ export default function MineView3D(p: MineView3DProps) {
       waterFlowRef.current = false;
     };
   }, [ready, showWater3D, waterAllowed, waterDirAllowed, symSizeK, p.nodes, p.branches,
-      p.xyScale, p.zScale, p.waterBranchResults, p.animSpeed, p.animated, p.schemaSymbols]);
+      p.xyScale, p.zScale, p.waterBranchResults, p.waterNodeResults, p.animSpeed, p.animated, p.schemaSymbols]);
 
   // ── Объёмные вентиляторы ──────────────────────────────────────────────
   // Свой слой, как стрелки и значки: обороты, реверс и остановка меняются в
@@ -1822,7 +1825,7 @@ export default function MineView3D(p: MineView3DProps) {
           <button
             onClick={() => setShowWater3D(v => !v)}
             title={showWater3D
-              ? "Водопровод (синий) и воздухопровод (красный) у стенок выработки, бегущие стрелки — направление воды по гидравлическому расчёту, запорные вентили (красный маховик и заслонка — закрыт) и редукционные клапаны (янтарный колпак — срезает давление), насосы (зелёная подсветка — работает), резервуары с уровнем воды, пожарные краны: синий маховик — открыт, красный — закрыт"
+              ? "Водопровод (синий) и воздухопровод (красный) у стенок выработки, бегущие стрелки — направление воды по гидравлическому расчёту, запорные вентили (красный маховик и заслонка — закрыт) и редукционные клапаны (янтарный колпак — срезает давление), насосы (зелёная подсветка — работает), резервуары: уровень воды убывает по расчётному времени истечения при открытых кранах, пожарные краны: синий маховик — открыт, красный — закрыт"
               : "Показать водопровод и пожарные краны"}
             className="text-[10px] px-2 py-1 rounded border hover:bg-white"
             style={{

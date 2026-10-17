@@ -17,7 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
-import { type WaterBranchResult } from "@/lib/waterHydraulics";
+import { type WaterBranchResult, type WaterNodeResult } from "@/lib/waterHydraulics";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { sectionOutline } from "@/lib/tube3d";
 import { toThree, branchSectionQuaternion } from "./mineScene";
@@ -33,6 +33,8 @@ export interface WaterInput {
   airPipes?: boolean;
   /** Результаты гидравлического расчёта — направление и скорость воды. */
   waterBranchResults?: Map<string, WaterBranchResult>;
+  /** Результаты расчёта по узлам — время истечения резервуаров. */
+  waterNodeResults?: Map<string, WaterNodeResult>;
   /** Множитель скорости анимации — общий со стрелками воздуха. */
   animSpeed?: number;
   /** Показывать стрелки направления воды. */
@@ -60,6 +62,8 @@ export interface MineWater {
   pumpCount: number;
   /** Сколько резервуаров поставлено. */
   tankCount: number;
+  /** Сколько баков сейчас опорожняется (есть разбор воды). */
+  drainingTanks: number;
   drawCalls: number;
 }
 
@@ -91,6 +95,14 @@ const PUMP_OFF = 0x6b7280;
 const TANK_SHELL = 0x94a3b8;
 const TANK_WATER = 0x2563eb;
 const MAX_TANKS = 500;
+/** Минута расчётного истечения = столько секунд показа (при скорости ×1). */
+const DRAIN_SEC_PER_MIN = 1;
+const DRAIN_MIN_SEC = 8;
+const DRAIN_MAX_SEC = 90;
+/** Пауза на пустом баке и время на заполнение перед новым циклом, с. */
+const DRAIN_HOLD_SEC = 1.5;
+const DRAIN_REFILL_SEC = 2.5;
+const DRAIN_LOW = 0.04;
 
 interface Pt { r: number; u: number }
 
@@ -593,6 +605,13 @@ export function buildMineWater(input: WaterInput): MineWater | null {
   // отводом с задвижкой. Обручи и крышка с люком — чтобы бак читался баком,
   // а не колонной.
   const tankCount = tankNodes.length;
+  // Опорожнение бака. Время истечения (drainTime, мин) считает гидравлический
+  // расчёт при открытых кранах. Реальные десятки минут сжаты: минута расчёта —
+  // секунда показа (с учётом общей скорости анимации), затем бак на миг пустеет,
+  // быстро наполняется и цикл повторяется. Кранов не открыто — уровень стоит.
+  interface TankAnim { i: number; base: THREE.Vector3; tR: number; tH: number; fill: number; cycle: number }
+  const tankAnims: TankAnim[] = [];
+  let tankWaterMesh: THREE.InstancedMesh | null = null;
   if (tankCount > 0) {
     const shellG = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
     const waterG = new THREE.CylinderGeometry(1, 1, 1, 28);
@@ -612,6 +631,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     const pipeMatT = new THREE.MeshStandardMaterial({ color: WATER_COLOR, metalness: 0.45, roughness: 0.4 });
 
     const waterM = makeMesh(waterG, waterMat, tankCount);
+    tankWaterMesh = waterM;
     const shellM = makeMesh(shellG, shellMat, tankCount);
     shellM.renderOrder = 6;
     const hoopM = makeMesh(hoopG, steelMat, tankCount * 3);
@@ -660,6 +680,14 @@ export function buildMineWater(input: WaterInput): MineWater | null {
           .addScaledVector(run.right, run.side * off);
       } else {
         base = center.clone().addScaledVector(yUp, -tH * 0.1);
+      }
+
+      const nr = input.waterNodeResults?.get(n.id);
+      const drainMin = nr?.drainTime ?? 0;
+      if (cap > 0 && Number.isFinite(drainMin) && drainMin > 0 && !nr?.noWater) {
+        const k = Math.max(0.1, input.animSpeed ?? 1);
+        const cycle = Math.max(DRAIN_MIN_SEC, Math.min(DRAIN_MAX_SEC, drainMin * DRAIN_SEC_PER_MIN)) / k;
+        tankAnims.push({ i, base: base.clone(), tR, tH, fill, cycle });
       }
 
       // Вода
@@ -765,7 +793,34 @@ export function buildMineWater(input: WaterInput): MineWater | null {
 
   const qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
   const qArrow = new THREE.Quaternion();
+  const tankLevel = (ta: TankAnim, t: number) => {
+    const full = ta.cycle + DRAIN_HOLD_SEC + DRAIN_REFILL_SEC;
+    const ph = ((t % full) + full) % full;
+    if (ph < ta.cycle) {
+      // Истечение под напором идёт быстрее в начале: уровень ~ (1 − τ)².
+      const x = 1 - ph / ta.cycle;
+      return DRAIN_LOW + (ta.fill - DRAIN_LOW) * x * x;
+    }
+    if (ph < ta.cycle + DRAIN_HOLD_SEC) return DRAIN_LOW;
+    const y = (ph - ta.cycle - DRAIN_HOLD_SEC) / DRAIN_REFILL_SEC;
+    return DRAIN_LOW + (ta.fill - DRAIN_LOW) * (y * y * (3 - 2 * y));
+  };
+  const qId = new THREE.Quaternion();
+  const setTanks = (t: number) => {
+    if (!tankWaterMesh || tankAnims.length === 0) return;
+    for (const ta of tankAnims) {
+      const wH = Math.max(1e-4, ta.tH * tankLevel(ta, t));
+      tmpPos.copy(ta.base);
+      tmpPos.y += wH / 2;
+      tmpScale.set(ta.tR * 0.97, wH, ta.tR * 0.97);
+      m4.compose(tmpPos, qId, tmpScale);
+      tankWaterMesh.setMatrixAt(ta.i, m4);
+    }
+    tankWaterMesh.instanceMatrix.needsUpdate = true;
+  };
+
   const setTime = (t: number) => {
+    setTanks(t);
     if (!arrowMesh) return;
     for (const ln of lanes) {
       const { run } = ln;
@@ -807,7 +862,8 @@ export function buildMineWater(input: WaterInput): MineWater | null {
 
   return {
     group, dispose, setTime,
-    hasFlow: arrowCount > 0,
+    hasFlow: arrowCount > 0 || tankAnims.length > 0,
+    drainingTanks: tankAnims.length,
     arrowCount,
     pipeCount: runs.length,
     hydrantCount,

@@ -1838,6 +1838,7 @@ export default function TopoCanvas(props: Props) {
               infoConfig={infoConfig}
               unitsConfig={unitsConfig}
               waterBranchResults={waterBranchResults}
+              waterNodeResults={waterNodeResults}
               /* Условные обозначения — те же, что на чертеже. Без них объём
                  показывал голую геометрию: перемычки, двери, вентиляторы и
                  очаги пожара несут половину содержания вентиляционного плана. */
