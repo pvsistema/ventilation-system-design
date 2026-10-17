@@ -210,6 +210,17 @@ export default function MineView3D(p: MineView3DProps) {
   // Выключатель — общий с чертежом («Панель информации» → водопровод).
   const waterRef = useRef<MineWater | null>(null);
   const [showWater3D, setShowWater3D] = useState(true);
+  // Подписи баков, насосов и клапанов. Выбор запоминается в браузере:
+  // на большой схеме их выключают один раз и не хотят видеть снова.
+  const [showWaterLabels, setShowWaterLabels] = useState(() => {
+    try { return localStorage.getItem("mine3d.waterLabels") !== "0"; } catch { return true; }
+  });
+  const showWaterLabelsRef = useRef(showWaterLabels);
+  showWaterLabelsRef.current = showWaterLabels;
+  useEffect(() => {
+    try { localStorage.setItem("mine3d.waterLabels", showWaterLabels ? "1" : "0"); } catch { /* приватный режим */ }
+    needsRenderRef.current = true;
+  }, [showWaterLabels]);
   const [waterInfo, setWaterInfo] = useState({ pipes: 0, hydrants: 0, fittings: 0, pumps: 0, tanks: 0 });
   const waterFlowRef = useRef(false);
   const waterDirAllowed = !p.infoConfig || p.infoConfig.waterFlowDirection !== false;
@@ -1049,7 +1060,7 @@ export default function MineView3D(p: MineView3DProps) {
         // сядет ровно на те места, где нарисованы выработки.
         const lc = labelCanvasRef.current;
         if (lc) {
-          const tankLbls = waterRef.current?.tankLabels ?? [];
+          const tankLbls = showWaterLabelsRef.current ? (waterRef.current?.tankLabels ?? []) : [];
           const wantLabels = showLabelsRef.current && labelsRef.current.length > 0;
           if (wantLabels || tankLbls.length > 0) {
             // Холст держим в пикселях устройства, а рисуем в логических:
@@ -1846,6 +1857,24 @@ export default function MineView3D(p: MineView3DProps) {
             }}
           >
             Водопровод 3D
+          </button>
+        )}
+
+        {hasWaterPipes && showWater3D && waterAllowed && (
+          <button
+            onClick={() => setShowWaterLabels(v => !v)}
+            title={showWaterLabels
+              ? "Скрыть подписи резервуаров, насосов и редукционных клапанов"
+              : "Показать подписи резервуаров (ёмкость, истечение), насосов (напор, подача) и клапанов (давление до/после)"}
+            className="text-[10px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: showWaterLabels ? "#1d4ed8" : "var(--c-b2, #d1d5db)",
+              color: showWaterLabels ? "#1d4ed8" : "var(--c-t2, #374151)",
+              background: showWaterLabels ? "rgba(219,234,254,0.95)" : "rgba(255,255,255,0.9)",
+              fontWeight: showWaterLabels ? 600 : 400,
+            }}
+          >
+            Подписи воды
           </button>
         )}
 
