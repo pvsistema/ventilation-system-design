@@ -22,6 +22,7 @@ import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { sectionOutline } from "@/lib/tube3d";
 import { toThree, branchSectionQuaternion } from "./mineScene";
 import { canvasFont } from "@/lib/canvasFont";
+import { getValveById } from "@/lib/pressureReducingValves";
 
 export interface WaterInput {
   nodes: TopoNode[];
@@ -682,6 +683,31 @@ export function buildMineWater(input: WaterInput): MineWater | null {
       m4.compose(tmpPos, run.q, tmpScale);
       capM!.setMatrixAt(i, m4);
       capM!.setColorAt(i, tmpColor.set(active ? REDUCER_ACTIVE : REDUCER_BODY));
+      // Подпись: модель, давление до и после клапана, сколько срезал.
+      {
+        const r = res?.get(run.b.id);
+        const model = getValveById(run.b.wpReducerModel);
+        const name = model && model.id !== "manual" && !/вручную/i.test(model.name) ? model.name : "";
+        const lines: string[] = [];
+        let warn = false;
+        if (r) {
+          lines.push(`До: ${fmtNum(r.reducerInP, 2)} МПа`);
+          lines.push(`После: ${fmtNum(r.reducerOutP, 2)} МПа`);
+          if (active && r.reducerDeltaP > 0) lines.push(`Срезает: ${fmtNum(r.reducerDeltaP, 2)} МПа`);
+          else lines.push(`Не работает (вход ниже ${fmtNum(run.b.wpReducerOutPressure, 2)} МПа)`);
+          if (r.reducerOverCapacity) { lines.push("Расход выше паспортного"); warn = true; }
+        } else {
+          lines.push(`Настройка: ${fmtNum(run.b.wpReducerOutPressure, 2)} МПа`);
+          lines.push("Расчёт не выполнен");
+          warn = true;
+        }
+        pumpLabels.push({
+          id: `red:${f.sym?.id ?? run.b.id}`,
+          pos: at(run, s, run.slot.r, u + dR * 1.2 + dR * 1.4 + 0.15 * fk, new THREE.Vector3()),
+          title: name ? `Клапан ${name}` : "Клапан редукционный",
+          lines, warn,
+        });
+      }
       // Манометр — на выходе клапана, циферблатом к оси выработки
       const gR = Math.max(0.05, dR * 0.55);
       const gs = s + (dL / 2 - gR * 0.2) * kx;
