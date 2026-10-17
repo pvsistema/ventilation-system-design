@@ -17,6 +17,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
+import { type WaterBranchResult } from "@/lib/waterHydraulics";
 import { sectionOutline } from "@/lib/tube3d";
 import { toThree, branchSectionQuaternion } from "./mineScene";
 
@@ -29,11 +30,22 @@ export interface WaterInput {
   sizeK?: number;
   /** Показывать воздухопровод (сжатый воздух). */
   airPipes?: boolean;
+  /** Результаты гидравлического расчёта — направление и скорость воды. */
+  waterBranchResults?: Map<string, WaterBranchResult>;
+  /** Множитель скорости анимации — общий со стрелками воздуха. */
+  animSpeed?: number;
+  /** Показывать стрелки направления воды. */
+  flowArrows?: boolean;
 }
 
 export interface MineWater {
   group: THREE.Group;
   dispose(): void;
+  /** Двигает стрелки воды. Время — общие часы схемы (flowAnim.flowTime), с. */
+  setTime(seconds: number): void;
+  /** Есть ли что двигать: хотя бы одна труба с расходом. */
+  hasFlow: boolean;
+  arrowCount: number;
   pipeCount: number;
   hydrantCount: number;
   drawCalls: number;
@@ -49,6 +61,12 @@ const HYDRANT_CLOSED = 0xdc2626;
 const BRACKET_STEP = 6;
 const MAX_BRACKETS = 20000;
 const MAX_HYDRANTS = 2000;
+const MAX_WATER_ARROWS = 6000;
+/** Шаг стрелок воды вдоль трубы, м натуры. */
+const ARROW_STEP = 5;
+/** Ниже этого расхода (м³/ч) направление считать нельзя. */
+const MIN_WATER_FLOW = 0.001;
+const ARROW_COLOR = 0xdc2626;
 
 interface Pt { r: number; u: number }
 
@@ -297,6 +315,92 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     });
   }
 
+  // ── Бегущие стрелки воды ──────────────────────────────────────────────
+  // Стрелка — «манжета» на трубе: конус шире трубы, надетый на её ось. Так она
+  // видна с любой стороны и не прячется в теле трубы. Направление и скорость —
+  // из гидравлического расчёта (как стрелка на чертеже): flowFromTo задаёт
+  // сторону, скорость воды в трубе — темп бега, сжатый в читаемый диапазон.
+  interface Lane { run: Run; sign: 1 | -1; n: number; step: number; speed: number; first: number }
+  const lanes: Lane[] = [];
+  let arrowCount = 0;
+  if (input.flowArrows !== false) {
+    const animK = Math.max(0.1, input.animSpeed ?? 1);
+    for (const run of runs) {
+      if (run.color !== WATER_COLOR) continue;
+      const res = input.waterBranchResults?.get(run.b.id);
+      const flow = res ? (res.flow ?? 0) : (run.b.wpComputedFlow ?? 0);
+      if (!(Math.abs(flow) > MIN_WATER_FLOW)) continue;
+      if (run.b.wpHasGate && run.b.wpGateClosed) continue;
+      const fromTo = res ? res.flowFromTo !== false : flow >= 0;
+      const realLen = run.len / kx;
+      const n = Math.max(1, Math.round(realLen / ARROW_STEP));
+      if (arrowCount + n > MAX_WATER_ARROWS) break;
+      const v = Math.abs(res?.velocity ?? run.b.wpComputedVelocity ?? 1);
+      // Натурная скорость воды 0,5…3 м/с → 1,5…5 м/с на экране (в метрах натуры).
+      const speed = Math.max(1.5, Math.min(5, 1.2 + v * 1.3)) * kx * animK;
+      lanes.push({ run, sign: fromTo ? 1 : -1, n, step: run.len / n, speed, first: arrowCount });
+      arrowCount += n;
+    }
+  }
+
+  let arrowMesh: THREE.InstancedMesh | null = null;
+  if (arrowCount > 0) {
+    // Единичная стрелка вдоль +X: наконечник-конус и короткая втулка-хвостик.
+    const head = new THREE.ConeGeometry(1, 1.4, 14, 1, false);
+    head.rotateZ(-Math.PI / 2);
+    head.translate(0.7, 0, 0);
+    const tail = new THREE.CylinderGeometry(0.62, 0.62, 1.2, 14, 1, false);
+    tail.rotateZ(-Math.PI / 2);
+    tail.translate(-0.6, 0, 0);
+    const parts = [head, tail].map(g => g.toNonIndexed());
+    head.dispose(); tail.dispose();
+    const arrowGeom = new THREE.BufferGeometry();
+    const pos: number[] = [], nor: number[] = [];
+    for (const g of parts) {
+      pos.push(...(g.attributes.position.array as Float32Array));
+      nor.push(...(g.attributes.normal.array as Float32Array));
+      g.dispose();
+    }
+    arrowGeom.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    arrowGeom.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3));
+    const arrowMat = new THREE.MeshStandardMaterial({
+      color: ARROW_COLOR, roughness: 0.45, metalness: 0.1,
+      emissive: ARROW_COLOR, emissiveIntensity: 0.45,
+    });
+    arrowMesh = makeMesh(arrowGeom, arrowMat, arrowCount);
+    arrowMesh.renderOrder = 4;
+  }
+
+  const qFlip = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI);
+  const qArrow = new THREE.Quaternion();
+  const setTime = (t: number) => {
+    if (!arrowMesh) return;
+    for (const ln of lanes) {
+      const { run } = ln;
+      const R = run.slot.R * kx;
+      const aR = R * 1.7;
+      const half = aR * 1.4;
+      const span = Math.max(1e-6, run.len - 2 * half);
+      qArrow.copy(run.q);
+      if (ln.sign < 0) qArrow.multiply(qFlip);
+      for (let k = 0; k < ln.n; k++) {
+        let d = (k * ln.step + t * ln.speed) % run.len;
+        if (d < 0) d += run.len;
+        const along = ln.sign > 0 ? d : run.len - d;
+        const s = half + (along / run.len) * span;
+        at(run, s, run.slot.r, run.slot.u, tmpPos);
+        // У концов стрелка «вырастает» и «тает», чтобы не прыгать на стыках.
+        const edge = Math.min(d, run.len - d) / Math.max(1e-6, Math.min(run.len / 2, 1.5 * kx));
+        const sc = aR * Math.min(1, Math.max(0.05, edge));
+        tmpScale.setScalar(sc);
+        m4.compose(tmpPos, qArrow, tmpScale);
+        arrowMesh.setMatrixAt(ln.first + k, m4);
+      }
+    }
+    arrowMesh.instanceMatrix.needsUpdate = true;
+  };
+  setTime(0);
+
   for (const m of meshes) {
     m.instanceMatrix.needsUpdate = true;
     if (m.instanceColor) m.instanceColor.needsUpdate = true;
@@ -310,7 +414,9 @@ export function buildMineWater(input: WaterInput): MineWater | null {
   };
 
   return {
-    group, dispose,
+    group, dispose, setTime,
+    hasFlow: arrowCount > 0,
+    arrowCount,
     pipeCount: runs.length,
     hydrantCount,
     drawCalls: meshes.length,

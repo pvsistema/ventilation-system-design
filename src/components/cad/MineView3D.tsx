@@ -208,6 +208,8 @@ export default function MineView3D(p: MineView3DProps) {
   const waterRef = useRef<MineWater | null>(null);
   const [showWater3D, setShowWater3D] = useState(true);
   const [waterInfo, setWaterInfo] = useState({ pipes: 0, hydrants: 0 });
+  const waterFlowRef = useRef(false);
+  const waterDirAllowed = !p.infoConfig || p.infoConfig.waterFlowDirection !== false;
   const hasWaterPipes = p.branches.some(b => b.hasWaterPipe || b.hasAirPipe);
   const waterAllowed = !p.infoConfig || p.infoConfig.waterPipes !== false;
 
@@ -722,16 +724,23 @@ export default function MineView3D(p: MineView3DProps) {
     const prev = waterRef.current;
     if (prev) { scene.remove(prev.group); prev.dispose(); waterRef.current = null; }
     setWaterInfo({ pipes: 0, hydrants: 0 });
+    waterFlowRef.current = false;
     if (showWater3D && waterAllowed) {
       const built = buildMineWater({
         nodes: p.nodes, branches: p.branches,
         xyScale: p.xyScale, zScale: p.zScale,
         sizeK: symSizeK,
+        waterBranchResults: p.waterBranchResults,
+        animSpeed: p.animSpeed,
+        flowArrows: waterDirAllowed,
       });
       if (built) {
         scene.add(built.group);
         waterRef.current = built;
         setWaterInfo({ pipes: built.pipeCount, hydrants: built.hydrantCount });
+        // Бегут, только пока включена общая «Анимация» — как стрелки воздуха.
+        waterFlowRef.current = built.hasFlow && p.animated !== false;
+        built.setTime(waterFlowRef.current ? flowTime() : 0);
       }
     }
     needsRenderRef.current = true;
@@ -741,8 +750,10 @@ export default function MineView3D(p: MineView3DProps) {
       scene.remove(w.group);
       w.dispose();
       waterRef.current = null;
+      waterFlowRef.current = false;
     };
-  }, [ready, showWater3D, waterAllowed, symSizeK, p.nodes, p.branches, p.xyScale, p.zScale]);
+  }, [ready, showWater3D, waterAllowed, waterDirAllowed, symSizeK, p.nodes, p.branches,
+      p.xyScale, p.zScale, p.waterBranchResults, p.animSpeed, p.animated]);
 
   // ── Объёмные вентиляторы ──────────────────────────────────────────────
   // Свой слой, как стрелки и значки: обороты, реверс и остановка меняются в
@@ -902,6 +913,13 @@ export default function MineView3D(p: MineView3DProps) {
       const bk = bkRef.current;
       if (bkSailRef.current && bk) {
         bk.setTime(flowTime());
+        needsRenderRef.current = true;
+      }
+
+      // Стрелки воды в трубах — те же общие часы схемы.
+      const water = waterRef.current;
+      if (waterFlowRef.current && water) {
+        water.setTime(flowTime());
         needsRenderRef.current = true;
       }
 
@@ -1800,7 +1818,7 @@ export default function MineView3D(p: MineView3DProps) {
           <button
             onClick={() => setShowWater3D(v => !v)}
             title={showWater3D
-              ? "Водопровод (синий) и воздухопровод (красный) у стенок выработки, пожарные краны с вентилем: синий маховик — открыт, красный — закрыт"
+              ? "Водопровод (синий) и воздухопровод (красный) у стенок выработки, бегущие стрелки — направление воды по гидравлическому расчёту, пожарные краны: синий маховик — открыт, красный — закрыт"
               : "Показать водопровод и пожарные краны"}
             className="text-[10px] px-2 py-1 rounded border hover:bg-white"
             style={{
