@@ -207,7 +207,7 @@ export default function MineView3D(p: MineView3DProps) {
   // Выключатель — общий с чертежом («Панель информации» → водопровод).
   const waterRef = useRef<MineWater | null>(null);
   const [showWater3D, setShowWater3D] = useState(true);
-  const [waterInfo, setWaterInfo] = useState({ pipes: 0, hydrants: 0, fittings: 0 });
+  const [waterInfo, setWaterInfo] = useState({ pipes: 0, hydrants: 0, fittings: 0, pumps: 0 });
   const waterFlowRef = useRef(false);
   const waterDirAllowed = !p.infoConfig || p.infoConfig.waterFlowDirection !== false;
   const hasWaterPipes = p.branches.some(b => b.hasWaterPipe || b.hasAirPipe);
@@ -725,7 +725,7 @@ export default function MineView3D(p: MineView3DProps) {
     if (!scene) return;
     const prev = waterRef.current;
     if (prev) { scene.remove(prev.group); prev.dispose(); waterRef.current = null; }
-    setWaterInfo({ pipes: 0, hydrants: 0, fittings: 0 });
+    setWaterInfo({ pipes: 0, hydrants: 0, fittings: 0, pumps: 0 });
     waterFlowRef.current = false;
     if (showWater3D && waterAllowed) {
       const built = buildMineWater({
@@ -740,7 +740,7 @@ export default function MineView3D(p: MineView3DProps) {
       if (built) {
         scene.add(built.group);
         waterRef.current = built;
-        setWaterInfo({ pipes: built.pipeCount, hydrants: built.hydrantCount, fittings: built.fittingCount });
+        setWaterInfo({ pipes: built.pipeCount, hydrants: built.hydrantCount, fittings: built.fittingCount, pumps: built.pumpCount });
         // Бегут, только пока включена общая «Анимация» — как стрелки воздуха.
         waterFlowRef.current = built.hasFlow && p.animated !== false;
         built.setTime(waterFlowRef.current ? flowTime() : 0);
@@ -1821,7 +1821,7 @@ export default function MineView3D(p: MineView3DProps) {
           <button
             onClick={() => setShowWater3D(v => !v)}
             title={showWater3D
-              ? "Водопровод (синий) и воздухопровод (красный) у стенок выработки, бегущие стрелки — направление воды по гидравлическому расчёту, запорные вентили (красный маховик и заслонка — закрыт) и редукционные клапаны (янтарный колпак — срезает давление), пожарные краны: синий маховик — открыт, красный — закрыт"
+              ? "Водопровод (синий) и воздухопровод (красный) у стенок выработки, бегущие стрелки — направление воды по гидравлическому расчёту, запорные вентили (красный маховик и заслонка — закрыт) и редукционные клапаны (янтарный колпак — срезает давление), насосы (зелёная подсветка — работает), пожарные краны: синий маховик — открыт, красный — закрыт"
               : "Показать водопровод и пожарные краны"}
             className="text-[10px] px-2 py-1 rounded border hover:bg-white"
             style={{
@@ -1971,7 +1971,8 @@ export default function MineView3D(p: MineView3DProps) {
         {msCount > 0 && <> · замерных станций: <b>{msCount}</b></>}
         {waterInfo.pipes > 0 && <> · трубопроводов: <b>{waterInfo.pipes}</b></>}
         {waterInfo.hydrants > 0 && <> · пож. кранов: <b>{waterInfo.hydrants}</b></>}
-        {waterInfo.fittings > 0 && <> · вентилей и клапанов: <b>{waterInfo.fittings}</b></>} · {stats.fps} кадр/с
+        {waterInfo.fittings > 0 && <> · вентилей и клапанов: <b>{waterInfo.fittings}</b></>}
+        {waterInfo.pumps > 0 && <> · насосов: <b>{waterInfo.pumps}</b></>} · {stats.fps} кадр/с
       </div>
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"

@@ -42,7 +42,7 @@ export interface WaterInput {
 }
 
 /** Значки, которые слой водопровода показывает объёмно. */
-export const WATER_FITTING_IDS = new Set(["valve_water", "valve_reduce"]);
+export const WATER_FITTING_IDS = new Set(["valve_water", "valve_reduce", "pump"]);
 
 export interface MineWater {
   group: THREE.Group;
@@ -56,6 +56,8 @@ export interface MineWater {
   hydrantCount: number;
   /** Сколько запорных вентилей и редукционных клапанов поставлено. */
   fittingCount: number;
+  /** Сколько насосов поставлено. */
+  pumpCount: number;
   drawCalls: number;
 }
 
@@ -80,6 +82,10 @@ const GATE_OPEN = 0x2196f3;
 const GATE_CLOSED = 0xdc2626;
 const REDUCER_BODY = 0x1e3a8a;
 const REDUCER_ACTIVE = 0xf59e0b;
+const PUMP_BODY = 0x1f6f43;
+const PUMP_MOTOR = 0x2b4c7e;
+const PUMP_ON = 0x22c55e;
+const PUMP_OFF = 0x6b7280;
 
 interface Pt { r: number; u: number }
 
@@ -109,7 +115,7 @@ function pipeSlot(b: TopoBranch, diamMm: number, side: 1 | -1) {
   const mirrored = outline.map(p => ({ r: p.r * side, u: p.u }));
   const wall = wallAt(mirrored, u);
   const gap = 0.12;
-  return { u, wall, r: Math.max(R, wall - gap - R), R, h };
+  return { u, wall, r: Math.max(R, wall - gap - R), R, h, floor: uMin };
 }
 
 export function buildMineWater(input: WaterInput): MineWater | null {
@@ -337,7 +343,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
   // открыт, красный — закрыт, и тогда поперёк трубы стоит красный диск-заслонка.
   // Клапан: тёмно-синий корпус-бочка, колпак пружины сверху и манометр. Если по
   // расчёту клапан срезает давление, колпак светится янтарным.
-  interface Fit { run: Run; s: number; kind: "gate" | "reducer" }
+  interface Fit { run: Run; s: number; kind: "gate" | "reducer" | "pump" }
   const fits: Fit[] = [];
   const waterRunByBranch = new Map<string, Run>();
   for (const run of runs) if (run.color === WATER_COLOR) waterRunByBranch.set(run.b.id, run);
@@ -351,7 +357,8 @@ export function buildMineWater(input: WaterInput): MineWater | null {
   };
   for (const sym of input.symbols ?? []) {
     if (!sym.branchId || !WATER_FITTING_IDS.has(sym.typeId)) continue;
-    addFit(sym.branchId, sym.t ?? 0.5, sym.typeId === "valve_water" ? "gate" : "reducer");
+    const kind = sym.typeId === "valve_water" ? "gate" : sym.typeId === "pump" ? "pump" : "reducer";
+    addFit(sym.branchId, sym.t ?? 0.5, kind);
   }
   for (const run of waterRunByBranch.values()) {
     if (run.b.wpHasGate && !seen.has(`gate:${run.b.id}`)) addFit(run.b.id, 0.4, "gate");
@@ -360,6 +367,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
 
   const gates = fits.filter(f => f.kind === "gate");
   const reducers = fits.filter(f => f.kind === "reducer");
+  const pumps = fits.filter(f => f.kind === "pump");
   const fk = sizeK;
   const xAx = new THREE.Vector3(1, 0, 0);
   const qT = new THREE.Quaternion();
@@ -392,7 +400,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     // Пакеты на тип детали.
     const nG = gates.length, nR = reducers.length;
     const bodyM = makeMesh(sphereG, metal, nG);
-    const flangeM = makeMesh(flangeG, metal, (nG + nR) * 2);
+    const flangeM = makeMesh(flangeG, metal, (nG + nR + pumps.length) * 2);
     const stemM = makeMesh(stemG, metal, nG + nR);
     const wheelM = makeMesh(wheelG, glow, nG);
     const closedGates = gates.filter(f => f.run.b.wpGateClosed);
@@ -450,6 +458,88 @@ export function buildMineWater(input: WaterInput): MineWater | null {
         discM.setMatrixAt(ci++, m4);
       }
     });
+
+    // ── Насосы ──────────────────────────────────────────────────────
+    // Насос стоит на трубе: улитка-корпус поперёк трубы, рядом — двигатель
+    // вдоль трубы на общей раме с опорами до почвы. Работает — двигатель и
+    // лампа светятся зелёным, крыльчатка вентилятора двигателя подсвечена;
+    // стоит (нет напора или расчёт не включил его) — лампа серая.
+    const resP = input.waterBranchResults;
+    if (pumps.length > 0) {
+      const nP = pumps.length;
+      const voluteG = new THREE.CylinderGeometry(1, 1, 1, 22);
+      voluteG.rotateX(Math.PI / 2);
+      const motorG = new THREE.CylinderGeometry(1, 1, 1, 18);
+      motorG.rotateZ(-Math.PI / 2);
+      const finG = new THREE.CylinderGeometry(1.08, 1.08, 1, 18, 1, true);
+      finG.rotateZ(-Math.PI / 2);
+      const boxG = new THREE.BoxGeometry(1, 1, 1);
+      const lampG = new THREE.SphereGeometry(1, 12, 10);
+      const paint = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.35, roughness: 0.45 });
+      const lit = new THREE.MeshStandardMaterial({
+        color: 0xffffff, roughness: 0.4, emissive: 0xffffff, emissiveIntensity: 0.6,
+      });
+      const steel = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.5, roughness: 0.5 });
+      const voluteM = makeMesh(voluteG, paint, nP);
+      const motorM = makeMesh(motorG, paint, nP);
+      const finM = makeMesh(finG, lit, nP);
+      const frameM = makeMesh(boxG, steel, nP * 3);
+      const lampM = makeMesh(lampG, lit, nP);
+      let fr = 0;
+      pumps.forEach((f, i) => {
+        const { run, s } = f;
+        const { R, u, r, floor } = run.slot;
+        const pr = resP?.get(run.b.id);
+        const on = pr ? !!pr.pumpActive : (run.b.wpPumpHead ?? 0) > 0;
+        const vR = Math.max(R * 2.4, 0.16 * fk);
+        const vW = vR * 0.9;
+        // Улитка — на трубе
+        at(run, s, r, u, tmpPos);
+        tmpScale.set(vR * kx, vR * kx, vW * kx);
+        m4.compose(tmpPos, run.q, tmpScale);
+        voluteM.setMatrixAt(i, m4);
+        voluteM.setColorAt(i, tmpColor.set(PUMP_BODY));
+        flange(run, s - vR * kx, Math.max(R * 1.6, 0.06 * fk));
+        flange(run, s + vR * kx, Math.max(R * 1.6, 0.06 * fk));
+        // Двигатель — рядом с улиткой, ближе к оси выработки, вдоль трубы
+        const mR = vR * 0.62, mL = vR * 2.2;
+        const mr = r - vW / 2 - mR - 0.02;
+        const mu = u - vR * 0.35;
+        at(run, s, mr, mu, tmpPos);
+        tmpScale.set(mL * kx, mR * kx, mR * kx);
+        m4.compose(tmpPos, run.q, tmpScale);
+        motorM.setMatrixAt(i, m4);
+        motorM.setColorAt(i, tmpColor.set(PUMP_MOTOR));
+        // Рёбра охлаждения — светятся, когда насос работает
+        at(run, s, mr, mu, tmpPos);
+        tmpScale.set(mL * 0.55 * kx, mR * kx, mR * kx);
+        m4.compose(tmpPos, run.q, tmpScale);
+        finM.setMatrixAt(i, m4);
+        finM.setColorAt(i, tmpColor.set(on ? PUMP_ON : PUMP_OFF).multiplyScalar(on ? 1 : 0.6));
+        // Рама и две опоры до почвы
+        const baseU = Math.min(mu - mR, u - vR) - 0.04;
+        const midR = (r + mr) / 2;
+        const frameW = Math.abs(r - mr) + vW + mR;
+        at(run, s, midR, baseU, tmpPos);
+        tmpScale.set(mL * 1.15 * kx, 0.06 * kx, frameW * kx);
+        m4.compose(tmpPos, run.q, tmpScale);
+        frameM.setMatrixAt(fr++, m4);
+        const legH = Math.max(0.02, baseU - floor);
+        for (const off of [-mL * 0.45, mL * 0.45]) {
+          at(run, s + off * kx, midR, floor + legH / 2, tmpPos);
+          tmpScale.set(0.07 * kx, legH * kx, frameW * 0.8 * kx);
+          m4.compose(tmpPos, run.q, tmpScale);
+          frameM.setMatrixAt(fr++, m4);
+        }
+        // Лампа состояния на двигателе
+        at(run, s, mr, mu + mR + 0.05 * fk, tmpPos);
+        tmpScale.setScalar(0.05 * fk * kx);
+        m4.compose(tmpPos, run.q, tmpScale);
+        lampM.setMatrixAt(i, m4);
+        lampM.setColorAt(i, tmpColor.set(on ? PUMP_ON : PUMP_OFF));
+
+      });
+    }
 
     const res = input.waterBranchResults;
     reducers.forEach((f, i) => {
@@ -592,7 +682,8 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     arrowCount,
     pipeCount: runs.length,
     hydrantCount,
-    fittingCount: fits.length,
+    fittingCount: gates.length + reducers.length,
+    pumpCount: pumps.length,
     drawCalls: meshes.length,
   };
 }
