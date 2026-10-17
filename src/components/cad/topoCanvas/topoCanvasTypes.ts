@@ -224,6 +224,9 @@ export interface Props {
   /** Результаты гидравлического расчёта узлов (для маркеров предупреждений на схеме) */
   waterNodeResults?: Map<string, import("@/lib/waterHydraulics").WaterNodeResult>;
   waterBranchResults?: Map<string, import("@/lib/waterHydraulics").WaterBranchResult>;
+  /** Нормы и участки вентиляции — для расчёта доставки воздуха по ставу в режиме «Модель». */
+  ventNorms?: import("@/lib/ventSections").VentNorms;
+  ventSections?: import("@/lib/ventSections").VentSection[];
   /** Карта branchId → сегмент задымления {color, fromT, toT} */
   branchFireColors?: Map<string, { color: string; fromT: number; toT: number }>;
   /**

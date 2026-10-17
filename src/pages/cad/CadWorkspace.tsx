@@ -967,6 +967,8 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               unitsConfig={unitsConfig}
               waterNodeResults={waterNetwork.nodeResults}
               waterBranchResults={waterNetwork.branchResults}
+              ventNorms={c.ventNorms}
+              ventSections={c.ventSections}
               zScale={zScale}
               xyScale={xyScale}
               schemaSymbols={schemaSymbols}

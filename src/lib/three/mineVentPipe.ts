@@ -20,6 +20,8 @@ import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { sectionOutline } from "@/lib/tube3d";
 import { toThree, branchSectionQuaternion } from "./mineScene";
 import { type TankLabel } from "./mineWater";
+import { type VentSection, type VentNorms } from "@/lib/ventSections";
+import { calcVentPipeDelivery, type VentPipeDelivery } from "@/lib/ventPipeDelivery";
 
 export interface VentPipeInput {
   nodes: TopoNode[];
@@ -33,6 +35,9 @@ export interface VentPipeInput {
   flowArrows?: boolean;
   /** Ветви с исходящей струёй — стрелки в них синие. */
   pollutedBranchIds?: Set<string>;
+  /** Нормы и участки — для требуемого расхода в забое (как во вкладке «Вентстав»). */
+  ventNorms?: VentNorms;
+  ventSections?: VentSection[];
 }
 
 export interface MineVentPipe {
@@ -270,6 +275,19 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
       sign = ((atFrom ? 1 : -1) * (inward ? 1 : -1)) as 1 | -1;
     }
     fans.push({ run, runIdx: runs.indexOf(run), s, sign, fb });
+  }
+
+  // ── Доставка воздуха — тот же расчёт, что во вкладке «Вентстав» ───────
+  const delivByComp = new Map<number, VentPipeDelivery>();
+  if (input.ventNorms) {
+    const tryCalc = (b: TopoBranch, runIdx: number) => {
+      const c = find(runIdx);
+      if (delivByComp.has(c)) return;
+      const d = calcVentPipeDelivery(b, branches, input.ventNorms!, input.ventSections ?? []);
+      if (d) delivByComp.set(c, d);
+    };
+    for (const fp of fans) if (fp.runIdx >= 0) tryCalc(fp.fb, fp.runIdx);
+    runs.forEach((r, i) => { if (r.flowB === r.host) tryCalc(r.flowB, i); });
   }
 
   // ── Свободные концы — раструбы ────────────────────────────────────────
@@ -534,8 +552,12 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
       else if (Q > MIN_FLOW) {
         lines.push(`Q = ${fmt(Q)} м³/с`);
         if ((fb.fanPressure ?? 0) > 0) lines.push(`H = ${fmt(fb.fanPressure, 0)} Па`);
+        const dv = delivByComp.get(find(fp.runIdx));
         const cq = compQ.get(find(fp.runIdx));
-        if (cq && cq.qin > 0 && isFinite(cq.qout) && cq.qin - cq.qout > 1e-3) {
+        if (dv) {
+          lines.push(`В забой: ${fmt(dv.flowFace)} м³/с · Kдост = ${fmt(dv.delivery)}`);
+          if (dv.flowShort) { lines.push(`Нужно ${fmt(dv.required)} м³/с — не хватает`); warn = true; }
+        } else if (cq && cq.qin > 0 && isFinite(cq.qout) && cq.qin - cq.qout > 1e-3) {
           lines.push(`До конца става: ${fmt(cq.qout)} м³/с`);
           lines.push(`Kдост = ${fmt(cq.qout / cq.qin)} · утечки ${fmt(cq.qin - cq.qout)} м³/с`);
         }
@@ -553,10 +575,39 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
   for (const e of ends) {
     if (!e.out) continue;
     const { run } = e;
-    const lines = [`Q = ${fmt(run.Q)} м³/с`, `v = ${fmt(run.v, 1)} м/с`];
-    const cq = compQ.get(find(runs.indexOf(run)));
+    const dv = delivByComp.get(find(runs.indexOf(run)));
+    const lines: string[] = [];
     let warn = false;
-    if (cq && cq.qin - cq.qout > 1e-3) lines.push(`Утечки: ${fmt(cq.qin - cq.qout)} м³/с`);
+    if (dv) {
+      lines.push(`Q забой = ${fmt(dv.flowFace)} м³/с (вент. ${fmt(dv.flowFan)})`);
+      lines.push(`Kдост = ${fmt(dv.delivery)} · утечки ${fmt(dv.leakagePercent, 0)} %`);
+      lines.push(`v выхода = ${fmt(dv.velocityFace, 1)} м/с`);
+      if (dv.required > 0) {
+        lines.push(`Требуется: ${fmt(dv.required)} м³/с${dv.flowShort ? " — не хватает" : ""}`);
+        if (dv.flowShort) warn = true;
+      }
+      if (dv.maxLength != null) {
+        const by = dv.limitedBy === "pressure" ? " (по давлению)" : dv.limitedBy === "flow" ? " (по расходу)" : "";
+        if (dv.maxLength <= 0) {
+          lines.push("Lпред: расход недостижим");
+          warn = true;
+        } else {
+          lines.push(`Lпред = ${fmt(dv.maxLength, 0)} м${by}`);
+          const r = dv.reserve ?? 0;
+          lines.push(r >= 0
+            ? `Запас: ${fmt(r, 0)} м (став ${fmt(dv.length, 0)} м)`
+            : `Став длиннее предела на ${fmt(-r, 0)} м`);
+          if (r < 0) warn = true;
+        }
+      } else {
+        lines.push("Lпред: не задан требуемый расход");
+      }
+      if (dv.overPressure) { lines.push("Депрессия выше паспорта рукава"); warn = true; }
+    } else {
+      lines.push(`Q = ${fmt(run.Q)} м³/с`, `v = ${fmt(run.v, 1)} м/с`);
+      const cq = compQ.get(find(runs.indexOf(run)));
+      if (cq && cq.qin - cq.qout > 1e-3) lines.push(`Утечки: ${fmt(cq.qin - cq.qout)} м³/с`);
+    }
     if (run.v > 0 && run.v < 0.25) { lines.push("Скорость ниже 0,25 м/с"); warn = true; }
     labels.push({
       id: `vpend:${run.flowB.id}:${e.atStart ? 0 : 1}`,

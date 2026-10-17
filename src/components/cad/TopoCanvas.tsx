@@ -91,6 +91,8 @@ export default function TopoCanvas(props: Props) {
     posOuterColors,
     waterNodeResults,
     waterBranchResults,
+    ventNorms,
+    ventSections,
     branchFireColors,
     fire3d,
     branchExplosionColors,
@@ -1839,6 +1841,8 @@ export default function TopoCanvas(props: Props) {
               unitsConfig={unitsConfig}
               waterBranchResults={waterBranchResults}
               waterNodeResults={waterNodeResults}
+              ventNorms={ventNorms}
+              ventSections={ventSections}
               /* Условные обозначения — те же, что на чертеже. Без них объём
                  показывал голую геометрию: перемычки, двери, вентиляторы и
                  очаги пожара несут половину содержания вентиляционного плана. */

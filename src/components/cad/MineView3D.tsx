@@ -45,6 +45,7 @@ import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { type WaterBranchResult, type WaterNodeResult } from "@/lib/waterHydraulics";
+import { type VentSection, type VentNorms } from "@/lib/ventSections";
 import { flowTime } from "@/lib/flowAnim";
 import Icon from "@/components/ui/icon";
 import { onCanvasFontsReady } from "@/lib/canvasFont";
@@ -71,6 +72,9 @@ export interface MineView3DProps {
   unitsConfig?: UnitsConfig;
   /** Результаты расчёта водопровода — для показаний редуктора в подписи. */
   waterBranchResults?: Map<string, WaterBranchResult>;
+  /** Нормы и участки — требуемый расход в забое для подписи става. */
+  ventNorms?: VentNorms;
+  ventSections?: VentSection[];
   /** Результаты расчёта водопровода по узлам — опорожнение резервуаров. */
   waterNodeResults?: Map<string, WaterNodeResult>;
   /**
@@ -869,6 +873,8 @@ export default function MineView3D(p: MineView3DProps) {
         animSpeed: p.animSpeed,
         flowArrows: showArrows,
         pollutedBranchIds: p.pollutedBranchIds,
+        ventNorms: p.ventNorms,
+        ventSections: p.ventSections,
       });
       if (built) {
         scene.add(built.group);
@@ -888,7 +894,8 @@ export default function MineView3D(p: MineView3DProps) {
       ventMotionRef.current = false;
     };
   }, [ready, showVent3D, hasVentPipes, showSymbols, showArrows, symSizeK, p.schemaSymbols, p.nodes,
-      p.branches, p.xyScale, p.zScale, p.animSpeed, p.animated, p.pollutedBranchIds]);
+      p.branches, p.xyScale, p.zScale, p.animSpeed, p.animated, p.pollutedBranchIds,
+      p.ventNorms, p.ventSections]);
 
   // Карта задымления приходит новой на каждую перерисовку страницы — сравниваем
   // по содержимому, иначе дым пересобирался бы без всякой причины.
