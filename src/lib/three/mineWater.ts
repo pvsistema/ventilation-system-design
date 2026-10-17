@@ -130,7 +130,7 @@ export interface MineWater {
   tankCount: number;
   /** Сколько баков сейчас опорожняется (есть разбор воды). */
   drainingTanks: number;
-  /** Подписи над баками: ёмкость и расчётное время истечения. */
+  /** Подписи над баками (ёмкость, истечение) и насосами (напор, подача). */
   tankLabels: TankLabel[];
   drawCalls: number;
 }
@@ -430,22 +430,23 @@ export function buildMineWater(input: WaterInput): MineWater | null {
   // открыт, красный — закрыт, и тогда поперёк трубы стоит красный диск-заслонка.
   // Клапан: тёмно-синий корпус-бочка, колпак пружины сверху и манометр. Если по
   // расчёту клапан срезает давление, колпак светится янтарным.
-  interface Fit { run: Run; s: number; kind: "gate" | "reducer" | "pump" }
+  interface Fit { run: Run; s: number; kind: "gate" | "reducer" | "pump"; sym?: SchemaSymbol }
+  const pumpLabels: TankLabel[] = [];
   const fits: Fit[] = [];
   const waterRunByBranch = new Map<string, Run>();
   for (const run of runs) if (run.color === WATER_COLOR) waterRunByBranch.set(run.b.id, run);
   const seen = new Set<string>();
-  const addFit = (bid: string, t: number, kind: Fit["kind"]) => {
+  const addFit = (bid: string, t: number, kind: Fit["kind"], sym?: SchemaSymbol) => {
     const run = waterRunByBranch.get(bid);
     if (!run || fits.length >= MAX_FITTINGS) return;
     const tt = Math.max(0.05, Math.min(0.95, t));
-    fits.push({ run, s: tt * run.len, kind });
+    fits.push({ run, s: tt * run.len, kind, sym });
     seen.add(`${kind}:${bid}`);
   };
   for (const sym of input.symbols ?? []) {
     if (!sym.branchId || !WATER_FITTING_IDS.has(sym.typeId)) continue;
     const kind = sym.typeId === "valve_water" ? "gate" : sym.typeId === "pump" ? "pump" : "reducer";
-    addFit(sym.branchId, sym.t ?? 0.5, kind);
+    addFit(sym.branchId, sym.t ?? 0.5, kind, sym);
   }
   for (const run of waterRunByBranch.values()) {
     if (run.b.wpHasGate && !seen.has(`gate:${run.b.id}`)) addFit(run.b.id, 0.4, "gate");
@@ -624,6 +625,37 @@ export function buildMineWater(input: WaterInput): MineWater | null {
         m4.compose(tmpPos, run.q, tmpScale);
         lampM.setMatrixAt(i, m4);
         lampM.setColorAt(i, tmpColor.set(on ? PUMP_ON : PUMP_OFF));
+        // Подпись: марка, напор и подача. Напор — расчётный (что насос
+        // реально прибавил в сети), подача — расход воды через его трубу.
+        {
+          const sym = f.sym;
+          const lines: string[] = [];
+          const nPar = Math.max(1, sym?.pumpParallel ?? 1);
+          const headCalc = pr?.pumpHeadM;
+          const headNom = (sym?.pumpHead ?? 0) * nPar || (run.b.wpPumpHead ?? 0);
+          const head = on && headCalc != null && headCalc > 0 ? headCalc : headNom;
+          lines.push(head > 0 ? `H = ${fmtNum(head)} м вод. ст.` : "Напор не задан");
+          if (pr && on) {
+            lines.push(`Q = ${fmtNum(Math.abs(pr.flow ?? 0))} м³/ч`);
+            if (pr.pumpDeltaP != null && pr.pumpDeltaP > 0) lines.push(`+${fmtNum(pr.pumpDeltaP, 3)} МПа`);
+          } else if (sym?.pumpFlow) {
+            lines.push(`Qном = ${fmtNum(sym.pumpFlow)} м³/ч`);
+          }
+          const nomFlow = (sym?.pumpFlow ?? 0) * nPar;
+          let warn = false;
+          if (!pr) { lines.push("Расчёт не выполнен"); warn = head > 0; }
+          else if (!on) { lines.push("Не работает"); warn = true; }
+          else if (nomFlow > 0 && Math.abs(pr.flow ?? 0) > nomFlow * 1.1) {
+            lines.push(`Перегруз: Qном ${fmtNum(nomFlow)} м³/ч`); warn = true;
+          }
+          const base = sym?.pumpName ? `Насос ${sym.pumpName}` : "Насос";
+          pumpLabels.push({
+            id: `pump:${sym?.id ?? run.b.id}`,
+            pos: at(run, s, mr, mu + mR + 0.2 * fk, new THREE.Vector3()),
+            title: nPar > 1 ? `${base} ×${nPar}` : base,
+            lines, warn,
+          });
+        }
 
       });
     }
@@ -952,7 +984,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     group, dispose, setTime,
     hasFlow: arrowCount > 0 || tankAnims.length > 0,
     drainingTanks: tankAnims.length,
-    tankLabels,
+    tankLabels: [...tankLabels, ...pumpLabels],
     arrowCount,
     pipeCount: runs.length,
     hydrantCount,
