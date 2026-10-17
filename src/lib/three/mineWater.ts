@@ -18,6 +18,7 @@
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { type WaterBranchResult } from "@/lib/waterHydraulics";
+import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { sectionOutline } from "@/lib/tube3d";
 import { toThree, branchSectionQuaternion } from "./mineScene";
 
@@ -36,7 +37,12 @@ export interface WaterInput {
   animSpeed?: number;
   /** Показывать стрелки направления воды. */
   flowArrows?: boolean;
+  /** Значки схемы — по ним ставятся запорные вентили и редукционные клапаны. */
+  symbols?: SchemaSymbol[];
 }
+
+/** Значки, которые слой водопровода показывает объёмно. */
+export const WATER_FITTING_IDS = new Set(["valve_water", "valve_reduce"]);
 
 export interface MineWater {
   group: THREE.Group;
@@ -48,6 +54,8 @@ export interface MineWater {
   arrowCount: number;
   pipeCount: number;
   hydrantCount: number;
+  /** Сколько запорных вентилей и редукционных клапанов поставлено. */
+  fittingCount: number;
   drawCalls: number;
 }
 
@@ -67,6 +75,11 @@ const ARROW_STEP = 5;
 /** Ниже этого расхода (м³/ч) направление считать нельзя. */
 const MIN_WATER_FLOW = 0.001;
 const ARROW_COLOR = 0xdc2626;
+const MAX_FITTINGS = 4000;
+const GATE_OPEN = 0x2196f3;
+const GATE_CLOSED = 0xdc2626;
+const REDUCER_BODY = 0x1e3a8a;
+const REDUCER_ACTIVE = 0xf59e0b;
 
 interface Pt { r: number; u: number }
 
@@ -315,6 +328,166 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     });
   }
 
+  // ── Запорные вентили и редукционные клапаны ───────────────────────────
+  // Ставятся по значкам схемы (valve_water / valve_reduce) — в той же точке
+  // ветви (t), что и на чертеже. Если значка нет, а признак в карточке ветви
+  // стоит (старые проекты) — ставим в типовую точку: вентиль на 0,4, клапан на 0,6.
+  //
+  // Вентиль: корпус-шар на трубе, фланцы, шпиндель и маховик. Маховик синий —
+  // открыт, красный — закрыт, и тогда поперёк трубы стоит красный диск-заслонка.
+  // Клапан: тёмно-синий корпус-бочка, колпак пружины сверху и манометр. Если по
+  // расчёту клапан срезает давление, колпак светится янтарным.
+  interface Fit { run: Run; s: number; kind: "gate" | "reducer" }
+  const fits: Fit[] = [];
+  const waterRunByBranch = new Map<string, Run>();
+  for (const run of runs) if (run.color === WATER_COLOR) waterRunByBranch.set(run.b.id, run);
+  const seen = new Set<string>();
+  const addFit = (bid: string, t: number, kind: Fit["kind"]) => {
+    const run = waterRunByBranch.get(bid);
+    if (!run || fits.length >= MAX_FITTINGS) return;
+    const tt = Math.max(0.05, Math.min(0.95, t));
+    fits.push({ run, s: tt * run.len, kind });
+    seen.add(`${kind}:${bid}`);
+  };
+  for (const sym of input.symbols ?? []) {
+    if (!sym.branchId || !WATER_FITTING_IDS.has(sym.typeId)) continue;
+    addFit(sym.branchId, sym.t ?? 0.5, sym.typeId === "valve_water" ? "gate" : "reducer");
+  }
+  for (const run of waterRunByBranch.values()) {
+    if (run.b.wpHasGate && !seen.has(`gate:${run.b.id}`)) addFit(run.b.id, 0.4, "gate");
+    if (run.b.wpHasReducer && !seen.has(`reducer:${run.b.id}`)) addFit(run.b.id, 0.6, "reducer");
+  }
+
+  const gates = fits.filter(f => f.kind === "gate");
+  const reducers = fits.filter(f => f.kind === "reducer");
+  const fk = sizeK;
+  const xAx = new THREE.Vector3(1, 0, 0);
+  const qT = new THREE.Quaternion();
+  const qR = new THREE.Quaternion();
+
+  if (fits.length > 0) {
+    const sphereG = new THREE.SphereGeometry(1, 16, 12);
+    const flangeG = new THREE.CylinderGeometry(1, 1, 1, 16);
+    flangeG.rotateZ(-Math.PI / 2);
+    const stemG = new THREE.CylinderGeometry(1, 1, 1, 8);
+    const wheelG = new THREE.TorusGeometry(1, 0.16, 8, 20);
+    const discG = new THREE.CylinderGeometry(1, 1, 1, 20);
+    discG.rotateZ(-Math.PI / 2);
+    const drumG = new THREE.CylinderGeometry(1, 1, 1, 18);
+    drumG.rotateZ(-Math.PI / 2);
+    const capG = new THREE.CylinderGeometry(0.75, 1, 1, 16);
+    const gaugeG = new THREE.CylinderGeometry(1, 1, 1, 18);
+    gaugeG.rotateX(Math.PI / 2);
+
+    const metal = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: 0.55, roughness: 0.35 });
+    const glow = new THREE.MeshStandardMaterial({
+      color: 0xffffff, metalness: 0.2, roughness: 0.45, emissive: 0xffffff, emissiveIntensity: 0.0,
+    });
+    const shut = new THREE.MeshStandardMaterial({
+      color: GATE_CLOSED, roughness: 0.5, emissive: GATE_CLOSED, emissiveIntensity: 0.5,
+      transparent: true, opacity: 0.85, side: THREE.DoubleSide,
+    });
+    const face = new THREE.MeshBasicMaterial({ color: 0xf8fafc });
+
+    // Пакеты на тип детали.
+    const nG = gates.length, nR = reducers.length;
+    const bodyM = makeMesh(sphereG, metal, nG);
+    const flangeM = makeMesh(flangeG, metal, (nG + nR) * 2);
+    const stemM = makeMesh(stemG, metal, nG + nR);
+    const wheelM = makeMesh(wheelG, glow, nG);
+    const closedGates = gates.filter(f => f.run.b.wpGateClosed);
+    const discM = closedGates.length > 0 ? makeMesh(discG, shut, closedGates.length) : null;
+    const drumM = nR > 0 ? makeMesh(drumG, metal, nR) : null;
+    const capM = nR > 0 ? makeMesh(capG, glow, nR) : null;
+    const gaugeM = nR > 0 ? makeMesh(gaugeG, face, nR) : null;
+    const gaugeRimM = nR > 0 ? makeMesh(gaugeG.clone(), metal, nR) : null;
+    if (gaugeRimM) geoms.push(gaugeRimM.geometry);
+
+    let fi = 0, si = 0;
+    const flange = (run: Run, s: number, R: number) => {
+      at(run, s, run.slot.r, run.slot.u, tmpPos);
+      tmpScale.set(0.05 * fk * kx, R * kx, R * kx);
+      m4.compose(tmpPos, run.q, tmpScale);
+      flangeM.setMatrixAt(fi, m4);
+      flangeM.setColorAt(fi++, tmpColor.set(0x64748b));
+    };
+    const stem = (run: Run, s: number, u0: number, h: number, r0: number) => {
+      at(run, s, run.slot.r, u0 + h / 2, tmpPos);
+      tmpScale.set(r0 * kx, h * kx, r0 * kx);
+      m4.compose(tmpPos, run.q, tmpScale);
+      stemM.setMatrixAt(si, m4);
+      stemM.setColorAt(si++, tmpColor.set(0x94a3b8));
+    };
+
+    let ci = 0;
+    gates.forEach((f, i) => {
+      const { run, s } = f;
+      const { R, u } = run.slot;
+      const closed = !!run.b.wpGateClosed;
+      const bR = Math.max(R * 1.45, 0.08 * fk);
+      at(run, s, run.slot.r, u, tmpPos);
+      tmpScale.set(bR * 1.25 * kx, bR * kx, bR * kx);
+      m4.compose(tmpPos, run.q, tmpScale);
+      bodyM.setMatrixAt(i, m4);
+      bodyM.setColorAt(i, tmpColor.set(0x475569));
+      const fR = Math.max(R * 1.6, bR * 0.9);
+      flange(run, s - bR * 1.25 * kx, fR);
+      flange(run, s + bR * 1.25 * kx, fR);
+      const sh = 0.22 * fk;
+      stem(run, s, u + bR * 0.8, sh, 0.018 * fk);
+      const wR = 0.13 * fk;
+      at(run, s, run.slot.r, u + bR * 0.8 + sh, tmpPos);
+      qR.setFromAxisAngle(xAx, Math.PI / 2);
+      qT.copy(run.q).multiply(qR);
+      tmpScale.setScalar(wR * kx);
+      m4.compose(tmpPos, qT, tmpScale);
+      wheelM.setMatrixAt(i, m4);
+      wheelM.setColorAt(i, tmpColor.set(closed ? GATE_CLOSED : GATE_OPEN));
+      if (closed && discM) {
+        at(run, s, run.slot.r, u, tmpPos);
+        tmpScale.set(0.03 * fk * kx, bR * 1.7 * kx, bR * 1.7 * kx);
+        m4.compose(tmpPos, run.q, tmpScale);
+        discM.setMatrixAt(ci++, m4);
+      }
+    });
+
+    const res = input.waterBranchResults;
+    reducers.forEach((f, i) => {
+      const { run, s } = f;
+      const { R, u } = run.slot;
+      const active = !!res?.get(run.b.id)?.reducerActive;
+      const dR = Math.max(R * 1.6, 0.1 * fk);
+      const dL = dR * 2.2;
+      at(run, s, run.slot.r, u, tmpPos);
+      tmpScale.set(dL * kx, dR * kx, dR * kx);
+      m4.compose(tmpPos, run.q, tmpScale);
+      drumM!.setMatrixAt(i, m4);
+      drumM!.setColorAt(i, tmpColor.set(REDUCER_BODY));
+      flange(run, s - dL / 2 * kx, dR * 1.1);
+      flange(run, s + dL / 2 * kx, dR * 1.1);
+      // Колпак пружины над корпусом
+      const ch = dR * 1.4;
+      stem(run, s, u + dR * 0.8, dR * 0.4, dR * 0.35);
+      at(run, s, run.slot.r, u + dR * 1.2 + ch / 2, tmpPos);
+      tmpScale.set(dR * 0.7 * kx, ch * kx, dR * 0.7 * kx);
+      m4.compose(tmpPos, run.q, tmpScale);
+      capM!.setMatrixAt(i, m4);
+      capM!.setColorAt(i, tmpColor.set(active ? REDUCER_ACTIVE : REDUCER_BODY));
+      // Манометр — на выходе клапана, циферблатом к оси выработки
+      const gR = Math.max(0.05, dR * 0.55);
+      const gs = s + (dL / 2 - gR * 0.2) * kx;
+      at(run, gs, run.slot.r - dR - gR * 0.15, u + dR * 0.6, tmpPos);
+      tmpScale.set(gR * kx, gR * kx, gR * 0.35 * kx);
+      m4.compose(tmpPos, run.q, tmpScale);
+      gaugeRimM!.setMatrixAt(i, m4);
+      gaugeRimM!.setColorAt(i, tmpColor.set(0x334155));
+      at(run, gs, run.slot.r - dR - gR * 0.15 - gR * 0.2, u + dR * 0.6, tmpPos);
+      tmpScale.set(gR * 0.85 * kx, gR * 0.85 * kx, gR * 0.05 * kx);
+      m4.compose(tmpPos, run.q, tmpScale);
+      gaugeM!.setMatrixAt(i, m4);
+    });
+  }
+
   // ── Бегущие стрелки воды ──────────────────────────────────────────────
   // Стрелка — «манжета» на трубе: конус шире трубы, надетый на её ось. Так она
   // видна с любой стороны и не прячется в теле трубы. Направление и скорость —
@@ -419,6 +592,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     arrowCount,
     pipeCount: runs.length,
     hydrantCount,
+    fittingCount: fits.length,
     drawCalls: meshes.length,
   };
 }
