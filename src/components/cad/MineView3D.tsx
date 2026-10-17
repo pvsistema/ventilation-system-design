@@ -21,7 +21,7 @@
 // параллельными и расстояния на экране пропорциональны натурным. Перспектива
 // красивее, но по ней нельзя судить о размерах.
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { buildMineScene, disposeScene, recolorScene, pickBranch, setHighlight, type BuiltScene } from "@/lib/three/mineScene";
@@ -37,6 +37,9 @@ import {
 import { buildMineBulkheads, type MineBulkheads } from "@/lib/three/mineBulkheads";
 import { buildMineFire, type MineFire, type SmokeSegment } from "@/lib/three/mineFire";
 import { buildMineWater, type MineWater } from "@/lib/three/mineWater";
+import {
+  buildMineVentPipe, ventPipeHiddenIds, ventPipeFanSymbolIds, type MineVentPipe,
+} from "@/lib/three/mineVentPipe";
 import { BULKHEAD_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { type InfoDisplayConfig } from "@/lib/infoConfig";
@@ -227,6 +230,29 @@ export default function MineView3D(p: MineView3DProps) {
   const hasWaterPipes = p.branches.some(b => b.hasWaterPipe || b.hasAirPipe)
     || p.nodes.some(n => n.fireNodeType === "reservoir");
   const waterAllowed = !p.infoConfig || p.infoConfig.waterPipes !== false;
+
+  // ── Вентрубопровод (став ВМП) ─────────────────────────────────────────
+  // На чертеже став — отдельная узкая нить ветвей рядом с выработкой. В объёме
+  // она подменяется трубой под кровлей хозяйской выработки (mineVentPipe.ts):
+  // нить из сцены, стрелок и подписей убирается, ВМП на ней ставит слой става.
+  const ventRef = useRef<MineVentPipe | null>(null);
+  const ventMotionRef = useRef(false);
+  const [showVent3D, setShowVent3D] = useState(true);
+  const [ventInfo, setVentInfo] = useState({ pipes: 0, length: 0, fans: 0 });
+  const hasVentPipes = p.branches.some(b => b.hasVentPipe || b.isVentPipeBranch);
+  const ventHidden = useMemo(
+    () => (showVent3D ? ventPipeHiddenIds(p.branches) : new Set<string>()),
+    [showVent3D, p.branches],
+  );
+  const sceneBranches = useMemo(
+    () => (ventHidden.size > 0 ? p.branches.filter(b => !ventHidden.has(b.id)) : p.branches),
+    [p.branches, ventHidden],
+  );
+  const sceneSymbols = useMemo(() => {
+    if (ventHidden.size === 0 || !p.schemaSymbols) return p.schemaSymbols;
+    const ids = ventPipeFanSymbolIds(p.schemaSymbols, ventHidden);
+    return ids.size > 0 ? p.schemaSymbols.filter(sy => !ids.has(sy.id)) : p.schemaSymbols;
+  }, [p.schemaSymbols, ventHidden]);
 
   const msRef = useRef<MineMeasureStations | null>(null);
   const [showMs3D, setShowMs3D] = useState(true);
@@ -451,7 +477,7 @@ export default function MineView3D(p: MineView3DProps) {
     const t0 = performance.now();
     const built = buildMineScene({
       nodes: p.nodes,
-      branches: p.branches,
+      branches: sceneBranches,
       xyScale: p.xyScale,
       zScale: p.zScale,
       colorOf: colorOfRef.current,
@@ -501,7 +527,7 @@ export default function MineView3D(p: MineView3DProps) {
     // p.colorOf намеренно НЕ в зависимостях — см. colorOfRef выше.
     // opacity и showEdges меняют материал и набор мешей, поэтому требуют
     // пересборки; ракурс при этом сохраняется (см. keep выше).
-  }, [ready, p.nodes, p.branches, p.xyScale, p.zScale, opacity, showEdges]);
+  }, [ready, p.nodes, sceneBranches, p.xyScale, p.zScale, opacity, showEdges]);
 
   // ── Подписи выработок ─────────────────────────────────────────────────
   // Текст собирается заранее и отдельно от геометрии: он меняется чаще (галочка
@@ -510,7 +536,7 @@ export default function MineView3D(p: MineView3DProps) {
   useEffect(() => {
     labelsRef.current = buildMineLabels({
       nodes: p.nodes,
-      branches: p.branches,
+      branches: sceneBranches,
       xyScale: p.xyScale,
       zScale: p.zScale,
       infoConfig: p.infoConfig,
@@ -522,7 +548,7 @@ export default function MineView3D(p: MineView3DProps) {
       symbols: p.schemaSymbols,
     });
     needsRenderRef.current = true;
-  }, [p.nodes, p.branches, p.xyScale, p.zScale, p.infoConfig, p.unitsConfig,
+  }, [p.nodes, sceneBranches, p.xyScale, p.zScale, p.infoConfig, p.unitsConfig,
       p.waterBranchResults, p.schemaSymbols]);
 
   // Подписи включили или выключили — нужен новый кадр, иначе слой так и остался
@@ -550,7 +576,7 @@ export default function MineView3D(p: MineView3DProps) {
 
     if (showArrows) {
       const arrows = buildFlowArrows({
-        nodes: p.nodes, branches: p.branches,
+        nodes: p.nodes, branches: sceneBranches,
         xyScale: p.xyScale, zScale: p.zScale,
         pollutedBranchIds: p.pollutedBranchIds,
         animSpeed: p.animSpeed,
@@ -586,7 +612,7 @@ export default function MineView3D(p: MineView3DProps) {
       arrowsRef.current = null;
       animatingRef.current = false;
     };
-  }, [ready, showArrows, arrowsInside, p.nodes, p.branches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
+  }, [ready, showArrows, arrowsInside, p.nodes, sceneBranches, p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
 
   // ── Условные обозначения ──────────────────────────────────────────────
   // Пересобираются при смене схемы, состава значков и их размера. Геометрию
@@ -603,10 +629,10 @@ export default function MineView3D(p: MineView3DProps) {
     }
     setSymbolCount(0);
 
-    if (showSymbols && p.schemaSymbols && p.schemaSymbols.length > 0) {
+    if (showSymbols && sceneSymbols && sceneSymbols.length > 0) {
       const built = buildMineSymbols({
         nodes: p.nodes, branches: p.branches,
-        symbols: p.schemaSymbols,
+        symbols: sceneSymbols,
         xyScale: p.xyScale, zScale: p.zScale,
         sizeK: symSizeK,
         // Вентилятор показан объёмной машиной — плоский двойник ему не нужен.
@@ -639,7 +665,7 @@ export default function MineView3D(p: MineView3DProps) {
       s.dispose();
       symbolsRef.current = null;
     };
-  }, [ready, showSymbols, showFans3D, showMs3D, showBk3D, showFire3D, !!p.fire3d, showWater3D, waterAllowed, symSizeK, p.schemaSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
+  }, [ready, showSymbols, showFans3D, showMs3D, showBk3D, showFire3D, !!p.fire3d, showWater3D, waterAllowed, symSizeK, sceneSymbols, p.nodes, p.branches, p.xyScale, p.zScale]);
 
   // ── Объёмные перемычки ────────────────────────────────────────────────
   // Свой слой, как вентиляторы и станции: перемычки переставляют и меняют им
@@ -793,10 +819,10 @@ export default function MineView3D(p: MineView3DProps) {
 
     // Машины показываем только вместе с обозначениями: выключив УО, человек
     // просит чистую геометрию — вентилятор такое же обозначение, как прочие.
-    if (showSymbols && showFans3D && p.schemaSymbols && p.schemaSymbols.length > 0) {
+    if (showSymbols && showFans3D && sceneSymbols && sceneSymbols.length > 0) {
       const built = buildMineFans({
         nodes: p.nodes, branches: p.branches,
-        symbols: p.schemaSymbols,
+        symbols: sceneSymbols,
         xyScale: p.xyScale, zScale: p.zScale,
         sizeK: symSizeK,
         pollutedBranchIds: p.pollutedBranchIds,
@@ -823,8 +849,46 @@ export default function MineView3D(p: MineView3DProps) {
       fansRef.current = null;
       fansSpinRef.current = false;
     };
-  }, [ready, showSymbols, showFans3D, symSizeK, p.schemaSymbols, p.nodes, p.branches,
+  }, [ready, showSymbols, showFans3D, symSizeK, sceneSymbols, p.nodes, p.branches,
       p.xyScale, p.zScale, p.pollutedBranchIds, p.animSpeed, p.animated]);
+
+  // ── Вентрубопровод: став под кровлей, ВМП, стрелки воздуха ────────────
+  useEffect(() => {
+    const scene = sceneRef.current;
+    if (!ready || !scene) return;
+    const prev = ventRef.current;
+    if (prev) { scene.remove(prev.group); prev.dispose(); ventRef.current = null; }
+    ventMotionRef.current = false;
+    setVentInfo({ pipes: 0, length: 0, fans: 0 });
+    if (showVent3D && hasVentPipes) {
+      const built = buildMineVentPipe({
+        nodes: p.nodes, branches: p.branches,
+        symbols: showSymbols ? p.schemaSymbols : [],
+        xyScale: p.xyScale, zScale: p.zScale,
+        sizeK: symSizeK,
+        animSpeed: p.animSpeed,
+        flowArrows: showArrows,
+        pollutedBranchIds: p.pollutedBranchIds,
+      });
+      if (built) {
+        scene.add(built.group);
+        ventRef.current = built;
+        setVentInfo({ pipes: built.pipeCount, length: built.totalLength, fans: built.fanCount });
+        ventMotionRef.current = built.hasMotion && p.animated !== false;
+        built.setTime(ventMotionRef.current ? flowTime() : 0);
+      }
+    }
+    needsRenderRef.current = true;
+    return () => {
+      const v = ventRef.current;
+      if (!v) return;
+      scene.remove(v.group);
+      v.dispose();
+      ventRef.current = null;
+      ventMotionRef.current = false;
+    };
+  }, [ready, showVent3D, hasVentPipes, showSymbols, showArrows, symSizeK, p.schemaSymbols, p.nodes,
+      p.branches, p.xyScale, p.zScale, p.animSpeed, p.animated, p.pollutedBranchIds]);
 
   // Карта задымления приходит новой на каждую перерисовку страницы — сравниваем
   // по содержимому, иначе дым пересобирался бы без всякой причины.
@@ -936,6 +1000,12 @@ export default function MineView3D(p: MineView3DProps) {
       }
 
       // Стрелки воды в трубах — те же общие часы схемы.
+      const vent = ventRef.current;
+      if (ventMotionRef.current && vent) {
+        vent.setTime(flowTime());
+        needsRenderRef.current = true;
+      }
+
       const water = waterRef.current;
       if (waterFlowRef.current && water) {
         water.setTime(flowTime());
@@ -1060,7 +1130,9 @@ export default function MineView3D(p: MineView3DProps) {
         // сядет ровно на те места, где нарисованы выработки.
         const lc = labelCanvasRef.current;
         if (lc) {
-          const tankLbls = showWaterLabelsRef.current ? (waterRef.current?.tankLabels ?? []) : [];
+          const tankLbls = showWaterLabelsRef.current
+            ? [...(waterRef.current?.tankLabels ?? []), ...(ventRef.current?.labels ?? [])]
+            : [];
           const wantLabels = showLabelsRef.current && labelsRef.current.length > 0;
           if (wantLabels || tankLbls.length > 0) {
             // Холст держим в пикселях устройства, а рисуем в логических:
@@ -1860,12 +1932,30 @@ export default function MineView3D(p: MineView3DProps) {
           </button>
         )}
 
-        {hasWaterPipes && showWater3D && waterAllowed && (
+        {hasVentPipes && (
+          <button
+            onClick={() => setShowVent3D(v => !v)}
+            title={showVent3D
+              ? "Вентрубопровод под кровлей хозяйской выработки: гибкий рукав (жёлтый, кольца) или металл (серый, фланцы) на тросе-подвеске, ВМП на ставе, бегущие стрелки воздуха внутри по расчёту, подписи расхода и утечек"
+              : "Показать вентрубопровод трубой под кровлей выработки (сейчас — отдельной нитью, как на чертеже)"}
+            className="text-[10px] px-2 py-1 rounded border hover:bg-white"
+            style={{
+              borderColor: showVent3D ? "#b45309" : "var(--c-b2, #d1d5db)",
+              color: showVent3D ? "#b45309" : "var(--c-t2, #374151)",
+              background: showVent3D ? "rgba(254,243,199,0.95)" : "rgba(255,255,255,0.9)",
+              fontWeight: showVent3D ? 600 : 400,
+            }}
+          >
+            Вентрубопровод 3D
+          </button>
+        )}
+
+        {(hasWaterPipes && showWater3D && waterAllowed || hasVentPipes && showVent3D) && (
           <button
             onClick={() => setShowWaterLabels(v => !v)}
             title={showWaterLabels
-              ? "Скрыть подписи резервуаров, насосов и редукционных клапанов"
-              : "Показать подписи резервуаров (ёмкость, истечение), насосов (напор, подача) и клапанов (давление до/после)"}
+              ? "Скрыть подписи резервуаров, насосов, редукционных клапанов, ВМП и выходов става"
+              : "Показать подписи резервуаров (ёмкость, истечение), насосов (напор, подача), клапанов (давление до/после), ВМП и выходов става (расход, утечки)"}
             className="text-[10px] px-2 py-1 rounded border hover:bg-white"
             style={{
               borderColor: showWaterLabels ? "#1d4ed8" : "var(--c-b2, #d1d5db)",
@@ -1874,7 +1964,7 @@ export default function MineView3D(p: MineView3DProps) {
               fontWeight: showWaterLabels ? 600 : 400,
             }}
           >
-            Подписи воды
+            Подписи труб
           </button>
         )}
 
@@ -2016,7 +2106,9 @@ export default function MineView3D(p: MineView3DProps) {
         {waterInfo.hydrants > 0 && <> · пож. кранов: <b>{waterInfo.hydrants}</b></>}
         {waterInfo.fittings > 0 && <> · вентилей и клапанов: <b>{waterInfo.fittings}</b></>}
         {waterInfo.pumps > 0 && <> · насосов: <b>{waterInfo.pumps}</b></>}
-        {waterInfo.tanks > 0 && <> · резервуаров: <b>{waterInfo.tanks}</b></>} · {stats.fps} кадр/с
+        {waterInfo.tanks > 0 && <> · резервуаров: <b>{waterInfo.tanks}</b></>}
+        {ventInfo.pipes > 0 && <> · став: <b>{Math.round(ventInfo.length)} м</b></>}
+        {ventInfo.fans > 0 && <> · ВМП на ставе: <b>{ventInfo.fans}</b></>} · {stats.fps} кадр/с
       </div>
 
       <div className="absolute bottom-2 right-2 text-[10px] px-2 py-1 rounded"
