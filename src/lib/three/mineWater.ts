@@ -58,6 +58,8 @@ export interface MineWater {
   fittingCount: number;
   /** Сколько насосов поставлено. */
   pumpCount: number;
+  /** Сколько резервуаров поставлено. */
+  tankCount: number;
   drawCalls: number;
 }
 
@@ -86,6 +88,9 @@ const PUMP_BODY = 0x1f6f43;
 const PUMP_MOTOR = 0x2b4c7e;
 const PUMP_ON = 0x22c55e;
 const PUMP_OFF = 0x6b7280;
+const TANK_SHELL = 0x94a3b8;
+const TANK_WATER = 0x2563eb;
+const MAX_TANKS = 500;
 
 interface Pt { r: number; u: number }
 
@@ -165,7 +170,9 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     (n.fireNodeType ?? "none") === "consumer" && waterByNode.has(n.id),
   ).slice(0, MAX_HYDRANTS);
 
-  if (runs.length === 0) return null;
+  const tankNodes = nodes.filter(n => (n.fireNodeType ?? "none") === "reservoir").slice(0, MAX_TANKS);
+
+  if (runs.length === 0 && tankNodes.length === 0) return null;
 
   const group = new THREE.Group();
   group.name = "mine-water";
@@ -578,6 +585,128 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     });
   }
 
+  // ── Резервуары ────────────────────────────────────────────────────────
+  // Узел-источник ППЗ («резервуар») — вертикальный бак у выработки: стальная
+  // обечайка на просвет, внутри — синий столб воды. Размер — по ёмкости
+  // (fireCapacity, м³), высота воды — по заполнению. Бак стоит рядом с
+  // выработкой со стороны водопровода, на её почве, и соединён с трубой
+  // отводом с задвижкой. Обручи и крышка с люком — чтобы бак читался баком,
+  // а не колонной.
+  const tankCount = tankNodes.length;
+  if (tankCount > 0) {
+    const shellG = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
+    const waterG = new THREE.CylinderGeometry(1, 1, 1, 28);
+    const hoopG = new THREE.TorusGeometry(1, 0.025, 6, 32);
+    hoopG.rotateX(Math.PI / 2);
+    const lidG = new THREE.CylinderGeometry(1, 1, 1, 28);
+    const stubG = new THREE.CylinderGeometry(1, 1, 1, 12);
+    const shellMat = new THREE.MeshStandardMaterial({
+      color: TANK_SHELL, metalness: 0.5, roughness: 0.4,
+      transparent: true, opacity: 0.32, side: THREE.DoubleSide, depthWrite: false,
+    });
+    const waterMat = new THREE.MeshStandardMaterial({
+      color: TANK_WATER, roughness: 0.15, metalness: 0.1,
+      emissive: TANK_WATER, emissiveIntensity: 0.25, transparent: true, opacity: 0.8,
+    });
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.55, roughness: 0.4 });
+    const pipeMatT = new THREE.MeshStandardMaterial({ color: WATER_COLOR, metalness: 0.45, roughness: 0.4 });
+
+    const waterM = makeMesh(waterG, waterMat, tankCount);
+    const shellM = makeMesh(shellG, shellMat, tankCount);
+    shellM.renderOrder = 6;
+    const hoopM = makeMesh(hoopG, steelMat, tankCount * 3);
+    const lidM = makeMesh(lidG, steelMat, tankCount * 2);
+    const stubM = makeMesh(stubG, pipeMatT, tankCount * 2);
+
+    const yUp = new THREE.Vector3(0, 1, 0);
+    const qI = new THREE.Quaternion();
+    const tmpA = new THREE.Vector3();
+    const tmpB = new THREE.Vector3();
+    const tmpD = new THREE.Vector3();
+    let hi = 0, li = 0, sti = 0;
+
+    const cyl = (mesh: THREE.InstancedMesh, i: number, from: THREE.Vector3, to: THREE.Vector3, rad: number) => {
+      tmpD.subVectors(to, from);
+      const L = tmpD.length();
+      if (!(L > 1e-6)) { mesh.setMatrixAt(i, m4.makeScale(0, 0, 0)); return; }
+      qArrowT.setFromUnitVectors(yUp, tmpD.normalize());
+      tmpPos.addVectors(from, to).multiplyScalar(0.5);
+      tmpScale.set(rad, L, rad);
+      m4.compose(tmpPos, qArrowT, tmpScale);
+      mesh.setMatrixAt(i, m4);
+    };
+    const qArrowT = new THREE.Quaternion();
+
+    tankNodes.forEach((n, i) => {
+      const cap = Math.max(0, n.fireCapacity ?? 0);
+      // Размер бака по ёмкости: H ≈ 1,2·D, в разумных пределах.
+      const V = cap > 0 ? cap : 50;
+      const D = Math.max(1.6, Math.min(12, Math.cbrt((4 * V) / (Math.PI * 1.2))));
+      const H = Math.max(2, Math.min(14, D * 1.2));
+      const tR = (D / 2) * kx, tH = H * kx;
+      const fill = cap > 0 ? 0.85 : 0.08;
+
+      const center = toThree(n.x * kx, n.y * kx, n.z * kz);
+      const run = waterByNode.get(n.id)?.[0];
+      let base: THREE.Vector3;
+      let joint: THREE.Vector3 | null = null;
+      if (run) {
+        const s0 = run.b.fromId === n.id ? Math.min(run.len * 0.15, 1 * kx) : run.len - Math.min(run.len * 0.15, 1 * kx);
+        joint = at(run, s0, run.slot.r, run.slot.u, new THREE.Vector3());
+        // Бак за стенкой выработки, со стороны водопровода
+        const off = (run.slot.wall + 0.6) * kx + tR;
+        base = new THREE.Vector3().copy(run.a).addScaledVector(run.dir, s0)
+          .addScaledVector(run.up, run.slot.floor * kx)
+          .addScaledVector(run.right, run.side * off);
+      } else {
+        base = center.clone().addScaledVector(yUp, -tH * 0.1);
+      }
+
+      // Вода
+      const wH = tH * fill;
+      tmpPos.copy(base).addScaledVector(yUp, wH / 2);
+      tmpScale.set(tR * 0.97, wH, tR * 0.97);
+      m4.compose(tmpPos, qI, tmpScale);
+      waterM.setMatrixAt(i, m4);
+      // Обечайка
+      tmpPos.copy(base).addScaledVector(yUp, tH / 2);
+      tmpScale.set(tR, tH, tR);
+      m4.compose(tmpPos, qI, tmpScale);
+      shellM.setMatrixAt(i, m4);
+      // Обручи: низ, середина, верх
+      for (const k of [0.02, 0.5, 0.98]) {
+        tmpPos.copy(base).addScaledVector(yUp, tH * k);
+        tmpScale.setScalar(tR * 1.01);
+        m4.compose(tmpPos, qI, tmpScale);
+        hoopM.setMatrixAt(hi++, m4);
+      }
+      // Крышка и люк
+      tmpPos.copy(base).addScaledVector(yUp, tH + 0.03 * kx);
+      tmpScale.set(tR * 1.02, 0.06 * kx, tR * 1.02);
+      m4.compose(tmpPos, qI, tmpScale);
+      lidM.setMatrixAt(li++, m4);
+      tmpPos.copy(base).addScaledVector(yUp, tH + 0.15 * kx);
+      tmpScale.set(tR * 0.28, 0.2 * kx, tR * 0.28);
+      m4.compose(tmpPos, qI, tmpScale);
+      lidM.setMatrixAt(li++, m4);
+      // Отвод от дна бака к водопроводу: вниз-вбок, затем к трубе
+      const pr = Math.max(run ? run.slot.R : 0.05, 0.05) * kx;
+      if (joint) {
+        tmpA.copy(base).addScaledVector(yUp, Math.min(0.4 * kx, tH * 0.1));
+        tmpB.copy(joint).sub(tmpA);
+        tmpB.y = 0;
+        const toward = tmpB.lengthSq() > 1e-9 ? tmpB.normalize() : tmpB.set(0, 0, 0);
+        const outlet = tmpA.clone().addScaledVector(toward, tR);
+        cyl(stubM, sti++, tmpA.clone().addScaledVector(toward, tR * 0.9), outlet.clone().setY(joint.y), pr);
+        cyl(stubM, sti++, outlet.clone().setY(joint.y), joint, pr);
+      } else {
+        stubM.setMatrixAt(sti++, m4.makeScale(0, 0, 0));
+        stubM.setMatrixAt(sti++, m4.makeScale(0, 0, 0));
+      }
+    });
+
+  }
+
   // ── Бегущие стрелки воды ──────────────────────────────────────────────
   // Стрелка — «манжета» на трубе: конус шире трубы, надетый на её ось. Так она
   // видна с любой стороны и не прячется в теле трубы. Направление и скорость —
@@ -684,6 +813,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     hydrantCount,
     fittingCount: gates.length + reducers.length,
     pumpCount: pumps.length,
+    tankCount,
     drawCalls: meshes.length,
   };
 }
