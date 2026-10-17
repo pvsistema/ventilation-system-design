@@ -21,6 +21,7 @@ import { type WaterBranchResult, type WaterNodeResult } from "@/lib/waterHydraul
 import { type SchemaSymbol } from "@/pages/cad/cadTypes";
 import { sectionOutline } from "@/lib/tube3d";
 import { toThree, branchSectionQuaternion } from "./mineScene";
+import { canvasFont } from "@/lib/canvasFont";
 
 export interface WaterInput {
   nodes: TopoNode[];
@@ -41,6 +42,71 @@ export interface WaterInput {
   flowArrows?: boolean;
   /** Значки схемы — по ним ставятся запорные вентили и редукционные клапаны. */
   symbols?: SchemaSymbol[];
+}
+
+/** Подпись над баком — рисуется поверх картинки, как подписи выработок. */
+export interface TankLabel {
+  id: string;
+  /** Точка над крышкой бака, координаты сцены. */
+  pos: THREE.Vector3;
+  title: string;
+  lines: string[];
+  /** Вода до бака не доходит или расчёт ещё не выполнен. */
+  warn: boolean;
+}
+
+const fmtNum = (v: number, d = 1) =>
+  v.toLocaleString("ru-RU", { maximumFractionDigits: d, minimumFractionDigits: 0 });
+
+/** Рисует подписи баков поверх объёмной картинки. Холст не очищает. */
+export function drawTankLabels(
+  ctx: CanvasRenderingContext2D,
+  labels: TankLabel[],
+  cam: THREE.Camera,
+  w: number,
+  h: number,
+): void {
+  if (labels.length === 0) return;
+  const v = new THREE.Vector3();
+  ctx.save();
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  const titleFont = canvasFont(9, 700);
+  const dataFont = canvasFont(8.5, 600);
+  const LH = 12;
+  for (const lb of labels) {
+    v.copy(lb.pos).project(cam);
+    if (v.z < -1 || v.z > 1) continue;
+    const x = (v.x * 0.5 + 0.5) * w;
+    const y = (-v.y * 0.5 + 0.5) * h;
+    if (x < -120 || x > w + 120 || y < -80 || y > h + 80) continue;
+    const rows = [lb.title, ...lb.lines];
+    ctx.font = dataFont;
+    let tw = 0;
+    rows.forEach((r, i) => {
+      ctx.font = i === 0 ? titleFont : dataFont;
+      tw = Math.max(tw, ctx.measureText(r).width);
+    });
+    const bw = tw + 12, bh = rows.length * LH + 6;
+    const bx = x - bw / 2, by = y - bh - 10;
+    ctx.fillStyle = "rgba(255,255,255,0.92)";
+    ctx.strokeStyle = lb.warn ? "#dc2626" : "#2563eb";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.rect(bx, by, bw, bh);
+    ctx.fill();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x, by + bh);
+    ctx.lineTo(x, y);
+    ctx.stroke();
+    rows.forEach((r, i) => {
+      ctx.font = i === 0 ? titleFont : dataFont;
+      ctx.fillStyle = i === 0 ? "#1e3a8a" : (lb.warn && i === rows.length - 1 ? "#dc2626" : "#0f172a");
+      ctx.fillText(r, x, by + 3 + LH * (i + 0.5));
+    });
+  }
+  ctx.restore();
 }
 
 /** Значки, которые слой водопровода показывает объёмно. */
@@ -64,6 +130,8 @@ export interface MineWater {
   tankCount: number;
   /** Сколько баков сейчас опорожняется (есть разбор воды). */
   drainingTanks: number;
+  /** Подписи над баками: ёмкость и расчётное время истечения. */
+  tankLabels: TankLabel[];
   drawCalls: number;
 }
 
@@ -611,6 +679,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
   // быстро наполняется и цикл повторяется. Кранов не открыто — уровень стоит.
   interface TankAnim { i: number; base: THREE.Vector3; tR: number; tH: number; fill: number; cycle: number }
   const tankAnims: TankAnim[] = [];
+  const tankLabels: TankLabel[] = [];
   let tankWaterMesh: THREE.InstancedMesh | null = null;
   if (tankCount > 0) {
     const shellG = new THREE.CylinderGeometry(1, 1, 1, 28, 1, true);
@@ -688,6 +757,25 @@ export function buildMineWater(input: WaterInput): MineWater | null {
         const k = Math.max(0.1, input.animSpeed ?? 1);
         const cycle = Math.max(DRAIN_MIN_SEC, Math.min(DRAIN_MAX_SEC, drainMin * DRAIN_SEC_PER_MIN)) / k;
         tankAnims.push({ i, base: base.clone(), tR, tH, fill, cycle });
+      }
+
+      {
+        const lines: string[] = [cap > 0 ? `V = ${fmtNum(cap)} м³` : "Ёмкость не задана"];
+        let warn = false;
+        if (nr?.noWater) { lines.push("Нет связи с сетью"); warn = true; }
+        else if (cap > 0 && Number.isFinite(drainMin) && drainMin > 0) {
+          const hh = Math.floor(drainMin / 60);
+          lines.push(hh > 0
+            ? `Истечение: ${fmtNum(drainMin, 0)} мин (${hh} ч ${Math.round(drainMin - hh * 60)} мин)`
+            : `Истечение: ${fmtNum(drainMin)} мин`);
+        } else if (!nr) { lines.push("Расчёт не выполнен"); warn = cap > 0; }
+        else lines.push("Разбора воды нет");
+        tankLabels.push({
+          id: n.id,
+          pos: base.clone().addScaledVector(yUp, tH + 0.35 * kx),
+          title: n.name ? `Резервуар ${n.name}` : "Резервуар",
+          lines, warn,
+        });
       }
 
       // Вода
@@ -864,6 +952,7 @@ export function buildMineWater(input: WaterInput): MineWater | null {
     group, dispose, setTime,
     hasFlow: arrowCount > 0 || tankAnims.length > 0,
     drainingTanks: tankAnims.length,
+    tankLabels,
     arrowCount,
     pipeCount: runs.length,
     hydrantCount,

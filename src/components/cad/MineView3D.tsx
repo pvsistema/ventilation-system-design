@@ -26,6 +26,7 @@ import * as THREE from "three";
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { buildMineScene, disposeScene, recolorScene, pickBranch, setHighlight, type BuiltScene } from "@/lib/three/mineScene";
 import { buildMineLabels, drawMineLabels, type MineLabel } from "@/lib/three/mineLabels";
+import { drawTankLabels } from "@/lib/three/mineWater";
 import { buildFlowArrows, type FlowArrows } from "@/lib/three/mineArrows";
 import { buildMineSymbols, type MineSymbols } from "@/lib/three/mineSymbols";
 import { buildMineFans, type MineFans } from "@/lib/three/mineFans";
@@ -1048,7 +1049,9 @@ export default function MineView3D(p: MineView3DProps) {
         // сядет ровно на те места, где нарисованы выработки.
         const lc = labelCanvasRef.current;
         if (lc) {
-          if (showLabelsRef.current && labelsRef.current.length > 0) {
+          const tankLbls = waterRef.current?.tankLabels ?? [];
+          const wantLabels = showLabelsRef.current && labelsRef.current.length > 0;
+          if (wantLabels || tankLbls.length > 0) {
             // Холст держим в пикселях устройства, а рисуем в логических:
             // иначе текст на экранах с высокой плотностью выходит мыльным.
             if (lc.width !== Math.round(w * dpr) || lc.height !== Math.round(h * dpr)) {
@@ -1058,9 +1061,16 @@ export default function MineView3D(p: MineView3DProps) {
             const lctx = lc.getContext("2d");
             if (lctx) {
               lctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-              drawMineLabels(lctx, labelsRef.current, cam, {
-                selectedId: selectedRef.current, width: w, height: h,
-              });
+              if (wantLabels) {
+                drawMineLabels(lctx, labelsRef.current, cam, {
+                  selectedId: selectedRef.current, width: w, height: h,
+                });
+              } else {
+                lctx.clearRect(0, 0, w, h);
+              }
+              // Подписи баков — поверх подписей выработок: их немного, и они
+              // несут главное для ППЗ — сколько воды и на сколько её хватит.
+              drawTankLabels(lctx, tankLbls, cam, w, h);
             }
           } else if (lc.width > 0) {
             // Подписи выключили — холст гасим, иначе на схеме остался бы
