@@ -123,6 +123,11 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   const byId = new Map(branches.map(b => [b.id, b]));
   const hidden = ventPipeHiddenIds(branches);
+  const degree = new Map<string, number>();
+  for (const b of branches) {
+    if (b.isVentPipeBranch) continue;
+    for (const id of [b.fromId, b.toId]) degree.set(id, (degree.get(id) ?? 0) + 1);
+  }
 
   interface Run {
     flowB: TopoBranch; host: TopoBranch;
@@ -173,7 +178,14 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
     if (legacy) {
       Q = Math.abs(flowB.vpComputedFlow ?? 0);
       v = Math.abs(flowB.vpComputedVelocity ?? 0) || (Q > 0 ? Q / area : 0);
-      sign = (flowB.flow ?? 0) < 0 ? -1 : 1;
+      // Нагнетательная схема: в ставе воздух идёт К ЗАБОЮ, а по выработке
+      // возвращается от него — то есть навстречу расходу выработки. Раньше
+      // брался знак расхода выработки, и стрелки в ставе бежали к ВМП.
+      const fDeg = degree.get(host.fromId) ?? 0, tDeg = degree.get(host.toId) ?? 0;
+      const hf = host.flow ?? 0;
+      if (tDeg === 1 && fDeg !== 1) sign = 1;
+      else if (fDeg === 1 && tDeg !== 1) sign = -1;
+      else sign = hf > 0 ? -1 : 1;
     } else {
       const f = flowB.flow ?? 0;
       Q = Math.abs(f);
@@ -196,13 +208,24 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
     const host = byId.get(b.vpHostBranchId!)!;
     hosted.add(host.id);
     if (ENTRY_RE.test(b.type ?? "")) continue;
-    const tf = nodeById.get(b.fromId);
+    // Нить может идти навстречу хозяйской выработке: цепочку става собирают
+    // по ходу воздуха, а выработку чертили как угодно. Сравниваем направления
+    // в ОБЪЁМЕ (с высотой): раньше сравнивались расстояния на плане, и у
+    // восстающих, стволов и коротких выработок (короче двойного отступа нити)
+    // направление угадывалось наугад — стрелки бежали к вентилятору.
+    const tf = nodeById.get(b.fromId), tt = nodeById.get(b.toId);
     const hf = nodeById.get(host.fromId), ht = nodeById.get(host.toId);
     let orient: 1 | -1 = 1;
-    if (tf && hf && ht) {
-      const d1 = Math.hypot(tf.x - hf.x, tf.y - hf.y);
-      const d2 = Math.hypot(tf.x - ht.x, tf.y - ht.y);
-      orient = d1 <= d2 ? 1 : -1;
+    if (finite(tf) && finite(tt) && finite(hf) && finite(ht)) {
+      const dot = (tt!.x - tf!.x) * (ht!.x - hf!.x)
+        + (tt!.y - tf!.y) * (ht!.y - hf!.y)
+        + (tt!.z - tf!.z) * (ht!.z - hf!.z) * kz * kz / (kx * kx);
+      if (Math.abs(dot) > 1e-9) orient = dot > 0 ? 1 : -1;
+      else {
+        const d1 = Math.hypot(tf!.x - hf!.x, tf!.y - hf!.y, tf!.z - hf!.z);
+        const d2 = Math.hypot(tf!.x - ht!.x, tf!.y - ht!.y, tf!.z - ht!.z);
+        orient = d1 <= d2 ? 1 : -1;
+      }
     }
     const run = mkRun(b, host, orient, false);
     if (!run) continue;
@@ -275,6 +298,40 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
       sign = ((atFrom ? 1 : -1) * (inward ? 1 : -1)) as 1 | -1;
     }
     fans.push({ run, runIdx: runs.indexOf(run), s, sign, fb });
+  }
+
+  // ── Единое направление воздуха по всему ставу ─────────────────────────
+  // Воздух в ставе течёт непрерывно: в каждый стык он входит из одного звена
+  // и выходит в следующее. Знак расхода у отдельных звеньев может прийти
+  // разным (звено нарисовано навстречу маршруту, расход около нуля), и стрелки
+  // на соседних звеньях бежали навстречу друг другу. Поэтому направление
+  // задаёт ВМП, а дальше оно передаётся по стыкам: «вошёл в узел — следующее
+  // звено из него выходит».
+  {
+    const fixed = new Set<number>();
+    const queue: number[] = [];
+    for (const fp of fans) {
+      if (fp.runIdx < 0 || fixed.has(fp.runIdx)) continue;
+      fp.run.sign = fp.sign;
+      fixed.add(fp.runIdx); queue.push(fp.runIdx);
+    }
+    const exitNode = (r: Run) => (r.sign > 0 ? r.host.toId : r.host.fromId);
+    while (queue.length) {
+      const i = queue.shift()!;
+      const r = runs[i];
+      const outN = exitNode(r);
+      const inN = r.sign > 0 ? r.host.fromId : r.host.toId;
+      for (const [node, leaving] of [[outN, true], [inN, false]] as const) {
+        for (const j of atNode.get(node) ?? []) {
+          if (fixed.has(j)) continue;
+          const o = runs[j];
+          // Из узла выхода воздух уходит в соседнее звено, в узел входа — приходит из него.
+          const startsHere = o.host.fromId === node;
+          o.sign = (leaving ? (startsHere ? 1 : -1) : (startsHere ? -1 : 1)) as 1 | -1;
+          fixed.add(j); queue.push(j);
+        }
+      }
+    }
   }
 
   // ── Доставка воздуха — тот же расчёт, что во вкладке «Вентстав» ───────
