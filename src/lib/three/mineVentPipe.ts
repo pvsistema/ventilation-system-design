@@ -93,16 +93,66 @@ function roofAt(outline: Pt[], r: number): number {
   return best;
 }
 
-/** Ветви нити става, которые в объёме заменяются трубой в хозяйской выработке. */
-export function ventPipeHiddenIds(branches: TopoBranch[]): Set<string> {
+/** Расстояние от точки до отрезка (план + высота), м. */
+function segDist(p: TopoNode, a: TopoNode, b: TopoNode): number {
+  const dx = b.x - a.x, dy = b.y - a.y, dz = b.z - a.z;
+  const L = dx * dx + dy * dy + dz * dz;
+  const t = L > 1e-12 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy + (p.z - a.z) * dz) / L)) : 0;
+  return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy, p.z - a.z - t * dz);
+}
+
+/**
+ * Хозяйская выработка для каждого звена нити става.
+ *
+ * В новых проектах она записана в звене (vpHostBranchId). В СТАРЫХ — нет:
+ * нить строили раньше, чем появилось это поле. Тогда такая нить в объёме
+ * рисовалась отдельной тонкой выработкой за стенкой, а ВМП на ней — отдельно
+ * от става. Для них хозяйку ищем по геометрии: выработка, вдоль которой оба
+ * конца звена лежат на расстоянии отступа нити (по умолчанию 2 м).
+ * Короткие «вход/выход» отдаются хозяйке соседнего звена.
+ */
+export function resolveVentHosts(branches: TopoBranch[], nodes: TopoNode[]): Map<string, string> {
   const byId = new Map(branches.map(b => [b.id, b]));
-  const out = new Set<string>();
+  const nodeById = new Map(nodes.map(n => [n.id, n]));
+  const out = new Map<string, string>();
+  const mains = branches.filter(b => !b.isVentPipeBranch);
+  const ok = (n?: TopoNode) => !!n && isFinite(n.x) && isFinite(n.y) && isFinite(n.z);
   for (const b of branches) {
-    if (!b.isVentPipeBranch || !b.vpHostBranchId) continue;
-    const host = byId.get(b.vpHostBranchId);
-    if (host && !host.isVentPipeBranch) out.add(b.id);
+    if (!b.isVentPipeBranch) continue;
+    const own = b.vpHostBranchId ? byId.get(b.vpHostBranchId) : undefined;
+    if (own && !own.isVentPipeBranch) { out.set(b.id, own.id); continue; }
+    if (ENTRY_RE.test(b.type ?? "")) continue;
+    const f = nodeById.get(b.fromId), t = nodeById.get(b.toId);
+    if (!ok(f) || !ok(t)) continue;
+    const tol = Math.max(4.5, (b.vpOffset ?? 2) * 2);
+    let best: TopoBranch | undefined, bestD = Infinity;
+    for (const m of mains) {
+      const a = nodeById.get(m.fromId), c = nodeById.get(m.toId);
+      if (!ok(a) || !ok(c)) continue;
+      const d = Math.max(segDist(f!, a!, c!), segDist(t!, a!, c!));
+      if (d < bestD) { bestD = d; best = m; }
+    }
+    if (best && bestD <= tol) out.set(b.id, best.id);
+  }
+  // Вход/выход без хозяйки — к хозяйке примыкающего звена нити.
+  const threadAt = new Map<string, string[]>();
+  for (const b of branches) {
+    if (!b.isVentPipeBranch || !out.has(b.id) || ENTRY_RE.test(b.type ?? "")) continue;
+    for (const id of [b.fromId, b.toId]) {
+      const arr = threadAt.get(id) ?? []; arr.push(b.id); threadAt.set(id, arr);
+    }
+  }
+  for (const b of branches) {
+    if (!b.isVentPipeBranch || out.has(b.id) || !ENTRY_RE.test(b.type ?? "")) continue;
+    const nb = threadAt.get(b.fromId)?.[0] ?? threadAt.get(b.toId)?.[0];
+    if (nb) out.set(b.id, out.get(nb)!);
   }
   return out;
+}
+
+/** Ветви нити става, которые в объёме заменяются трубой в хозяйской выработке. */
+export function ventPipeHiddenIds(branches: TopoBranch[], nodes: TopoNode[] = []): Set<string> {
+  return new Set(resolveVentHosts(branches, nodes).keys());
 }
 
 /** Значки вентиляторов, стоящие на нити става: их рисует слой става. */
@@ -122,7 +172,8 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
   const animK = Math.max(0.1, input.animSpeed ?? 1);
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   const byId = new Map(branches.map(b => [b.id, b]));
-  const hidden = ventPipeHiddenIds(branches);
+  const hostOf = resolveVentHosts(branches, nodes);
+  const hidden = new Set(hostOf.keys());
   const degree = new Map<string, number>();
   for (const b of branches) {
     if (b.isVentPipeBranch) continue;
@@ -134,6 +185,7 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
     a: THREE.Vector3; dir: THREE.Vector3; len: number; q: THREE.Quaternion;
     up: THREE.Vector3; right: THREE.Vector3;
     rc: number; u: number; R: number; roof: number;
+    outline: Pt[]; halfW: number; uMin: number; uMax: number;
     metal: boolean; color: number;
     /** Расход в ставе, м³/с, скорость, м/с, и куда идёт воздух вдоль хозяйской выработки. */
     Q: number; v: number; sign: 1 | -1;
@@ -165,12 +217,6 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
       : (!legacy && flowB.diameter && flowB.diameter > 0 ? flowB.diameter * 1000 : 500);
     const Rmax = Math.max(0.1, Math.min(0.75, h * 0.28, halfW * 0.6));
     const R = Math.max(0.1, Math.min(Rmax, diamMm / 2000));
-    const rc = SIDE * Math.max(0, Math.min(halfW * 0.55, halfW - R - 0.25));
-    const lim = Math.max(0, halfW - 1e-3);
-    const clampR = (r: number) => Math.max(-lim, Math.min(lim, r));
-    let roof = Math.min(roofAt(outline, clampR(rc - R)), roofAt(outline, clampR(rc + R)));
-    if (!isFinite(roof) || roof <= uMin) roof = uMax;
-    const u = Math.max(uMin + R, roof - 0.12 - R);
     const metal = /металл/i.test(flowB.vpMaterial ?? "");
 
     let Q: number, v: number, sign: 1 | -1;
@@ -193,7 +239,8 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
       sign = ((f < 0 ? -1 : 1) * orient) as 1 | -1;
     }
     return {
-      flowB, host, a, dir, len, q, up, right, rc, u, R, roof, metal,
+      flowB, host, a, dir, len, q, up, right, rc: 0, u: 0, R, roof: 0, metal,
+      outline, halfW, uMin, uMax,
       color: metal ? METAL_COLOR : RUKAV_COLOR, Q, v, sign,
     };
   };
@@ -205,9 +252,15 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
 
   for (const b of branches) {
     if (!hidden.has(b.id)) continue;
-    const host = byId.get(b.vpHostBranchId!)!;
+    const host = byId.get(hostOf.get(b.id)!)!;
     hosted.add(host.id);
     if (ENTRY_RE.test(b.type ?? "")) continue;
+    // Два звена нити в одной выработке (став огибал сбойку, нить провели с
+    // изломом) — это одна труба. Раньше на каждое звено ставилась своя труба
+    // по всей длине выработки, и в одном месте висели две трубы со стрелками
+    // навстречу друг другу.
+    const same = runByHost.get(host.id);
+    if (same && same.host === host) { runByThread.set(b.id, same); continue; }
     // Нить может идти навстречу хозяйской выработке: цепочку става собирают
     // по ходу воздуха, а выработку чертили как угодно. Сравниваем направления
     // в ОБЪЁМЕ (с высотой): раньше сравнивались расстояния на плане, и у
@@ -248,14 +301,43 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
       .addScaledVector(run.up, u * kx)
       .addScaledVector(run.right, r * kx);
 
-  // ── Связность става: по узлам хозяйских выработок ─────────────────────
+  // ── Связность става ───────────────────────────────────────────────────
+  //
+  // Звенья связываем по узлам САМОЙ НИТИ, а не по узлам выработок. Под ставом
+  // выработки на сопряжениях нередко разбиты так, что соседние не имеют
+  // общего узла (узлы стоят в метре друг от друга). Связность по узлам
+  // выработок там рвалась: став распадался на куски, в разрыве вставали
+  // лишние раструбы и подпись «Выход става», а единая высота трубы и расчёт
+  // доставки считались для каждого куска отдельно.
   const parent = runs.map((_, i) => i);
   const find = (i: number): number => (parent[i] === i ? i : (parent[i] = find(parent[i])));
+  const runIdx = new Map(runs.map((r, i) => [r, i]));
   const atNode = new Map<string, number[]>();
+  const threadDeg = new Map<string, number>();
+  const threadNodes: { node: string; run: number }[] = [];
+  for (const b of branches) {
+    if (!hidden.has(b.id)) continue;
+    const r = b.hasVentPipe && !ENTRY_RE.test(b.type ?? "")
+      ? runByThread.get(b.id)
+      : runByHost.get(hostOf.get(b.id) ?? "");
+    const i = r ? runIdx.get(r) : undefined;
+    if (i === undefined) continue;
+    for (const id of [b.fromId, b.toId]) {
+      const arr = atNode.get(id) ?? [];
+      if (!arr.includes(i)) arr.push(i);
+      atNode.set(id, arr);
+      if (!ENTRY_RE.test(b.type ?? "")) {
+        threadDeg.set(id, (threadDeg.get(id) ?? 0) + 1);
+        threadNodes.push({ node: id, run: i });
+      }
+    }
+  }
   runs.forEach((r, i) => {
+    if (r.flowB !== r.host) return;
     for (const id of [r.host.fromId, r.host.toId]) {
       const arr = atNode.get(id) ?? [];
-      arr.push(i); atNode.set(id, arr);
+      if (!arr.includes(i)) arr.push(i);
+      atNode.set(id, arr);
     }
   });
   for (const arr of atNode.values()) for (let k = 1; k < arr.length; k++) parent[find(arr[k])] = find(arr[0]);
@@ -281,13 +363,22 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
     if (!ENTRY_RE.test(fb.type ?? "")) {
       run = runByThread.get(fb.id);
       if (!run) continue;
-      const t = Math.max(0.05, Math.min(0.95, sym.t ?? 0.5));
-      const orient = run.sign * (f < 0 ? -1 : 1);
-      s = (orient > 0 ? t : 1 - t) * run.len;
+      // Место машины — проекция её точки на нити на ось выработки: звено нити
+      // бывает длиннее выработки (уходит за сопряжение), и доля длины звена
+      // ставила ВМП не туда.
+      const t = Math.max(0, Math.min(1, sym.t ?? 0.5));
+      const nf = nodeById.get(fb.fromId), nt = nodeById.get(fb.toId);
+      if (finite(nf) && finite(nt)) {
+        const pa = toThree(nf!.x * kx, nf!.y * kx, nf!.z * kz);
+        const pb = toThree(nt!.x * kx, nt!.y * kx, nt!.z * kz);
+        s = pa.lerp(pb, t).sub(run.a).dot(run.dir);
+      } else s = t * run.len;
+      const edge = Math.min(run.len * 0.1, 1.5 * kx);
+      s = Math.max(edge, Math.min(run.len - edge, s));
       sign = run.sign;
       if (f >= 0 && fb.fanReverse) sign = (-sign) as 1 | -1;
     } else {
-      run = runByHost.get(fb.vpHostBranchId ?? "");
+      run = runByHost.get(hostOf.get(fb.id) ?? "");
       if (!run) continue;
       const atFrom = fb.fromId === run.host.fromId || fb.toId === run.host.fromId;
       const route = atFrom ? run.host.fromId : run.host.toId;
@@ -300,37 +391,85 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
     fans.push({ run, runIdx: runs.indexOf(run), s, sign, fb });
   }
 
-  // ── Единое направление воздуха по всему ставу ─────────────────────────
-  // Воздух в ставе течёт непрерывно: в каждый стык он входит из одного звена
-  // и выходит в следующее. Знак расхода у отдельных звеньев может прийти
-  // разным (звено нарисовано навстречу маршруту, расход около нуля), и стрелки
-  // на соседних звеньях бежали навстречу друг другу. Поэтому направление
-  // задаёт ВМП, а дальше оно передаётся по стыкам: «вошёл в узел — следующее
-  // звено из него выходит».
+  // ── Направление воздуха в каждой трубе — по самой нити става ──────────
+  //
+  // Воздух в звене нити идёт от одного его узла к другому (знак расхода).
+  // Проецируем этот ход на ось хозяйской выработки и складываем по всем
+  // звеньям, лежащим в ней: так направление получается и там, где нить
+  // проложена с изломом или «петлёй» (звено ушло назад за сопряжение и
+  // вернулось), и там, где выработки начерчены навстречу друг другу.
+  //
+  // Раньше направление сначала угадывалось по одному звену, а потом
+  // передавалось от ВМП по узлам ВЫРАБОТОК. Узлы соседних выработок под
+  // ставом совпадают не всегда (став проходит сопряжение, где выработка
+  // разбита на две с разными узлами), передача обрывалась, и дальше по ставу
+  // стрелки шли по случайному знаку — навстречу друг другу, а раструб и
+  // подпись «Выход става» вставали не на тот конец.
   {
-    const fixed = new Set<number>();
-    const queue: number[] = [];
-    for (const fp of fans) {
-      if (fp.runIdx < 0 || fixed.has(fp.runIdx)) continue;
-      fp.run.sign = fp.sign;
-      fixed.add(fp.runIdx); queue.push(fp.runIdx);
+    const along = new Map<Run, number>();
+    for (const b of branches) {
+      if (!hidden.has(b.id)) continue;
+      const host = byId.get(hostOf.get(b.id)!);
+      const run = host ? runByHost.get(host.id) : undefined;
+      if (!run) continue;
+      const f = b.flow ?? 0;
+      if (Math.abs(f) < 1e-6) continue;
+      const nf = nodeById.get(b.fromId), nt = nodeById.get(b.toId);
+      if (!finite(nf) || !finite(nt)) continue;
+      const pa = toThree(nf!.x * kx, nf!.y * kx, nf!.z * kz);
+      const pb = toThree(nt!.x * kx, nt!.y * kx, nt!.z * kz);
+      const d = pb.sub(pa).dot(run.dir) * (f < 0 ? -1 : 1);
+      along.set(run, (along.get(run) ?? 0) + d);
     }
-    const exitNode = (r: Run) => (r.sign > 0 ? r.host.toId : r.host.fromId);
-    while (queue.length) {
-      const i = queue.shift()!;
+    for (const [run, d] of along) if (Math.abs(d) > 1e-6) run.sign = d > 0 ? 1 : -1;
+  }
+  for (const fp of fans) {
+    if (ENTRY_RE.test(fp.fb.type ?? "")) continue;
+    const f = fp.fb.flow ?? 0;
+    fp.sign = fp.run.sign;
+    if (f >= 0 && fp.fb.fanReverse) fp.sign = (-fp.sign) as 1 | -1;
+  }
+
+  // ── Положение трубы в сечении — ОДНО на весь став ─────────────────────
+  //
+  // Раньше каждое звено считало своё место отдельно, в осях СВОЕЙ выработки:
+  //  • «левая стенка» бралась относительно направления, в котором выработку
+  //    начертили. Соседние выработки часто начерчены навстречу друг другу —
+  //    и на каждом стыке труба перескакивала к противоположной стенке;
+  //  • высота считалась от кровли своего сечения: арка выше прямоугольника,
+  //    поэтому на стыке арочной и прямоугольной выработки труба ступенькой
+  //    прыгала вверх-вниз, а стрелки уходили в разрыв.
+  // Теперь сторона — левая ПО ХОДУ ВОЗДУХА (направление уже согласовано по
+  // всему ставу), а высота и отступ от оси — общие для связного става, по
+  // самому тесному сечению: труба идёт одной ровной ниткой и нигде не
+  // выходит за контур выработки.
+  {
+    const comp = new Map<number, { u: number; off: number }>();
+    runs.forEach((r, i) => {
+      const lim = Math.max(0, r.halfW - 1e-3);
+      const off = Math.max(0, Math.min(r.halfW * 0.55, r.halfW - r.R - 0.25));
+      const rr = Math.min(lim, off);
+      let roof = Math.min(
+        roofAt(r.outline, Math.max(-lim, -rr - r.R)),
+        roofAt(r.outline, Math.max(-lim, Math.min(lim, -rr + r.R))),
+      );
+      if (!isFinite(roof) || roof <= r.uMin) roof = r.uMax;
+      const u = Math.max(r.uMin + r.R, roof - 0.12 - r.R);
+      const c = find(i);
+      const cur = comp.get(c);
+      if (!cur) comp.set(c, { u, off });
+      else { cur.u = Math.min(cur.u, u); cur.off = Math.min(cur.off, off); }
+    });
+    for (let i = 0; i < runs.length; i++) {
       const r = runs[i];
-      const outN = exitNode(r);
-      const inN = r.sign > 0 ? r.host.fromId : r.host.toId;
-      for (const [node, leaving] of [[outN, true], [inN, false]] as const) {
-        for (const j of atNode.get(node) ?? []) {
-          if (fixed.has(j)) continue;
-          const o = runs[j];
-          // Из узла выхода воздух уходит в соседнее звено, в узел входа — приходит из него.
-          const startsHere = o.host.fromId === node;
-          o.sign = (leaving ? (startsHere ? 1 : -1) : (startsHere ? -1 : 1)) as 1 | -1;
-          fixed.add(j); queue.push(j);
-        }
-      }
+      const cc = comp.get(find(i))!;
+      r.rc = SIDE * r.sign * cc.off;
+      r.u = Math.max(r.uMin + r.R, cc.u);
+      const lim = Math.max(0, r.halfW - 1e-3);
+      const clampR = (x: number) => Math.max(-lim, Math.min(lim, x));
+      let roof = Math.min(roofAt(r.outline, clampR(r.rc - r.R)), roofAt(r.outline, clampR(r.rc + r.R)));
+      if (!isFinite(roof) || roof <= r.uMin) roof = r.uMax;
+      r.roof = Math.max(roof, r.u + r.R);
     }
   }
 
@@ -350,14 +489,32 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
   // ── Свободные концы — раструбы ────────────────────────────────────────
   interface End { run: Run; atStart: boolean; out: boolean }
   const ends: End[] = [];
-  for (const run of runs) {
+  const endSeen = new Set<string>();
+  const pushEnd = (run: Run, atStart: boolean) => {
+    const key = `${runIdx.get(run)}:${atStart ? 0 : 1}`;
+    if (endSeen.has(key)) return;
+    endSeen.add(key);
+    const out = run.Q > MIN_FLOW && (atStart ? run.sign < 0 : run.sign > 0);
+    ends.push({ run, atStart, out });
+  };
+  // Конец нити (узел, где сходится одно звено) — конец става. Сторону
+  // трубы находим проекцией этого узла на ось выработки.
+  for (const { node, run: i } of threadNodes) {
+    if ((threadDeg.get(node) ?? 0) !== 1) continue;
+    const run = runs[i];
+    const n = nodeById.get(node);
+    if (!finite(n)) continue;
+    const s0 = toThree(n!.x * kx, n!.y * kx, n!.z * kz).sub(run.a).dot(run.dir);
+    pushEnd(run, s0 < run.len / 2);
+  }
+  // Став по галочке на выработке — концы по узлам выработок.
+  runs.forEach((run, i) => {
+    if (run.flowB !== run.host) return;
     for (const atStart of [true, false]) {
       const id = atStart ? run.host.fromId : run.host.toId;
-      if ((atNode.get(id)?.length ?? 0) !== 1) continue;
-      const out = run.Q > MIN_FLOW && (atStart ? run.sign < 0 : run.sign > 0);
-      ends.push({ run, atStart, out });
+      if ((atNode.get(id) ?? []).filter(j => j !== i).length === 0) pushEnd(run, atStart);
     }
-  }
+  });
 
   // ── Сборка геометрии ──────────────────────────────────────────────────
   const group = new THREE.Group();
@@ -632,7 +789,7 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
   for (const e of ends) {
     if (!e.out) continue;
     const { run } = e;
-    const dv = delivByComp.get(find(runs.indexOf(run)));
+    const dv = delivByComp.get(find(runIdx.get(run)!));
     const lines: string[] = [];
     let warn = false;
     if (dv) {
@@ -680,8 +837,12 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
     if (!arrowMesh) return;
     for (const ln of lanes) {
       const { run } = ln;
-      const aR = run.R * 0.55 * kx;
-      const half = aR * 1.4;
+      // Стрелка вытянута вдоль трубы: при круглом масштабе наконечник
+      // выходил коротким «шариком» и в рукаве читался как точка, а не как
+      // направление.
+      const aR = run.R * 0.5 * kx;
+      const aL = Math.min(aR * 2.4, run.len * 0.3);
+      const half = aL * 1.4;
       const span = Math.max(1e-6, run.len - 2 * half);
       qArrow.copy(run.q);
       if (run.sign < 0) qArrow.multiply(qFlip);
@@ -691,7 +852,8 @@ export function buildMineVentPipe(input: VentPipeInput): MineVentPipe | null {
         const along = run.sign > 0 ? d : run.len - d;
         pt(run, half + (along / run.len) * span, run.rc, run.u, tmpPos);
         const edge = Math.min(d, run.len - d) / Math.max(1e-6, Math.min(run.len / 2, 1.5 * kx));
-        tmpScale.setScalar(aR * Math.min(1, Math.max(0.05, edge)));
+        const fade = Math.min(1, Math.max(0.05, edge));
+        tmpScale.set(aL * fade, aR * fade, aR * fade);
         m4.compose(tmpPos, qArrow, tmpScale);
         arrowMesh.setMatrixAt(ln.first + k, m4);
       }

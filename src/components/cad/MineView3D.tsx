@@ -245,8 +245,8 @@ export default function MineView3D(p: MineView3DProps) {
   const [ventInfo, setVentInfo] = useState({ pipes: 0, length: 0, fans: 0 });
   const hasVentPipes = p.branches.some(b => b.hasVentPipe || b.isVentPipeBranch);
   const ventHidden = useMemo(
-    () => (showVent3D ? ventPipeHiddenIds(p.branches) : new Set<string>()),
-    [showVent3D, p.branches],
+    () => (showVent3D ? ventPipeHiddenIds(p.branches, p.nodes) : new Set<string>()),
+    [showVent3D, p.branches, p.nodes],
   );
   const sceneBranches = useMemo(
     () => (ventHidden.size > 0 ? p.branches.filter(b => !ventHidden.has(b.id)) : p.branches),
