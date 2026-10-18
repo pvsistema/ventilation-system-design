@@ -133,7 +133,30 @@ interface CamState {
   target: THREE.Vector3;
 }
 
-export default function MineView3D(p: MineView3DProps) {
+export default function MineView3D(props: MineView3DProps) {
+  // Сцена строится в координатах относительно центра схемы, а не в
+  // абсолютных маркшейдерских. Видеокарта считает в 32-битных числах: у
+  // схемы в государственных координатах (X ≈ 2 300 000 м, после масштаба
+  // плана ×2,7 — свыше 6 000 000) шаг такого числа — полметра. Всё, что
+  // меньше, — труба става Ø0,8 м, хомуты, стрелки, подвески — «ломалось» в
+  // кубики и дрожало при анимации, а выработки рябили по граням. У схем в
+  // местных координатах (сотни-тысячи метров) этого не было, поэтому они
+  // выглядели чисто. Сдвиг одинаков для всех слоёв, а расстояния и уклоны
+  // от него не меняются — расчёты, подписи и выбор выработок не затронуты.
+  const localNodes = useMemo(() => {
+    const ns = props.nodes;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const n of ns) {
+      if (!isFinite(n.x) || !isFinite(n.y)) continue;
+      if (n.x < x0) x0 = n.x; if (n.x > x1) x1 = n.x;
+      if (n.y < y0) y0 = n.y; if (n.y > y1) y1 = n.y;
+    }
+    if (!isFinite(x0)) return ns;
+    const cx = Math.round((x0 + x1) / 2), cy = Math.round((y0 + y1) / 2);
+    if (Math.abs(cx) < 1000 && Math.abs(cy) < 1000) return ns;
+    return ns.map(n => ({ ...n, x: n.x - cx, y: n.y - cy }));
+  }, [props.nodes]);
+  const p = { ...props, nodes: localNodes };
   const hostRef = useRef<HTMLDivElement | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
