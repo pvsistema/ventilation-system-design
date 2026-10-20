@@ -375,7 +375,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
             проветривания.
           </div>
 
-          <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} />
+          <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} />
         </div>
 
         )}

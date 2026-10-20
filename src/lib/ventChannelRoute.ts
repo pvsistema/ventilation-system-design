@@ -179,60 +179,155 @@ export function routeNodes(ids: string[], byId: Map<string, TopoBranch>): string
   return res;
 }
 
+export interface RouteOptions {
+  /**
+   * Ветви, закрытые для воздуха: глухие перемычки, закрытые двери, стенки.
+   * Открытые двери и проёмы сюда не входят — через них струя проходит.
+   */
+  closed?: Set<string>;
+  /** Расчёт сети выполнен: расход и направление струи в ветвях достоверны. */
+  solved?: boolean;
+}
+
+/** Как удалось построить маршрут — от лучшего к запасному варианту. */
+export type RouteMode = "flow" | "open" | "length";
+
+export interface ABRoute {
+  branchIds: string[];
+  nodeIds: string[];
+  mode: RouteMode;
+  /** Наименьший расход на маршруте, м³/с (слабое звено), 0 — без расчёта. */
+  minQ: number;
+  /** Длина маршрута, м. */
+  length: number;
+}
+
+const FLOW_EPS = 1e-3;
+
 /**
- * Маршрут канала между узлами А и Б, обязательно проходящий через ветвь
- * вентилятора: путь А → (один конец вентилятора) + вентилятор + (другой
- * конец) → Б. Каждая половина — кратчайшая по длине (Дейкстра), ветвь
- * вентилятора и ветви первой половины во второй не используются. Из двух
- * ориентаций вентилятора берётся более короткая. null — пути нет.
+ * Маршрут канала между узлами А и Б через ветвь вентилятора.
+ *
+ * Канал ГВУ — это главная струя: весь воздух вентилятора идёт по нему одной
+ * трубой. Поэтому маршрут выбирается не по длине, а по воздуху:
+ *   1) через закрытые перемычки, глухие стенки и двери путь не идёт —
+ *      открытые двери и проёмы проходимы;
+ *   2) после расчёта сети — только по ветвям с расходом и строго по ходу
+ *      струи (А → вентилятор → Б либо целиком навстречу, если А на выдаче);
+ *   3) из возможных путей берётся тот, у которого слабое звено пропускает
+ *      наибольший расход (самая «толстая» струя), а длина решает только при
+ *      равном расходе.
+ * Раньше брался кратчайший по длине путь без этих условий — он срезал через
+ * сбойки с ничтожным расходом и проходил сквозь закрытые перемычки.
+ *
+ * Если по струе пути нет (например, расчёт не выполнен или узел выбран вне
+ * главной струи), ищется путь через открытые выработки, а в крайнем случае —
+ * прежний кратчайший; mode сообщает, какой вариант сработал.
  */
 export function routeBetweenNodes(
   fan: TopoBranch,
   aNode: string,
   bNode: string,
   branches: TopoBranch[],
-): { branchIds: string[]; nodeIds: string[] } | null {
-  const adj = buildAdjacency(branches.filter(x => !x.isLeakage));
-  const shortest = (src: string, dst: string, banned: Set<string>, bannedNodes: Set<string>) => {
-    if (src === dst) return { ids: [] as string[], nodes: [src], len: 0 };
-    const dist = new Map<string, number>([[src, 0]]);
+  opts: RouteOptions = {},
+): ABRoute | null {
+  const closed = opts.closed ?? new Set<string>();
+  const hasFlow = !!opts.solved && branches.some(b => Math.abs(b.flow ?? 0) > FLOW_EPS);
+  const usable = branches.filter(x => !x.isLeakage);
+  const adj = buildAdjacency(usable);
+  const q = (e: TopoBranch) => Math.round(Math.abs(e.flow ?? 0) * 100) / 100;
+
+  /**
+   * dir: +1 — идём по ходу струи, −1 — навстречу, 0 — направление не важно.
+   * useFlow — критерий «наибольший расход слабого звена», иначе только длина.
+   */
+  const search = (
+    src: string, dst: string, banned: Set<string>, bannedNodes: Set<string>,
+    dir: 0 | 1 | -1, useFlow: boolean, skipClosed: boolean,
+  ) => {
+    if (src === dst) return { ids: [] as string[], nodes: [src], len: 0, minQ: Infinity };
+    const lab = new Map<string, { w: number; len: number }>([[src, { w: Infinity, len: 0 }]]);
     const prev = new Map<string, { node: string; br: string }>();
     const done = new Set<string>();
+    const better = (a: { w: number; len: number }, b?: { w: number; len: number }) =>
+      !b || (useFlow ? (a.w > b.w || (a.w === b.w && a.len < b.len)) : a.len < b.len);
     for (;;) {
-      let u: string | null = null, best = Infinity;
-      for (const [k, v] of dist) if (!done.has(k) && v < best) { best = v; u = k; }
-      if (u === null) return null;
+      let u: string | null = null, best: { w: number; len: number } | undefined;
+      for (const [k, v] of lab) if (!done.has(k) && better(v, best)) { best = v; u = k; }
+      if (u === null || !best) return null;
       if (u === dst) break;
       done.add(u);
       for (const e of adj.get(u) ?? []) {
         if (banned.has(e.id)) continue;
+        if (skipClosed && closed.has(e.id)) continue;
+        if (dir !== 0) {
+          const f = e.flow ?? 0;
+          if (Math.abs(f) <= FLOW_EPS) continue;
+          // Ход воздуха в ветви: from→to при f > 0, иначе to→from.
+          const airFrom = f > 0 ? e.fromId : e.toId;
+          if (dir > 0 ? airFrom !== u : airFrom === u) continue;
+        }
         const w = other(e, u);
+        if (done.has(w)) continue;
         if (bannedNodes.has(w) && w !== dst) continue;
-        const d = best + Math.max(0.01, e.length || 0);
-        if (d < (dist.get(w) ?? Infinity)) { dist.set(w, d); prev.set(w, { node: u, br: e.id }); }
+        const cand = { w: Math.min(best.w, q(e)), len: best.len + Math.max(0.01, e.length || 0) };
+        if (better(cand, lab.get(w))) { lab.set(w, cand); prev.set(w, { node: u, br: e.id }); }
       }
     }
     const ids: string[] = [], nds: string[] = [dst];
     let c = dst;
-    while (c !== src) { const p = prev.get(c)!; ids.unshift(p.br); nds.unshift(p.node); c = p.node; }
-    return { ids, nodes: nds, len: dist.get(dst)! };
+    while (c !== src) { const pv = prev.get(c)!; ids.unshift(pv.br); nds.unshift(pv.node); c = pv.node; }
+    const end = lab.get(dst)!;
+    return { ids, nodes: nds, len: end.len, minQ: end.w };
   };
-  const tryDir = (p: string, q: string) => {
-    const left = shortest(aNode, p, new Set([fan.id]), new Set([q]));
-    if (!left) return null;
-    const used = new Set([fan.id, ...left.ids]);
-    const right = shortest(q, bNode, used, new Set(left.nodes));
-    if (!right) return null;
-    return {
-      branchIds: [...left.ids, fan.id, ...right.ids],
-      nodeIds: [...left.nodes, ...right.nodes],
-      len: left.len + right.len,
+
+  const attempt = (dir: 0 | 1 | -1, useFlow: boolean, skipClosed: boolean) => {
+    const tryDir = (p: string, qn: string) => {
+      if (dir !== 0) {
+        // Сам вентилятор должен стоять по ходу выбранного направления.
+        const f = fan.flow ?? 0;
+        if (Math.abs(f) > FLOW_EPS) {
+          const airFrom = f > 0 ? fan.fromId : fan.toId;
+          if (dir > 0 ? airFrom !== p : airFrom === p) return null;
+        }
+      }
+      const left = search(aNode, p, new Set([fan.id]), new Set([qn]), dir, useFlow, skipClosed);
+      if (!left) return null;
+      const right = search(qn, bNode, new Set([fan.id, ...left.ids]), new Set(left.nodes), dir, useFlow, skipClosed);
+      if (!right) return null;
+      return {
+        branchIds: [...left.ids, fan.id, ...right.ids],
+        nodeIds: [...left.nodes, ...right.nodes],
+        minQ: Math.min(left.minQ, right.minQ, hasFlow ? q(fan) : Infinity),
+        length: left.len + right.len + Math.max(0, fan.length || 0),
+      };
     };
+    const cands = [tryDir(fan.fromId, fan.toId), tryDir(fan.toId, fan.fromId)]
+      .filter((x): x is NonNullable<typeof x> => !!x);
+    if (!cands.length) return null;
+    cands.sort((x, y) => (useFlow && x.minQ !== y.minQ ? y.minQ - x.minQ : x.length - y.length));
+    return cands[0];
   };
-  const r1 = tryDir(fan.fromId, fan.toId);
-  const r2 = tryDir(fan.toId, fan.fromId);
-  const r = !r1 ? r2 : !r2 ? r1 : (r1.len <= r2.len ? r1 : r2);
-  return r ? { branchIds: r.branchIds, nodeIds: r.nodeIds } : null;
+
+  const fin = (r: NonNullable<ReturnType<typeof attempt>>, mode: RouteMode): ABRoute => ({
+    branchIds: r.branchIds, nodeIds: r.nodeIds, mode,
+    minQ: isFinite(r.minQ) ? r.minQ : 0, length: r.length,
+  });
+
+  if (hasFlow) {
+    // По струе: А на всасе (воздух идёт А → Б) или на выдаче (Б → А).
+    const fwd = attempt(1, true, true);
+    const bwd = attempt(-1, true, true);
+    const pick = !fwd ? bwd : !bwd ? fwd
+      : (fwd.minQ !== bwd.minQ ? (fwd.minQ > bwd.minQ ? fwd : bwd) : (fwd.length <= bwd.length ? fwd : bwd));
+    if (pick) return fin(pick, "flow");
+    const open = attempt(0, true, true);
+    if (open) return fin(open, "open");
+  } else {
+    const open = attempt(0, false, true);
+    if (open) return fin(open, "open");
+  }
+  const any = attempt(0, false, false);
+  return any ? fin(any, "length") : null;
 }
 
 /** Фактический тип конца маршрута по узлу (для подписи). */

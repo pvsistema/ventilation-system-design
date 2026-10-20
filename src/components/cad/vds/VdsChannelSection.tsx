@@ -27,6 +27,7 @@ import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import { getFanById, fanQMax, fanCurveAtAngle, fanHAngle, fanEfficiencyAngle, type FanCurve } from "@/lib/fanCurves";
 import { PA_PER_MM_H2O } from "@/lib/aerodynamics";
+import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 import {
   traceChannelRoute, routeNodes, buildAdjacency, END_LABEL, isVertical, routeBetweenNodes, classifyEnd,
   type RouteEndKind,
@@ -39,6 +40,10 @@ interface Props {
   nodes: TopoNode[];
   /** Подсветка ветвей маршрута на схеме. */
   onHighlight?: (ids: string[]) => void;
+  /** Вентсооружения по ветвям — чтобы маршрут не шёл через закрытые перемычки. */
+  bulkheads?: Map<string, BranchBulkheadInfo>;
+  /** Расчёт сети выполнен — маршрут строится по расходу и ходу струи. */
+  solved?: boolean;
 }
 
 const RHO = 1.2;
@@ -74,7 +79,7 @@ function n(s: string): number {
   return Number.isFinite(v) ? v : 0;
 }
 
-export default function VdsChannelSection({ fans, label, branches, nodes, onHighlight }: Props) {
+export default function VdsChannelSection({ fans, label, branches, nodes, onHighlight, bulkheads, solved }: Props) {
   const gvu = useMemo(() => fans.filter(f => f.fanType === "ГВУ"), [fans]);
   const list = gvu.length ? gvu : fans;
   const [fanId, setFanId] = useState<string>(list[0]?.id ?? "");
@@ -91,6 +96,19 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const [nodeA, setNodeA] = useState("");
   const [nodeB, setNodeB] = useState("");
   const [abError, setAbError] = useState("");
+  const [abNote, setAbNote] = useState<{ text: string; warn: boolean } | null>(null);
+  // Закрытые для воздуха ветви: есть сооружение, и это не открытая дверь и
+  // не окно/проём. Без сведений о сооружениях — по признаку ветви.
+  const closedIds = useMemo(() => {
+    const out = new Set<string>();
+    for (const br of branches) {
+      const info = bulkheads?.get(br.id);
+      if (info) {
+        if (info.present && !info.allOpen && !info.hasWindow) out.add(br.id);
+      } else if (br.hasBulkhead) out.add(br.id);
+    }
+    return out;
+  }, [branches, bulkheads]);
 
   const byId = useMemo(() => new Map(branches.map(x => [x.id, x] as const)), [branches]);
   const nodeById = useMemo(() => new Map(nodes.map(x => [x.id, x] as const)), [nodes]);
@@ -101,7 +119,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
 
   // Автотрассировка при смене вентилятора / порога вертикальности
   function autoTrace() {
-    setAbError("");
+    setAbError(""); setAbNote(null);
     if (!b) { setRouteIds([]); return; }
     const r = traceChannelRoute(b, branches, nodes, thr);
     setRouteIds(r.branchIds);
@@ -118,9 +136,22 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
     setNodeA(a); setNodeB(bb);
     if (!b || !a || !bb) return;
     if (a === bb) { setAbError("Узлы А и Б совпадают"); return; }
-    const r = routeBetweenNodes(b, a, bb, branches);
-    if (!r) { setAbError("Нет пути от узла А к узлу Б через ветвь вентилятора"); return; }
+    const r = routeBetweenNodes(b, a, bb, branches, { closed: closedIds, solved });
+    if (!r) { setAbNote(null); setAbError("Нет пути от узла А к узлу Б через ветвь вентилятора"); return; }
     setAbError("");
+    const fq = (v: number) => v.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
+    setAbNote(
+      r.mode === "flow"
+        ? { text: `Маршрут по главной струе: наименьший расход на пути ${fq(r.minQ)} м³/с, длина ${fq(r.length)} м`, warn: false }
+        : r.mode === "open"
+          ? {
+              text: solved
+                ? "По ходу струи от А до Б пути нет — маршрут проложен по открытым выработкам без учёта направления. Проверьте, что узлы лежат на струе вентилятора."
+                : "Расчёт сети не выполнен — маршрут проложен по открытым выработкам (в обход закрытых перемычек) по наименьшей длине. Выполните расчёт, чтобы учесть расход и ход струи.",
+              warn: true,
+            }
+          : { text: "Пройти можно только через закрытые перемычки — маршрут кратчайший по длине. Проверьте выбор узлов А и Б.", warn: true },
+    );
     setRouteIds(r.branchIds);
     setEnds({
       start: classifyEnd(a, r.branchIds[0], branches, nodes, thr),
@@ -172,7 +203,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
     const node = side === "start" ? nn[0] : nn[nn.length - 1];
     setEnds(e => ({ ...e, [side]: classifyEnd(node, id, branches, nodes, thr) }));
     if (side === "start") setNodeA(node); else setNodeB(node);
-    setAbError("");
+    setAbError(""); setAbNote(null);
   }
   function trim(side: "start" | "end") {
     if (routeIds.length <= 1) return;
@@ -185,7 +216,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
     const edgeBr = side === "start" ? ids[0] : ids[ids.length - 1];
     setEnds(e => ({ ...e, [side]: classifyEnd(node, edgeBr, branches, nodes, thr) }));
     if (side === "start") setNodeA(node); else setNodeB(node);
-    setAbError("");
+    setAbError(""); setAbNote(null);
   }
 
   const curve = b?.fanCurveId ? getFanById(b.fanCurveId) : undefined;
@@ -341,8 +372,16 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
                   className="px-1.5 py-0.5 rounded border border-gray-300 bg-white hover:bg-gray-50">
                   <Icon name="ArrowLeftRight" size={11} />
                 </button>
-                <span className="text-gray-400">маршрут — кратчайший путь через ветвь вентилятора</span>
+                <span className="text-gray-400">маршрут — по главной струе через ветвь вентилятора, в обход закрытых перемычек</span>
               </div>
+              {abNote && !abError && (
+                <div className="mb-2 text-[11px] px-2 py-1 rounded"
+                  style={abNote.warn
+                    ? { background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }
+                    : { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
+                  {abNote.text}
+                </div>
+              )}
               {abError && (
                 <div className="mb-2 text-[11px] px-2 py-1 rounded" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c" }}>
                   {abError}
