@@ -26,6 +26,7 @@ import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 import VdsReportPanel from "@/components/cad/vds/VdsReportPanel";
 import VdsChannelSection from "@/components/cad/vds/VdsChannelSection";
 import { useDraggableWindow } from "@/hooks/useDraggableWindow";
+import { C, INP, INP_STYLE, Info, Kpi, Row } from "@/components/cad/vds/vdsUi";
 
 interface Props {
   branches: TopoBranch[];
@@ -41,6 +42,8 @@ interface Props {
   stabilityBranches?: TopoBranch[];
   /** Подсветить ветви на схеме (маршрут вентканала); [] — снять подсветку. */
   onHighlightBranches?: (ids: string[]) => void;
+  /** Вкладка, открытая при показе окна. */
+  initialTab?: "opening" | "channel" | "report";
 }
 
 interface GvuRow {
@@ -68,11 +71,11 @@ function classify(a: number): { label: string; color: string } {
   return { label: "Легкопроветриваемая", color: "var(--c-green, #16a34a)" };
 }
 
-export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches, onHighlightBranches }: Props) {
-  const [tab, setTab] = useState<"opening" | "channel" | "report">("opening");
+export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches, onHighlightBranches, initialTab = "opening" }: Props) {
+  const [tab, setTab] = useState<"opening" | "channel" | "report">(initialTab);
   // Окно перетаскивается за шапку, положение запоминается между открытиями.
   // Ограничение по краю экрана считаем по большей ширине (вкладка «Отчёт ВДС»).
-  const winWidth = tab === "report" ? 920 : tab === "channel" ? 760 : 680;
+  const winWidth = tab === "report" ? 920 : tab === "channel" ? 780 : 640;
   const { pos, dragHandleProps } = useDraggableWindow({ width: 920, height: 700, storageKey: "pvs_vds_dialog_pos" });
   // Вентиляторы (ГВУ/ВВУ), установленные в открытой схеме. ГВУ идут первыми.
   const fanBranches = useMemo(
@@ -153,64 +156,72 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
 
   const cls = classify(calc.A);
 
-  const inputCls =
-    "w-full px-2 py-1 text-[12px] border border-gray-300 rounded outline-none focus:border-blue-500";
-
   return (
     <div
       className="fixed inset-0 z-[200]"
-      style={{ background: "rgba(0,0,0,0.35)" }}
+      style={{ background: "rgba(15,23,42,0.28)" }}
       onMouseDown={e => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
-        className="bg-white rounded shadow-2xl flex flex-col"
+        className="rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        onKeyDown={e => { if (e.key === "Escape") onClose(); }}
         style={{
           position: "fixed",
           left: Math.min(pos.x, Math.max(0, window.innerWidth - winWidth)),
           top: pos.y,
           width: winWidth, maxWidth: "96vw",
           maxHeight: `calc(100vh - ${pos.y + 12}px)`,
-          border: "1px solid #b0b8cc",
+          background: C.s1,
+          border: `1.5px solid ${C.b2}`,
         }}
       >
-        {/* Заголовок — за него окно перетаскивается */}
+        {/* Шапка — за неё окно перетаскивается */}
         <div
-          className="flex items-center justify-between px-4 py-2.5"
+          className="flex items-center gap-2.5 px-4 pt-3 pb-2 select-none"
           {...dragHandleProps}
-          style={{ ...dragHandleProps.style, background: "var(--c-tint-blue, #e8edf5)", borderBottom: "1px solid #c0cad8" }}
+          style={{ ...dragHandleProps.style }}
         >
-          <span className="text-[13px] font-semibold text-gray-800 flex items-center gap-2">
-            <Icon name="Gauge" size={16} />
-            ВДС — воздушно-депрессионная съёмка
-          </span>
-          <button
-            onClick={onClose}
-            className="text-gray-500 hover:text-gray-800 transition-colors"
-            title="Закрыть"
-          >
-            <Icon name="X" size={18} />
+          <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+            style={{ background: C.tintBlue, border: `1px solid ${C.tintBlue2}` }}>
+            <Icon name="Gauge" size={17} style={{ color: C.accent }} />
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="text-[14px] font-bold leading-tight" style={{ color: C.t1 }}>Воздушно-депрессионная съёмка</div>
+            <div className="text-[11px]" style={{ color: C.t3 }}>
+              {solved ? "по результатам расчёта сети" : "сеть не рассчитана — данные вентиляторов могут быть нулевыми"}
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded p-1 hover:bg-black/5" style={{ color: C.t4 }} title="Закрыть (Esc)">
+            <Icon name="X" size={17} />
           </button>
         </div>
 
-        {/* Подвкладки ВДС */}
-        <div className="flex gap-1 px-3 pt-2" style={{ borderBottom: "1px solid #dde3ec" }}>
-          {([
-            ["opening", "Эквивалентное отверстие", "Gauge"],
-            ["channel", "Вентканал ГВУ", "Fan"],
-            ["report", "Отчёт ВДС", "FileLock2"],
-          ] as const).map(([id, label, icon]) => (
-            <button key={id} onClick={() => { setTab(id); if (id !== "channel") onHighlightBranches?.([]); }}
-              className={`px-3 py-1.5 text-[12px] rounded-t border border-b-0 flex items-center gap-1.5 ${tab === id ? "bg-white text-blue-700 font-semibold border-gray-300" : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100"}`}
-              style={tab === id ? { marginBottom: -1 } : undefined}>
-              <Icon name={icon} size={13} />{label}
-            </button>
-          ))}
+        {/* Вкладки — сегментный переключатель */}
+        <div className="px-4 pb-2" style={{ borderBottom: `1px solid ${C.b1}` }}>
+          <div className="inline-flex p-0.5 rounded-lg gap-0.5" style={{ background: C.s2, border: `1px solid ${C.b1}` }}>
+            {([
+              ["opening", "Эквивалентное отверстие", "Gauge"],
+              ["channel", "Вентканал ГВУ", "Fan"],
+              ["report", "Отчёт ВДС", "FileLock2"],
+            ] as const).map(([id, label, icon]) => {
+              const on = tab === id;
+              return (
+                <button key={id} onClick={() => { setTab(id); if (id !== "channel") onHighlightBranches?.([]); }}
+                  className="px-2.5 py-1 text-[12px] rounded-md flex items-center gap-1.5 transition-colors"
+                  style={on
+                    ? { background: C.s1, color: C.accent, fontWeight: 600, boxShadow: "0 1px 2px rgba(0,0,0,0.08)", border: `1px solid ${C.b1}` }
+                    : { color: C.t3, border: "1px solid transparent" }}>
+                  <Icon name={icon} size={13} />{label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        {tab === "report" ? (
-          <div className="overflow-y-auto px-4 py-3" style={{ flex: 1 }}>
+        <div className="overflow-y-auto px-4 py-3" style={{ flex: 1, background: C.s2 }}>
+          {tab === "report" ? (
             <VdsReportPanel
               branches={branches}
               nodes={nodes}
@@ -220,178 +231,107 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
               license={license}
               stabilityBranches={stabilityBranches}
             />
-          </div>
-        ) : tab === "channel" ? (
-          <div className="overflow-y-auto px-4 pb-3" style={{ flex: 1 }}>
+          ) : tab === "channel" ? (
             <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} />
-          </div>
-        ) : (
-        <div className="overflow-y-auto px-4 py-3" style={{ flex: 1 }}>
-          {/* ── Секция: Эквивалентное отверстие шахты ── */}
-          <div className="mb-2">
-            <div className="text-[13px] font-semibold text-gray-800">
-              Эквивалентное отверстие шахты
-            </div>
-            <div className="text-[11px] text-gray-500 leading-snug">
-              Расчёт по числу ГВУ: при одной установке — формула (24), при
-              нескольких — формула (25). Q — подача воздуха ГВУ (м³/с), H —
-              депрессия ГВУ (даПа, = мм вод. ст.). Выберите вентилятор из схемы —
-              данные подставятся автоматически (давление переводится из Па в даПа).
-            </div>
-          </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: C.t2 }}>
+                <span className="font-semibold" style={{ color: C.t1 }}>Эквивалентное отверстие шахты</span>
+                <span style={{ color: C.t4 }}>· ф. {calc.formula}</span>
+                <Info text="Одна ГВУ — формула (24): A = 0,38·Q/√H. Несколько ГВУ — формула (25): A = 0,38·ΣQ/√(Σh·Q/ΣQ). Q — подача ГВУ, м³/с; H — депрессия, даПа (= мм вод. ст.). При выборе вентилятора из схемы Q и H подставляются из расчёта сети (Па → даПа)." />
+              </div>
 
-          {!solved && fanBranches.length > 0 && (
-            <div
-              className="mb-2 text-[11px] px-2 py-1.5 rounded"
-              style={{ background: "#fff7e6", border: "1px solid #ffe0a3", color: "#9a6700" }}
-            >
-              Сеть ещё не рассчитана — расход и депрессия вентиляторов могут быть
-              нулевыми. Выполните «Расчёт сети» для актуальных значений.
+              <div className="grid gap-2" style={{ gridTemplateColumns: "minmax(0,1fr) 210px" }}>
+                {/* Таблица ГВУ */}
+                <div className="rounded-lg overflow-hidden" style={{ background: C.s1, border: `1px solid ${C.b1}` }}>
+                  <table className="w-full text-[12px] border-collapse">
+                    <thead>
+                      <tr style={{ background: C.s2, color: C.t3 }}>
+                        <th className="text-left font-medium px-2 py-1 w-6 text-[10.5px]">№</th>
+                        <th className="text-left font-medium px-1 py-1 text-[10.5px]">ГВУ со схемы</th>
+                        <th className="text-left font-medium px-1 py-1 w-[72px] text-[10.5px]">Q, м³/с</th>
+                        <th className="text-left font-medium px-1 py-1 w-[72px] text-[10.5px]">H, даПа</th>
+                        <th className="w-7"></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {rows.map((r, i) => (
+                        <tr key={r.id} style={{ borderTop: `1px solid ${C.b1}` }}>
+                          <td className="px-2 py-1 text-center text-[11px]" style={{ color: C.t4 }}>{i + 1}</td>
+                          <td className="px-1 py-1">
+                            {fanBranches.length > 0 ? (
+                              <select className={INP} style={INP_STYLE} value={r.branchId} onChange={e => pickFan(r.id, e.target.value)}>
+                                <option value="">— ручной ввод —</option>
+                                {fanBranches.map(b => <option key={b.id} value={b.id}>{fanLabel(b)}</option>)}
+                              </select>
+                            ) : (
+                              <input className={INP} style={INP_STYLE} value={r.name} placeholder={`ГВУ-${i + 1}`}
+                                onChange={e => updateRow(r.id, { name: e.target.value })} />
+                            )}
+                          </td>
+                          <td className="px-1 py-1">
+                            <input className={INP + " text-right"} style={INP_STYLE} value={r.q} inputMode="decimal" placeholder="0"
+                              onChange={e => updateRow(r.id, { q: e.target.value, branchId: "" })} />
+                          </td>
+                          <td className="px-1 py-1">
+                            <input className={INP + " text-right"} style={INP_STYLE} value={r.h} inputMode="decimal" placeholder="0"
+                              onChange={e => updateRow(r.id, { h: e.target.value, branchId: "" })} />
+                          </td>
+                          <td className="px-1 py-1 text-center">
+                            <button onClick={() => removeRow(r.id)} disabled={rows.length <= 1}
+                              className="rounded p-0.5 hover:bg-black/5 disabled:opacity-30" style={{ color: C.t4 }} title="Удалить ГВУ">
+                              <Icon name="Trash2" size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  <button onClick={addRow} className="w-full flex items-center justify-center gap-1 py-1 text-[11.5px] hover:bg-black/[0.03]"
+                    style={{ color: C.accent, borderTop: `1px solid ${C.b1}` }}>
+                    <Icon name="Plus" size={13} /> Добавить ГВУ
+                  </button>
+                </div>
+
+                {/* Результат */}
+                <div className="flex flex-col gap-2">
+                  <Kpi label="Эквивалентное отверстие A" value={calc.A ? calc.A.toFixed(3) : "—"} unit="м²"
+                    tone={calc.A <= 0 ? "neutral" : calc.A < 1 ? "red" : calc.A <= 2 ? "amber" : "green"}
+                    sub={<span style={{ color: cls.color, fontWeight: 600 }}>{cls.label}</span>} />
+                  <div className="rounded-lg px-2.5 py-1" style={{ background: C.s1, border: `1px solid ${C.b1}` }}>
+                    <Row k="Учтено ГВУ" v={calc.count} />
+                    <Row k="ΣQ, м³/с" v={calc.sumQ ? calc.sumQ.toFixed(2) : "—"} />
+                    <Row k="H экв., даПа" v={calc.HavgDaPa ? calc.HavgDaPa.toFixed(2) : "—"} />
+                  </div>
+                </div>
+              </div>
+
+              {/* Шкала категорий */}
+              <div className="grid grid-cols-3 gap-1 text-[10.5px]">
+                {[
+                  ["до 1 м²", "трудная", C.red, calc.A > 0 && calc.A < 1],
+                  ["1–2 м²", "средняя", C.amber, calc.A >= 1 && calc.A <= 2],
+                  ["свыше 2 м²", "лёгкая", C.green, calc.A > 2],
+                ].map(([r, t, c, on]) => (
+                  <div key={String(r)} className="rounded-md px-2 py-1 flex items-center gap-1.5"
+                    style={{ background: on ? C.s1 : "transparent", border: `1px solid ${on ? String(c) : C.b1}` }}>
+                    <span className="w-2 h-2 rounded-full shrink-0" style={{ background: String(c) }} />
+                    <span style={{ color: on ? C.t1 : C.t3, fontWeight: on ? 600 : 400 }}><b className="font-semibold">{String(r)}</b> {String(t)}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-start gap-1 text-[10.5px] leading-snug" style={{ color: C.t4 }}>
+                <Icon name="Info" size={11} className="mt-[1px] shrink-0" />
+                Классификация применима только без активной аэродинамической связи выработок с выработанным пространством (зоной обрушения).
+              </div>
             </div>
           )}
-
-          {/* Таблица ГВУ */}
-          <table className="w-full text-[12px] border-collapse mb-2">
-            <thead>
-              <tr className="text-gray-600" style={{ background: "#f1f4f9" }}>
-                <th className="text-left font-medium px-2 py-1 border border-gray-200 w-8">№</th>
-                <th className="text-left font-medium px-2 py-1 border border-gray-200">ГВУ со схемы</th>
-                <th className="text-left font-medium px-2 py-1 border border-gray-200 w-24">Q, м³/с</th>
-                <th className="text-left font-medium px-2 py-1 border border-gray-200 w-24">H, даПа</th>
-                <th className="text-center font-medium px-2 py-1 border border-gray-200 w-8"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={r.id}>
-                  <td className="px-2 py-1 border border-gray-200 text-gray-500 text-center">{i + 1}</td>
-                  <td className="px-1 py-1 border border-gray-200">
-                    {fanBranches.length > 0 ? (
-                      <select
-                        className={inputCls + " bg-white"}
-                        value={r.branchId}
-                        onChange={e => pickFan(r.id, e.target.value)}
-                      >
-                        <option value="">— ручной ввод —</option>
-                        {fanBranches.map(b => (
-                          <option key={b.id} value={b.id}>
-                            {fanLabel(b)}
-                          </option>
-                        ))}
-                      </select>
-                    ) : (
-                      <input
-                        className={inputCls}
-                        value={r.name}
-                        placeholder={`ГВУ-${i + 1}`}
-                        onChange={e => updateRow(r.id, { name: e.target.value })}
-                      />
-                    )}
-                  </td>
-                  <td className="px-1 py-1 border border-gray-200">
-                    <input
-                      className={inputCls}
-                      value={r.q}
-                      inputMode="decimal"
-                      placeholder="0"
-                      onChange={e => updateRow(r.id, { q: e.target.value, branchId: "" })}
-                    />
-                  </td>
-                  <td className="px-1 py-1 border border-gray-200">
-                    <input
-                      className={inputCls}
-                      value={r.h}
-                      inputMode="decimal"
-                      placeholder="0"
-                      onChange={e => updateRow(r.id, { h: e.target.value, branchId: "" })}
-                    />
-                  </td>
-                  <td className="px-1 py-1 border border-gray-200 text-center">
-                    <button
-                      onClick={() => removeRow(r.id)}
-                      disabled={rows.length <= 1}
-                      className="text-gray-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-gray-400"
-                      title="Удалить ГВУ"
-                    >
-                      <Icon name="Trash2" size={14} />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-
-          <button
-            onClick={addRow}
-            className="text-[12px] text-blue-600 hover:text-blue-800 flex items-center gap-1 mb-3"
-          >
-            <Icon name="Plus" size={14} /> Добавить ГВУ
-          </button>
-
-          {/* Результат */}
-          <div
-            className="rounded p-3"
-            style={{ background: "#f7f9fc", border: "1px solid #dde3ec" }}
-          >
-            <div className="grid grid-cols-2 gap-y-1.5 text-[12px]">
-              <span className="text-gray-600">Учтено ГВУ:</span>
-              <span className="text-gray-900 font-medium">{calc.count}</span>
-
-              <span className="text-gray-600">Суммарная подача ΣQ:</span>
-              <span className="text-gray-900 font-medium">
-                {calc.sumQ ? calc.sumQ.toFixed(2) : "—"} м³/с
-              </span>
-
-              <span className="text-gray-600">Эквивалентная депрессия H:</span>
-              <span className="text-gray-900 font-medium">
-                {calc.HavgDaPa ? calc.HavgDaPa.toFixed(2) : "—"} даПа
-              </span>
-
-              <span className="text-gray-600">Формула:</span>
-              <span className="text-gray-900 font-medium">{calc.formula}</span>
-            </div>
-
-            <div className="mt-2 pt-2 flex items-baseline gap-2" style={{ borderTop: "1px solid #dde3ec" }}>
-              <span className="text-[13px] text-gray-700 font-semibold">
-                Эквивалентное отверстие A:
-              </span>
-              <span className="text-[18px] font-bold text-blue-700">
-                {calc.A ? calc.A.toFixed(3) : "—"}
-              </span>
-              <span className="text-[13px] text-gray-600">м²</span>
-            </div>
-
-            <div className="mt-1 text-[12px]">
-              <span className="text-gray-600">Категория: </span>
-              <span className="font-semibold" style={{ color: cls.color }}>
-                {cls.label}
-              </span>
-            </div>
-          </div>
-
-          <div className="mt-2 text-[11px] text-gray-400 leading-snug">
-            По величине эквивалентного отверстия и сложности проветривания шахты
-            делятся на три группы: труднопроветриваемые — до 1 м², средней
-            трудности — от 1 до 2 м² и легкопроветриваемые — свыше 2 м². Такой
-            классификацией можно пользоваться только при отсутствии активной
-            аэродинамической связи действующих горных выработок с выработанным
-            пространством (зоной обрушения). В противном случае эквивалентное
-            отверстие шахты не характеризует фактического состояния её
-            проветривания.
-          </div>
         </div>
 
-        )}
-
         {/* Футер */}
-        <div
-          className="flex items-center justify-end gap-2 px-4 py-2.5"
-          style={{ background: "#f1f4f9", borderTop: "1px solid #c0cad8" }}
-        >
-          <button
-            onClick={onClose}
-            className="px-3 py-1.5 text-[12px] rounded border border-gray-300 bg-white hover:bg-gray-50 text-gray-700"
-          >
+        <div className="flex items-center justify-end gap-2 px-4 py-2" style={{ borderTop: `1px solid ${C.b1}` }}>
+          <button onClick={onClose} className="px-3 py-1 text-[12px] rounded-md hover:brightness-95"
+            style={{ background: C.s1, border: `1px solid ${C.b2}`, color: C.t2 }}>
             Закрыть
           </button>
         </div>

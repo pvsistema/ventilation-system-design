@@ -28,6 +28,7 @@ import type { TopoBranch, TopoNode } from "@/lib/topology";
 import { getFanById, fanQMax, fanCurveAtAngle, fanHAngle, fanEfficiencyAngle, type FanCurve } from "@/lib/fanCurves";
 import { PA_PER_MM_H2O } from "@/lib/aerodynamics";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
+import { C, Card, Field, Info, INP, INP_STYLE, Kpi, MiniBtn, Note, Row } from "@/components/cad/vds/vdsUi";
 import {
   traceChannelRoute, routeNodes, buildAdjacency, END_LABEL, isVertical, routeBetweenNodes, classifyEnd,
   type RouteEndKind,
@@ -281,7 +282,6 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const eFact = pFact * T, eRec = pRec * T;
   const saving = Math.max(0, eFact - eRec);
 
-  const inputCls = "w-full px-2 py-1 text-[12px] border border-gray-300 rounded outline-none focus:border-blue-500";
   const f = (x: number, d = 2) => (x > 0 ? x.toFixed(d) : "—");
   const nodeNum = (id?: string) => (id ? nodeById.get(id)?.number || id : "?");
   const brName = (x: TopoBranch) => x.type || x.mineTypeName || `ветвь ${x.id}`;
@@ -290,121 +290,108 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
     return <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ color: c, border: `1px solid ${c}55`, background: `${c}10` }}>{END_LABEL[k]}</span>;
   };
 
+  const pctLoss = hNom > 0 && hFact > 0 ? (hFact / hNom) * 100 : 0;
+  const sectionTone = okSection === false ? "red" : okSection ? "green" : "neutral";
+  const pointTone = [zoneOk, etaOk, stallOk].some(x => x === false) ? "red" : [zoneOk, etaOk, stallOk].every(x => x === true) ? "green" : "neutral";
+  const fmtInt = (x: number) => Math.round(x).toLocaleString("ru-RU");
+
   return (
-    <div className="pt-3">
-      <div className="text-[13px] font-semibold text-gray-800">Вентиляционный канал ГВУ — работа в номинальной точке</div>
-      <div className="text-[11px] text-gray-500 leading-snug mb-2">
-        Сечение подбирается под номинальную точку вентилятора (η = max) по потерям давления в канале — не более заданной
-        доли напора. Скорость воздуха в вентиляционном канале не регламентируется и приводится для справки. Рабочая точка
-        проверяется на устойчивость (без срыва) и на зону экономичной работы (без вибрации и перегрузки подшипников).
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5 text-[11.5px]">
+        <span className="font-semibold" style={{ color: C.t1 }}>Вентиляционный канал ГВУ — работа в номинальной точке</span>
+        <Info text="Сечение подбирается под номинальную точку вентилятора (η = max) по потерям давления в канале — не более заданной доли напора. Скорость воздуха в канале не регламентируется и приводится для справки. Рабочая точка проверяется на устойчивость (без срыва) и на зону экономичной работы (без вибрации и перегрузки подшипников)." />
       </div>
 
-      <div className="grid grid-cols-3 gap-2 mb-2 text-[12px]">
-        <label className="col-span-3 sm:col-span-1">
-          <span className="text-gray-600">Вентилятор</span>
-          <select className={inputCls + " bg-white"} value={fanId} onChange={e => { setFanId(e.target.value); setQManual(""); }}>
+      {/* Исходные данные */}
+      <div className="grid gap-2 rounded-lg px-2.5 py-2" style={{ gridTemplateColumns: "minmax(0,2.2fr) 1fr 1fr 0.8fr 0.8fr", background: C.s1, border: `1px solid ${C.b1}` }}>
+        <Field label="Вентилятор">
+          <select className={INP} style={INP_STYLE} value={fanId} onChange={e => { setFanId(e.target.value); setQManual(""); }}>
             {list.length === 0 && <option value="">— нет в схеме —</option>}
             {list.map(x => <option key={x.id} value={x.id}>{label(x)}</option>)}
           </select>
-        </label>
-        <label>
-          <span className="text-gray-600">Q<sub>ном</sub>, м³/с {qNomCurve > 0 && !qManual ? "(η max)" : ""}</span>
-          <input className={inputCls} inputMode="decimal" value={qManual} placeholder={qNomCurve ? qNomCurve.toFixed(2) : "ввести"}
+        </Field>
+        <Field label={<>Q<sub>ном</sub>, м³/с{qNomCurve > 0 && !qManual ? " · η max" : ""}</>}>
+          <input className={INP + " text-right"} style={INP_STYLE} inputMode="decimal" value={qManual} placeholder={qNomCurve ? qNomCurve.toFixed(2) : "ввести"}
             onChange={e => setQManual(e.target.value)} />
-        </label>
-        <label>
-          <span className="text-gray-600">Потери в канале ≤, % H<sub>ном</sub></span>
-          <input className={inputCls} inputMode="decimal" value={lossPct} onChange={e => setLossPct(e.target.value)} />
-        </label>
-        <label>
-          <span className="text-gray-600">Тариф, руб/кВт·ч · часов/год</span>
-          <div className="flex gap-1">
-            <input className={inputCls} inputMode="decimal" value={tariff} onChange={e => setTariff(e.target.value)} />
-            <input className={inputCls} inputMode="decimal" value={hours} onChange={e => setHours(e.target.value)} />
-          </div>
-        </label>
+        </Field>
+        <Field label={<>Потери ≤, % H<sub>ном</sub></>}>
+          <input className={INP + " text-right"} style={INP_STYLE} inputMode="decimal" value={lossPct} onChange={e => setLossPct(e.target.value)} />
+        </Field>
+        <Field label="Тариф, ₽/кВт·ч">
+          <input className={INP + " text-right"} style={INP_STYLE} inputMode="decimal" value={tariff} onChange={e => setTariff(e.target.value)} />
+        </Field>
+        <Field label="Часов/год">
+          <input className={INP + " text-right"} style={INP_STYLE} inputMode="decimal" value={hours} onChange={e => setHours(e.target.value)} />
+        </Field>
       </div>
 
       {b && !curve && !qManual && (
-        <div className="mb-2 text-[11px] px-2 py-1.5 rounded" style={{ background: "#fff7e6", border: "1px solid #ffe0a3", color: "#9a6700" }}>
-          У вентилятора не задана модель из справочника — номинальную точку определить нельзя. Введите Q<sub>ном</sub> вручную (напор берётся из расчёта сети).
-        </div>
+        <Note tone="amber">У вентилятора не задана модель из справочника — введите Q<sub>ном</sub> вручную (напор берётся из расчёта сети).</Note>
       )}
+
+      {/* Ключевые результаты */}
+      <div className="grid grid-cols-4 gap-2">
+        <Kpi label={<>Рекомендуемое S<sub>рек</sub></>} value={sRec > 0 ? f(sRec) : "—"} unit="м²"
+          sub={sRec > 0 ? <>D<sub>экв</sub> = {f(dEq)} м · h<sub>к</sub> ≤ {f(kLoss * 100, 0)} %</> : "нет сопротивления по маршруту"} />
+        <Kpi label="Наименьшее по маршруту" value={f(sFact)} unit="м²" tone={sectionTone}
+          sub={okSection === false ? "меньше рекомендуемого" : okSection ? "достаточно" : narrow ? brName(narrow) : "—"} />
+        <Kpi label="Потери в канале" value={f(hFact, 1)} unit="Па" tone={pctLoss > kLoss * 100 ? "red" : pctLoss > 0 ? "green" : "neutral"}
+          sub={<>{pctLoss > 0 ? `${pctLoss.toFixed(1)} % H` : "—"}<sub>ном</sub> · рек. {f(hRec, 1)} Па</>} />
+        <Kpi label="Экономия при S рек" value={saving > 0 ? fmtInt(saving * price) : "—"} unit={saving > 0 ? "₽/год" : undefined} tone={saving > 0 ? "green" : "neutral"}
+          sub={saving > 0 ? `${fmtInt(saving)} кВт·ч/год` : "канал не хуже рекомендуемого"} />
+      </div>
 
       {/* ─── Маршрут вентканала ─── */}
       {b && (
-        <div className="mb-2 rounded" style={{ border: "1px solid #dde3ec" }}>
-          <div className="flex items-center gap-2 px-2 py-1.5 text-[12px]" style={{ background: "#f1f4f9", borderBottom: showRoute ? "1px solid #dde3ec" : undefined }}>
-            <button onClick={() => setShowRoute(s => !s)} className="flex items-center gap-1 font-semibold text-gray-700">
-              <Icon name={showRoute ? "ChevronDown" : "ChevronRight"} size={14} />
-              <Icon name="Route" size={14} />
-              Маршрут вентканала
-            </button>
-            <span className="text-gray-500">
-              {route.length} ветв. · {f(totalL, 1)} м · уз. {nodeNum(firstNode)} → {nodeNum(lastNode)}
-            </span>
-            <div className="ml-auto flex items-center gap-2">
-              <label className="flex items-center gap-1 text-[11px] text-gray-600" title="Ветвь считается вертикальным стволом, если |угол наклона| не меньше порога">
+        <Card title="Маршрут вентканала" icon="Route"
+          right={
+            <div className="flex items-center gap-1.5">
+              <span className="text-[11px] mr-1" style={{ color: C.t3 }}>{route.length} ветв. · {f(totalL, 1)} м</span>
+              <label className="flex items-center gap-1 text-[11px]" style={{ color: C.t3 }} title="Ветвь считается вертикальным стволом, если |угол наклона| не меньше порога">
                 ствол ≥
-                <input className="w-10 px-1 py-0.5 text-[11px] border border-gray-300 rounded" value={vertThr} onChange={e => setVertThr(e.target.value)} />°
+                <input className="w-9 px-1 py-0.5 text-[11px] rounded-md text-right" style={INP_STYLE} value={vertThr} onChange={e => setVertThr(e.target.value)} />°
               </label>
-              <button onClick={() => setHighlight(h => !h)}
-                title={highlight ? "Снять подсветку маршрута на схеме" : "Подсветить маршрут на схеме"}
-                className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border"
-                style={highlight ? { borderColor: "#93c5fd", background: "#eff6ff", color: "#1d4ed8" } : { borderColor: "#d1d5db", background: "#fff", color: "#4b5563" }}>
+              <MiniBtn onClick={() => setHighlight(h => !h)} active={highlight} title={highlight ? "Снять подсветку маршрута на схеме" : "Подсветить маршрут на схеме"}>
                 <Icon name={highlight ? "Eye" : "EyeOff"} size={12} /> На схеме
-              </button>
-              <button onClick={autoTrace} className="flex items-center gap-1 px-2 py-0.5 text-[11px] rounded border border-gray-300 bg-white hover:bg-gray-50">
-                <Icon name="Wand2" size={12} /> Авто
-              </button>
+              </MiniBtn>
+              <MiniBtn onClick={autoTrace} title="Автотрассировка от вентилятора"><Icon name="Wand2" size={12} /> Авто</MiniBtn>
+              <MiniBtn onClick={() => setShowRoute(v => !v)} title={showRoute ? "Свернуть" : "Развернуть"}>
+                <Icon name={showRoute ? "ChevronUp" : "ChevronDown"} size={12} />
+              </MiniBtn>
             </div>
+          }>
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
+            <NodePick label="А" value={nodeA} options={nodeOptions} onChange={v => traceAB(v, nodeB)} />
+            <button onClick={() => traceAB(nodeB, nodeA)} title="Поменять А и Б местами" className="rounded-md px-1 py-0.5 hover:bg-black/5" style={{ color: C.t3 }}>
+              <Icon name="ArrowLeftRight" size={12} />
+            </button>
+            <NodePick label="Б" value={nodeB} options={nodeOptions} onChange={v => traceAB(nodeA, v)} />
+            <Info text="Маршрут между узлами А и Б строится по главной струе через ветвь вентилятора, в обход закрытых перемычек." />
           </div>
+          {(abError || abNote) && (
+            <div className="mt-1.5">
+              {abError ? <Note tone="red">{abError}</Note> : abNote && <Note tone={abNote.warn ? "amber" : "green"}>{abNote.text}</Note>}
+            </div>
+          )}
 
           {showRoute && (
-            <div className="p-2">
-              {/* Выбор границ канала: узлы А и Б */}
-              <div className="flex flex-wrap items-center gap-2 mb-2 pb-2 text-[11px]" style={{ borderBottom: "1px dashed #dde3ec" }}>
-                <span className="text-gray-600 font-medium">Канал от узла</span>
-                <NodePick label="А" value={nodeA} options={nodeOptions} onChange={v => traceAB(v, nodeB)} />
-                <span className="text-gray-600">до узла</span>
-                <NodePick label="Б" value={nodeB} options={nodeOptions} onChange={v => traceAB(nodeA, v)} />
-                <button onClick={() => traceAB(nodeB, nodeA)} title="Поменять А и Б местами"
-                  className="px-1.5 py-0.5 rounded border border-gray-300 bg-white hover:bg-gray-50">
-                  <Icon name="ArrowLeftRight" size={11} />
-                </button>
-                <span className="text-gray-400">маршрут — по главной струе через ветвь вентилятора, в обход закрытых перемычек</span>
+            <>
+              <div className="mt-1.5">
+                <RouteEndRow title="Начало" node={nodeNum(firstNode)} badge={endBadge(ends.start)}
+                  cand={startCand} brName={brName} nodeNum={nodeNum} canTrim={route.length > 1 && routeIds[0] !== fanId}
+                  onAdd={id => extend("start", id)} onTrim={() => trim("start")} thr={thr} />
               </div>
-              {abNote && !abError && (
-                <div className="mb-2 text-[11px] px-2 py-1 rounded"
-                  style={abNote.warn
-                    ? { background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }
-                    : { background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534" }}>
-                  {abNote.text}
-                </div>
-              )}
-              {abError && (
-                <div className="mb-2 text-[11px] px-2 py-1 rounded" style={{ background: "#fef2f2", border: "1px solid #fecaca", color: "#b91c1c" }}>
-                  {abError}
-                </div>
-              )}
-              {/* Начало маршрута */}
-              <RouteEndRow
-                title="Начало" node={nodeNum(firstNode)} badge={endBadge(ends.start)}
-                cand={startCand} brName={brName} nodeNum={nodeNum} canTrim={route.length > 1 && routeIds[0] !== fanId}
-                onAdd={id => extend("start", id)} onTrim={() => trim("start")} thr={thr}
-              />
-
-              <table className="w-full text-[11px] my-1.5">
+              <table className="w-full text-[11px] my-1">
                 <thead>
-                  <tr className="text-gray-500 text-left">
-                    <th className="font-normal py-0.5">#</th>
+                  <tr className="text-left" style={{ color: C.t4 }}>
+                    <th className="font-normal py-0.5 w-5">#</th>
                     <th className="font-normal">Выработка</th>
                     <th className="font-normal">Узлы</th>
                     <th className="font-normal text-right">L, м</th>
                     <th className="font-normal text-right">S, м²</th>
-                    <th className="font-normal text-right">∠, °</th>
-                    <th className="font-normal text-right">V при Q<sub>ном</sub></th>
-                    <th className="font-normal text-right">V при Q<sub>max</sub></th>
+                    <th className="font-normal text-right">∠°</th>
+                    <th className="font-normal text-right">V<sub>ном</sub></th>
+                    <th className="font-normal text-right">V<sub>max</sub></th>
                     <th className="font-normal text-right">h, Па</th>
                   </tr>
                 </thead>
@@ -415,113 +402,76 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
                     const isFan = x.id === fanId;
                     const isNarrow = narrow?.id === x.id;
                     return (
-                      <tr key={x.id} style={{ borderTop: "1px solid #eef1f5", background: isFan ? "#eff6ff" : undefined }}>
-                        <td className="py-0.5 text-gray-400">{i + 1}</td>
+                      <tr key={x.id} className="tabular-nums" style={{ borderTop: `1px solid ${C.b1}`, background: isFan ? C.tintBlue : undefined, color: C.t1 }}>
+                        <td className="py-[3px]" style={{ color: C.t4 }}>{i + 1}</td>
                         <td className="font-medium">
-                          {isFan && <Icon name="Fan" size={11} className="inline mr-1 text-blue-600" />}
+                          {isFan && <Icon name="Fan" size={11} className="inline mr-1" style={{ color: C.accent }} />}
                           {brName(x)}
-                          {isNarrow && <span className="ml-1 text-[10px] text-amber-600">узкое место</span>}
+                          {isNarrow && <span className="ml-1 text-[10px] px-1 rounded" style={{ color: C.amber, border: `1px solid ${C.amber}` }}>узкое</span>}
                         </td>
-                        <td className="text-gray-500">{nodeNum(rNodes[i])}→{nodeNum(rNodes[i + 1])}</td>
+                        <td style={{ color: C.t3 }}>{nodeNum(rNodes[i])}→{nodeNum(rNodes[i + 1])}</td>
                         <td className="text-right">{f(x.length, 1)}</td>
                         <td className="text-right">{f(x.area)}</td>
-                        <td className="text-right text-gray-500">{(x.angle ?? 0).toFixed(0)}</td>
+                        <td className="text-right" style={{ color: C.t3 }}>{(x.angle ?? 0).toFixed(0)}</td>
                         <td className="text-right">{f(vn)}</td>
-                        <td className="text-right text-gray-500">{f(v)}</td>
+                        <td className="text-right" style={{ color: C.t3 }}>{f(v)}</td>
                         <td className="text-right">{f((x.resistance || 0) * qNom * qNom * PA_PER_MM_H2O, 1)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-
-              {/* Конец маршрута */}
-              <RouteEndRow
-                title="Конец" node={nodeNum(lastNode)} badge={endBadge(ends.end)}
+              <RouteEndRow title="Конец" node={nodeNum(lastNode)} badge={endBadge(ends.end)}
                 cand={endCand} brName={brName} nodeNum={nodeNum} canTrim={route.length > 1 && routeIds[routeIds.length - 1] !== fanId}
-                onAdd={id => extend("end", id)} onTrim={() => trim("end")} thr={thr}
-              />
-
+                onAdd={id => extend("end", id)} onTrim={() => trim("end")} thr={thr} />
               {ends.start !== "shaft" && ends.end !== "shaft" && (
-                <div className="mt-1.5 text-[11px] px-2 py-1 rounded" style={{ background: "#fff7e6", border: "1px solid #ffe0a3", color: "#9a6700" }}>
-                  Сопряжение с подземным стволом не найдено — выберите узлы А и Б вручную.
-                </div>
+                <div className="mt-1.5"><Note tone="amber">Сопряжение с подземным стволом не найдено — выберите узлы А и Б вручную.</Note></div>
               )}
-            </div>
+            </>
           )}
-        </div>
+        </Card>
       )}
 
-      <div className="rounded p-3 grid grid-cols-2 gap-y-1.5 text-[12px]" style={{ background: "#f7f9fc", border: "1px solid #dde3ec" }}>
-        <Hdr>Номинальная точка вентилятора</Hdr>
-        <span className="text-gray-600">Модель:</span>
-        <span className="font-medium">{curve?.name || b?.fanName || "—"}{N > 1 ? ` × ${N} в параллель` : ""}</span>
-        <span className="text-gray-600">Номинальная подача Q<sub>ном</sub> (η max):</span>
-        <span className="font-medium">{f(qNom)} м³/с = {f(qNom * 60, 0)} м³/мин</span>
-        <span className="text-gray-600">Напор в номинальной точке H<sub>ном</sub>:</span>
-        <span className="font-medium">{f(hNom, 0)} Па ({f(hNom / 10, 1)} даПа)</span>
-        <span className="text-gray-600">КПД η<sub>max</sub>:</span>
-        <span className="font-medium">
-          {f(etaMax * 100, 0)} %
-          {!etaReliable && curve ? <span className="text-amber-600 font-normal"> — кривая КПД в паспорте недостоверна, принято {etaFan >= 0.3 ? "из свойств вентилятора" : "0,7"}; Q<sub>ном</sub> — паспортный номинал</span> : null}
-        </span>
-        <span className="text-gray-600">Макс. подача Q<sub>max</sub> (край паспорта):</span>
-        <span className="font-medium">{f(qMax)} м³/с = {f(qMax * 60, 0)} м³/мин</span>
-        {qNomOverMax && (
-          <span className="col-span-2 text-[11px] text-amber-700">
-            Введённая Q<sub>ном</sub> больше максимальной подачи по паспорту — проверьте значение (рекомендуемая номинальная {f(qNomCurve)} м³/с).
-          </span>
-        )}
+      {/* Подробности — три колонки */}
+      <div className="grid grid-cols-3 gap-2">
+        <Card title="Номинальная точка" icon="Target">
+          <Row k="Модель" v={<span className="truncate inline-block max-w-[130px] align-bottom" title={curve?.name || b?.fanName || ""}>{curve?.name || b?.fanName || "—"}{N > 1 ? ` ×${N}` : ""}</span>} />
+          <Row k={<>Q<sub>ном</sub></>} v={<>{f(qNom)} м³/с</>} />
+          <Row k={<>H<sub>ном</sub></>} v={<>{f(hNom, 0)} Па</>} />
+          <Row k={<>η<sub>max</sub></>} v={<>{f(etaMax * 100, 0)} %</>} color={!etaReliable && curve ? C.amber : undefined} />
+          <Row k={<>Q<sub>max</sub> паспорт</>} v={<>{f(qMax)} м³/с</>} />
+          {!etaReliable && curve && <div className="text-[10.5px] mt-0.5" style={{ color: C.amber }}>Кривая КПД недостоверна — принято {etaFan >= 0.3 ? "из свойств" : "0,7"}, Q<sub>ном</sub> паспортный</div>}
+          {qNomOverMax && <div className="text-[10.5px] mt-0.5" style={{ color: C.red }}>Q<sub>ном</sub> больше паспортной макс. (рек. {f(qNomCurve)})</div>}
+        </Card>
 
-        <Hdr>Сечение канала (по потерям давления)</Hdr>
-        <span className="text-gray-600 font-semibold">Рекомендуемое сечение S<sub>рек</sub> (h<sub>к</sub> ≤ {f(kLoss * 100, 0)} % H<sub>ном</sub>):</span>
-        <span className="font-bold text-blue-700">{sRec > 0 ? <>{f(sRec)} м² <span className="font-normal text-gray-500">D<sub>экв</sub> = {f(dEq)} м</span></> : "— (нет сопротивления по маршруту)"}</span>
-        <span className="text-gray-600">Наименьшее сечение по маршруту:</span>
-        <span className="font-medium" style={{ color: okSection === false ? "#dc2626" : okSection ? "#16a34a" : undefined }}>
-          {f(sFact)} м²{narrow ? ` — ${brName(narrow)}` : ""}{okSection === false ? " — меньше рекомендуемого" : okSection ? " — достаточно" : ""}
-        </span>
-        <span className="text-gray-600">Длина канала по маршруту:</span>
-        <span className="font-medium">{f(totalL, 1)} м ({route.length} ветв.)</span>
-        <span className="text-gray-600">Скорость при Q<sub>ном</sub> / при Q<sub>max</sub> (справочно):</span>
-        <span className="font-medium">{f(vNomFact)} / {f(vMaxFact)} м/с</span>
-        <span className="text-gray-600">Скоростной напор при Q<sub>ном</sub> h<sub>ск</sub> = ρV²/2:</span>
-        <span className="font-medium">{f(hSk, 1)} Па</span>
-        <span className="text-gray-600">Потери в канале при Q<sub>ном</sub>: факт / рек.:</span>
-        <span className="font-medium">
-          {f(hFact, 1)} Па ({hNom > 0 ? f((hFact / hNom) * 100, 1) : "—"} %) / {f(hRec, 1)} Па
-        </span>
+        <Card title="Рабочая точка" icon="Activity" right={pointTone !== "neutral" ? <Icon name={pointTone === "green" ? "CheckCircle2" : "AlertTriangle"} size={13} style={{ color: pointTone === "green" ? C.green : C.red }} /> : undefined}>
+          <Row k={<>Q<sub>раб</sub> / H<sub>раб</sub></>} v={<>{f(qNow)} / {f(hNow, 0)}</>} />
+          <Row k={<span title="Норма 0,8…1,15">Q<sub>раб</sub>/Q<sub>ном</sub></span>} v={<Check ok={zoneOk} text={ratio > 0 ? ratio.toFixed(2) : "—"} bad={ratio < 0.8 ? "левее номинала — вибрация, риск помпажа" : "правее номинала — перегрузка двигателя и подшипников"} />} />
+          <Row k={<span title="Не менее 0,9·η max">η раб.</span>} v={<Check ok={etaOk} text={etaNow > 0 ? `${(etaNow * 100).toFixed(0)} %` : "—"} bad="неэкономичный режим" />} />
+          <Row k={<span title="H раб ≤ 0,9·H max — без срыва">Запас до срыва</span>} v={<Check ok={stallOk} text={nom ? `≤ ${f(0.9 * nom.hMax, 0)} Па` : "—"} bad="зона срыва потока" />} />
+          <Row k="V ном / V max" v={<>{f(vNomFact)} / {f(vMaxFact)} м/с</>} />
+        </Card>
 
-        <Hdr>Рабочая точка по расчёту сети</Hdr>
-        <span className="text-gray-600">Q<sub>раб</sub> / H<sub>раб</sub>:</span>
-        <span className="font-medium">{f(qNow)} м³/с ({f(qNow * 60, 0)} м³/мин) / {f(hNow, 0)} Па</span>
-        <span className="text-gray-600">Отношение Q<sub>раб</sub>/Q<sub>ном</sub> (норма 0,8…1,15):</span>
-        <Check ok={zoneOk} text={ratio > 0 ? ratio.toFixed(2) : "—"} bad={ratio < 0.8 ? "левее номинала — рост вибрации, риск помпажа" : "правее номинала — перегрузка двигателя и подшипников"} />
-        <span className="text-gray-600">КПД в рабочей точке (≥ 0,9·η<sub>max</sub>):</span>
-        <Check ok={etaOk} text={etaNow > 0 ? `${(etaNow * 100).toFixed(0)} %` : "—"} bad="неэкономичный режим" />
-        <span className="text-gray-600">Устойчивость H<sub>раб</sub> ≤ 0,9·H<sub>max</sub> (без срыва):</span>
-        <Check ok={stallOk} text={nom ? `${f(hNow, 0)} ≤ ${f(0.9 * nom.hMax, 0)} Па` : "—"} bad="зона срыва потока" />
-
-        <Hdr>Экономический эффект</Hdr>
-        <span className="text-gray-600">Мощность на потери в канале: факт / рек.:</span>
-        <span className="font-medium">{pFact > 0 ? pFact.toFixed(1) : "—"} / {pRec > 0 ? pRec.toFixed(1) : "—"} кВт</span>
-        <span className="text-gray-600">Электроэнергия в год: факт / рек.:</span>
-        <span className="font-medium">{eFact > 0 ? Math.round(eFact).toLocaleString("ru-RU") : "—"} / {eRec > 0 ? Math.round(eRec).toLocaleString("ru-RU") : "—"} кВт·ч</span>
-        <span className="text-gray-600">Экономия при сечении S<sub>рек</sub>:</span>
-        <span className="font-bold" style={{ color: saving > 0 ? "#16a34a" : undefined }}>
-          {saving > 0 ? `${Math.round(saving).toLocaleString("ru-RU")} кВт·ч/год ≈ ${Math.round(saving * price).toLocaleString("ru-RU")} руб/год` : "— (канал уже не хуже рекомендуемого)"}
-        </span>
+        <Card title="Энергия и потери" icon="Zap">
+          <Row k="Скоростной напор" v={<>{f(hSk, 1)} Па</>} />
+          <Row k="Мощность: факт" v={<>{pFact > 0 ? pFact.toFixed(1) : "—"} кВт</>} />
+          <Row k="Мощность: рек." v={<>{pRec > 0 ? pRec.toFixed(1) : "—"} кВт</>} />
+          <Row k="кВт·ч/год: факт" v={eFact > 0 ? fmtInt(eFact) : "—"} />
+          <Row k="кВт·ч/год: рек." v={eRec > 0 ? fmtInt(eRec) : "—"} />
+        </Card>
       </div>
     </div>
   );
 }
 
-function Hdr({ children }: { children: React.ReactNode }) {
-  return <div className="col-span-2 mt-1.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-500" style={{ borderTop: "1px solid #e3e8f0" }}>{children}</div>;
-}
-
 function Check({ ok, text, bad }: { ok: boolean | null; text: string; bad: string }) {
-  const c = ok === null ? undefined : ok ? "#16a34a" : "#dc2626";
-  return <span className="font-medium" style={{ color: c }}>{text}{ok === true ? " — в норме" : ok === false ? ` — ${bad}` : ""}</span>;
+  const c = ok === null ? undefined : ok ? C.green : C.red;
+  return (
+    <span className="inline-flex items-center gap-1" style={{ color: c }} title={ok === false ? bad : ok ? "в норме" : undefined}>
+      {text}
+      {ok !== null && <Icon name={ok ? "Check" : "AlertTriangle"} size={11} />}
+    </span>
+  );
 }
 
 function NodePick({ label, value, options, onChange }: {
@@ -530,7 +480,7 @@ function NodePick({ label, value, options, onChange }: {
   return (
     <label className="flex items-center gap-1">
       <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-white" style={{ background: label === "А" ? "#2563eb" : "#16a34a" }}>{label}</span>
-      <select className="px-1 py-0.5 text-[11px] border border-gray-300 rounded bg-white max-w-[180px]" value={value} onChange={e => onChange(e.target.value)}>
+      <select className="px-1 py-0.5 text-[11px] rounded-md max-w-[200px]" style={INP_STYLE} value={value} onChange={e => onChange(e.target.value)}>
         <option value="">—</option>
         {options.map(o => (
           <option key={o.id} value={o.id}>
@@ -550,12 +500,12 @@ function RouteEndRow(props: {
   const { title, node, badge, cand, brName, canTrim, onAdd, onTrim, thr } = props;
   return (
     <div className="flex items-center gap-2 text-[11px]">
-      <span className="text-gray-500 w-12">{title}:</span>
-      <span className="font-medium">узел {node}</span>
+      <span className="w-12" style={{ color: C.t3 }}>{title}:</span>
+      <span className="font-medium" style={{ color: C.t1 }}>узел {node}</span>
       {badge}
       <div className="ml-auto flex items-center gap-1">
         {cand.length > 0 && (
-          <select className="px-1 py-0.5 text-[11px] border border-gray-300 rounded bg-white" value=""
+          <select className="px-1 py-0.5 text-[11px] rounded-md" style={INP_STYLE} value=""
             onChange={e => e.target.value && onAdd(e.target.value)}>
             <option value="">+ продлить…</option>
             {cand.map(c => (
@@ -566,7 +516,7 @@ function RouteEndRow(props: {
           </select>
         )}
         {canTrim && (
-          <button onClick={onTrim} title="Убрать крайнюю ветвь" className="px-1.5 py-0.5 rounded border border-gray-300 bg-white hover:bg-gray-50">
+          <button onClick={onTrim} title="Убрать крайнюю ветвь" className="px-1.5 py-0.5 rounded-md hover:bg-black/5" style={INP_STYLE}>
             <Icon name="Minus" size={11} />
           </button>
         )}

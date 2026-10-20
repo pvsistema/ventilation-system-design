@@ -5,7 +5,7 @@ import Icon from "@/components/ui/icon";
 import type { TopoBranch } from "@/lib/topology";
 import { KV_OPTIONS, type KeyValueRow, type VdsReportForm as Form } from "@/lib/vdsReport/types";
 
-const inputCls = "w-full px-2 py-1 text-[12px] border border-gray-300 rounded outline-none focus:border-blue-500 bg-white";
+const inputCls = "w-full px-2 py-1 text-[12px] border border-[color:var(--c-b2,#d1d5db)] rounded-md outline-none focus:border-[color:var(--c-accent,#1e5a7a)] bg-[color:var(--c-s1,#fff)]";
 
 interface Props {
   form: Form;
@@ -16,12 +16,12 @@ interface Props {
 function Group({ title, children, open: initial = false, hint }: { title: string; children: React.ReactNode; open?: boolean; hint?: string }) {
   const [open, setOpen] = useState(initial);
   return (
-    <div className="border border-gray-200 rounded mb-2 bg-white">
+    <div className="border border-[color:var(--c-b1,#e5e7eb)] rounded-md mb-2 bg-[color:var(--c-s1,#fff)]">
       <button type="button" onClick={() => setOpen(o => !o)}
-        className="w-full flex items-center gap-2 px-3 py-2 text-left text-[12px] font-semibold text-gray-800 hover:bg-gray-50">
+        className="w-full flex items-center gap-2 px-3 py-1.5 text-left text-[12px] font-semibold text-[color:var(--c-t1,#111827)] hover:bg-black/5">
         <Icon name={open ? "ChevronDown" : "ChevronRight"} size={14} />
         <span className="flex-1">{title}</span>
-        {hint && <span className="text-[10px] font-normal text-gray-400">{hint}</span>}
+        {hint && <span className="text-[10px] font-normal text-[color:var(--c-t4,#9ca3af)]">{hint}</span>}
       </button>
       {open && <div className="px-3 pb-3 pt-1 space-y-2">{children}</div>}
     </div>
@@ -33,7 +33,7 @@ function Field({ label, value, onChange, area, rows = 3, placeholder }: {
 }) {
   return (
     <label className="block">
-      <span className="block text-[11px] text-gray-600 mb-0.5">{label}</span>
+      <span className="block text-[11px] text-[color:var(--c-t2,#374151)] mb-0.5">{label}</span>
       {area
         ? <textarea className={inputCls} rows={rows} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />
         : <input className={inputCls} value={value} placeholder={placeholder} onChange={e => onChange(e.target.value)} />}
@@ -45,25 +45,25 @@ function KvTable({ rows, onChange, cols }: { rows: KeyValueRow[]; onChange: (r: 
   return (
     <div>
       <table className="w-full text-[12px] border-collapse">
-        <thead><tr className="bg-gray-50 text-gray-600">
-          <th className="border border-gray-200 px-2 py-1 text-left font-medium">{cols[0]}</th>
-          <th className="border border-gray-200 px-2 py-1 text-left font-medium">{cols[1]}</th>
-          <th className="border border-gray-200 w-7" />
+        <thead><tr className="bg-[color:var(--c-s2,#f9fafb)] text-[color:var(--c-t2,#374151)]">
+          <th className="border border-[color:var(--c-b1,#e5e7eb)] px-2 py-1 text-left font-medium">{cols[0]}</th>
+          <th className="border border-[color:var(--c-b1,#e5e7eb)] px-2 py-1 text-left font-medium">{cols[1]}</th>
+          <th className="border border-[color:var(--c-b1,#e5e7eb)] w-7" />
         </tr></thead>
         <tbody>
           {rows.map((r, i) => (
             <tr key={i}>
-              <td className="border border-gray-200 p-0.5"><input className={inputCls} value={r.name} onChange={e => onChange(rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} /></td>
-              <td className="border border-gray-200 p-0.5"><input className={inputCls} value={r.value} onChange={e => onChange(rows.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} /></td>
-              <td className="border border-gray-200 text-center">
-                <button type="button" className="text-gray-400 hover:text-red-600" onClick={() => onChange(rows.filter((_, j) => j !== i))}><Icon name="X" size={13} /></button>
+              <td className="border border-[color:var(--c-b1,#e5e7eb)] p-0.5"><input className={inputCls} value={r.name} onChange={e => onChange(rows.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} /></td>
+              <td className="border border-[color:var(--c-b1,#e5e7eb)] p-0.5"><input className={inputCls} value={r.value} onChange={e => onChange(rows.map((x, j) => j === i ? { ...x, value: e.target.value } : x))} /></td>
+              <td className="border border-[color:var(--c-b1,#e5e7eb)] text-center">
+                <button type="button" className="text-[color:var(--c-t4,#9ca3af)] hover:text-red-600" onClick={() => onChange(rows.filter((_, j) => j !== i))}><Icon name="X" size={13} /></button>
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       <button type="button" onClick={() => onChange([...rows, { name: "", value: "" }])}
-        className="mt-1 text-[11px] text-blue-600 hover:underline flex items-center gap-1"><Icon name="Plus" size={12} />Добавить строку</button>
+        className="mt-1 text-[11px] text-[color:var(--c-accent,#1e5a7a)] hover:underline flex items-center gap-1"><Icon name="Plus" size={12} />Добавить строку</button>
     </div>
   );
 }
@@ -82,7 +82,7 @@ export default function VdsReportFormView({ form, setForm, gvuBranches }: Props)
 
   return (
     <div>
-      <div className="text-[11px] text-gray-500 mb-2 leading-snug">
+      <div className="text-[11px] text-[color:var(--c-t3,#6b7280)] mb-2 leading-snug">
         Раздел 1 (техническое задание, сведения о руднике) и титульный лист заполняются рудником.
         Разделы 2–4, выводы и рекомендации рассчитываются автоматически по модели вентиляционной сети.
         Данные формы сохраняются для этого проекта.
@@ -136,9 +136,9 @@ export default function VdsReportFormView({ form, setForm, gvuBranches }: Props)
         <Field label="Основное горное оборудование (по строке на позицию)" area rows={4} value={form.equipment} onChange={set("equipment")} />
         <Field label="Действующие горизонты" value={form.horizons} onChange={set("horizons")} />
         <Field label="Преобладающий вид крепления" value={form.supportType} onChange={set("supportType")} />
-        <div className="text-[11px] text-gray-600 font-medium">Характер опасности</div>
+        <div className="text-[11px] text-[color:var(--c-t2,#374151)] font-medium">Характер опасности</div>
         <KvTable rows={form.hazards} onChange={set("hazards")} cols={["Вид опасности", "Оценка"]} />
-        <div className="text-[11px] text-gray-600 font-medium mt-2">Сечение и протяжённость главных выработок</div>
+        <div className="text-[11px] text-[color:var(--c-t2,#374151)] font-medium mt-2">Сечение и протяжённость главных выработок</div>
         <KvTable rows={form.mainWorkings} onChange={set("mainWorkings")} cols={["Выработка", "Параметры (гор., S, L)"]} />
       </Group>
 
@@ -154,7 +154,7 @@ export default function VdsReportFormView({ form, setForm, gvuBranches }: Props)
       <Group title="Параметры ВДС для расчётных разделов" open hint="разделы 2–4">
         <div className="grid grid-cols-3 gap-2">
           <label className="block">
-            <span className="block text-[11px] text-gray-600 mb-0.5">Дата ВДС</span>
+            <span className="block text-[11px] text-[color:var(--c-t2,#374151)] mb-0.5">Дата ВДС</span>
             <input type="date" className={inputCls} value={form.surveyDate} onChange={e => set("surveyDate")(e.target.value)} />
           </label>
           <Field label="Qрасч. по руднику, м³/с (пусто — по забоям схемы)" value={form.requiredAir} onChange={set("requiredAir")} />
@@ -171,17 +171,17 @@ export default function VdsReportFormView({ form, setForm, gvuBranches }: Props)
           <Field label="Цена эл.энергии, руб/кВт·ч" value={form.electricityCost} onChange={set("electricityCost")} />
         </div>
 
-        <div className="text-[11px] text-gray-600 font-medium mt-1">Главные вентиляторные установки (из схемы)</div>
+        <div className="text-[11px] text-[color:var(--c-t2,#374151)] font-medium mt-1">Главные вентиляторные установки (из схемы)</div>
         {gvuBranches.length === 0 && <div className="text-[11px] text-amber-700">В схеме нет работающих ГВУ.</div>}
         {gvuBranches.map(b => {
           const g = gvuInput(b.id);
           return (
-            <div key={b.id} className="border border-gray-200 rounded p-2 bg-gray-50">
-              <div className="text-[12px] font-semibold text-gray-700 mb-1">{b.fanName || "ГВУ"} · {String(b.type || "").replace(/^"(.*)"$/, "$1")}</div>
+            <div key={b.id} className="border border-[color:var(--c-b1,#e5e7eb)] rounded-md p-2 bg-[color:var(--c-s2,#f9fafb)]">
+              <div className="text-[12px] font-semibold text-[color:var(--c-t2,#374151)] mb-1">{b.fanName || "ГВУ"} · {String(b.type || "").replace(/^"(.*)"$/, "$1")}</div>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Место установки" value={g?.place ?? ""} onChange={v => setGvu(b.id, { place: v })} placeholder="Пром. площадка ВХВ …" />
                 <label className="block">
-                  <span className="block text-[11px] text-gray-600 mb-0.5">Кв — внешние утечки по месту установки</span>
+                  <span className="block text-[11px] text-[color:var(--c-t2,#374151)] mb-0.5">Кв — внешние утечки по месту установки</span>
                   <select className={inputCls} value={g?.kv ?? 1.05} onChange={e => setGvu(b.id, { kv: parseFloat(e.target.value) })}>
                     {KV_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
@@ -193,28 +193,28 @@ export default function VdsReportFormView({ form, setForm, gvuBranches }: Props)
           );
         })}
 
-        <div className="text-[11px] text-gray-600 font-medium mt-1">Средства измерения</div>
+        <div className="text-[11px] text-[color:var(--c-t2,#374151)] font-medium mt-1">Средства измерения</div>
         <table className="w-full text-[12px] border-collapse">
-          <thead><tr className="bg-gray-50 text-gray-600">
-            {["Наименование", "Кол-во", "Параметр", "Погрешность", ""].map(t => <th key={t} className="border border-gray-200 px-1 py-1 text-left font-medium">{t}</th>)}
+          <thead><tr className="bg-[color:var(--c-s2,#f9fafb)] text-[color:var(--c-t2,#374151)]">
+            {["Наименование", "Кол-во", "Параметр", "Погрешность", ""].map(t => <th key={t} className="border border-[color:var(--c-b1,#e5e7eb)] px-1 py-1 text-left font-medium">{t}</th>)}
           </tr></thead>
           <tbody>
             {form.instruments.map((r, i) => (
               <tr key={i}>
                 {(["name", "count", "parameter", "accuracy"] as const).map(k => (
-                  <td key={k} className="border border-gray-200 p-0.5">
+                  <td key={k} className="border border-[color:var(--c-b1,#e5e7eb)] p-0.5">
                     <input className={inputCls} value={r[k]} onChange={e => set("instruments")(form.instruments.map((x, j) => j === i ? { ...x, [k]: e.target.value } : x))} />
                   </td>
                 ))}
-                <td className="border border-gray-200 text-center w-7">
-                  <button type="button" className="text-gray-400 hover:text-red-600" onClick={() => set("instruments")(form.instruments.filter((_, j) => j !== i))}><Icon name="X" size={13} /></button>
+                <td className="border border-[color:var(--c-b1,#e5e7eb)] text-center w-7">
+                  <button type="button" className="text-[color:var(--c-t4,#9ca3af)] hover:text-red-600" onClick={() => set("instruments")(form.instruments.filter((_, j) => j !== i))}><Icon name="X" size={13} /></button>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
         <button type="button" onClick={() => set("instruments")([...form.instruments, { name: "", count: "1", parameter: "", accuracy: "" }])}
-          className="text-[11px] text-blue-600 hover:underline flex items-center gap-1"><Icon name="Plus" size={12} />Добавить прибор</button>
+          className="text-[11px] text-[color:var(--c-accent,#1e5a7a)] hover:underline flex items-center gap-1"><Icon name="Plus" size={12} />Добавить прибор</button>
       </Group>
 
       <Group title="Дополнительные выводы и рекомендации">
