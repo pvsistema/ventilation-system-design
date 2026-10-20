@@ -49,6 +49,8 @@ interface Props {
   solved?: boolean;
   /** Перехват клика по ветви на схеме — для ручного выбора ветвей канала. */
   branchPickRef?: MutableRefObject<((branchId: string) => void) | null>;
+  /** Название проекта — для заголовка и имени файла выгрузки. */
+  projectName?: string;
 }
 
 const RHO = 1.2;
@@ -80,18 +82,28 @@ function etaAt(c: FanCurve, q: number, angle: number, k: number) {
 }
 
 function n(s: string): number {
-  const v = parseFloat(String(s).replace(",", "."));
+  const v = parseFloat(String(s).replace(/\s+/g, "").replace(",", "."));
   return Number.isFinite(v) ? v : 0;
 }
 
-export default function VdsChannelSection({ fans, label, branches, nodes, onHighlight, bulkheads, branchPickRef }: Props) {
+// Настройки расчёта сохраняются между открытиями окна и сменой вкладок
+const LS_KEY = "vds.channel.settings";
+function loadSettings(): { lossPct?: string; tariff?: string; hours?: string } {
+  try { return JSON.parse(localStorage.getItem(LS_KEY) || "{}"); } catch { return {}; }
+}
+
+export default function VdsChannelSection({ fans, label, branches, nodes, onHighlight, bulkheads, branchPickRef, projectName }: Props) {
   const gvu = useMemo(() => fans.filter(f => f.fanType === "ГВУ"), [fans]);
   const list = gvu.length ? gvu : fans;
   const [fanId, setFanId] = useState<string>(list[0]?.id ?? "");
   const [qManual, setQManual] = useState("");
-  const [lossPct, setLossPct] = useState("5");
-  const [tariff, setTariff] = useState("6");
-  const [hours, setHours] = useState("8760");
+  const [lossPct, setLossPct] = useState(() => loadSettings().lossPct ?? "5");
+  const [tariff, setTariff] = useState(() => loadSettings().tariff ?? "6");
+  const [hours, setHours] = useState(() => loadSettings().hours ?? "8760");
+  useEffect(() => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify({ lossPct, tariff, hours })); } catch { /* недоступно */ }
+  }, [lossPct, tariff, hours]);
+  const [exporting, setExporting] = useState(false);
   const [vertThr, setVertThr] = useState("60");
   const [routeIds, setRouteIds] = useState<string[]>([]);
   const [showRoute, setShowRoute] = useState(true);
@@ -349,6 +361,9 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const pRec = etaWork > 0 && sForEco > 0 ? (lossAtS(sForEco, qWork) * qWork) / etaWork / 1000 : 0;
   const eFact = pFact * T, eRec = pRec * T;
   const saving = sForEco > 0 ? Math.max(0, eFact - eRec) : 0;
+  const costFact = eFact * price;
+  const costRec = eRec * price;
+  const savingRub = saving * price;
 
   const f = (x: number, d = 2) => (x > 0 ? x.toFixed(d) : "—");
   const nodeNum = (id?: string) => (id ? nodeById.get(id)?.number || id : "?");
@@ -364,11 +379,80 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const angleTxt = (a: number) => `${a > 0 ? "+" : ""}${Number(a.toFixed(1))}°`;
   const fmtInt = (x: number) => Math.round(x).toLocaleString("ru-RU");
 
+  async function doExport() {
+    if (!b) return;
+    setExporting(true);
+    try {
+      const warnings: string[] = [];
+      if (!chain.chain && route.length > 1) warnings.push(chain.problem === "fork" ? "Выбранные ветви образуют развилку — канал должен быть одной линией." : "Выбранные ветви не образуют непрерывную линию (разрыв).");
+      if (chain.chain && ends.start !== "shaft" && ends.end !== "shaft") warnings.push("Сопряжение канала с подземным стволом не найдено.");
+      if (qDesign > 0 && curve && !designReachable) warnings.push(`Вентилятор не обеспечит Q расч = ${qDesign.toFixed(2)} м³/с в данной сети ни при одном угле лопаток (максимум ${qMaxNet.toFixed(2)} м³/с).`);
+      if (!etaReliable && curve) warnings.push("Кривая КПД вентилятора недостоверна — КПД принят из свойств вентилятора или 0,7.");
+      if (zoneOk === false) warnings.push(`Рабочая точка вне зоны экономичной работы: Q раб/Q ном = ${ratio.toFixed(2)}.`);
+      if (recMax.why) warnings.push(`Рекомендуемое сечение при Q расч не определено: ${whyText[recMax.why]}.`);
+      const { exportVentChannelXlsx } = await import("@/lib/ventChannelExcel");
+      await exportVentChannelXlsx({
+        projectName: projectName ?? "",
+        fanLabel: label(b),
+        fanModel: curve?.name || b.fanName || "—",
+        parallel: N,
+        angleNow: hasAngles ? angleTxt(angle) : "—",
+        angleBest: hasAngles ? angleTxt(angleBest) : "—",
+        rpm: curve ? (rpm || curve.rpmNominal) : 0,
+        qManual: qManualV > 0,
+        kLossPct: kLoss * 100,
+        tariff: price,
+        hours: T,
+        qNom, hNom, etaMax,
+        qMaxNow, qMaxPassportBest: qMaxDesign,
+        qNow, hNow, etaNow, rNet,
+        ratio, zoneOk, etaOk, stallOk, hStall: 0.9 * hMaxInst,
+        qDesign, hDesign, etaDesign,
+        sRec, dEq, sRecNote: whyText[recMax.why],
+        qMaxNet, hMaxNet, sRecTop, dEqTop, sRecTopNote: curve ? whyText[recTop.why] : "нет характеристики вентилятора",
+        sFact, narrowName: narrow ? brName(narrow) : "", okSection, okTop,
+        qRecFact: qRecFact.q,
+        qRecFactBy: qRecFact.q <= 0 ? "" : qRecFact.by === "fan" ? "канал не ограничивает вентилятор" : "ограничено потерями в канале",
+        totalL, totalR, rFixed,
+        hFactWork, pctWork, hFactDesign, hRecDesign,
+        vWork, vDesign, hSk,
+        pFact, pRec, eFact, eRec, costFact, costRec, saving, savingRub,
+        route: route.map((x, i) => ({
+          name: brName(x),
+          nodes: chain.chain ? `${nodeNum(rNodes[i])}→${nodeNum(rNodes[i + 1])}` : `${nodeNum(x.fromId)}–${nodeNum(x.toId)}`,
+          length: x.length || 0,
+          area: x.area || 0,
+          angle: Math.round(x.angle ?? 0),
+          rWork: x.resistance || 0,
+          rFull: rFull(x),
+          vWork: x.area > 0 ? qWork / x.area : 0,
+          vDesign: x.area > 0 ? qDesign / x.area : 0,
+          hWork: rFull(x) * qWork * qWork,
+          isFan: x.id === fanId,
+          isNarrow: narrow?.id === x.id,
+        })),
+        routeChain: chain.chain,
+        startNode: nodeNum(firstNode), endNode: nodeNum(lastNode),
+        startKind: END_LABEL[ends.start], endKind: END_LABEL[ends.end],
+        warnings,
+      });
+    } finally {
+      setExporting(false);
+    }
+  }
+
   return (
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5 text-[11.5px]">
         <span className="font-semibold" style={{ color: C.t1 }}>Вентиляционный канал ГВУ — сечение и производительность</span>
         <Info text="Сечение подбирается так, чтобы потери давления в канале были не более заданной доли напора вентилятора. Расчётный расход — рабочая точка по расчёту сети или введённый вручную; напор при нём — по характеристике вентилятора (при введённом Q — текущий угол или ближайший, дающий этот расход). Второй вариант — максимальная производительность: пересечение характеристики вентилятора при угле наибольшего расхода с характеристикой рудника. Рекомендуемая производительность — наибольший расход, который пропускает фактический канал при тех же потерях. Сопротивление ветвей учитывается вместе с вентсооружениями и окном ГВУ, как в расчёте сети (R·Q² — сразу в паскалях). Рабочая точка проверяется по паспортному номиналу текущего угла." />
+        <button onClick={doExport} disabled={!b || exporting || route.length === 0}
+          className="ml-auto flex items-center gap-1.5 px-2.5 py-1 text-[11.5px] rounded-md font-medium disabled:opacity-40 hover:brightness-95"
+          style={{ background: "var(--c-tint-green, #f0fdf4)", border: "1px solid #86efac", color: "var(--c-green-ink, #166534)" }}
+          title="Выгрузить расчёт вентканала и методику в Excel">
+          <Icon name={exporting ? "Loader2" : "FileSpreadsheet"} size={13} className={exporting ? "animate-spin" : undefined} />
+          Excel
+        </button>
       </div>
 
       {/* Исходные данные */}
@@ -574,10 +658,14 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
           <Row k={<span title="H = R·Q² — характеристика рудника по рабочей точке">R сети (рудника)</span>} v={rNet > 0 ? rNet.toFixed(5) : "—"} />
           <Row k={<>h при Q<sub>расч</sub>: факт / рек.</>} v={<>{f(hFactDesign, 0)} / {f(hRecDesign, 0)} Па</>} />
           <Row k="Мощность на потери: факт" v={<>{pFact > 0 ? pFact.toFixed(1) : "—"} кВт</>} />
-          {sForEco > 0 && <Row k="Мощность при S рек" v={<>{pRec > 0 ? pRec.toFixed(1) : "—"} кВт</>} />}
+          <Row k="Затраты на потери: факт" v={costFact > 0 ? <>{fmtInt(costFact)} ₽/год</> : "—"} />
+          {sForEco > 0 && <Row k="Затраты при S рек" v={costRec > 0 ? <>{fmtInt(costRec)} ₽/год</> : "—"} />}
           <Row k="Экономия при S рек" bold color={saving > 0 ? C.green : undefined}
-            v={saving > 0 ? <>{fmtInt(saving * price)} ₽/год</> : "— канал достаточен"} />
-          {saving > 0 && <div className="text-[10.5px] text-right" style={{ color: C.t3 }}>{fmtInt(saving)} кВт·ч/год · {fmtInt(eFact)} → {fmtInt(eRec)}</div>}
+            v={saving > 0 ? <>{fmtInt(savingRub)} ₽/год</> : "— канал достаточен"} />
+          <div className="text-[10.5px] text-right" style={{ color: C.t3 }}>
+            {saving > 0 ? <>{fmtInt(saving)} кВт·ч/год · {fmtInt(eFact)} → {fmtInt(eRec)} · </> : <>{fmtInt(eFact)} кВт·ч/год · </>}
+            тариф {price > 0 ? price.toLocaleString("ru-RU") : "—"} ₽/кВт·ч
+          </div>
         </Card>
       </div>
       <div className="flex items-start gap-1 text-[10.5px] leading-snug" style={{ color: C.t4 }}>

@@ -231,7 +231,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
               stabilityBranches={stabilityBranches}
             />
           ) : tab === "channel" ? (
-            <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} branchPickRef={branchPickRef} />
+            <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} branchPickRef={branchPickRef} projectName={projectName} />
           ) : (
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: C.t2 }}>
