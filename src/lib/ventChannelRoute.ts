@@ -343,3 +343,55 @@ export function classifyEnd(nodeId: string, prevBranchId: string | undefined, br
   if (inc.length > 1) return "fork";
   return "manual";
 }
+
+/**
+ * Упорядочивает произвольный набор ветвей (выбранных вручную на схеме) в
+ * непрерывную линию. Если набор — простая цепочка, ветви выстраиваются от
+ * одного её конца к другому (начало — узел связи с атмосферой, если он на
+ * конце; иначе — сохраняется прежняя ориентация). Если ветви не образуют одну
+ * цепочку (разрыв или развилка), порядок выбора сохраняется, chain = false.
+ */
+export function orderBranchChain(
+  ids: string[],
+  byId: Map<string, TopoBranch>,
+  nodeById: Map<string, TopoNode>,
+  prevFirstNode?: string,
+): { branchIds: string[]; nodeIds: string[]; chain: boolean; problem?: "gap" | "fork" } {
+  const list = ids.map(id => byId.get(id)).filter(Boolean) as TopoBranch[];
+  if (list.length === 0) return { branchIds: [], nodeIds: [], chain: true };
+  if (list.length === 1) {
+    const b = list[0];
+    const flip = (nodeById.get(b.toId)?.atmosphereLink && !nodeById.get(b.fromId)?.atmosphereLink) || prevFirstNode === b.toId;
+    return { branchIds: [b.id], nodeIds: flip ? [b.toId, b.fromId] : [b.fromId, b.toId], chain: true };
+  }
+  const deg = new Map<string, TopoBranch[]>();
+  for (const b of list) for (const n of [b.fromId, b.toId]) {
+    if (!deg.has(n)) deg.set(n, []);
+    deg.get(n)!.push(b);
+  }
+  if ([...deg.values()].some(v => v.length > 2)) {
+    return { branchIds: list.map(b => b.id), nodeIds: [], chain: false, problem: "fork" };
+  }
+  const endsN = [...deg.entries()].filter(([, v]) => v.length === 1).map(([k]) => k);
+  if (endsN.length !== 2) {
+    return { branchIds: list.map(b => b.id), nodeIds: [], chain: false, problem: "gap" };
+  }
+  let start = endsN[0];
+  const atm = (n: string) => !!nodeById.get(n)?.atmosphereLink;
+  if (atm(endsN[1]) && !atm(endsN[0])) start = endsN[1];
+  else if (!atm(endsN[0]) && prevFirstNode && endsN.includes(prevFirstNode)) start = prevFirstNode;
+  const outIds: string[] = [];
+  const outNodes: string[] = [start];
+  const used = new Set<string>();
+  let u = start;
+  for (let i = 0; i < list.length; i++) {
+    const e = (deg.get(u) ?? []).find(x => !used.has(x.id));
+    if (!e) break;
+    used.add(e.id); outIds.push(e.id);
+    u = other(e, u); outNodes.push(u);
+  }
+  if (outIds.length !== list.length) {
+    return { branchIds: list.map(b => b.id), nodeIds: [], chain: false, problem: "gap" };
+  }
+  return { branchIds: outIds, nodeIds: outNodes, chain: true };
+}

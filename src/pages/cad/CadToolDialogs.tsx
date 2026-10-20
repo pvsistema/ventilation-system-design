@@ -171,6 +171,8 @@ export interface CadToolDialogsProps {
   setShowVds: (v: boolean) => void;
   /** Сведения о вентсооружениях по ветвям (для «Отчёта ВДС») */
   vdsBulkheads?: Map<string, BranchBulkheadInfo>;
+  /** Перехват клика по ветви схемы окном ВДС (ручной выбор ветвей вентканала). */
+  vdsBranchPickRef?: React.MutableRefObject<((branchId: string) => void) | null>;
   // Взрывоопасность рудничной атмосферы (Приложение № 11)
   showExplosibility: boolean;
   setShowExplosibility: (v: boolean) => void;
@@ -462,6 +464,7 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           onClose={() => { p.setDepressogramHighlight([]); p.setShowVds(false); }}
           onHighlightBranches={p.setDepressogramHighlight}
           bulkheads={p.vdsBulkheads}
+          branchPickRef={p.vdsBranchPickRef}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
           license={p.license}
           stabilityBranches={p.branchesWithTotalDep ?? p.branches}

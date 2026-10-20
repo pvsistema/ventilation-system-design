@@ -150,6 +150,7 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
     bulkheadRByBranch,
     branchesWithTotalDep,
     vdsBulkheads,
+    vdsBranchPickRef,
     ventSections,
     setVentSections,
     ventNorms,
@@ -548,6 +549,7 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
       showVds={showVds}
       setShowVds={setShowVds}
       vdsBulkheads={vdsBulkheads}
+      vdsBranchPickRef={vdsBranchPickRef}
       showExplosibility={showExplosibility}
       setShowExplosibility={setShowExplosibility}
       solveResult={solveResult}

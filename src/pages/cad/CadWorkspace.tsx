@@ -75,6 +75,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     setFireCalcDone,
     rescuePickMode,
     rescuePickHandlerRef,
+    vdsBranchPickRef,
     rescuePathBranchIds,
     rescuePathBranchDirs,
     rescuePathNodeIds,
@@ -904,6 +905,10 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 setSelectedNodeId(id); setSelectedNodeIds(new Set()); setSelectedSymbolId(null); setSelectedSymbolIds(new Set()); if (id) { setSelectedBranchId(null); setActiveSide("params"); }
               }}
               onSelectBranch={(id) => {
+                if (id && vdsBranchPickRef.current) {
+                  vdsBranchPickRef.current(id);
+                  return;
+                }
                 if (inspectionBindMode && selectedInspectionRouteId && id) {
                   // Режим МПО: клик добавляет выработку в конец маршрута или убирает её
                   setInspectionRoutes(prev => prev.map(r => {

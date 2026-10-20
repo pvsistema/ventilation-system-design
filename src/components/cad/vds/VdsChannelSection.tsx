@@ -22,7 +22,7 @@
 // Канал — это МАРШРУТ: ветвь с вентилятором + последовательные ветви до
 // сопряжения с вертикальным стволом (и до поверхности с другой стороны).
 // ─────────────────────────────────────────────────────────────────────────────
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import { getFanById, fanQMax, fanCurveAtAngle, fanHAngle, fanEfficiencyAngle, type FanCurve } from "@/lib/fanCurves";
@@ -30,7 +30,7 @@ import { PA_PER_MM_H2O } from "@/lib/aerodynamics";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
 import { C, Card, Field, Info, INP, INP_STYLE, Kpi, MiniBtn, Note, Row } from "@/components/cad/vds/vdsUi";
 import {
-  traceChannelRoute, routeNodes, buildAdjacency, END_LABEL, isVertical, routeBetweenNodes, classifyEnd,
+  traceChannelRoute, buildAdjacency, END_LABEL, isVertical, classifyEnd, orderBranchChain,
   type RouteEndKind,
 } from "@/lib/ventChannelRoute";
 
@@ -45,6 +45,8 @@ interface Props {
   bulkheads?: Map<string, BranchBulkheadInfo>;
   /** Расчёт сети выполнен — маршрут строится по расходу и ходу струи. */
   solved?: boolean;
+  /** Перехват клика по ветви на схеме — для ручного выбора ветвей канала. */
+  branchPickRef?: MutableRefObject<((branchId: string) => void) | null>;
 }
 
 const RHO = 1.2;
@@ -80,7 +82,7 @@ function n(s: string): number {
   return Number.isFinite(v) ? v : 0;
 }
 
-export default function VdsChannelSection({ fans, label, branches, nodes, onHighlight, bulkheads, solved }: Props) {
+export default function VdsChannelSection({ fans, label, branches, nodes, onHighlight, bulkheads, branchPickRef }: Props) {
   const gvu = useMemo(() => fans.filter(f => f.fanType === "ГВУ"), [fans]);
   const list = gvu.length ? gvu : fans;
   const [fanId, setFanId] = useState<string>(list[0]?.id ?? "");
@@ -90,27 +92,10 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const [hours, setHours] = useState("8760");
   const [vertThr, setVertThr] = useState("60");
   const [routeIds, setRouteIds] = useState<string[]>([]);
-  const [ends, setEnds] = useState<{ start: RouteEndKind; end: RouteEndKind }>({ start: "dead", end: "dead" });
   const [showRoute, setShowRoute] = useState(true);
   const [highlight, setHighlight] = useState(true);
-  // Узлы А и Б — границы канала, выбранные пользователем ("" — не задан)
-  const [nodeA, setNodeA] = useState("");
-  const [nodeB, setNodeB] = useState("");
-  const [abError, setAbError] = useState("");
-  const [abNote, setAbNote] = useState<{ text: string; warn: boolean } | null>(null);
-  // Закрытые для воздуха ветви: есть сооружение, и это не открытая дверь и
-  // не окно/проём. Без сведений о сооружениях — по признаку ветви.
-  const closedIds = useMemo(() => {
-    const out = new Set<string>();
-    for (const br of branches) {
-      const info = bulkheads?.get(br.id);
-      if (info) {
-        if (info.present && !info.allOpen && !info.hasWindow) out.add(br.id);
-      } else if (br.hasBulkhead) out.add(br.id);
-    }
-    return out;
-  }, [branches, bulkheads]);
-
+  // Ручной выбор ветвей кликом по схеме (окно остаётся открытым)
+  const [picking, setPicking] = useState(false);
   const byId = useMemo(() => new Map(branches.map(x => [x.id, x] as const)), [branches]);
   const nodeById = useMemo(() => new Map(nodes.map(x => [x.id, x] as const)), [nodes]);
   const adj = useMemo(() => buildAdjacency(branches), [branches]);
@@ -120,63 +105,29 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
 
   // Автотрассировка при смене вентилятора / порога вертикальности
   function autoTrace() {
-    setAbError(""); setAbNote(null);
     if (!b) { setRouteIds([]); return; }
     const r = traceChannelRoute(b, branches, nodes, thr);
     setRouteIds(r.branchIds);
-    setEnds({ start: r.start.kind, end: r.end.kind });
-    const nIds = r.nodeIds;
-    setNodeA(nIds[0] ?? "");
-    setNodeB(nIds[nIds.length - 1] ?? "");
   }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(autoTrace, [fanId, thr]);
 
-  // Маршрут между выбранными узлами А и Б (кратчайший путь через вентилятор)
-  function traceAB(a: string, bb: string) {
-    setNodeA(a); setNodeB(bb);
-    if (!b || !a || !bb) return;
-    if (a === bb) { setAbError("Узлы А и Б совпадают"); return; }
-    const r = routeBetweenNodes(b, a, bb, branches, { closed: closedIds, solved });
-    if (!r) { setAbNote(null); setAbError("Нет пути от узла А к узлу Б через ветвь вентилятора"); return; }
-    setAbError("");
-    const fq = (v: number) => v.toLocaleString("ru-RU", { maximumFractionDigits: 2 });
-    setAbNote(
-      r.mode === "flow"
-        ? { text: `Маршрут по главной струе: наименьший расход на пути ${fq(r.minQ)} м³/с, длина ${fq(r.length)} м`, warn: false }
-        : r.mode === "open"
-          ? {
-              text: solved
-                ? "По ходу струи от А до Б пути нет — маршрут проложен по открытым выработкам без учёта направления. Проверьте, что узлы лежат на струе вентилятора."
-                : "Расчёт сети не выполнен — маршрут проложен по открытым выработкам (в обход закрытых перемычек) по наименьшей длине. Выполните расчёт, чтобы учесть расход и ход струи.",
-              warn: true,
-            }
-          : { text: "Пройти можно только через закрытые перемычки — маршрут кратчайший по длине. Проверьте выбор узлов А и Б.", warn: true },
-    );
-    setRouteIds(r.branchIds);
-    setEnds({
-      start: classifyEnd(a, r.branchIds[0], branches, nodes, thr),
-      end: classifyEnd(bb, r.branchIds[r.branchIds.length - 1], branches, nodes, thr),
-    });
+  // Состав канала: ветвь в списке — убрать, нет — добавить.
+  // Ветвь вентилятора из канала не убирается.
+  function toggleBranch(id: string) {
+    if (id === fanId) return;
+    setRouteIds(prev => (prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]));
   }
+  const toggleRef = useRef(toggleBranch);
+  toggleRef.current = toggleBranch;
+  useEffect(() => {
+    if (!branchPickRef) return;
+    branchPickRef.current = picking ? (id: string) => toggleRef.current(id) : null;
+    return () => { branchPickRef.current = null; };
+  }, [picking, branchPickRef]);
 
-  // Узлы для выбора А/Б: связная часть сети вокруг вентилятора, по номеру
-  const nodeOptions = useMemo(() => {
-    if (!b) return [] as TopoNode[];
-    const seen = new Set<string>([b.fromId, b.toId]);
-    const stack = [b.fromId, b.toId];
-    while (stack.length && seen.size < 5000) {
-      const u = stack.pop()!;
-      for (const e of adj.get(u) ?? []) {
-        const w = e.fromId === u ? e.toId : e.fromId;
-        if (!seen.has(w)) { seen.add(w); stack.push(w); }
-      }
-    }
-    const num = (x: TopoNode) => { const v = parseFloat(x.number); return Number.isFinite(v) ? v : Infinity; };
-    return nodes.filter(x => seen.has(x.id)).sort((p, q) => num(p) - num(q) || String(p.number).localeCompare(String(q.number)));
-  }, [b, adj, nodes]);
-
-  const route = useMemo(() => routeIds.map(id => byId.get(id)).filter(Boolean) as TopoBranch[], [routeIds, byId]);
+  const routeOrdered = useMemo(() => orderBranchChain(routeIds, byId, nodeById).branchIds, [routeIds, byId, nodeById]);
+  const route = useMemo(() => routeOrdered.map(id => byId.get(id)).filter(Boolean) as TopoBranch[], [routeOrdered, byId]);
 
   // Подсветка маршрута на схеме — синхронно с составом маршрута.
   // При размонтировании блока (закрытие окна / смена вкладки) снимаем.
@@ -187,9 +138,14 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   }, [routeKey, highlight]);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => () => onHighlight?.([]), []);
-  const rNodes = useMemo(() => routeNodes(routeIds, byId), [routeIds, byId]);
-  const firstNode = rNodes[0];
-  const lastNode = rNodes[rNodes.length - 1];
+  const chain = useMemo(() => orderBranchChain(routeIds, byId, nodeById), [routeIds, byId, nodeById]);
+  const rNodes = chain.nodeIds;
+  const firstNode = chain.chain ? rNodes[0] : undefined;
+  const lastNode = chain.chain ? rNodes[rNodes.length - 1] : undefined;
+  const ends = useMemo(() => ({
+    start: firstNode ? classifyEnd(firstNode, route[0]?.id, branches, nodes, thr) : ("dead" as RouteEndKind),
+    end: lastNode ? classifyEnd(lastNode, route[route.length - 1]?.id, branches, nodes, thr) : ("dead" as RouteEndKind),
+  }), [firstNode, lastNode, route, branches, nodes, thr]);
 
   // Кандидаты для продления маршрута на концах
   const candidates = (nodeId: string | undefined) =>
@@ -197,27 +153,14 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const startCand = candidates(firstNode);
   const endCand = candidates(lastNode);
 
-  function extend(side: "start" | "end", id: string) {
-    const ids = side === "start" ? [id, ...routeIds] : [...routeIds, id];
-    setRouteIds(ids);
-    const nn = routeNodes(ids, byId);
-    const node = side === "start" ? nn[0] : nn[nn.length - 1];
-    setEnds(e => ({ ...e, [side]: classifyEnd(node, id, branches, nodes, thr) }));
-    if (side === "start") setNodeA(node); else setNodeB(node);
-    setAbError(""); setAbNote(null);
+  function extend(_side: "start" | "end", id: string) {
+    setRouteIds(prev => (prev.includes(id) ? prev : [...prev, id]));
   }
   function trim(side: "start" | "end") {
-    if (routeIds.length <= 1) return;
-    const cut = side === "start" ? routeIds[0] : routeIds[routeIds.length - 1];
-    if (cut === fanId) return; // ветвь вентилятора не удаляем
-    const ids = side === "start" ? routeIds.slice(1) : routeIds.slice(0, -1);
-    setRouteIds(ids);
-    const nn = routeNodes(ids, byId);
-    const node = side === "start" ? nn[0] : nn[nn.length - 1];
-    const edgeBr = side === "start" ? ids[0] : ids[ids.length - 1];
-    setEnds(e => ({ ...e, [side]: classifyEnd(node, edgeBr, branches, nodes, thr) }));
-    if (side === "start") setNodeA(node); else setNodeB(node);
-    setAbError(""); setAbNote(null);
+    if (route.length <= 1) return;
+    const cut = side === "start" ? route[0].id : route[route.length - 1].id;
+    if (cut === fanId) return;
+    setRouteIds(prev => prev.filter(x => x !== cut));
   }
 
   const curve = b?.fanCurveId ? getFanById(b.fanCurveId) : undefined;
@@ -361,16 +304,33 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
             </div>
           }>
           <div className="flex flex-wrap items-center gap-1.5 text-[11px]">
-            <NodePick label="А" value={nodeA} options={nodeOptions} onChange={v => traceAB(v, nodeB)} />
-            <button onClick={() => traceAB(nodeB, nodeA)} title="Поменять А и Б местами" className="rounded-md px-1 py-0.5 hover:bg-black/5" style={{ color: C.t3 }}>
-              <Icon name="ArrowLeftRight" size={12} />
+            <button onClick={() => setPicking(v => !v)} disabled={!branchPickRef}
+              className="flex items-center gap-1.5 px-2 py-1 rounded-md font-medium disabled:opacity-40"
+              style={picking
+                ? { background: C.accent, color: "#fff", border: `1px solid ${C.accent}` }
+                : { background: C.tintBlue, color: C.accent, border: `1px solid ${C.accent}` }}
+              title="Включите и щёлкайте по ветвям на схеме: щелчок добавляет ветвь в канал, повторный — убирает">
+              <Icon name={picking ? "MousePointerClick" : "MousePointer2"} size={13} />
+              {picking ? "Выбор на схеме: вкл — щёлкайте по ветвям" : "Выбрать ветви на схеме"}
             </button>
-            <NodePick label="Б" value={nodeB} options={nodeOptions} onChange={v => traceAB(nodeA, v)} />
-            <Info text="Маршрут между узлами А и Б строится по главной струе через ветвь вентилятора, в обход закрытых перемычек." />
+            {picking && (
+              <MiniBtn onClick={() => setPicking(false)} title="Завершить выбор"><Icon name="Check" size={12} /> Готово</MiniBtn>
+            )}
+            <MiniBtn onClick={() => setRouteIds(b ? [b.id] : [])} title="Оставить в канале только ветвь вентилятора">
+              <Icon name="Eraser" size={12} /> Очистить
+            </MiniBtn>
+            <Info text="Состав канала задаётся вручную: включите выбор и щёлкайте по ветвям на схеме, окно расчёта остаётся открытым. Ветви выстраиваются в линию автоматически. «Авто» — трассировка от вентилятора до развилки/ствола." />
           </div>
-          {(abError || abNote) && (
+          {picking && (
+            <div className="mt-1.5"><Note tone="green">Режим выбора включён: щелчок по ветви на схеме добавляет её в канал, повторный щелчок — убирает. Сейчас в канале: {route.length} ветв.</Note></div>
+          )}
+          {!chain.chain && route.length > 1 && (
             <div className="mt-1.5">
-              {abError ? <Note tone="red">{abError}</Note> : abNote && <Note tone={abNote.warn ? "amber" : "green"}>{abNote.text}</Note>}
+              <Note tone="amber">
+                {chain.problem === "fork"
+                  ? "Выбранные ветви образуют развилку — канал должен быть одной линией. Уберите лишние ветви."
+                  : "Выбранные ветви не образуют непрерывную линию — между ними разрыв. Добавьте недостающие ветви."}
+              </Note>
             </div>
           )}
 
@@ -378,7 +338,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
             <>
               <div className="mt-1.5">
                 <RouteEndRow title="Начало" node={nodeNum(firstNode)} badge={endBadge(ends.start)}
-                  cand={startCand} brName={brName} nodeNum={nodeNum} canTrim={route.length > 1 && routeIds[0] !== fanId}
+                  cand={startCand} brName={brName} nodeNum={nodeNum} canTrim={route.length > 1 && route[0]?.id !== fanId}
                   onAdd={id => extend("start", id)} onTrim={() => trim("start")} thr={thr} />
               </div>
               <table className="w-full text-[11px] my-1">
@@ -393,6 +353,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
                     <th className="font-normal text-right">V<sub>ном</sub></th>
                     <th className="font-normal text-right">V<sub>max</sub></th>
                     <th className="font-normal text-right">h, Па</th>
+                    <th className="w-5"></th>
                   </tr>
                 </thead>
                 <tbody>
@@ -409,23 +370,30 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
                           {brName(x)}
                           {isNarrow && <span className="ml-1 text-[10px] px-1 rounded" style={{ color: C.amber, border: `1px solid ${C.amber}` }}>узкое</span>}
                         </td>
-                        <td style={{ color: C.t3 }}>{nodeNum(rNodes[i])}→{nodeNum(rNodes[i + 1])}</td>
+                        <td style={{ color: C.t3 }}>{chain.chain ? `${nodeNum(rNodes[i])}→${nodeNum(rNodes[i + 1])}` : `${nodeNum(x.fromId)}–${nodeNum(x.toId)}`}</td>
                         <td className="text-right">{f(x.length, 1)}</td>
                         <td className="text-right">{f(x.area)}</td>
                         <td className="text-right" style={{ color: C.t3 }}>{(x.angle ?? 0).toFixed(0)}</td>
                         <td className="text-right">{f(vn)}</td>
                         <td className="text-right" style={{ color: C.t3 }}>{f(v)}</td>
                         <td className="text-right">{f((x.resistance || 0) * qNom * qNom * PA_PER_MM_H2O, 1)}</td>
+                        <td className="text-right w-5">
+                          {!isFan && (
+                            <button onClick={() => toggleBranch(x.id)} title="Убрать из канала" className="rounded p-0.5 hover:bg-black/5" style={{ color: C.t4 }}>
+                              <Icon name="X" size={11} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
               <RouteEndRow title="Конец" node={nodeNum(lastNode)} badge={endBadge(ends.end)}
-                cand={endCand} brName={brName} nodeNum={nodeNum} canTrim={route.length > 1 && routeIds[routeIds.length - 1] !== fanId}
+                cand={endCand} brName={brName} nodeNum={nodeNum} canTrim={route.length > 1 && route[route.length - 1]?.id !== fanId}
                 onAdd={id => extend("end", id)} onTrim={() => trim("end")} thr={thr} />
-              {ends.start !== "shaft" && ends.end !== "shaft" && (
-                <div className="mt-1.5"><Note tone="amber">Сопряжение с подземным стволом не найдено — выберите узлы А и Б вручную.</Note></div>
+              {chain.chain && ends.start !== "shaft" && ends.end !== "shaft" && (
+                <div className="mt-1.5"><Note tone="amber">Сопряжение с подземным стволом не найдено — добавьте ветви канала до ствола (кнопка «Выбрать ветви на схеме»).</Note></div>
               )}
             </>
           )}
@@ -471,24 +439,6 @@ function Check({ ok, text, bad }: { ok: boolean | null; text: string; bad: strin
       {text}
       {ok !== null && <Icon name={ok ? "Check" : "AlertTriangle"} size={11} />}
     </span>
-  );
-}
-
-function NodePick({ label, value, options, onChange }: {
-  label: string; value: string; options: TopoNode[]; onChange: (id: string) => void;
-}) {
-  return (
-    <label className="flex items-center gap-1">
-      <span className="inline-flex items-center justify-center w-4 h-4 rounded-full text-[10px] font-bold text-white" style={{ background: label === "А" ? "#2563eb" : "#16a34a" }}>{label}</span>
-      <select className="px-1 py-0.5 text-[11px] rounded-md max-w-[200px]" style={INP_STYLE} value={value} onChange={e => onChange(e.target.value)}>
-        <option value="">—</option>
-        {options.map(o => (
-          <option key={o.id} value={o.id}>
-            {o.number || o.id}{o.name ? ` · ${o.name}` : ""}{o.atmosphereLink ? " (поверхность)" : ""}
-          </option>
-        ))}
-      </select>
-    </label>
   );
 }
 

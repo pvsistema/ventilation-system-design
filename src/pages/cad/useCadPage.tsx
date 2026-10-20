@@ -1208,6 +1208,8 @@ export function useCadPage() {
   const [rescueStartNodeId, setRescueStartNodeId] = useState("");
   const [rescueTargetNodeId, setRescueTargetNodeId] = useState("");
   const rescuePickHandlerRef = React.useRef<((nodeId: string) => void) | null>(null);
+  // ВДС → вентканал: пока открыт режим выбора, клик по ветви схемы уходит в окно расчёта
+  const vdsBranchPickRef = React.useRef<((branchId: string) => void) | null>(null);
   const [rescuePathBranchIds, setRescuePathBranchIds] = useState<Set<string>>(new Set());
   const [rescuePathBranchDirs, setRescuePathBranchDirs] = useState<Map<string, boolean>>(new Map());
   const [rescuePathNodeIds, setRescuePathNodeIds] = useState<Set<string>>(new Set());
@@ -6159,6 +6161,7 @@ export function useCadPage() {
     rescueTargetNodeId,
     setRescueTargetNodeId,
     rescuePickHandlerRef,
+    vdsBranchPickRef,
     rescuePathBranchIds,
     setRescuePathBranchIds,
     rescuePathBranchDirs,

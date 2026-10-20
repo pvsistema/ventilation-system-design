@@ -20,6 +20,7 @@
 // добавлять другие расчёты по схеме (каждый в свой блок).
 // ─────────────────────────────────────────────────────────────────────────────
 import { useMemo, useState } from "react";
+import type { MutableRefObject } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
 import type { BranchBulkheadInfo } from "@/lib/branchBulkheadInfo";
@@ -44,6 +45,8 @@ interface Props {
   onHighlightBranches?: (ids: string[]) => void;
   /** Вкладка, открытая при показе окна. */
   initialTab?: "opening" | "channel" | "report";
+  /** Перехват клика по ветви на схеме (ручной выбор ветвей вентканала). */
+  branchPickRef?: MutableRefObject<((branchId: string) => void) | null>;
 }
 
 interface GvuRow {
@@ -71,7 +74,7 @@ function classify(a: number): { label: string; color: string } {
   return { label: "Легкопроветриваемая", color: "var(--c-green, #16a34a)" };
 }
 
-export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches, onHighlightBranches, initialTab = "opening" }: Props) {
+export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches, onHighlightBranches, initialTab = "opening", branchPickRef }: Props) {
   const [tab, setTab] = useState<"opening" | "channel" | "report">(initialTab);
   // Окно перетаскивается за шапку, положение запоминается между открытиями.
   // Ограничение по краю экрана считаем по большей ширине (вкладка «Отчёт ВДС»).
@@ -158,14 +161,10 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
 
   return (
     <div
-      className="fixed inset-0 z-[200]"
-      style={{ background: "rgba(15,23,42,0.28)" }}
-      onMouseDown={e => {
-        if (e.target === e.currentTarget) onClose();
-      }}
+      className="fixed inset-0 z-[200] pointer-events-none"
     >
       <div
-        className="rounded-xl shadow-2xl flex flex-col overflow-hidden"
+        className="rounded-xl shadow-2xl flex flex-col overflow-hidden pointer-events-auto"
         onKeyDown={e => { if (e.key === "Escape") onClose(); }}
         style={{
           position: "fixed",
@@ -232,7 +231,7 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
               stabilityBranches={stabilityBranches}
             />
           ) : tab === "channel" ? (
-            <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} />
+            <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} branchPickRef={branchPickRef} />
           ) : (
             <div className="flex flex-col gap-2">
               <div className="flex items-center gap-1.5 text-[11.5px]" style={{ color: C.t2 }}>
