@@ -3,10 +3,15 @@
 // в НОМИНАЛЬНОЙ (оптимальной) точке: максимальный КПД, без вибрации и
 // перегрузки подшипников, без срыва потока; с экономичными потерями в канале.
 //
-// 1. Расчётный режим — максимальная производительность при НАИБОЛЬШЕМ угле
-//    лопаток (или введённый расход); H и η — с той же характеристики.
-//    Установка из N вентиляторов в параллель: H_уст(Q) = N·H(Q/N) — как в
-//    расчёте сети.
+// 1. Расчётный режим: Q_расч — введённый необходимый расход, а если поле
+//    пустое — РАБОЧАЯ ТОЧКА вентилятора по расчёту сети (Q_раб, H_раб).
+//    При вводе Q напор H_расч — по характеристике вентилятора при этом
+//    расходе (текущий угол; если расход за его пределом — ближайший угол,
+//    который его даёт). Отдельно проверяется, хватит ли напора на рудник
+//    (H_треб = R_сети·Q², R_сети = H_раб/Q_раб²) и какой угол для этого нужен.
+//    Режим максимальной производительности — пересечение характеристики при
+//    угле наибольшего расхода с характеристикой рудника.
+//    Установка из N вентиляторов в параллель: H_уст(Q) = N·H(Q/N).
 // 2. Сопротивление: R ветвей + вентсооружения + окно/перемычка ГВУ, в Н·с²/м⁸
 //    (R·Q² — сразу паскали, без ×9,81 — так же считает расчёт сети).
 //    S_рек: R_пер·(S_i/S)^2,5 + R_пост = k·H_расч / Q_расч².
@@ -166,18 +171,24 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const rpm = b?.fanRpm ?? 0;
   const kRpm = curve && rpm > 0 && curve.rpmNominal > 0 ? rpm / curve.rpmNominal : 1;
 
-  // Наибольший угол лопаток (если у вентилятора есть регулирование углом)
+  // Углы лопаток вентилятора (если есть регулирование углом)
   const angleList = curve
     ? (curve.angleCurves && curve.angleCurves.length > 0 ? curve.angleCurves.map(x => x.angle) : (curve.bladeAngles ?? []))
     : [];
   const hasAngles = angleList.length >= 2;
-  const angleMax = hasAngles ? Math.max(...angleList) : angle;
 
   // Характеристика УСТАНОВКИ из N вентиляторов в параллель — так же, как в
   // расчёте сети: каждый пропускает Q/N, напор установки N·H(Q/N).
   const hInst = (q: number, a: number) => (curve ? N * fanHAngle(curve, q / N, a, rpm) : 0);
   const etaInst = (q: number, a: number) => (curve ? fanEfficiencyAngle(curve, q / N / kRpm, a) : 0);
   const qMaxAt = (a: number) => (curve ? fanQMax(curve, a, rpm) * N : 0);
+
+  // Угол максимальной производительности — тот, у которого наибольший
+  // паспортный расход (а не просто наибольший по номеру: у пользовательских
+  // характеристик крайний угол может давать меньший расход).
+  const angleBest = hasAngles
+    ? angleList.reduce((best, a) => (qMaxAt(a) > qMaxAt(best) ? a : best), angleList[0])
+    : angle;
 
   // Паспортная номинальная точка при ТЕКУЩЕМ угле (η = max)
   const nom = b && curve ? nominalPoint(curve, angle, rpm) : null;
@@ -189,16 +200,55 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const qMaxNow = qMaxAt(angle);
   const hMaxInst = nom ? nom.hMax * N : 0;
 
-  // Расчётный режим для подбора сечения: максимальная производительность
-  // при наибольшем угле лопаток. Введённый вручную расход заменяет её, а напор
-  // и КПД берутся с той же характеристики при этом расходе.
-  const qMaxDesign = curve ? qMaxAt(angleMax) : 0;
+  // ── Рабочая точка по расчёту сети ──
+  const qNow = Math.abs(b?.flow ?? 0);
+  const hNow = Math.abs(b?.fanPressure ?? 0);
+  // Характеристика сети, на которую работает вентилятор: H = R_сети·Q².
+  // По ней определяется напор при любом другом расходе (рудник требует
+  // больше депрессии при большем расходе).
+  const rNet = qNow > 0.01 && hNow > 0 ? hNow / (qNow * qNow) : 0;
+
+  // ── Режим 1: расчётный расход ──
+  // Пусто — рабочая точка по расчёту сети (Q_раб, H_раб). Введён вручную —
+  // напор, который вентилятор развивает при этом расходе по своей
+  // характеристике: при текущем угле, а если расход за его паспортным
+  // пределом — при ближайшем угле, который этот расход обеспечивает.
   const qManualV = n(qManual);
-  const qDesign = qManualV > 0 ? qManualV : (qMaxDesign > 0 ? qMaxDesign : Math.abs(b?.flow ?? 0));
-  const hDesign = curve ? hInst(qDesign, angleMax) : Math.abs(b?.fanPressure ?? 0);
-  const etaDesignRaw = curve && etaReliable ? etaInst(qDesign, angleMax) : 0;
-  const etaDesign = etaDesignRaw > 0.05 ? etaDesignRaw : etaMax;
-  const qDesignOverMax = curve != null && qManualV > 0 && qManualV > qMaxDesign * 1.001;
+  const qDesign = qManualV > 0 ? qManualV : qNow;
+  const angleForQ = (() => {
+    if (!curve || !(qDesign > 0)) return null;
+    const cand = (hasAngles ? angleList : [angle]).filter(a => qDesign <= qMaxAt(a) * 1.001);
+    if (cand.length === 0) return null;
+    return cand.reduce((m, a) => (Math.abs(a - angle) < Math.abs(m - angle) ? a : m), cand[0]);
+  })();
+  const angleDesign = angleForQ ?? angle;
+  const hDesign = qManualV > 0
+    ? (curve ? hInst(qDesign, angleDesign) : hNow)
+    : hNow;
+  // Хватит ли напора на рудник: требуемая депрессия при Q_расч — R_сети·Q²
+  const hNeedNet = rNet > 0 && qDesign > 0 ? rNet * qDesign * qDesign : 0;
+  const angleForDesign = (() => {
+    if (!curve || !(qDesign > 0 && hNeedNet > 0)) return angleForQ;
+    const cand = (hasAngles ? angleList : [angle]).filter(a => qDesign <= qMaxAt(a) * 1.001 && hInst(qDesign, a) >= hNeedNet * 0.98);
+    if (cand.length === 0) return null;
+    return cand.reduce((m, a) => (Math.abs(a - angle) < Math.abs(m - angle) ? a : m), cand[0]);
+  })();
+  const designReachable = !curve || angleForDesign !== null;
+
+  // ── Режим 2: максимальная производительность в этой сети ──
+  // Пересечение характеристики вентилятора при угле максимальной
+  // производительности с характеристикой сети R_сети·Q².
+  const qMaxDesign = curve ? qMaxAt(angleBest) : 0;
+  const qMaxNet = (() => {
+    if (!curve) return 0;
+    if (!(rNet > 0)) return qMaxDesign;
+    const g = (q: number) => hInst(q, angleBest) - rNet * q * q;
+    if (g(qMaxDesign) >= 0) return qMaxDesign;
+    let lo = 0, hi = qMaxDesign;
+    for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2; if (g(m) >= 0) lo = m; else hi = m; }
+    return lo;
+  })();
+  const hMaxNet = curve ? hInst(qMaxNet, angleBest) : 0;
 
   const kLoss = n(lossPct) / 100;
 
@@ -228,16 +278,31 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const lossAtS = (S: number, q: number) => rAtS(S) * q * q;
 
   // Сечение, при котором потери в канале = k·H при расходе q
-  const sectionFor = (q: number, h: number): { s: number; impossible: boolean } => {
-    if (!(q > 0 && h > 0 && kLoss > 0 && kRoute > 0)) return { s: 0, impossible: false };
+  type SecRes = { s: number; why: "" | "impossible" | "noQ" | "noH" | "noR" | "noK" };
+  const sectionFor = (q: number, h: number): SecRes => {
+    if (!(q > 0)) return { s: 0, why: "noQ" };
+    if (!(h > 0)) return { s: 0, why: "noH" };
+    if (!(kLoss > 0)) return { s: 0, why: "noK" };
+    if (!(kRoute > 0)) return { s: 0, why: "noR" };
     const rAllowed = (kLoss * h) / (q * q) - rFixed;
-    if (rAllowed <= 0) return { s: 0, impossible: true };
-    return { s: Math.pow(kRoute / rAllowed, 1 / 2.5), impossible: false };
+    if (rAllowed <= 0) return { s: 0, why: "impossible" };
+    return { s: Math.pow(kRoute / rAllowed, 1 / 2.5), why: "" };
+  };
+  const whyText: Record<SecRes["why"], string> = {
+    "": "",
+    impossible: "сооружения на канале сами дают потери больше допустимых",
+    noQ: "нет расхода — выполните расчёт сети или введите Q",
+    noH: "нет напора — выполните расчёт сети",
+    noR: "у ветвей канала нет сопротивления или сечения",
+    noK: "задайте допустимые потери, %",
   };
   const recMax = sectionFor(qDesign, hDesign);
   const sRec = recMax.s;
-  const recNom = sectionFor(qNom, hNom);
+  const recTop = sectionFor(qMaxNet, hMaxNet);
+  const sRecTop = recTop.s;
   const dEq = sRec > 0 ? Math.sqrt((4 * sRec) / Math.PI) : 0;
+  const dEqTop = sRecTop > 0 ? Math.sqrt((4 * sRecTop) / Math.PI) : 0;
+  const okTop = sFact > 0 && sRecTop > 0 ? sFact >= sRecTop * 0.98 : null;
   const okSection = sFact > 0 && sRec > 0 ? sFact >= sRec * 0.98 : null;
 
   // Рекомендуемая производительность при фактическом сечении: наибольший
@@ -249,7 +314,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
       const h = Math.abs(b?.fanPressure ?? 0);
       return { q: h > 0 ? Math.sqrt((kLoss * h) / totalR) : 0, by: "channel" as const };
     }
-    const g = (q: number) => kLoss * hInst(q, angleMax) - totalR * q * q;
+    const g = (q: number) => kLoss * hInst(q, angleBest) - totalR * q * q;
     if (qMaxDesign <= 0) return { q: 0, by: "" as const };
     if (g(qMaxDesign) >= 0) return { q: qMaxDesign, by: "fan" as const };
     let lo = 0, hi = qMaxDesign;
@@ -257,9 +322,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
     return { q: lo, by: "channel" as const };
   })();
 
-  // Рабочая точка по расчёту сети — проверки против ПАСПОРТНОГО номинала
-  const qNow = Math.abs(b?.flow ?? 0);
-  const hNow = Math.abs(b?.fanPressure ?? 0);
+  // Проверки рабочей точки — против ПАСПОРТНОГО номинала текущего угла
   const ratio = qNom > 0 ? qNow / qNom : 0;
   const etaNow = curve && etaReliable && qNow > 0 ? etaInst(qNow, angle) : 0;
   const stallOk = nom && hNow > 0 ? hNow <= 0.9 * hMaxInst : null;
@@ -268,6 +331,8 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
 
   // Потери и скорости
   const qWork = qNow > 0 ? qNow : qDesign;
+  const etaDesignRaw = curve && etaReliable && qDesign > 0 ? etaInst(qDesign, angleForDesign ?? angle) : 0;
+  const etaDesign = etaDesignRaw > 0.05 ? etaDesignRaw : etaMax;
   const hFactWork = lossAt(qWork);
   const hFactDesign = lossAt(qDesign);
   const hRecDesign = lossAtS(sRec, qDesign);
@@ -303,7 +368,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
     <div className="flex flex-col gap-2">
       <div className="flex items-center gap-1.5 text-[11.5px]">
         <span className="font-semibold" style={{ color: C.t1 }}>Вентиляционный канал ГВУ — сечение и производительность</span>
-        <Info text="Сечение подбирается под максимальную производительность вентилятора при наибольшем угле лопаток: потери давления в канале не более заданной доли напора вентилятора в этой точке. Рекомендуемая производительность — наибольший расход, который пропускает фактический канал при тех же потерях. Сопротивление ветвей учитывается вместе с вентсооружениями и окном ГВУ, как в расчёте сети (R·Q² — сразу в паскалях). Рабочая точка проверяется по паспортному номиналу текущего угла." />
+        <Info text="Сечение подбирается так, чтобы потери давления в канале были не более заданной доли напора вентилятора. Расчётный расход — рабочая точка по расчёту сети или введённый вручную; напор при нём — по характеристике вентилятора (при введённом Q — текущий угол или ближайший, дающий этот расход). Второй вариант — максимальная производительность: пересечение характеристики вентилятора при угле наибольшего расхода с характеристикой рудника. Рекомендуемая производительность — наибольший расход, который пропускает фактический канал при тех же потерях. Сопротивление ветвей учитывается вместе с вентсооружениями и окном ГВУ, как в расчёте сети (R·Q² — сразу в паскалях). Рабочая точка проверяется по паспортному номиналу текущего угла." />
       </div>
 
       {/* Исходные данные */}
@@ -314,8 +379,8 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
             {list.map(x => <option key={x.id} value={x.id}>{label(x)}</option>)}
           </select>
         </Field>
-        <Field label={<>Q<sub>расч</sub>, м³/с{!qManual && qMaxDesign > 0 ? " · max" : ""}</>} hint="Расчётный расход для подбора сечения. Пусто — максимальная производительность при наибольшем угле лопаток.">
-          <input className={INP + " text-right"} style={INP_STYLE} inputMode="decimal" value={qManual} placeholder={qMaxDesign ? qMaxDesign.toFixed(2) : "ввести"}
+        <Field label={<>Q<sub>расч</sub>, м³/с{!qManual && qNow > 0 ? " · раб. точка" : ""}</>} hint="Необходимый расход для подбора сечения. Пусто — расход в рабочей точке вентилятора по расчёту сети.">
+          <input className={INP + " text-right"} style={INP_STYLE} inputMode="decimal" value={qManual} placeholder={qNow > 0 ? qNow.toFixed(2) : "ввести"}
             onChange={e => setQManual(e.target.value)} />
         </Field>
         <Field label="Потери в канале ≤, % H">
@@ -329,27 +394,35 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
         </Field>
       </div>
 
-      {b && !curve && !qManual && (
-        <Note tone="amber">У вентилятора не задана модель из справочника — характеристики нет. Расчётный расход — введённый или по расчёту сети, напор — из расчёта сети.</Note>
+      {b && !curve && qNow <= 0 && !qManual && (
+        <Note tone="amber">Нет рабочей точки вентилятора — выполните расчёт сети или введите необходимый расход.</Note>
       )}
 
       {/* Ключевые результаты */}
       <div className="grid grid-cols-4 gap-2">
-        <Kpi label={<>S<sub>рек</sub> при {qManualV > 0 ? "Q расч" : "Q max"}{hasAngles && !qManualV ? ` (${angleTxt(angleMax)})` : ""}</>}
-          value={sRec > 0 ? f(sRec) : recMax.impossible ? "нет" : "—"} unit={sRec > 0 ? "м²" : undefined} tone={recMax.impossible ? "red" : "accent"}
-          sub={recMax.impossible
-            ? "сооружения на канале сами дают потери больше допустимых"
-            : sRec > 0 ? <>D<sub>экв</sub> {f(dEq)} м · {f(qDesign)} м³/с · {f(hDesign, 0)} Па</> : "нет сопротивления по маршруту"} />
+        <Kpi label={<>S<sub>рек</sub> при {qManualV > 0 ? "Q расч" : "Q раб"}</>}
+          value={sRec > 0 ? f(sRec) : recMax.why === "impossible" ? "нет" : "—"} unit={sRec > 0 ? "м²" : undefined}
+          tone={recMax.why === "impossible" ? "red" : sRec > 0 ? (sFact >= sRec * 0.98 ? "green" : "red") : "neutral"}
+          sub={sRec > 0 ? <>{f(qDesign)} м³/с · H {f(hDesign, 0)} Па · D<sub>экв</sub> {f(dEq)} м</> : whyText[recMax.why]} />
+        <Kpi label={<>S<sub>рек</sub> при Q<sub>max</sub>{hasAngles ? ` (${angleTxt(angleBest)})` : ""}</>}
+          value={sRecTop > 0 ? f(sRecTop) : recTop.why === "impossible" ? "нет" : "—"} unit={sRecTop > 0 ? "м²" : undefined}
+          tone={recTop.why === "impossible" ? "red" : sRecTop > 0 ? (okTop ? "green" : "amber") : "neutral"}
+          sub={sRecTop > 0 ? <>{f(qMaxNet)} м³/с · {f(hMaxNet, 0)} Па · D<sub>экв</sub> {f(dEqTop)} м</> : (curve ? whyText[recTop.why] : "нет характеристики вентилятора")} />
         <Kpi label="Фактическое (наименьшее)" value={f(sFact)} unit="м²" tone={sectionTone}
-          sub={okSection === false ? `меньше рекомендуемого на ${f(sRec - sFact)} м²` : okSection ? "достаточно" : narrow ? brName(narrow) : "—"} />
+          sub={okSection === false ? `меньше рекомендуемого на ${f(sRec - sFact)} м²` : okSection ? (okTop === false ? "достаточно для Q расч, мало для Q max" : "достаточно") : narrow ? brName(narrow) : "—"} />
         <Kpi label={<>Q<sub>рек</sub> при факт. сечении</>} value={f(qRecFact.q)} unit={qRecFact.q > 0 ? "м³/с" : undefined}
-          tone={qRecFact.q <= 0 ? "neutral" : qRecFact.by === "fan" ? "green" : qWork > qRecFact.q * 1.001 ? "red" : "amber"}
+          tone={qRecFact.q <= 0 ? "neutral" : qRecFact.by === "fan" ? "green" : qDesign > qRecFact.q * 1.001 ? "red" : "amber"}
           sub={qRecFact.q <= 0 ? "—" : qRecFact.by === "fan" ? "канал не ограничивает вентилятор" : `ограничено каналом · ${f(qRecFact.q * 60, 0)} м³/мин`} />
-        <Kpi label={<>Потери при Q<sub>раб</sub></>} value={f(hFactWork, 1)} unit="Па" tone={pctWork > kLoss * 100 ? "red" : pctWork > 0 ? "green" : "neutral"}
-          sub={<>{pctWork > 0 ? `${pctWork.toFixed(1)} % H` : "—"}<sub>раб</sub> · при Q расч {f(hFactDesign, 0)} Па</>} />
       </div>
-      {qDesignOverMax && (
-        <Note tone="red">Q<sub>расч</sub> больше паспортной максимальной производительности при наибольшем угле ({f(qMaxDesign)} м³/с) — точка вне характеристики, результат недостоверен.</Note>
+      {qDesign > 0 && curve && !designReachable && (
+        <Note tone="red">
+          {angleForQ === null
+            ? <>Q<sub>расч</sub> = {f(qDesign)} м³/с больше паспортного максимума вентилятора ({f(qMaxDesign)} м³/с) — точка вне характеристики, сечение рассчитано по напору на краю характеристики справочно.</>
+            : <>Рудник при Q<sub>расч</sub> = {f(qDesign)} м³/с требует депрессии ≈ {f(hNeedNet, 0)} Па — вентилятор не разовьёт её ни при одном угле (максимум в этой сети {f(qMaxNet)} м³/с). Нужно снизить сопротивление сети или другой вентилятор.</>}
+        </Note>
+      )}
+      {qManualV > 0 && curve && designReachable && angleForDesign !== null && hasAngles && angleForDesign !== angle && (
+        <Note tone="amber">Для Q<sub>расч</sub> = {f(qDesign)} м³/с в этой сети нужен угол лопаток {angleTxt(angleForDesign)} (сейчас {angleTxt(angle)}).</Note>
       )}
 
       {/* ─── Маршрут вентканала ─── */}
@@ -477,12 +550,13 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
       <div className="grid grid-cols-3 gap-2">
         <Card title="Вентилятор" icon="Fan">
           <Row k="Модель" v={<span className="truncate inline-block max-w-[130px] align-bottom" title={curve?.name || b?.fanName || ""}>{curve?.name || b?.fanName || "—"}{N > 1 ? ` ×${N}` : ""}</span>} />
-          {hasAngles && <Row k="Угол: текущий / max" v={`${angleTxt(angle)} / ${angleTxt(angleMax)}`} />}
+          {hasAngles && <Row k="Угол: текущий / max Q" v={`${angleTxt(angle)} / ${angleTxt(angleBest)}`} />}
           <Row k={<>Q<sub>ном</sub> / H<sub>ном</sub></>} v={<>{f(qNom)} / {f(hNom, 0)}</>} />
           <Row k={<>η<sub>max</sub></>} v={<>{f(etaMax * 100, 0)} %</>} color={!etaReliable && curve ? C.amber : undefined} />
           <Row k={<>Q<sub>max</sub> при текущем угле</>} v={<>{f(qMaxNow)} м³/с</>} />
-          {hasAngles && <Row k={<>Q<sub>max</sub> при {angleTxt(angleMax)}</>} v={<>{f(qMaxDesign)} м³/с</>} bold />}
-          <Row k={<>Расчёт: H / η при Q<sub>расч</sub></>} v={<>{f(hDesign, 0)} Па / {f(etaDesign * 100, 0)} %</>} />
+          {hasAngles && <Row k={<>Q<sub>max</sub> паспорт {angleTxt(angleBest)}</>} v={<>{f(qMaxDesign)} м³/с</>} />}
+          <Row k={<>Q<sub>max</sub> в этой сети</>} v={<>{f(qMaxNet)} м³/с</>} bold />
+          <Row k={<>H / η при Q<sub>расч</sub></>} v={<>{f(hDesign, 0)} Па / {f(etaDesign * 100, 0)} %</>} />
           {!etaReliable && curve && <div className="text-[10.5px] mt-0.5" style={{ color: C.amber }}>Кривая КПД недостоверна — принято {etaFan >= 0.3 ? "из свойств" : "0,7"}, Q<sub>ном</sub> паспортный</div>}
         </Card>
 
@@ -495,9 +569,10 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
         </Card>
 
         <Card title="Энергия и потери" icon="Zap">
+          <Row k={<>Потери в канале при Q<sub>раб</sub></>} v={<>{f(hFactWork, 1)} Па{pctWork > 0 ? ` · ${pctWork.toFixed(1)} %` : ""}</>} color={pctWork > kLoss * 100 ? C.red : undefined} />
           <Row k="Скоростной напор (раб)" v={<>{f(hSk, 1)} Па</>} />
-          <Row k={<>S<sub>рек</sub> при Q<sub>ном</sub> тек. угла</>} v={recNom.s > 0 ? <>{f(recNom.s)} м²</> : recNom.impossible ? "нет" : "—"} />
-          <Row k="h при Q расч: факт / рек." v={<>{f(hFactDesign, 0)} / {f(hRecDesign, 0)} Па</>} />
+          <Row k={<span title="H = R·Q² — характеристика рудника по рабочей точке">R сети (рудника)</span>} v={rNet > 0 ? rNet.toFixed(5) : "—"} />
+          <Row k={<>h при Q<sub>расч</sub>: факт / рек.</>} v={<>{f(hFactDesign, 0)} / {f(hRecDesign, 0)} Па</>} />
           <Row k="Мощность на потери: факт" v={<>{pFact > 0 ? pFact.toFixed(1) : "—"} кВт</>} />
           {sForEco > 0 && <Row k="Мощность при S рек" v={<>{pRec > 0 ? pRec.toFixed(1) : "—"} кВт</>} />}
           <Row k="Экономия при S рек" bold color={saving > 0 ? C.green : undefined}
