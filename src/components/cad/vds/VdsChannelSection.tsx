@@ -291,7 +291,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   };
 
   return (
-    <div className="mt-4 pt-3" style={{ borderTop: "1px solid #dde3ec" }}>
+    <div className="pt-3">
       <div className="text-[13px] font-semibold text-gray-800">Вентиляционный канал ГВУ — работа в номинальной точке</div>
       <div className="text-[11px] text-gray-500 leading-snug mb-2">
         Сечение подбирается под номинальную точку вентилятора (η = max) по потерям давления в канале — не более заданной

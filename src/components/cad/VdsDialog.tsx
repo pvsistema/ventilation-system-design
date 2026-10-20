@@ -69,10 +69,10 @@ function classify(a: number): { label: string; color: string } {
 }
 
 export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads, projectName = "", license, stabilityBranches, onHighlightBranches }: Props) {
-  const [tab, setTab] = useState<"opening" | "report">("opening");
+  const [tab, setTab] = useState<"opening" | "channel" | "report">("opening");
   // Окно перетаскивается за шапку, положение запоминается между открытиями.
   // Ограничение по краю экрана считаем по большей ширине (вкладка «Отчёт ВДС»).
-  const winWidth = tab === "report" ? 920 : 680;
+  const winWidth = tab === "report" ? 920 : tab === "channel" ? 760 : 680;
   const { pos, dragHandleProps } = useDraggableWindow({ width: 920, height: 700, storageKey: "pvs_vds_dialog_pos" });
   // Вентиляторы (ГВУ/ВВУ), установленные в открытой схеме. ГВУ идут первыми.
   const fanBranches = useMemo(
@@ -198,9 +198,10 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
         <div className="flex gap-1 px-3 pt-2" style={{ borderBottom: "1px solid #dde3ec" }}>
           {([
             ["opening", "Эквивалентное отверстие", "Gauge"],
+            ["channel", "Вентканал ГВУ", "Fan"],
             ["report", "Отчёт ВДС", "FileLock2"],
           ] as const).map(([id, label, icon]) => (
-            <button key={id} onClick={() => { setTab(id); if (id === "report") onHighlightBranches?.([]); }}
+            <button key={id} onClick={() => { setTab(id); if (id !== "channel") onHighlightBranches?.([]); }}
               className={`px-3 py-1.5 text-[12px] rounded-t border border-b-0 flex items-center gap-1.5 ${tab === id ? "bg-white text-blue-700 font-semibold border-gray-300" : "bg-gray-50 text-gray-600 border-transparent hover:bg-gray-100"}`}
               style={tab === id ? { marginBottom: -1 } : undefined}>
               <Icon name={icon} size={13} />{label}
@@ -219,6 +220,10 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
               license={license}
               stabilityBranches={stabilityBranches}
             />
+          </div>
+        ) : tab === "channel" ? (
+          <div className="overflow-y-auto px-4 pb-3" style={{ flex: 1 }}>
+            <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} />
           </div>
         ) : (
         <div className="overflow-y-auto px-4 py-3" style={{ flex: 1 }}>
@@ -374,8 +379,6 @@ export default function VdsDialog({ branches, nodes, solved, onClose, bulkheads,
             отверстие шахты не характеризует фактического состояния её
             проветривания.
           </div>
-
-          <VdsChannelSection fans={fanBranches} label={fanLabel} branches={branches} nodes={nodes} onHighlight={onHighlightBranches} bulkheads={bulkheads} solved={solved} />
         </div>
 
         )}
