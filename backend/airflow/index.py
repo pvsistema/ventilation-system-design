@@ -341,13 +341,68 @@ def _fixed_H(e, Q):
 
 
 def _fan_q_top(e, h1, h2):
-    """Вершина параболы H(Q), если она лежит ЛЕВЕЕ паспортной зоны (qMin).
-    Левее неё напор считается постоянным (зона помпажа). Иначе −1."""
+    """Вершина параболы H(Q). Левее неё напор считается постоянным (зона
+    помпажа), иначе −1.
+
+    Раньше вершина учитывалась, только если лежала левее qMin. Но
+    характеристика из трёх паспортных точек (справочник АэроСети) за пределами
+    паспорта уходит в минус: у ВО-30 при Q=0 −758 Па, у ВОД-40 −4729 Па.
+    Расчёт стартует с малых расходов, вентилятор там «не давал» напора, и сеть
+    оставалась почти без движения (ГВУ 8 м³/с вместо 217). Теперь левее
+    вершины напор всегда держится на её уровне — так же считает АэроСеть."""
     if h2 < 0 and h1 > 0:
-        q_top = -h1 / (2.0 * h2)
-        if q_top < float(e.get("qMin", 0) or 0):
-            return q_top
+        return -h1 / (2.0 * h2)
     return -1.0
+
+
+# ── Вентилятор, свободно стоящий в выработке (без перемычки) ──────────────
+# Работает как струйный: выбрасывает струю с расходом q_j через площадь
+# колеса A, а основной поток выработки (скорость v = Q/S) идёт мимо. Напор,
+# который он добавляет выработке, — из закона сохранения количества движения:
+#     H = ρ·(A/S)/(1 − A/S)·(v_j − v)·|v_j − v|,   v_j = q_j/A
+# q_j — паспортная подача (последняя точка характеристики) на своих оборотах.
+# Сверено с АэроСетью («УГОК», 18 вентиляторов ВМЭ-12А, ВМ-6М, ВШМП-12):
+# формула повторяет напор из файла с одинаковым отношением 0,98 у всех —
+# это коэффициент JET_RHO = 1,2·0,98.
+JET_RHO = 1.176
+
+
+def _is_jet(e):
+    return bool(e.get("hasFan")) and float(e.get("jetQ", 0) or 0) > 0 and float(e.get("jetArea", 0) or 0) > 0
+
+
+def _jet_geom(e):
+    S = float(e.get("area", 0) or 0)
+    A = float(e.get("jetArea", 0) or 0)
+    if S <= 0.05:
+        S = max(A * 4.0, 1.0)
+    r = min(A / S, 0.9)
+    return S, A, r
+
+
+def jet_H(e, Q):
+    """Напор струйного вентилятора при расходе Q в выработке (знаковый, a→b)."""
+    if e.get("fanStopped"):
+        return 0.0
+    S, A, r = _jet_geom(e)
+    vj = float(e.get("jetQ", 0)) / A
+    dv = vj - Q / S
+    return JET_RHO * r / (1.0 - r) * dv * abs(dv)
+
+
+def jet_dH(e, Q):
+    """|dH/dQ| струйного вентилятора."""
+    if e.get("fanStopped"):
+        return 0.0
+    S, A, r = _jet_geom(e)
+    vj = float(e.get("jetQ", 0)) / A
+    return 2.0 * JET_RHO * r / (1.0 - r) * abs(vj - Q / S) / S
+
+
+def jet_signed(e, Q):
+    """Напор струйного вентилятора по направлению ветви a→b (знаковый)."""
+    d = -1.0 if e.get("fanReverse") else 1.0
+    return d * jet_H(e, Q * d)
 
 
 def fan_H(e, Q):
@@ -369,9 +424,10 @@ def fan_H(e, Q):
     # Опрокинутый поток: вентилятор не создаёт напора
     if Q < 0:
         return 0.0
-    # N вентиляторов в параллели: каждый пропускает Q/N и развивает H(Q/N),
-    # а суммарный напор установки, действующий на сеть = N·H(Q/N) (как «АэроСеть»:
-    # 1 вент → 53.6/755, 2 вент → 89.1/2082 — поле «Напор» показывает сумму).
+    # N вентиляторов в параллели: каждый пропускает Q/N и развивает H(Q/N);
+    # напор установки, действующий на сеть, — тот же H(Q/N), а не N·H(Q/N).
+    # Сверено с АэроСетью («УГОК», ВМЭВВ-14-2х160 ×2): по давлениям узлов
+    # файла напор установки ровно H(Q/N); при N·H он выходил вдвое больше.
     N = max(1, int(e.get("fanParallel", 1) or 1))
     mode = e.get("fanMode", "constant")
     if mode == "fixed":
@@ -428,7 +484,7 @@ def fan_H(e, Q):
                 return max(0.0, h_at_max + slope * d - abs(h2) * 4.0 * d * d)
             return max(0.0, h0 + h1 * q_one + h2 * q_one * q_one)
 
-        return _h_one() * N
+        return _h_one()
     # Constant-режим: напор задан числом (уже суммарный) — N не умножаем.
     # Применяем qMax для защиты от Q→∞ (как в Вентиляция-2).
     fp = float(e.get("fanPressure", 0))
@@ -472,8 +528,8 @@ def fan_H_display(e, Q):
     # Клипование по qMax: за паспортным пределом для ОТОБРАЖЕНИЯ фиксируем
     # напор на границе. Итерации это не затрагивает — там честный завал.
     qc = min(q_one, q_max)
-    # ×N — суммарный напор N вентиляторов в параллели (как показывает «АэроСеть»).
-    return max(0.0, h0 + h1 * qc + h2 * qc * qc) * N
+    # Параллельная установка: напор = H(Q/N) (см. fan_H).
+    return max(0.0, h0 + h1 * qc + h2 * qc * qc)
 
 
 def fan_dH(e, Q):
@@ -511,8 +567,8 @@ def fan_dH(e, Q):
                 dh_one = h1 + 2.0 * h2 * q_max_fan - 2.0 * abs(h2) * 4.0 * d
             else:
                 dh_one = h1 + 2.0 * h2 * q_one
-        # d(N·H(Q/N))/dQ = H'(Q/N) = dh_one (множители N сокращаются).
-        return abs(dh_one)
+        # d(H(Q/N))/dQ = H'(Q/N)/N
+        return abs(dh_one) / N
     return 0.0
 
 
@@ -718,7 +774,14 @@ def build_graph(nodes_in, branches_in, surface_temp=20.0, geo_gradient=0.0,
             "a":           node_a,
             "b":           node_b,
             "R":           get_R(b),
-            "hasFan":      bool(b.get("hasFan")),
+            # Вентилятор, свободно стоящий в выработке (без перемычки), — это
+            # струйный источник напора, а не вентилятор, задающий расход ветви.
+            # Для логики решателя (главный вентилятор, тупики ВМП, рабочая
+            # точка) он не «вентилятор»: его напор добавляется отдельно (jet).
+            "hasFan":      bool(b.get("hasFan")) and not (float(b.get("jetQ", 0) or 0) > 0 and float(b.get("jetArea", 0) or 0) > 0),
+            "jet":         bool(b.get("hasFan")) and float(b.get("jetQ", 0) or 0) > 0 and float(b.get("jetArea", 0) or 0) > 0 and not b.get("fanStopped"),
+            "jetQ":        float(b.get("jetQ", 0) or 0),
+            "jetArea":     float(b.get("jetArea", 0) or 0),
             "fanMode":     b.get("fanMode", "constant"),
             "fanPressure": float(b.get("fanPressure", 0)),
             "fanFixedQ":   float(b.get("fanFixedQ", 0) or 0),
@@ -1536,7 +1599,7 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
                     is_vmp = e.get("fanType", "ГВУ") == "ВМП"
                     fan_dir = 1.0 if is_vmp else (-1.0 if e.get("fanReverse") else 1.0)
                     q_fan = Q[gi] * fan_dir
-                    # fan_H = N·H(Q/N) — суммарный напор N вентиляторов в параллели.
+                    # fan_H = H(Q/N) — напор установки из N вентиляторов в параллели.
                     if is_vmp:
                         Hv = fan_H(e, abs(Q[gi]))   # ВМП: H всегда > 0
                     else:
@@ -1547,6 +1610,10 @@ def solve(nodes_in, branches_in, options, normal_flows=None, surface_temp=20.0,
                 # Естественная тяга: вклад в обход = h_nat * sign (фиксированный знак,
                 # не зависит от знака потока, как и вентилятор). Копим ОТДЕЛЬНО,
                 # чтобы применить дедбанд симметрии ниже.
+                if e.get("jet"):
+                    sum_H   -= jet_signed(e, Q[gi]) * sign
+                    sum_2RQ += jet_dH(e, Q[gi])
+
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:
                     sum_Hnat += h_nat * sign
@@ -1952,6 +2019,8 @@ def compute_node_pressures(edges, Q, nodes_in):
             habs = fan_H(e, abs(q))
         fan_dir = -1.0 if e.get("fanReverse") else 1.0
         H = fan_dir * habs
+        if e.get("jet"):
+            H += jet_signed(e, q)
         # Естественная тяга — источник напора в направлении a→b (как и вентилятор),
         # поэтому знак НЕ зависит от направления потока.
         h_nat = float(e.get("naturalDraft", 0.0) or 0.0)
@@ -2492,6 +2561,8 @@ def make_result(edges, Q, it, converged, max_res, log, diag, force_zero=False, d
         H_friction = e["R"] * q * q
         H    = H_friction - e.get("naturalDraft", 0.0) * (1.0 if q >= 0 else -1.0)
         Hv   = fan_H_display(e, abs(q))
+        if e.get("jet"):
+            Hv = jet_signed(e, q)
         # Фиксированный расход: напор, который вентилятору пришлось развить,
         # чтобы выдать заданный Q. В сети его даёт сама крутая характеристика,
         # а в тупике (расход задан напрямую) — это потери ветви R·Q².
@@ -2632,12 +2703,16 @@ def _mkr_fan_H(e, Q):
     if mode == "fixed":
         return _fixed_H(e, Q)
     if mode == "curve":
-        # N вентиляторов в параллели: суммарный напор установки = N·H(Q/N) (как «АэроСеть»).
+        # N вентиляторов в параллели: напор установки = H(Q/N) (как «АэроСеть»).
         q_one = abs(Q) / N
         if q_one <= 0:
             if e.get("fanReverse") and e.get("reverseH0") is not None:
-                return max(0.0, float(e.get("reverseH0", 0))) * N
-            return max(0.0, float(e.get("h0", 0))) * N
+                return max(0.0, float(e.get("reverseH0", 0)))
+            _h0 = float(e.get("h0", 0)); _h1 = float(e.get("h1", 0)); _h2 = float(e.get("h2", 0))
+            _qt = _fan_q_top(e, _h1, _h2)
+            if _qt > 0:
+                return max(0.0, _h0 + _h1 * _qt + _h2 * _qt * _qt)
+            return max(0.0, _h0)
         if e.get("fanReverse") and e.get("reverseH0") is not None:
             q_max = float(e.get("reverseQMax", e.get("qMax", 1e9)))
             rh0 = float(e.get("reverseH0", 0))
@@ -2649,7 +2724,7 @@ def _mkr_fan_H(e, Q):
                 # с включённой тягой поток улетал за характеристику (баг Q=145 м³/с).
                 h_at_max = rh0 + rh1 * q_max + rh2 * q_max * q_max
                 slope = min(rh1 + 2.0 * rh2 * q_max, -abs(rh2) * q_max * 4.0 - 50.0)
-                return (h_at_max + slope * (q_one - q_max)) * N
+                return h_at_max + slope * (q_one - q_max)
             h = rh0 + rh1 * q_one + rh2 * q_one * q_one
         else:
             q_max_fan = float(e.get("qMax", 1e9))
@@ -2662,9 +2737,12 @@ def _mkr_fan_H(e, Q):
                 # направлении (иначе становится сопротивлением и опрокидывает соседа).
                 h_at_max = h0v + h1v * q_max_fan + h2v * q_max_fan * q_max_fan
                 slope = min(h1v + 2.0 * h2v * q_max_fan, -abs(h2v) * q_max_fan * 4.0 - 50.0)
-                return max(0.0, h_at_max + slope * (q_one - q_max_fan)) * N
+                return max(0.0, h_at_max + slope * (q_one - q_max_fan))
+            q_top = _fan_q_top(e, h1v, h2v)
+            if q_top > 0 and q_one < q_top:
+                q_one = q_top
             h = h0v + h1v * q_one + h2v * q_one * q_one
-        return max(0.0, h) * N
+        return max(0.0, h)
     # Constant с qMax — резкий спад при выходе за паспорт (как Вентиляция-2)
     fp = max(0.0, float(e.get("fanPressure", 0)))
     q_max = float(e.get("qMax", 0))
@@ -2699,12 +2777,16 @@ def _mkr_fan_dH(e, Q):
         h1 = float(e.get("h1", 0))
         h2 = float(e.get("h2", 0))
         q_max_fan = float(e.get("qMax", 1e9))
-        if q_one > q_max_fan:
+        q_top = _fan_q_top(e, h1, h2)
+        if q_top > 0 and q_one < q_top:
+            dh = 0.0
+        elif q_one > q_max_fan:
             dh = abs(min(h1 + 2.0 * h2 * q_max_fan, -abs(h2) * q_max_fan * 4.0 - 50.0))
         else:
             dh = abs(h1 + 2.0 * h2 * q_one)
-    # d(N·H(Q/N))/dQ = H'(Q/N) = dh (множители N сокращаются).
-    return dh
+    # Установка из N вентиляторов в параллели: напор H(Q/N) (не N·H) —
+    # производная по общему расходу H'(Q/N)/N.
+    return dh / N
 
 
 def _bfs_tree(edges):
@@ -2738,12 +2820,49 @@ def _bfs_tree(edges):
     # ── Проход 1: только НЕ-вентиляторные рёбра ──────────────────────────
     adj_nofan = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        if e.get("hasFan") and not e.get("fanStopped"):
+        # Струйный вентилятор (без перемычки) — тоже источник напора: в дереве
+        # он выпал бы из контуров, и его напор не действовал бы на сеть.
+        if (e.get("hasFan") and not e.get("fanStopped")) or e.get("jet"):
             continue
         adj_nofan[e["a"]].append((i, e["b"], e["R"]))
         adj_nofan[e["b"]].append((i, e["a"], e["R"]))
     for u in adj_nofan:
         adj_nofan[u].sort(key=lambda x: x[2])  # малое R → предпочтительнее в дерево
+
+    # Остов минимального сопротивления (Краскал): в дерево идут ветви с
+    # малым R, а хордами контуров становятся ветви с большим R. Тогда каждый
+    # контур «держится» на одной жёсткой ветви, и поправки контуров почти не
+    # мешают друг другу. Прежний обход в ширину брал ветви по близости к
+    # поверхности: на крупной сети (УГОК, 2000 ветвей) хордами оказывались
+    # стволы и квершлаги с R≈0, контуры сцеплялись, и расчёт за 5000 итераций
+    # не доходил до решения (расходы ТНС отличались от АэроСети в 2 раза).
+    uf_parent = {}
+
+    def _find(x):
+        r = x
+        while uf_parent.get(r, r) != r:
+            r = uf_parent[r]
+        while uf_parent.get(x, x) != r:
+            nxt = uf_parent[x]
+            uf_parent[x] = r
+            x = nxt
+        return r
+
+    cand = []
+    for i, e in enumerate(edges):
+        if (e.get("hasFan") and not e.get("fanStopped")) or e.get("jet"):
+            continue
+        cand.append((float(e["R"]), i))
+    cand.sort()
+    tree_adj = collections.defaultdict(list)
+    for _r, i in cand:
+        e = edges[i]
+        ra, rb = _find(e["a"]), _find(e["b"])
+        if ra == rb:
+            continue
+        uf_parent[ra] = rb
+        tree_adj[e["a"]].append((i, e["b"]))
+        tree_adj[e["b"]].append((i, e["a"]))
 
     visited   = {root}
     parent    = {root: None}
@@ -2752,7 +2871,7 @@ def _bfs_tree(edges):
     queue = collections.deque([root])
     while queue:
         u = queue.popleft()
-        for ei, nb, _r in adj_nofan[u]:
+        for ei, nb in tree_adj[u]:
             if nb not in visited:
                 visited.add(nb)
                 parent[nb] = (u, ei)
@@ -2779,7 +2898,7 @@ def _bfs_tree(edges):
     # а во всех обычных случаях остаётся хордой и участвует в контурах МКР.
     adj_rest = collections.defaultdict(list)
     for i, e in enumerate(edges):
-        is_fan = bool(e.get("hasFan")) and not e.get("fanStopped")
+        is_fan = (bool(e.get("hasFan")) and not e.get("fanStopped")) or bool(e.get("jet"))
         adj_rest[e["a"]].append((i, e["b"], e["R"], 1 if is_fan else 0))
         adj_rest[e["b"]].append((i, e["a"], e["R"], 1 if is_fan else 0))
     for u in adj_rest:
@@ -2927,9 +3046,12 @@ def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
     fan_edge = [None] * n_edges   # объект ветви-вентилятора или None
     fan_is_vmp = [False] * n_edges
     fan_dir_edge = [1.0] * n_edges
+    jet_edge = [None] * n_edges
     for i, e in enumerate(active_edges_list):
         gi = local_to_global[i]
         R_edge[gi] = float(e["R"])
+        if e.get("jet"):
+            jet_edge[gi] = e
         nat_edge[gi] = float(e.get("naturalDraft", 0.0))
         if e.get("hasFan"):
             fan_edge[gi] = e
@@ -2976,6 +3098,11 @@ def _mkr_iterate_fast(contours_local, active_edges_list, local_to_global, Q,
                         H = _mkr_fan_H(fe, abs(qg)) if q_fan >= 0 else 0.0
                     num -= fdir * H * sign
                     den += _mkr_fan_dH(fe, abs(qg))
+
+                je = jet_edge[gi]
+                if je is not None:
+                    num -= jet_signed(je, qg) * sign
+                    den += jet_dH(je, qg)
 
                 hn = nat_edge[gi]
                 if hn != 0.0:
@@ -3484,6 +3611,10 @@ def solve_mkr(nodes_in, branches_in, options, normal_flows=None, surface_temp=20
                         H = _mkr_fan_H(e, abs(Q[gi])) if q_fan >= 0 else 0.0
                     num -= fan_dir * H * sign
                     den += _mkr_fan_dH(e, abs(Q[gi]))
+
+                if e.get("jet"):
+                    num -= jet_signed(e, Q[gi]) * sign
+                    den += jet_dH(e, Q[gi])
 
                 h_nat = e.get("naturalDraft", 0.0)
                 if h_nat != 0.0:

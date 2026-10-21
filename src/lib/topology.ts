@@ -90,6 +90,13 @@ export interface TopoNode {
   evacComputedSmoke?: boolean;     // рабочее место попадает в зону задымления
 }
 
+/**
+ * Вентилятор стоит свободно в выработке (без перемычки, воздух проходит мимо
+ * него): работает как струйный — добавляет выработке небольшой напор, а не
+ * задаёт её расход. Так АэроСеть считает способ установки «1».
+ */
+export const FAN_INSTALL_FREE = "Свободно в выработке";
+
 export interface TopoBranch {
   id: string;
   fromId: string;
@@ -133,7 +140,7 @@ export interface TopoBranch {
   fanRpm: number;           // обороты, об/мин
   fanBladeAngle: number;    // угол лопаток, °
   fanParallel: number;      // количество вентиляторов в параллель
-  fanInstall: string;       // установка: "Внутри перемычки" / "Без перемычки"
+  fanInstall: string;       // установка: "Внутри перемычки" / "Без перемычки" / FAN_INSTALL_FREE
   fanCrossingR: number;     // сопротивление перемычки, мюрг (только при установке "Внутри перемычки")
   fanWindowArea: number;    // ΔS — площадь поперечного сечения вентиляционного окна, м² (R = ρ/(2·ΔS²))
   fanEfficiency: number;    // расчётный КПД на рабочей точке

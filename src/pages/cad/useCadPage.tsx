@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect, useRef, useCallback } from "react"
 import { useLicenseContext } from "@/context/LicenseContext";
 import { withLicense } from "@/lib/license";
 import { type CadTool } from "@/components/cad/TopoCanvas";
-import { type TopoNode, type TopoBranch, type Horizon, OVERVIEW_HORIZON_ID, recalcAll, recalcBranchAero, makeNode, makeBranch, surveyXYZ, isNodeMoved } from "@/lib/topology";
+import { type TopoNode, type TopoBranch, type Horizon, OVERVIEW_HORIZON_ID, FAN_INSTALL_FREE, recalcAll, recalcBranchAero, makeNode, makeBranch, surveyXYZ, isNodeMoved } from "@/lib/topology";
 import { RAMP_WORK_ANGLE, RAMP_LIMIT_ANGLE } from "@/lib/rampBuilder";
 import { CANVAS_THRESHOLD } from "@/lib/canvasRenderer";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
@@ -4401,10 +4401,17 @@ export function useCadPage() {
       const fanWindowR = (b.hasFan && (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки" && winA > 0.001)
         ? fanWindowRkMurg(winA, b.area ?? 0) : 0;
 
+      // Вентилятор, свободно стоящий в выработке: струйный источник напора.
+      // Расчёт берёт подачу струи (паспортный предел на своих оборотах) и
+      // площадь колеса — напор зависит от разности скоростей струи и потока.
+      const isFree = b.hasFan && b.fanInstall === FAN_INSTALL_FREE && !!curve && !!eff && curve.diameter > 0;
+      const jet = isFree ? { jetQ: eff!.qMax * k, jetArea: Math.PI * curve!.diameter * curve!.diameter / 4 } : {};
+
       return {
         id: b.id,
         fromId: b.fromId,
         toId: b.toId,
+        ...jet,
         R: b.resistance + rBulkheadsTotal + fanWindowR, // fanCrossingR Python добавляет сам в get_R
         area: b.area,
         angle: b.angle ?? 0,
@@ -5281,9 +5288,9 @@ export function useCadPage() {
               const etaBase = fanEfficiencyAngle(curve, Q_one_nominal, b.fanBladeAngle);
               const effFactor = b.fanReverse ? (curve.reverseEfficiencyFactor ?? 0.82) : 1;
               newFanEfficiency = Math.max(0.05, etaBase * effFactor);
-              // Мощность установки: Hfan суммарный (N·H(Q/N)) → мощность = H(Q/N)·Q_total/η
-              // = (Hfan/N)·Q_total/η. Делим на N, т.к. Hfan уже умножен на N.
-              newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan) / N, Math.abs(rb.Q), newFanEfficiency);
+              // Мощность установки: напор установки H(Q/N) (как в АэроСети),
+              // через неё идёт весь расход Q — мощность = H·Q/η.
+              newFanShaftPower = fanShaftPower(Math.abs(rb.Hfan), Math.abs(rb.Q), newFanEfficiency);
               newPower = newFanShaftPower;
             }
           } else {

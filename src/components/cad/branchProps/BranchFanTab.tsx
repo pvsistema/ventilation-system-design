@@ -18,7 +18,7 @@
 //   • КПД при «постоянном напоре» стоял дважды (поле ввода и расчётное) —
 //     теперь одно поле ввода, расчётное значение в результатах.
 // ─────────────────────────────────────────────────────────────────────────────
-import { type TopoBranch } from "@/lib/topology";
+import { type TopoBranch, FAN_INSTALL_FREE } from "@/lib/topology";
 import { useMemo, useState } from "react";
 import { getFanById, fanQMax } from "@/lib/fanCurves";
 import FanChart from "@/components/cad/FanChart";
@@ -103,6 +103,7 @@ export default function BranchFanTab({
   const isVmp = b.fanType === "ВМП";
   const curve = getFanById(b.fanCurveId);
   const inBulkhead = (b.fanInstall ?? "Внутри перемычки") === "Внутри перемычки";
+  const isFree = b.fanInstall === FAN_INSTALL_FREE;
   const autoDS = curve && curve.diameter > 0 ? Math.PI * curve.diameter * curve.diameter / 4 : 0;
   const dS = (b.fanWindowArea ?? 0) > 0.001 ? b.fanWindowArea : autoDS;
   const solved = Math.abs(b.flow ?? 0) > 0.01;
@@ -226,13 +227,15 @@ export default function BranchFanTab({
           </Field>
         </div>
         <Row label="Где установлен">
-          <Segmented size="sm" value={inBulkhead ? "in" : "out"}
-            onChange={(v) => onUpdate({ fanInstall: v === "in" ? "Внутри перемычки" : "Без перемычки" })}
+          <Segmented size="sm" value={inBulkhead ? "in" : isFree ? "free" : "out"}
+            onChange={(v) => onUpdate({ fanInstall: v === "in" ? "Внутри перемычки" : v === "free" ? FAN_INSTALL_FREE : "Без перемычки" })}
             options={[
               { value: "in", label: "В перемычке", title: "Вентилятор в окне перемычки — окно добавляет сопротивление" },
-              { value: "out", label: "Без перемычки" },
+              { value: "out", label: "Без перемычки", title: "Весь воздух выработки идёт через вентилятор" },
+              { value: "free", label: "Свободно", title: "Стоит в выработке, воздух проходит мимо — подталкивает поток струёй (как в АэроСети)" },
             ]} />
         </Row>
+        {isFree && <Note tone="info">Свободно стоящий вентилятор не задаёт расход выработки, а добавляет ей напор струи — обычно десятки паскалей.</Note>}
       </Card>
 
       {/* ═══ 4. Результат расчёта ══════════════════════════════════════ */}

@@ -51,7 +51,7 @@ import { bulkheadSymbolsOf, symbolBulkheadR, branchOwnBulkheadR, type BulkheadRe
 import { fanWindowRkMurg } from "@/lib/bulkheads";
 import { getFanById, fanCurveAtAngle, fanHAngle, fanEfficiencyAngle, type FanCurve } from "@/lib/fanCurves";
 import { resistanceFromAlpha } from "@/lib/aerodynamics";
-import { OVERVIEW_HORIZON_ID } from "@/lib/topology";
+import { OVERVIEW_HORIZON_ID, FAN_INSTALL_FREE } from "@/lib/topology";
 import { LEGEND_TYPES } from "@/lib/schemaSymbols";
 import { erpNodeWaterXml, erpBranchWaterXml, erpBranchWaterItemsXml } from "@/lib/erpWater";
 import {
@@ -240,7 +240,8 @@ function fanItemXml(br: TopoBranch, offset: number, reversed: boolean): string {
     + `<field name="Airflow.ConfusorDiameter" value="${n(diam > 0 ? diam : 1.2, 3)}" />`
     + `<field name="Airflow.VentilatorSpeed" value="${n(br.fanRpm || curve?.rpmNominal || 0, 1)}" />`
     + `<field name="Airflow.VentilatorsInParallel" value="${Math.max(1, Math.round(br.fanParallel ?? 1))}" />`
-    + `<field name="Airflow.VentilatorInstallationType" value="0" />`
+    // Свободно стоящий в выработке — способ «1» АэроСети.
+    + `<field name="Airflow.VentilatorInstallationType" value="${br.fanInstall === FAN_INSTALL_FREE ? 1 : 0}" />`
     + (tpl ? `<field name="Airflow.VentilatorTemplateId" value="${tpl.templateId}" />`
       + `<field name="Airflow.VentilatorCharacteristicId" value="${tpl.characteristicId}" />` : "");
 

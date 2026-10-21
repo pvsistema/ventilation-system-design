@@ -86,7 +86,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import JSZip from "jszip";
-import { makeNode, makeBranch, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
+import { makeNode, makeBranch, FAN_INSTALL_FREE, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
 import { buildUserFanCurve } from "@/lib/userFanFit";
 import { USER_FAN_PREFIX, FAN_CATALOG, fanHAngle, type FanCurve } from "@/lib/fanCurves";
@@ -1443,13 +1443,17 @@ export async function parseErp(
     // кМюрг — это путь УТЕЧЕК в обход вентилятора (параллельно ему), а не
     // последовательное сопротивление: подставлять его в fanCrossingR
     // (последовательное) нельзя — расход через ГВУ упал бы почти до нуля.
+    //
+    // ИСПРАВЛЕНО: способ «1» в АэроСети — вентилятор, стоящий СВОБОДНО в
+    // выработке (без перемычки): воздух идёт мимо него, а сам он лишь
+    // подталкивает поток струёй (15–30 Па у ВМЭ-12А). Раньше такой
+    // вентилятор читался как «в перемычке» и перекрывал выработку: в ней
+    // оставался только его расход (УГОК: ПДШ 5 гор. 850 м — 21 м³/с вместо
+    // 115). Теперь это отдельный способ установки — FAN_INSTALL_FREE.
     const installRaw = String(ff["Airflow.VentilatorInstallationType"] ?? "").trim();
-    const fanInBulkhead = hasFan && installRaw !== "" && installRaw !== "0";
-    if (fanInBulkhead) {
-      fansInBulkhead++;
-      const rb0 = num(ff["Airflow.VentilatorBulkheadResistance"], 0);
-      if (rb0 > 0) fanBulkheadNotes.push(`${fanItem?.description || "вентилятор"} (выработка ${branchIdOf.get(rb)}): R перемычки ${rb0}`);
-    }
+    const fanFree = hasFan && installRaw !== "" && installRaw !== "0";
+    const fanInBulkhead = false;
+    if (fanFree) fansInBulkhead++;
 
     // ВМП в нашем расчёте нагнетает ВСЕГДА от начального узла к конечному,
     // флаг реверса для него не действует (реверс главного вентилятора не
@@ -1567,7 +1571,9 @@ export async function parseErp(
       fanEfficiency: hasFan ? num(ff["Airflow.IdealVentilatorEfficiency"], 0) : 0,
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
       fanRpm,
-      fanInstall: fanInBulkhead ? "Внутри перемычки" : "Без перемычки",
+      fanInstall: fanFree ? FAN_INSTALL_FREE : fanInBulkhead ? "Внутри перемычки" : "Без перемычки",
+      // Явно нулевые обороты у свободного вентилятора — он не работает.
+      ...(fanFree && String(ff["Airflow.VentilatorSpeed"] ?? "").trim() === "0" ? { fanStopped: true } : {}),
       fanCrossingR: 0,
       fanWindowArea: 0,
       // ── Перемычка ─────────────────────────────────────────────────────
@@ -1630,10 +1636,10 @@ export async function parseErp(
   if (fansReversed > 0) warnings.push(`Вентиляторов в реверсе: ${fansReversed}`);
   if (fans > 0) {
     warnings.push(fansInBulkhead > 0
-      ? `Вентиляторов, установленных в перемычке: ${fansInBulkhead} — R окна считается по колесу (π·D²/4); остальным установка «без перемычки», как в АэроСети`
+      ? `Вентиляторов, стоящих свободно в выработке (без перемычки): ${fansInBulkhead} — считаются как струйные: подталкивают поток, воздух проходит мимо; остальные — «без перемычки», окно уже входит в сопротивление выработки`
       : "Вентиляторы перенесены с установкой «без перемычки»: сопротивление окна в АэроСети уже входит в сопротивление выработки");
   }
-  if (fanBulkheadNotes.length > 0) {
+  if (fanBulkheadNotes.length > 0) { // (не заполняется — способ «1» теперь свободная установка)
     warnings.push(`Сопротивление перемычки вентилятора из АэроСети (путь утечек в обход вентилятора) не перенесено — в программе такого параметра нет: ${fanBulkheadNotes.slice(0, 5).join("; ")}${fanBulkheadNotes.length > 5 ? " …" : ""}`);
   }
   if (bulkMulti > 0) warnings.push(`Выработок с несколькими перемычками: ${bulkMulti} — перенесены все, сопротивления складываются`);

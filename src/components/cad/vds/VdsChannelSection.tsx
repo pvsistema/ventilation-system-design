@@ -11,7 +11,7 @@
 //    (H_треб = R_сети·Q², R_сети = H_раб/Q_раб²) и какой угол для этого нужен.
 //    Режим максимальной производительности — пересечение характеристики при
 //    угле наибольшего расхода с характеристикой рудника.
-//    Установка из N вентиляторов в параллель: H_уст(Q) = N·H(Q/N).
+//    Установка из N вентиляторов в параллель: H_уст(Q) = H(Q/N).
 // 2. Сопротивление: R ветвей + вентсооружения + окно/перемычка ГВУ, в Н·с²/м⁸
 //    (R·Q² — сразу паскали, без ×9,81 — так же считает расчёт сети).
 //    S_рек: R_пер·(S_i/S)^2,5 + R_пост = k·H_расч / Q_расч².
@@ -190,8 +190,8 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const hasAngles = angleList.length >= 2;
 
   // Характеристика УСТАНОВКИ из N вентиляторов в параллель — так же, как в
-  // расчёте сети: каждый пропускает Q/N, напор установки N·H(Q/N).
-  const hInst = (q: number, a: number) => (curve ? N * fanHAngle(curve, q / N, a, rpm) : 0);
+  // расчёте сети: каждый пропускает Q/N, напор установки H(Q/N).
+  const hInst = (q: number, a: number) => (curve ? fanHAngle(curve, q / N, a, rpm) : 0);
   const etaInst = (q: number, a: number) => (curve ? fanEfficiencyAngle(curve, q / N / kRpm, a) : 0);
   const qMaxAt = (a: number) => (curve ? fanQMax(curve, a, rpm) * N : 0);
 
@@ -210,7 +210,7 @@ export default function VdsChannelSection({ fans, label, branches, nodes, onHigh
   const etaFan = b?.fanEfficiency && b.fanEfficiency > 0 ? (b.fanEfficiency > 1 ? b.fanEfficiency / 100 : b.fanEfficiency) : 0;
   const etaMax = etaReliable ? nom!.eta : (etaFan >= 0.3 ? etaFan : 0.7);
   const qMaxNow = qMaxAt(angle);
-  const hMaxInst = nom ? nom.hMax * N : 0;
+  const hMaxInst = nom ? nom.hMax : 0;
 
   // ── Рабочая точка по расчёту сети ──
   const qNow = Math.abs(b?.flow ?? 0);
