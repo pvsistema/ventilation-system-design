@@ -10,7 +10,12 @@ OUT = os.path.join(ROOT, "public", "reestr")
 TMP = "/tmp/pdfbuild"
 FILES = ["00_ШПАРГАЛКА_ЗАПОЛНЕНИЯ_ЗАЯВКИ", "01_ИНСТРУКЦИЯ_ПО_УСТАНОВКЕ", "02_ФУНКЦИОНАЛЬНЫЕ_ХАРАКТЕРИСТИКИ",
          "03_ЖИЗНЕННЫЙ_ЦИКЛ_И_ПОДДЕРЖКА", "04_РУКОВОДСТВО_ПО_ЭКСПЛУАТАЦИИ", "05_ТЕХНИЧЕСКАЯ_ДОКУМЕНТАЦИЯ",
-         "06_ШАБЛОНЫ_СПРАВОК", "ОПИСЬ_КОМПЛЕКТА"]
+         "06_ШАБЛОНЫ_СПРАВОК", "07_ХРАНЕНИЕ_ИСХОДНОГО_ТЕКСТА", "08_ЛИЦЕНЗИОННЫЕ_КЛЮЧИ",
+         "11_ИНСТРУКЦИЯ_ДЛЯ_ЭКСПЕРТА", "ОПИСЬ_КОМПЛЕКТА"]
+# На сайт (public/reestr) — только документы для эксперта. Документы 07, 08, 11
+# (адрес, ключ эксперта) — во внутреннюю папку docs/private/reestr.
+PRIVATE = {"07_ХРАНЕНИЕ_ИСХОДНОГО_ТЕКСТА", "08_ЛИЦЕНЗИОННЫЕ_КЛЮЧИ", "11_ИНСТРУКЦИЯ_ДЛЯ_ЭКСПЕРТА"}
+PRIVATE_OUT = os.path.join(ROOT, "docs", "private", "reestr")
 CSS = """
 @page { size: A4; margin: 20mm 15mm 20mm 25mm; }
 body { font-family: 'Noto Serif', 'Times New Roman', serif; font-size: 11pt; line-height: 1.45; color: #000; }
@@ -38,7 +43,7 @@ def build(name: str):
     open(h, "w", encoding="utf-8").write(
         f"<!doctype html><html lang='ru'><head><meta charset='utf-8'><title>{html.escape(name)}</title>"
         f"<style>{CSS}</style></head><body>{body}</body></html>")
-    pdf = os.path.join(OUT, name + ".pdf")
+    pdf = os.path.join(PRIVATE_OUT if name in PRIVATE else OUT, name + ".pdf")
     subprocess.run(["timeout", "90", "chromium", "--headless", "--no-sandbox", "--disable-gpu",
                     "--disable-dev-shm-usage", "--no-pdf-header-footer", "--virtual-time-budget=5000",
                     "--timeout=30000", f"--print-to-pdf={pdf}", "file://" + h],
@@ -48,11 +53,14 @@ def build(name: str):
 if __name__ == "__main__":
     import pypdf
     os.makedirs(OUT, exist_ok=True)
+    os.makedirs(PRIVATE_OUT, exist_ok=True)
     for n in FILES:
         p = build(n)
         print(n, len(pypdf.PdfReader(p).pages), "стр")
     z = os.path.join(OUT, "ПВ-Система_комплект_для_реестра_РФ.zip")
     with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
         for n in FILES:
+            if n in PRIVATE:
+                continue
             zf.write(os.path.join(OUT, n + ".pdf"), n + ".pdf")
     print("zip", round(os.path.getsize(z) / 1048576, 2), "MB")
