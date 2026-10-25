@@ -65,7 +65,7 @@ export default function Docs() {
   const totalPages = DOCS.reduce((s, d) => s + d.pages, 0);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900"
+    <div className="h-full overflow-y-auto overscroll-contain bg-slate-50 text-slate-900"
       style={{ fontFamily: "var(--font-ui)" }}>
 
       {/* Шапка */}
