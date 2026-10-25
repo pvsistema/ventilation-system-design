@@ -11,6 +11,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import Icon from "@/components/ui/icon";
 import { APP_VERSION, APP_BUILD_DATE } from "@/lib/appVersion";
+import ExpertInstallerBlock from "@/components/docs/ExpertInstallerBlock";
 
 interface DocItem {
   file: string;
@@ -93,6 +94,8 @@ export default function Docs() {
       </div>
 
       <div className="max-w-4xl mx-auto px-6 py-8">
+
+        <ExpertInstallerBlock />
 
         {/* Обязательные документы */}
         <h2 className="text-[15px] font-semibold text-slate-900 mb-1">
