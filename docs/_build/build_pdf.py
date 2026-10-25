@@ -67,7 +67,7 @@ tr { page-break-inside: avoid; }
 th, td { border: 0.6pt solid #000; padding: 3pt 5pt; vertical-align: top; text-align: left; }
 th { background: #eee; }
 thead tr:has(th:empty:first-child):has(th:empty:last-child) { display: none; }
-pre { background: #f4f4f4; border: 0.6pt solid #999; padding: 6pt; white-space: pre-wrap; font-size: 9.5pt; font-family: 'Noto Sans Mono', monospace; }
+pre { background: #f4f4f4; border: 0.6pt solid #999; padding: 6pt; white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-all; font-size: 9.5pt; font-family: 'Noto Sans Mono', monospace; }
 code { font-family: 'Noto Sans Mono', monospace; font-size: 9.5pt; }
 blockquote { border-left: 2pt solid #999; margin: 6pt 0; padding: 2pt 8pt; color: #222; }
 hr { border: 0; border-top: 0.6pt solid #999; margin: 10pt 0; }
