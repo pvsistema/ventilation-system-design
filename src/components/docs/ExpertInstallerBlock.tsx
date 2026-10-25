@@ -3,6 +3,8 @@ import Icon from "@/components/ui/icon";
 import { APP_VERSION } from "@/lib/appVersion";
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 
+const YANDEX_DISK_URL = "https://disk.yandex.ru/d/ztBLZ8rKXphJEw";
+
 function CopyRow({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false);
   const copy = () => {
@@ -70,9 +72,18 @@ export default function ExpertInstallerBlock() {
         <Icon name="Download" size={17} />
         Скачать {fileName}
       </a>
+      <a
+        href={YANDEX_DISK_URL}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="inline-flex items-center gap-2 px-4 py-2.5 ml-2 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-700 text-[14px] font-medium mb-4">
+        <Icon name="Cloud" size={17} />
+        Резервная копия на Яндекс Диске
+      </a>
 
       <div className="space-y-3">
         <CopyRow label="Прямая ссылка на установщик" value={INSTALLER_URL} />
+        <CopyRow label="Резервная ссылка (Яндекс Диск, тот же файл)" value={YANDEX_DISK_URL} />
         {state === "loading" && (
           <div className="text-[12.5px] text-slate-500">Получаю контрольную сумму…</div>
         )}
