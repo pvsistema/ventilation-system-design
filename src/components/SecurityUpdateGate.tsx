@@ -1,10 +1,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// Блокирующее окно обязательного обновления по безопасности.
+// Окно рекомендованного обновления по безопасности.
 //
-// Обычный баннер обновления (AppUpdateBanner) можно закрыть и продолжить
-// работу — это правильно для обычных выпусков. Но если в старой сборке
-// устранена уязвимость, работать на ней нельзя: такое окно закрыть нельзя,
-// в нём только кнопка «Обновить».
+// Если в старой сборке устранена уязвимость, программа заметно предлагает
+// обновиться. Решение всегда принимает пользователь: окно можно закрыть
+// кнопкой «Позже» и продолжить работу. Принудительного обновления нет —
+// это требование к российскому ПО (реестр Минцифры).
 //
 // Порог задаёт администратор в панели (min_secure_version). Пока порог пуст,
 // окно не показывается никогда.
@@ -27,6 +27,7 @@ export default function SecurityUpdateGate() {
   const [busy, setBusy] = useState(false);
   const [progress, setProgress] = useState<number | null>(null);
   const [saved, setSaved] = useState(false);
+  const [dismissed, setDismissed] = useState(false);
 
   const desktop = isDesktopApp();
 
@@ -63,7 +64,7 @@ export default function SecurityUpdateGate() {
     return () => { cancelled = true; window.clearTimeout(t); };
   }, []);
 
-  if (!required) return null;
+  if (!required || dismissed) return null;
 
   const hasUnsaved = (): boolean => {
     try {
@@ -111,11 +112,11 @@ export default function SecurityUpdateGate() {
             <Icon name="ShieldAlert" size={28} style={{ color: "var(--c-red, #dc2626)" }} />
           </div>
           <h2 className="text-[18px] font-bold" style={{ color: "var(--c-blue-ink, #1a3a6b)" }}>
-            Требуется обновление безопасности
+            Рекомендуется обновление безопасности
           </h2>
           <p className="text-[13px] text-gray-500 mt-2 leading-relaxed">
             В вашей версии программы обнаружена и устранена уязвимость.
-            Чтобы продолжить работу, установите защищённую версию.
+            Рекомендуем установить защищённую версию.
           </p>
         </div>
 
@@ -168,7 +169,7 @@ export default function SecurityUpdateGate() {
           </div>
         )}
 
-        {/* Кнопка. Закрыть окно нельзя — обновление обязательно. */}
+        {/* Обновить — или отложить и продолжить работу */}
         <div className="px-6 py-5 mt-2">
           <button onClick={handleUpdate} disabled={busy}
             className="w-full h-11 rounded-xl text-[14px] font-semibold text-white flex items-center justify-center gap-2 transition-opacity hover:opacity-90 disabled:opacity-60"
@@ -181,6 +182,12 @@ export default function SecurityUpdateGate() {
                 {desktop ? "Обновить программу" : "Обновить страницу"}</>
             )}
           </button>
+          {!busy && (
+            <button onClick={() => setDismissed(true)}
+              className="w-full h-9 mt-2 rounded-xl text-[13px] font-medium text-gray-600 hover:bg-gray-100">
+              Позже
+            </button>
+          )}
           <p className="text-[11px] text-gray-400 text-center mt-3 leading-relaxed">
             {desktop
               ? "Программа скачает обновление и перезапустится автоматически."

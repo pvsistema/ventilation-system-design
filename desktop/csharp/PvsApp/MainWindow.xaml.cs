@@ -1240,9 +1240,10 @@ public partial class MainWindow : Window
         return IsNewerVersion(minSecure!, AppVersion);
     }
 
-    // Блокирующее окно: работать на уязвимой сборке нельзя. Кнопка одна —
-    // «Обновить». Отказ от обновления закрывает программу, чтобы человек не
-    // продолжал работу на небезопасной версии.
+    // Окно рекомендованного обновления по безопасности. Решение всегда за
+    // пользователем: «Да» — скачать и установить, «Нет» — продолжить работу
+    // на текущей версии. Программа не закрывается и не обновляется сама —
+    // принудительного обновления нет (требование реестра российского ПО).
     private void ShowSecurityUpdateDialog()
     {
         string latest = _updateInfo?.Version ?? "";
@@ -1250,26 +1251,20 @@ public partial class MainWindow : Window
 
         string text =
             "В вашей версии программы обнаружена и устранена уязвимость.\n" +
-            "Чтобы продолжить работу, установите защищённую версию.\n\n" +
+            "Рекомендуем установить защищённую версию.\n\n" +
             $"Установлена:  {AppVersion}\n" +
             (string.IsNullOrWhiteSpace(latest) ? "" : $"Безопасная:   {latest}\n") +
             (string.IsNullOrWhiteSpace(why) ? "" : $"\n{why}\n") +
             "\nОбновить сейчас?\n\n" +
             "Программа скачает обновление и перезапустится.\n" +
-            "Без обновления работа невозможна.";
+            "Можно отказаться и обновиться позже — работа продолжится.";
 
-        var answer = MessageBox.Show(this, text, "Требуется обновление безопасности",
-            MessageBoxButton.OKCancel, MessageBoxImage.Warning, MessageBoxResult.OK);
+        var answer = MessageBox.Show(this, text, "Рекомендуется обновление безопасности",
+            MessageBoxButton.YesNo, MessageBoxImage.Warning, MessageBoxResult.Yes);
 
-        if (answer == MessageBoxResult.OK)
+        if (answer == MessageBoxResult.Yes)
         {
             _ = HandleInstallUpdate();
-        }
-        else
-        {
-            // Пользователь отказался — на уязвимой сборке работать нельзя.
-            StopServerForUpdate();
-            Application.Current.Shutdown();
         }
     }
 
