@@ -14,7 +14,8 @@ FILES = ["00_ШПАРГАЛКА_ЗАПОЛНЕНИЯ_ЗАЯВКИ", "01_ИНСТ
          "11_ИНСТРУКЦИЯ_ДЛЯ_ЭКСПЕРТА", "ОПИСЬ_КОМПЛЕКТА"]
 # На сайт (public/reestr) — только документы для эксперта. Документы 07, 08, 11
 # (адрес, ключ эксперта) — во внутреннюю папку docs/private/reestr.
-PRIVATE = {"07_ХРАНЕНИЕ_ИСХОДНОГО_ТЕКСТА", "08_ЛИЦЕНЗИОННЫЕ_КЛЮЧИ", "11_ИНСТРУКЦИЯ_ДЛЯ_ЭКСПЕРТА"}
+PRIVATE = {"00_ШПАРГАЛКА_ЗАПОЛНЕНИЯ_ЗАЯВКИ", "06_ШАБЛОНЫ_СПРАВОК", "07_ХРАНЕНИЕ_ИСХОДНОГО_ТЕКСТА",
+           "08_ЛИЦЕНЗИОННЫЕ_КЛЮЧИ", "11_ИНСТРУКЦИЯ_ДЛЯ_ЭКСПЕРТА", "ОПИСЬ_КОМПЛЕКТА"}
 PRIVATE_OUT = os.path.join(ROOT, "docs", "private", "reestr")
 CSS = """
 @page { size: A4; margin: 20mm 15mm 20mm 25mm; }
@@ -57,10 +58,9 @@ if __name__ == "__main__":
     for n in FILES:
         p = build(n)
         print(n, len(pypdf.PdfReader(p).pages), "стр")
-    z = os.path.join(OUT, "ПВ-Система_комплект_для_реестра_РФ.zip")
+    # Полный комплект — только во внутренней папке, на сайт не попадает.
+    z = os.path.join(PRIVATE_OUT, "ПВ-Система_комплект_для_реестра_РФ.zip")
     with zipfile.ZipFile(z, "w", zipfile.ZIP_DEFLATED) as zf:
         for n in FILES:
-            if n in PRIVATE:
-                continue
-            zf.write(os.path.join(OUT, n + ".pdf"), n + ".pdf")
+            zf.write(os.path.join(PRIVATE_OUT if n in PRIVATE else OUT, n + ".pdf"), n + ".pdf")
     print("zip", round(os.path.getsize(z) / 1048576, 2), "MB")

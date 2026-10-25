@@ -19,8 +19,6 @@ interface DocItem {
   pages: number;
   /** Обязательный документ для экспертной проверки (шаг 5/13). */
   required?: boolean;
-  /** Внутренний документ — не для загрузки в форму реестра. */
-  internal?: boolean;
 }
 
 const DOCS: DocItem[] = [
@@ -56,32 +54,10 @@ const DOCS: DocItem[] = [
     file: "05_ТЕХНИЧЕСКАЯ_ДОКУМЕНТАЦИЯ.pdf",
     title: "Техническая документация",
     desc: "Архитектура программы, технологический стек, системные требования, сведения о правообладании.",
-    pages: 8,
-  },
-  {
-    file: "06_ШАБЛОНЫ_СПРАВОК.pdf",
-    title: "Шаблоны справок",
-    desc: "Готовые тексты справок для шагов 9, 10 и 12 заявления, перечень используемых программных компонентов.",
-    pages: 6,
-    internal: true,
-  },
-  {
-    file: "00_ШПАРГАЛКА_ЗАПОЛНЕНИЯ_ЗАЯВКИ.pdf",
-    title: "Шпаргалка по заполнению заявления",
-    desc: "Готовые формулировки для всех 13 шагов формы реестра и контрольный список перед подачей.",
-    pages: 21,
-    internal: true,
-  },
-  {
-    file: "ОПИСЬ_КОМПЛЕКТА.pdf",
-    title: "Опись комплекта",
-    desc: "Состав пакета, порядок подготовки документов, что нужно подготовить дополнительно.",
-    pages: 4,
-    internal: true,
+    pages: 9,
   },
 ];
 
-const ARCHIVE = "ПВ-Система_комплект_для_реестра_РФ.zip";
 const BASE = "/reestr/";
 
 export default function Docs() {
@@ -118,28 +94,13 @@ export default function Docs() {
 
       <div className="max-w-4xl mx-auto px-6 py-8">
 
-        {/* Скачать всё одним архивом */}
-        <a
-          href={BASE + ARCHIVE}
-          download
-          className="flex items-center gap-4 p-5 rounded-xl bg-blue-600 hover:bg-blue-700 transition-colors text-white mb-8 shadow-sm">
-          <Icon name="Download" size={28} className="flex-shrink-0" />
-          <div className="flex-1 min-w-0">
-            <div className="font-semibold text-[15px]">Скачать весь комплект одним архивом</div>
-            <div className="text-[13px] opacity-90 mt-0.5">
-              Все документы в PDF · ZIP, около 0,9 МБ
-            </div>
-          </div>
-          <Icon name="ChevronRight" size={22} className="flex-shrink-0 opacity-80" />
-        </a>
-
         {/* Обязательные документы */}
         <h2 className="text-[15px] font-semibold text-slate-900 mb-1">
           Документы для экспертной проверки
         </h2>
         <p className="text-[13px] text-slate-600 mb-4">
-          Четыре обязательных документа, загружаемые на шаге 5 заявления о включении
-          сведений в Единый реестр российских программ для ЭВМ и баз данных.
+          Описание функциональных характеристик, инструкция по установке, руководство
+          по эксплуатации и сведения о поддержке программы. Открываются без регистрации.
         </p>
 
         <div className="space-y-2.5 mb-8">
@@ -203,11 +164,6 @@ function DocCard({ doc }: { doc: DocItem }) {
           <span className="font-medium text-[14px] text-slate-900 group-hover:text-blue-700">
             {doc.title}
           </span>
-          {doc.internal && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
-              рабочий документ
-            </span>
-          )}
         </div>
         <p className="text-[12.5px] text-slate-600 mt-1 leading-relaxed">{doc.desc}</p>
         <div className="text-[11.5px] text-slate-400 mt-1.5">
