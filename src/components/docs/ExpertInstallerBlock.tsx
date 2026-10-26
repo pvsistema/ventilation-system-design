@@ -3,7 +3,7 @@ import Icon from "@/components/ui/icon";
 import { APP_VERSION } from "@/lib/appVersion";
 import { INSTALLER_URL, fetchRemoteVersion } from "@/lib/updater";
 
-const YANDEX_DISK_URL = "https://disk.yandex.ru/d/ztBLZ8rKXphJEw";
+const YANDEX_DISK_URL = "https://disk.yandex.ru/d/lUNqRKv4CFvYKw";
 
 function CopyRow({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false);
