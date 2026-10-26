@@ -374,6 +374,28 @@ export const HELP_SECTIONS_GUIDES: Section[] = [
           Не нашли ответ? Откройте «Лог» в строке состояния — большинство проблем расчёта описаны там
           с указанием конкретной ветви или узла.
         </Note>
+
+        <H3>Техническая поддержка</H3>
+        <table className="w-full text-[12px] border-collapse">
+          <tbody>
+            {[
+              ["Электронная почта", "votapise@mail.ru"],
+              ["Телефон", "+7 962 524-46-98"],
+              ["Сайт", "https://пв-система.рф"],
+              ["Документация", "https://пв-система.рф/docs"],
+            ].map(([k, v]) => (
+              <tr key={k} className="even:bg-gray-50">
+                <td className="p-1.5 border border-gray-200 font-medium w-40">{k}</td>
+                <td className="p-1.5 border border-gray-200 text-gray-700 select-all">{v}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <p className="text-[11px] text-gray-500">
+          Поддержка работает в рабочие дни. Обращения принимаются круглосуточно, обработка — в рабочее
+          время. В письме укажите версию программы (окно «О программе»), опишите действия и приложите
+          файл проекта .vproj и снимок «Лога» — так ответ будет быстрее.
+        </p>
       </div>
     ),
   },

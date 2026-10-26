@@ -298,7 +298,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 { id: "general", label: "Общие" },
                 { id: "vent", label: "Вентиляция" },
                 { id: "topology", label: "Топология" },
-                { id: "waterpipes", label: "Трубы:" },
+                { id: "waterpipes", label: "Трубы" },
                 { id: "conveyor", label: "Конвейер" },
                 { id: "fireload", label: "Пож.нагрузка" },
                 { id: "airdemand", label: "Расход воздуха" },

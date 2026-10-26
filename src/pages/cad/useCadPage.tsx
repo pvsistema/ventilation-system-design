@@ -711,6 +711,8 @@ export function useCadPage() {
       order.forEach((b, i) => branchMap.set(b.id, String(branchStart + i)));
     }
 
+    if (nodeMap.size > 0 || branchMap.size > 0) pushHistory();
+
     if (nodeMap.size > 0) {
       setNodes((prev) => prev.map((n) => {
         const newId = nodeMap.get(n.id) ?? n.id;
