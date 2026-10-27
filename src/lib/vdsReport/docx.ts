@@ -9,8 +9,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType,
-  AlignmentType, HeadingLevel, PageBreak, BorderStyle, VerticalAlign,
+  AlignmentType, HeadingLevel, PageBreak, BorderStyle, VerticalAlign, Footer,
 } from "docx";
+import { getDocMark, docMarkLine, docMarkProps } from "@/lib/docMark";
 import type { VdsReportForm } from "./types";
 import { f, type VdsCalcResult } from "./calc";
 import { buildConclusions, buildRecommendations } from "./conclusions";
@@ -345,10 +346,27 @@ export async function buildVdsDocx(form: VdsReportForm, r: VdsCalcResult): Promi
     "Ушаков К.З. Справочник по рудничной вентиляции. — М.: Недра, 1977.",
   ].forEach((s, i) => children.push(p(`${i + 1}. ${s}`)));
 
+  // Отметка лицензии в нижнем колонтитуле и в свойствах файла: по ней видно,
+  // из какой копии программы вышел отчёт (см. docMark.ts).
+  const mark = getDocMark();
+  const markFooter = new Footer({
+    children: [new Paragraph({
+      alignment: AlignmentType.CENTER,
+      spacing: { before: 60 },
+      children: [new TextRun({
+        text: docMarkLine(mark), font: FONT, size: 16, color: "808080",
+        italics: true,
+      })],
+    })],
+  });
+
   const doc = new Document({
     styles: { default: { document: { run: { font: FONT, size: 26 } } } },
+    ...docMarkProps(mark),
+    title: `Отчёт ВДС — ${form.mineName || "рудник"}`,
     sections: [{
       properties: { page: { margin: { top: 1134, bottom: 1134, left: 1701, right: 850 } } },
+      footers: { default: markFooter },
       children,
     }],
   });
