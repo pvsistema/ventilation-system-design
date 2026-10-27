@@ -161,6 +161,16 @@ if not exist "%CORE_DIR%\server.py" if not exist "%CORE_DIR%" (
 echo     OK
 echo.
 
+REM ---------- Check the core signing key EARLY ----------
+REM server.exe is signed at the end of step 2, but a missing or wrong key must
+REM surface NOW: otherwise the build dies after 5-20 minutes of Nuitka work.
+REM A key that is simply not set is fine here - it will be asked for at signing
+REM time; the script only prints where to get it. A WRONG key stops the build.
+echo [0/5] Checking the core signing key...
+python "%CS_DIR%\sign_core.py" --check
+if errorlevel 1 goto :fail
+echo.
+
 REM ---------- Step 1: frontend ----------
 echo [1/5] Building frontend (desktop mode)...
 cd /d "%ROOT%"
@@ -255,10 +265,15 @@ REM --- Sign server.exe: PVS.exe verifies this signature on EVERY start ---
 REM A modified core (e.g. with the license check cut out) will not start.
 REM Needs the OFFLINE_KEY_PRIVATE secret: set it as an environment variable
 REM before the build, or paste it when asked (hidden input, not saved).
+REM sign_core.py prints where to get the key and how to pass it.
 echo     Signing server.exe...
 python "%CS_DIR%\sign_core.py" "%CS_DIR%\dist\server\server.exe"
 if errorlevel 1 (
-    echo ERROR: server.exe is not signed - PVS.exe would refuse to start it.
+    echo.
+    echo ERROR: server.exe is NOT signed - PVS.exe would refuse to start it.
+    echo        The compiled core is kept in dist\server\server.exe: once the key
+    echo        is available you can sign it alone, without rebuilding:
+    echo            python desktop\csharp\sign_core.py desktop\csharp\dist\server\server.exe
     goto :fail
 )
 echo     OK (core compiled to native code with Nuitka and signed, version %SERVER_VERSION%)
