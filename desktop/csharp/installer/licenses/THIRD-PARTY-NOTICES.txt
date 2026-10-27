@@ -5,14 +5,8 @@
 их правообладателями безвозмездно на условиях открытых (свободных) лицензий.
 Ниже — перечень компонентов; полные тексты лицензий лежат в этой же папке.
 
-Компонент svglib (GNU LGPL 3.0) используется без изменений как отдельная
-библиотека. Его исходный текст доступен у правообладателя:
-  svglib — https://github.com/deeplook/svglib
-По запросу пользователя исходный текст этого компонента предоставляется
-в соответствии с условиями лицензии. Полный текст: LGPL-3.0.txt
-(LGPL 3.0 дополняет GPL 3.0, её текст — GPL-3.0.txt).
-Загрузчик PyInstaller распространяется по GPL 2.0 с исключением, прямо
-разрешающим распространение собранных им программ на любых условиях.
+Расчётное ядро скомпилировано компилятором Nuitka; его среда выполнения,
+входящая в ядро, распространяется по лицензии Apache 2.0.
 
 Исключительное право на программу «ПВ-Система» принадлежит её правообладателю.
 
@@ -93,9 +87,7 @@ Flask                                      3.1.0          BSD-3-Clause          
 Werkzeug (в составе Flask)                 3.x            BSD-3-Clause                       python-werkzeug.txt
 Jinja2 (в составе Flask)                   3.x            BSD-3-Clause                       python-jinja2.txt
 NumPy                                      2.1.3          BSD-3-Clause                       python-numpy.txt
-ReportLab                                  4.2.5          BSD-3-Clause                       python-reportlab.txt
-svglib                                     1.5.1          LGPL-3.0                           python-svglib.txt
-PyInstaller (загрузчик)                    6.11.1         GPL-2.0 с исключением для собираемых программ python-pyinstaller.txt
+Nuitka (среда выполнения)                  2.8.10         Apache-2.0                         python-nuitka.txt
 .NET Runtime                               8              MIT                                dotnet.txt
 BouncyCastle.Cryptography                  2.4.0          MIT                                bouncycastle.txt
 Microsoft.Web.WebView2 SDK                 1.0.2739.15    BSD-3-Clause (Microsoft)           microsoft-webview2.txt

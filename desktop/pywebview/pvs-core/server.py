@@ -28,16 +28,26 @@ def resource(path):
 def get_core_version():
     """Версия ядра (server.exe). Читается из server_version.txt рядом с exe —
     этот же файл сборщик проставляет, а C# сравнивает при обновлении."""
-    try:
-        exe_dir = os.path.dirname(os.path.abspath(sys.executable))
-        vfile = os.path.join(exe_dir, "server_version.txt")
-        if os.path.exists(vfile):
-            with open(vfile, "r", encoding="utf-8") as f:
-                v = f.read().strip()
-                if v:
-                    return v
-    except Exception:
-        pass
+    # Nuitka-onefile распаковывает ядро во временную папку, и sys.executable
+    # указывает туда. Папку самого server.exe даёт __compiled__.containing_dir
+    # (или sys.argv[0]); sys.executable — для запуска из исходников.
+    dirs = []
+    comp = globals().get("__compiled__")
+    if comp is not None and getattr(comp, "containing_dir", None):
+        dirs.append(comp.containing_dir)
+    if sys.argv and sys.argv[0]:
+        dirs.append(os.path.dirname(os.path.abspath(sys.argv[0])))
+    dirs.append(os.path.dirname(os.path.abspath(sys.executable)))
+    for exe_dir in dirs:
+        try:
+            vfile = os.path.join(exe_dir, "server_version.txt")
+            if os.path.exists(vfile):
+                with open(vfile, "r", encoding="utf-8") as f:
+                    v = f.read().strip()
+                    if v:
+                        return v
+        except Exception:
+            pass
     return "1.0.0"
 
 
@@ -204,8 +214,16 @@ def _load_backend_handler(name: str):
 
     path = next((c for c in candidates if os.path.exists(c)), None)
     if not path:
-        _HANDLER_CACHE[name] = None
-        return None
+        # Сборка Nuitka: функции скомпилированы в машинный код внутри
+        # server.exe как модули bf_<имя> (см. desktop/csharp/prepare_core.py),
+        # файлов index.py на диске нет.
+        try:
+            mod = importlib.import_module("bf_" + name.replace("-", "_"))
+            handler = getattr(mod, "handler", None)
+        except ImportError:
+            handler = None
+        _HANDLER_CACHE[name] = handler
+        return handler
 
     # Папка модуля должна быть в путях импорта: index.py делает
     # `from license_guard import license_gate`, а license_guard.py лежит РЯДОМ,
@@ -406,27 +424,18 @@ def _gate(body, func: str):
 def _find_dist():
     meipass = getattr(sys, "_MEIPASS", None)
     script_dir = os.path.dirname(os.path.abspath(__file__))
+    # Nuitka-onefile распаковывает данные рядом с модулем (script_dir);
+    # остальные варианты — запуск из исходников и прежняя сборка PyInstaller.
+    comp = globals().get("__compiled__")
+    comp_dir = getattr(comp, "containing_dir", None) if comp is not None else None
     candidates = [
+        os.path.join(script_dir, "dist"),
         os.path.join(meipass, "pvs-core", "dist") if meipass else None,
         os.path.join(meipass, "dist") if meipass else None,
-        os.path.join(script_dir, "dist"),
+        os.path.join(comp_dir, "dist") if comp_dir else None,
+        os.path.join(os.path.dirname(os.path.abspath(sys.argv[0])), "dist") if sys.argv and sys.argv[0] else None,
     ]
     candidates = [c for c in candidates if c]
-
-    log_path = os.path.join(os.path.expanduser("~"), "pvs_debug.txt")
-    with open(log_path, "w", encoding="utf-8") as f:
-        f.write(f"_MEIPASS={meipass}\n")
-        f.write(f"script_dir={script_dir}\n")
-        for c in candidates:
-            exists = os.path.isdir(c)
-            has_index = os.path.exists(os.path.join(c, "index.html")) if exists else False
-            f.write(f"  [{exists}/{has_index}] {c}\n")
-            if exists:
-                try:
-                    files = os.listdir(c)[:10]
-                    f.write(f"    files: {files}\n")
-                except Exception as e:
-                    f.write(f"    listdir error: {e}\n")
 
     for c in candidates:
         if os.path.isdir(c) and os.path.exists(os.path.join(c, "index.html")):

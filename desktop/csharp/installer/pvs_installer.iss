@@ -53,10 +53,12 @@ Source: "{#AppIcon}"; DestDir: "{app}"; DestName: "pvs.ico"; Flags: ignoreversio
 ; Отдельная чёткая иконка (16/32/48/64/128/256) для файлов-схем .vproj
 Source: "{#DocIcon}"; DestDir: "{app}"; DestName: "vproj.ico"; Flags: ignoreversion
 
-; Flask-сервер
+; Расчётное ядро целиком: server.exe, его подпись server.sig и файл версии.
+; Без server.sig программа не запустит ядро — оболочка проверяет подпись при
+; каждом старте, поэтому папка копируется целиком.
 Source: "{#SourceDir}\server\*"; DestDir: "{app}\server"; Flags: ignoreversion recursesubdirs createallsubdirs
 
-; Тексты лицензий сторонних компонентов (требование MIT/BSD/Apache/GPL/LGPL
+; Тексты лицензий сторонних компонентов (требование MIT/BSD/Apache
 ; и реестра российского ПО): перечень — THIRD-PARTY-NOTICES.txt.
 Source: "licenses\*"; DestDir: "{app}\licenses"; Flags: ignoreversion recursesubdirs createallsubdirs
 

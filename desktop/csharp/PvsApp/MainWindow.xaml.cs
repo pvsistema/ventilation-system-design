@@ -40,6 +40,11 @@ public partial class MainWindow : Window
     private const string ServerUrl       = "http://127.0.0.1:5173";
 
     private Process?     _serverProcess;
+    // Открытый на чтение файл ядра. Держим его, пока программа работает:
+    // проверенный файл нельзя подменить между проверкой подписи и запуском,
+    // а также во время сеанса (Windows не даст его перезаписать или удалить).
+    private FileStream?  _coreLock;
+    private static readonly string ServerDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server");
     private string?      _pendingFile;
     // Содержимое файла, открытого двойным кликом: читается фоном с самого
     // старта, ещё до того как интерфейс успеет его запросить.
@@ -111,27 +116,22 @@ public partial class MainWindow : Window
         if (_pendingFile is string startFile)
             _pendingRead = Task.Run(() => ReadPendingFile(startFile));
 
-        // Обновление, скачанное в прошлый сеанс: только переименовать файл.
-        ApplyPendingServerUpdate();
-
-        SetStatus("Запуск расчётного ядра...");
-        bool started = StartServerProcess();
-
-        if (!started)
+        // ПРОВЕРКА ПОДЛИННОСТИ ЯДРА ПРИ КАЖДОМ ЗАПУСКЕ.
+        // Раньше подпись проверялась только у скачанного обновления, а файл,
+        // уже лежащий на диске, запускался как есть: изменённое ядро (например,
+        // с вырезанной проверкой лицензии) работало незаметно. Теперь ядро
+        // запускается только если его контрольная сумма подписана нашим ключом.
+        SetStatus("Проверка расчётного ядра...");
+        if (!await EnsureVerifiedCoreAsync() || !StartServerProcess())
         {
-            // Ядра на диске нет вообще (первый запуск после частичной
-            // установки) — вот тут ждать закачку действительно приходится.
-            SetStatus("Загрузка расчётного ядра...");
-            await UpdateServerExeIfNeededAsync();
-            ApplyPendingServerUpdate();
-            if (!StartServerProcess())
-            {
-                MessageBox.Show("Расчётное ядро не найдено и не удалось его загрузить.\n\n" +
-                                "Проверьте подключение к сети и переустановите программу.",
-                                "ПВ-Система", MessageBoxButton.OK, MessageBoxImage.Error);
-                Application.Current.Shutdown();
-                return;
-            }
+            ReleaseCoreLock();
+            MessageBox.Show("Расчётное ядро повреждено, изменено или не найдено, " +
+                            "а загрузить подлинное ядро не удалось.\n\n" +
+                            "Подключитесь к интернету и перезапустите программу " +
+                            "или переустановите её.",
+                            "ПВ-Система", MessageBoxButton.OK, MessageBoxImage.Error);
+            Application.Current.Shutdown();
+            return;
         }
 
         // Пока ядро поднимается, параллельно готовим браузерный движок: его
@@ -211,10 +211,23 @@ public partial class MainWindow : Window
     {
         try
         {
-            string serverExe   = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
+            string serverExe   = Path.Combine(ServerDir, "server.exe");
             string pending     = serverExe + ".new";
             string pendingVer  = serverExe + ".newver";
+            string sigFile     = Path.Combine(ServerDir, CoreSigFileName);
+            string pendingSig  = sigFile + ".new";
             if (!File.Exists(pending)) return;
+
+            // Обновление без файла подписи (скачано старой версией программы)
+            // всё равно не пройдёт проверку при запуске — не ставим его.
+            if (!File.Exists(pendingSig))
+            {
+                try { File.Delete(pending); } catch { }
+                try { if (File.Exists(pendingVer)) File.Delete(pendingVer); } catch { }
+                return;
+            }
+
+            ReleaseCoreLock();
 
             if (File.Exists(serverExe))
             {
@@ -224,6 +237,7 @@ public partial class MainWindow : Window
                 try { File.Delete(bak); } catch { /* держит антивирус — удалится позже */ }
             }
             File.Move(pending, serverExe, overwrite: true);
+            File.Move(pendingSig, sigFile, overwrite: true);
 
             if (File.Exists(pendingVer))
             {
@@ -259,7 +273,7 @@ public partial class MainWindow : Window
             System.Windows.Threading.DispatcherPriority.Background);
     }
 
-    private async Task UpdateServerExeIfNeededAsync()
+    private async Task UpdateServerExeIfNeededAsync(bool force = false)
     {
         try
         {
@@ -281,7 +295,9 @@ public partial class MainWindow : Window
             // Версия совпала — качать нечего. Но если самого файла ядра на
             // диске нет (повреждённая установка), качаем даже при совпадении:
             // иначе запись о версии осталась бы, а работать было бы нечем.
-            if (remoteVer == localVer && File.Exists(serverExe)) return;
+            // force — ядро на диске не прошло проверку подлинности: качаем
+            // подлинное, даже если номер версии совпадает.
+            if (!force && remoteVer == localVer && File.Exists(serverExe)) return;
             // Уже скачано фоном в прошлый раз и ждёт применения — не качаем второй раз.
             if (File.Exists(serverExe + ".new")
                 && File.Exists(serverExe + ".newver")
@@ -317,6 +333,14 @@ public partial class MainWindow : Window
             // (ApplyPendingServerUpdate) — это переименование файла, мгновенно.
             string tmpPath = serverExe + ".new";
             await File.WriteAllBytesAsync(tmpPath, bytes);
+            // Подпись ядра кладём рядом: по ней ядро проверяется при каждом
+            // следующем запуске, в том числе без интернета.
+            await File.WriteAllTextAsync(Path.Combine(ServerDir, CoreSigFileName + ".new"),
+                JsonSerializer.Serialize(new CoreSignature
+                {
+                    Sha256 = info!.ServerSha256!.Trim().ToLowerInvariant(),
+                    Sig    = info.ServerSig!.Trim(),
+                }));
             await File.WriteAllTextAsync(serverExe + ".newver", remoteVer);
             LogIntegrity($"Ядро v{remoteVer} загружено фоном, будет применено при следующем запуске");
         }
@@ -332,6 +356,8 @@ public partial class MainWindow : Window
                 // Метку версии тоже убираем: недокачанный файл не должен
                 // выглядеть как готовое к применению обновление.
                 if (File.Exists(serverExe + ".newver")) File.Delete(serverExe + ".newver");
+                string sigNew = Path.Combine(ServerDir, CoreSigFileName + ".new");
+                if (File.Exists(sigNew)) File.Delete(sigNew);
                 string bakPath = serverExe + ".old";
                 if (!File.Exists(serverExe) && File.Exists(bakPath))
                     File.Move(bakPath, serverExe, overwrite: true);
@@ -355,13 +381,22 @@ public partial class MainWindow : Window
     /// </summary>
     private static bool VerifyServerBinary(byte[] data, string? expectedSha256, string? sigB64Url)
     {
+        string actual = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+        return VerifyHashSignature(actual, expectedSha256, sigB64Url);
+    }
+
+    /// <summary>
+    /// Сверяет фактическую сумму файла (hex) с заявленной и проверяет, что
+    /// заявленная сумма подписана подлинным приватным ключом.
+    /// </summary>
+    private static bool VerifyHashSignature(string actual, string? expectedSha256, string? sigB64Url)
+    {
         try
         {
             if (string.IsNullOrWhiteSpace(expectedSha256) || string.IsNullOrWhiteSpace(sigB64Url))
                 return false;
 
-            // 1. Контрольная сумма скачанного файла.
-            string actual = Convert.ToHexString(SHA256.HashData(data)).ToLowerInvariant();
+            // 1. Контрольная сумма файла.
             if (!string.Equals(actual, expectedSha256.Trim().ToLowerInvariant(), StringComparison.Ordinal))
                 return false;
 
@@ -379,6 +414,76 @@ public partial class MainWindow : Window
         {
             return false;
         }
+    }
+
+    // ── Проверка установленного ядра при каждом запуске ─────────────────────────
+
+    // Файл подписи рядом с server.exe: {"sha256": "...", "sig": "..."}.
+    // Создаётся при сборке (sign_core.py) и при обновлении ядра из облака.
+    private const string CoreSigFileName = "server.sig";
+
+    /// <summary>
+    /// Проверяет server.exe на диске по файлу подписи. При успехе оставляет
+    /// файл ядра открытым (_coreLock), чтобы его нельзя было подменить до
+    /// запуска и во время работы.
+    /// </summary>
+    private (bool Ok, string Reason) VerifyInstalledCore()
+    {
+        ReleaseCoreLock();
+        string serverExe = Path.Combine(ServerDir, "server.exe");
+        string sigFile   = Path.Combine(ServerDir, CoreSigFileName);
+        if (!File.Exists(serverExe)) return (false, "нет файла ядра");
+        if (!File.Exists(sigFile))   return (false, "нет файла подписи ядра");
+
+        FileStream? fs = null;
+        try
+        {
+            var sig = JsonSerializer.Deserialize<CoreSignature>(File.ReadAllText(sigFile),
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+            fs = new FileStream(serverExe, FileMode.Open, FileAccess.Read, FileShare.Read);
+            string actual = Convert.ToHexString(SHA256.HashData(fs)).ToLowerInvariant();
+            if (!VerifyHashSignature(actual, sig?.Sha256, sig?.Sig))
+            {
+                fs.Dispose();
+                return (false, "контрольная сумма или подпись не совпали");
+            }
+            _coreLock = fs;
+            return (true, "");
+        }
+        catch (Exception ex)
+        {
+            fs?.Dispose();
+            return (false, ex.Message);
+        }
+    }
+
+    /// <summary>
+    /// Гарантирует подлинное ядро перед запуском: проверяет файл на диске, а
+    /// если он изменён, повреждён или отсутствует — скачивает подлинное ядро
+    /// (оно само проверяется по подписи) и проверяет ещё раз.
+    /// </summary>
+    private async Task<bool> EnsureVerifiedCoreAsync()
+    {
+        // Обновление, скачанное в прошлый сеанс: только переименовать файл.
+        ApplyPendingServerUpdate();
+
+        var (ok, reason) = await Task.Run(() => VerifyInstalledCore());
+        if (ok) return true;
+
+        LogIntegrity("Ядро не прошло проверку подлинности: " + reason);
+        SetStatus("Загрузка подлинного расчётного ядра...");
+        await UpdateServerExeIfNeededAsync(force: true);
+        ApplyPendingServerUpdate();
+
+        (ok, reason) = await Task.Run(() => VerifyInstalledCore());
+        if (!ok) LogIntegrity("Подлинное ядро получить не удалось: " + reason);
+        return ok;
+    }
+
+    private void ReleaseCoreLock()
+    {
+        try { _coreLock?.Dispose(); } catch { }
+        _coreLock = null;
     }
 
     private static byte[] FromBase64Url(string s)
@@ -406,15 +511,15 @@ public partial class MainWindow : Window
     }
 
     /// <summary>
-    /// Поднимает расчётное ядро. Возвращает false, если файла ядра на диске нет
-    /// (тогда вызывающий код решает: качать или сдаваться) — раньше метод сам
-    /// показывал ошибку и закрывал программу, из-за чего не было возможности
-    /// попробовать восстановить ядро закачкой.
+    /// Поднимает расчётное ядро. Возвращает false, если файла ядра нет или оно
+    /// не прошло проверку подписи в этом сеансе (EnsureVerifiedCoreAsync).
     /// </summary>
     private bool StartServerProcess()
     {
-        string serverExe = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "server", "server.exe");
+        string serverExe = Path.Combine(ServerDir, "server.exe");
         if (!File.Exists(serverExe)) return false;
+        // Запускаем только ядро, прошедшее проверку подписи в этом сеансе.
+        if (_coreLock == null) return false;
 
         try
         {
@@ -430,11 +535,15 @@ public partial class MainWindow : Window
             _serverProcess.Start();
             return true;
         }
-        catch { return false; }
+        catch (Exception ex)
+        {
+            LogIntegrity("Не удалось запустить ядро: " + ex.Message);
+            return false;
+        }
     }
 
-    // 40 с вместо 20: PyInstaller-onefile при первом запуске (и особенно после
-    // обновления) распаковывает ядро во временную папку, а антивирус сканирует
+    // 40 с вместо 20: onefile-ядро при первом запуске (и особенно после
+    // обновления) распаковывается во временную папку, а антивирус сканирует
     // свежий exe — на слабой машине 20 с не хватало, и приложение сдавалось на
     // рабочем ядре.
     private async Task<bool> WaitForServerAsync(int timeoutMs = 40_000)
@@ -1489,6 +1598,7 @@ public partial class MainWindow : Window
     private void OnClosed(object? sender, EventArgs e)
     {
         try { _serverProcess?.Kill(entireProcessTree: true); } catch { }
+        ReleaseCoreLock();
     }
 
     /// <summary>
@@ -1505,6 +1615,8 @@ public partial class MainWindow : Window
         // 1) Наш собственный процесс ядра — со всем деревом дочерних.
         try { _serverProcess?.Kill(entireProcessTree: true); } catch { }
         try { _serverProcess?.WaitForExit(5000); } catch { }
+        // Отпускаем файл ядра — установщик должен его заменить.
+        ReleaseCoreLock();
 
         // 2) «Осиротевшие» ядра из нашей папки установки. Сравниваем путь,
         //    чтобы не задеть чужие процессы с тем же именем.
@@ -1795,6 +1907,15 @@ public class UpdateInfo
 
     [System.Text.Json.Serialization.JsonPropertyName("security_notes")]
     public string? SecurityNotes { get; set; }
+}
+
+public class CoreSignature
+{
+    [System.Text.Json.Serialization.JsonPropertyName("sha256")]
+    public string? Sha256 { get; set; }
+
+    [System.Text.Json.Serialization.JsonPropertyName("sig")]
+    public string? Sig { get; set; }
 }
 
 public class VersionInfo

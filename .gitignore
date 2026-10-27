@@ -27,3 +27,6 @@ builds
 
 # warmup/handoff артефакты
 tmp/
+# desktop build artefacts
+desktop/csharp/nuitka-build/
+desktop/csharp/pvs-core-nuitka/

@@ -33,6 +33,17 @@ desktop\csharp\build.bat
 | Node.js 18+ | собрать React-интерфейс | https://nodejs.org |
 | Python 3.11 | собрать расчётное ядро | https://python.org |
 | .NET 8 SDK | собрать PVS.exe | https://dotnet.microsoft.com/download/dotnet/8.0 |
+| Компилятор C (необязательно) | Nuitka переводит ядро в машинный код | Visual Studio Build Tools с «Разработка классических приложений на C++»; если их нет, Nuitka сама скачает MinGW64 при первой сборке (нужен интернет) |
+
+Ещё понадобится **закрытый ключ подписи** — значение секрета
+`OFFLINE_KEY_PRIVATE`. Им подписывается `server.exe`; без подписи `PVS.exe`
+ядро не запустит. Перед сборкой задай его в той же консоли:
+
+```cmd
+set OFFLINE_KEY_PRIVATE=<значение секрета>
+```
+
+или вставь его, когда сборка спросит (ввод скрыт, ключ никуда не сохраняется).
 
 Проверить, что всё установлено:
 
@@ -53,7 +64,8 @@ dotnet --version
 desktop\csharp\dist\
   PVS.exe          ← единственный файл, который запускает пользователь
   server\
-    server.exe     ← расчётное ядро (Flask, упаковано PyInstaller)
+    server.exe     ← расчётное ядро (Flask, скомпилировано Nuitka в машинный код)
+    server.sig     ← подпись ядра; PVS.exe проверяет её при КАЖДОМ запуске
 ```
 
 ---
@@ -92,60 +104,60 @@ xcopy /E /I /Y dist-desktop desktop\pywebview\pvs-core\dist
 
 ---
 
-## Шаг 2 — Собрать расчётное ядро server.exe (Python)
+## Шаг 2 — Собрать расчётное ядро server.exe (Nuitka) и подписать его
 
-Сначала копируем backend-функции (воздухораспределение, горноспасатели,
-гидравлика, SVG→PDF и др.) в ядро — их использует локальный сервер:
+### Защита ядра
 
-```cmd
-cd C:\PVS
+* **Машинный код вместо байт-кода.** Раньше ядро упаковывалось PyInstaller
+  в байт-код `.pyc`. Бесплатные утилиты распаковывают такой `server.exe` и
+  восстанавливают читаемый Python за минуты — вместе с проверкой лицензии.
+  Теперь Nuitka переводит Python в C и компилирует в машинный код: исходников
+  и байт-кода внутри нет, восстановить логику можно только дизассемблированием.
+* **Подпись при каждом запуске.** `sign_core.py` считает SHA-256 готового
+  `server.exe` и подписывает её закрытым ключом Ed25519 (`server.sig`).
+  `PVS.exe` перед каждым запуском ядра сверяет сумму файла и подпись
+  публичным ключом. Изменённое ядро не запустится: программа попробует
+  скачать подлинное, а без интернета покажет ошибку. Во время работы файл
+  ядра держится открытым, поэтому подменить его на ходу нельзя.
 
-rmdir /S /Q desktop\pywebview\pvs-core\backend_functions
-for %F in (airflow rescue-calculator water-hydraulics explosion-calculator aerodynamics) do (
-  mkdir desktop\pywebview\pvs-core\backend_functions\%F 2>nul
-  copy /Y backend\%F\index.py desktop\pywebview\pvs-core\backend_functions\%F\index.py
-)
-```
-
-Теперь собираем ядро (обрати внимание на `cairosvg` — он нужен для PDF+).
-Ядро **защищается от чтения кода**: все модули компилируются в байткод
-`.pyc`, и в `server.exe` попадают ТОЛЬКО скомпилированные файлы — исходники
-`.py` с формулами расчётов (аэродинамика, взрыв) в сборку не включаются.
-Бесплатно, лицензий не требует.
-
-Сборка идёт в 2 подшага: компиляция ядра в `.pyc` → PyInstaller упаковывает
-скомпилированную копию.
+### Команды
 
 ```cmd
 cd C:\PVS\desktop\csharp
+python -m pip install -r requirements-build.txt
 
-pip install pyinstaller flask numpy cairosvg
+REM 1) разложить ядро и расчётные функции для Nuitka (bf_<имя>.py)
+python prepare_core.py ..\pywebview\pvs-core ..\..\backend server_entry.py pvs-core-nuitka
 
-REM 1) скомпилировать ядро в байткод (только .pyc, без .py) в pvs-core-pyc
-python compile_core.py ..\pywebview\pvs-core pvs-core-pyc
-
-REM 2) упаковать server.exe ИЗ скомпилированной копии (--add-data -> она)
-pyinstaller --onefile --noconsole --name "server" ^
-  --add-data "pvs-core-pyc;pvs-core" ^
-  --hidden-import flask ^
-  --hidden-import numpy ^
-  --hidden-import cairosvg ^
+REM 2) скомпилировать (5–20 минут; список модулей — в pvs-core-nuitka\modules.txt,
+REM    build.bat подставляет его сам)
+cd pvs-core-nuitka
+python -m nuitka --onefile --assume-yes-for-downloads --windows-console-mode=disable ^
+  --output-dir=..\nuitka-build --output-filename=server.exe ^
+  --include-data-dir=dist=dist --include-module=server ^
+  --include-module=bf_airflow --include-module=license_guard ^
+  ... (остальные модули из modules.txt) ^
   server_entry.py
-```
+cd ..
 
-> ⚠️ Ключевой момент — в `--add-data` указывается `pvs-core-pyc`
-> (скомпилированная копия), а НЕ исходная `..\pywebview\pvs-core`.
-> Скрипт `compile_core.py` компилирует `.py` тем же Python, что и сборка,
-> поэтому версии байткода совпадают и импорт работает.
-
-Готовый `server.exe` появится в `desktop\csharp\dist\server.exe`.
-
-Разложим его в папку `server\`:
-
-```cmd
+REM 3) разложить и подписать
 mkdir dist\server
-copy dist\server.exe dist\server\server.exe
+copy nuitka-build\server.exe dist\server\server.exe
+python sign_core.py dist\server\server.exe
 ```
+
+Проще запустить `build.bat` — он делает всё это сам.
+
+### Публикация обновления ядра
+
+Загрузи `dist\server\server.exe` и опубликуй его в админ-панели
+(«Обновление»), как раньше. Облако посчитает сумму и подпишет её тем же
+ключом, а программа при обновлении сохранит подпись рядом с ядром
+(`server.sig`) и будет проверять её при каждом запуске.
+
+> ⚠️ Устанавливай программу только вместе с `server.sig`: установщик
+> берёт всю папку `server\`, поэтому при сборке через `build.bat` файл
+> подписи попадает туда автоматически.
 
 ---
 
@@ -266,6 +278,7 @@ desktop\csharp\dist\
   PVS.exe
   server\
     server.exe
+    server.sig
 ```
 
 Скопируй эту папку целиком. Пользователь запускает `PVS.exe`.
@@ -284,8 +297,12 @@ desktop\csharp\dist\
 5. Логотип отображается в шапке и в окне «О программе».
 6. (Опционально) Открой `PVS.dll` из `dist` в dnSpy — имена методов/полей
    должны быть нечитаемыми (обфускация C# сработала).
-7. (Опционально) Расчёты работают (аэродинамика, взрыв) — значит ядро,
-   скомпилированное в байткод (.pyc), запускается корректно.
+7. Расчёты работают (аэродинамика, взрыв) — значит ядро, скомпилированное
+   Nuitka, запускается корректно.
+8. Проверка подписи: измени один байт в `server\server.exe` (или удали
+   `server\server.sig`) и отключи интернет — программа должна отказаться
+   запускаться с сообщением «Расчётное ядро повреждено, изменено или не
+   найдено». Причина пишется в `%LOCALAPPDATA%\PVS\update.log`.
 
 ---
 
@@ -297,16 +314,17 @@ desktop\csharp\dist\
 | «Ошибка активации» при верном ключе | старый `server.exe` со старым адресом лицензии | пересобрать ядро (Шаг 2) — адрес лицензии зашит в `server.exe` |
 | «Не удалось запустить расчётный модуль» | нет `server\server.exe` рядом с `PVS.exe` | проверить Шаг 2 |
 | «airflow модуль не найден» | backend-функции не скопированы в ядро | выполнить копирование в начале Шага 2 и пересобрать |
-| «Ошибка векторного PDF» (PDF+) | нет `cairosvg` в ядре | установить `cairosvg` и пересобрать (Шаг 2) |
 | Пустое белое окно | не скопирован `dist` в `pvs-core\dist` | повторить конец Шага 1 |
 | Логотип-«битая картинка» без сети | нормально: оффлайн подставляется запасной значок | это ожидаемо |
 | Иконка окна стандартная | нет `pvs.ico` | выполнить Шаг 3 |
 | Окно не открывается / падает после обфускации | WPF-тип переименован | добавить его в `<SkipType>` в `PvsApp\obfuscar.xml` и пересобрать |
 | `obfuscar.console.exe not found` | не установился инструмент Obfuscar | проверить интернет/доступ к nuget.org, повторить Шаг 4 |
 | Обфускация «не применилась» | publish пересобрал проект | шаг 3 публикации должен идти с `--no-build` |
-| `server.exe` падает на старте / `No module named server` | упаковали не ту папку | `--add-data` должен указывать на `pvs-core-pyc`, а не на оригинал; пересобрать Шаг 2 |
-| `out of license` при сборке | остался старый вызов PyArmor | защита теперь через `.pyc` (см. Шаг 2), PyArmor не используется |
-| Формулы всё ещё видны (`.py`) в распакованном ядре | упаковали исходную папку | проверить, что в `--add-data` указана `pvs-core-pyc` (только `.pyc`) |
+| «Расчётное ядро повреждено, изменено или не найдено» | нет `server.sig` или ядро пересобрано без новой подписи | запустить `python sign_core.py dist\server\server.exe` или пересобрать `build.bat` |
+| `private key does not match` при подписи | вставлен не тот ключ | скопировать значение секрета `OFFLINE_KEY_PRIVATE` целиком |
+| Nuitka: `No module named bf_...` / «модуль не найден» | модуль не попал в `--include-module` | проверить `pvs-core-nuitka\modules.txt`; новый файл функции должен лежать рядом с её `index.py` |
+| Nuitka просит компилятор / долго качает | нет Visual Studio C++ | дождаться загрузки MinGW64 (один раз) или поставить Build Tools |
+| Антивирус удаляет `server.exe` | эвристика на onefile-сборки | добавить папку сборки в исключения; для пользователей — подписать установщик сертификатом |
 
 ---
 

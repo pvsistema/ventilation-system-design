@@ -184,42 +184,63 @@ echo [2/5] Building calc core server.exe...
 cd /d "%CS_DIR%"
 
 REM Kill any running server.exe (e.g. from a previous smoke test or app run),
-REM otherwise PyInstaller/copy cannot overwrite the locked .exe.
+REM otherwise the build cannot overwrite the locked .exe.
 taskkill /F /IM server.exe >nul 2>nul
 timeout /t 1 /nobreak >nul
 
-echo     Copying backend functions into core...
-set "BF_DST=%CORE_DIR%\backend_functions"
-if exist "%BF_DST%" rmdir /S /Q "%BF_DST%"
-call :copyfn airflow
-call :copyfn rescue-calculator
-call :copyfn water-hydraulics
-call :copyfn explosion-calculator
-call :copyfn aerodynamics
+REM NOTE: backend functions are NOT copied into the core folder any more.
+REM prepare_core.py takes them straight from %ROOT%\backend and lays them out
+REM flat as bf_<name>.py, so Nuitka can see them through normal imports.
 
 REM Install pinned build deps into the SAME python (python -m pip), so the wheels
 REM always match the interpreter regardless of a stray global pip on the machine.
 python -m pip install --upgrade pip >nul 2>nul
 python -m pip install -r "%CS_DIR%\requirements-build.txt" || goto :fail
 
-REM --- Protect Python core: compile .py -> .pyc, pack only bytecode ---
-REM Compile the whole core to .pyc and pack ONLY the bytecode copy,
-REM so no .py source ends up inside server.exe. Free, no license needed.
-echo     Compiling Python core to bytecode (.pyc)...
-set "CORE_OBF=%CS_DIR%\pvs-core-pyc"
-if exist "%CORE_OBF%" rmdir /S /Q "%CORE_OBF%"
-python "%CS_DIR%\compile_core.py" "%CORE_DIR%" "%CORE_OBF%"
+REM --- Protect Python core: compile to native machine code with Nuitka ---
+REM Previously the core was packed by PyInstaller as .pyc bytecode. Free tools
+REM unpack such a server.exe and decompile it back to readable Python in
+REM minutes - including the license check. Nuitka translates Python to C and
+REM compiles it to machine code: there is no source and no bytecode inside.
+REM Nuitka only includes modules found via import, so prepare_core.py lays the
+REM core and the calc functions out flat (bf_<name>.py) and lists the modules.
+echo     Preparing core for Nuitka...
+set "CORE_NK=%CS_DIR%\pvs-core-nuitka"
+python "%CS_DIR%\prepare_core.py" "%CORE_DIR%" "%ROOT%\backend" "%CS_DIR%\server_entry.py" "%CORE_NK%"
 if errorlevel 1 (
-    echo ERROR: core compilation failed
+    echo ERROR: core preparation failed
     goto :fail
 )
-if not exist "%CORE_OBF%\server.pyc" (
-    echo ERROR: bytecode core not produced - no server.pyc
-    goto :fail
-)
+set "NK_MODULES="
+for /f "usebackq delims=" %%m in ("%CORE_NK%\modules.txt") do set "NK_MODULES=!NK_MODULES! --include-module=%%m"
 
-echo     Packing server.exe from bytecode core...
-call pyinstaller --onefile --noconsole --name "server" --add-data "%CORE_OBF%;pvs-core" --hidden-import flask --hidden-import numpy --hidden-import svglib --hidden-import reportlab --collect-all reportlab --collect-all svglib --distpath "%CS_DIR%\dist" --workpath "%CS_DIR%\build" --specpath "%CS_DIR%" server_entry.py || goto :fail
+echo     Compiling server.exe with Nuitka ^(native code, takes 5-20 minutes^)...
+echo     Uses Visual Studio C++ if installed, otherwise downloads MinGW64 automatically ^(first run^).
+if exist "%CS_DIR%\nuitka-build" rmdir /S /Q "%CS_DIR%\nuitka-build"
+cd /d "%CORE_NK%"
+call python -m nuitka --onefile --assume-yes-for-downloads ^
+    --windows-console-mode=disable ^
+    --output-dir="%CS_DIR%\nuitka-build" --output-filename=server.exe ^
+    --include-data-dir="%CORE_NK%\dist=dist" ^
+    --include-module=server !NK_MODULES! ^
+    --nofollow-import-to=psycopg2 --nofollow-import-to=cryptography ^
+    --nofollow-import-to=pytest --nofollow-import-to=tkinter ^
+    --product-name="PV-Sistema core" --file-version=%SERVER_VERSION%.0 --product-version=%SERVER_VERSION%.0 ^
+    server_entry.py
+if errorlevel 1 (
+    cd /d "%CS_DIR%"
+    echo ERROR: Nuitka compilation failed - see messages above.
+    goto :fail
+)
+cd /d "%CS_DIR%"
+if not exist "%CS_DIR%\nuitka-build\server.exe" (
+    echo ERROR: Nuitka did not produce server.exe
+    goto :fail
+)
+if not exist "%CS_DIR%\dist" mkdir "%CS_DIR%\dist"
+copy /Y "%CS_DIR%\nuitka-build\server.exe" "%CS_DIR%\dist\server.exe" >nul || goto :fail
+REM Plain source copy of the core must not stay around next to the build.
+rmdir /S /Q "%CORE_NK%" >nul 2>nul
 
 if not exist "%CS_DIR%\dist\server" mkdir "%CS_DIR%\dist\server"
 REM Make sure the target is not locked by a running process before copying
@@ -229,7 +250,18 @@ copy /Y "%CS_DIR%\dist\server.exe" "%CS_DIR%\dist\server\server.exe" || goto :fa
 REM Stamp the core version next to server.exe. C# reads this file at startup and
 REM compares it with server_version from the server to decide whether to update.
 powershell -NoProfile -Command "Set-Content -NoNewline -Path '%CS_DIR%\dist\server\server_version.txt' -Value '%SERVER_VERSION%'" || goto :fail
-echo     OK (Python core compiled to bytecode, version %SERVER_VERSION%)
+
+REM --- Sign server.exe: PVS.exe verifies this signature on EVERY start ---
+REM A modified core (e.g. with the license check cut out) will not start.
+REM Needs the OFFLINE_KEY_PRIVATE secret: set it as an environment variable
+REM before the build, or paste it when asked (hidden input, not saved).
+echo     Signing server.exe...
+python "%CS_DIR%\sign_core.py" "%CS_DIR%\dist\server\server.exe"
+if errorlevel 1 (
+    echo ERROR: server.exe is not signed - PVS.exe would refuse to start it.
+    goto :fail
+)
+echo     OK (core compiled to native code with Nuitka and signed, version %SERVER_VERSION%)
 echo.
 
 REM ---------- Step 3: icon ----------
@@ -326,37 +358,19 @@ echo ============================================================
 echo   Build finished successfully.
 echo   User folder: %CS_DIR%\dist
 echo     PVS.exe
-echo     server\server.exe   (core version %SERVER_VERSION%)
+echo     server\server.exe   (core version %SERVER_VERSION%, native code)
+echo     server\server.sig   (signature checked by PVS.exe on every start)
 echo   Run: PVS.exe
 echo ------------------------------------------------------------
 echo   TO DELIVER THIS UPDATE TO USERS:
 echo     1) Upload  dist\server\server.exe  to poehali.dev storage
+echo        ^(the cloud signs it on publish; the installer ships server.sig^)
 echo     2) In Admin panel -^> Update -^> publish server.exe
 echo        and set server_version = %SERVER_VERSION%
 echo   (Without this step clients keep the old core.)
 echo ============================================================
 echo.
 pause
-exit /b 0
-
-REM ---------- helper: copy one backend function ----------
-:copyfn
-REM Copy the WHOLE function folder, not just index.py.
-REM Previously only index.py was taken, so the build was missing:
-REM   - license_guard.py (license check, shipped as a copy inside every calc
-REM     function). Calculations failed with 500 "No module named license_guard";
-REM The other builders (build.sh, prepare.bat, prepare.sh) always copied the
-REM whole folder; only this file was out of sync.
-REM Junk is removed AFTER copying. We deliberately avoid xcopy /EXCLUDE: it does
-REM not accept a quoted path and breaks silently when the project path contains
-REM spaces.
-if exist "%ROOT%\backend\%~1\index.py" (
-    xcopy /E /I /Q /Y "%ROOT%\backend\%~1" "%BF_DST%\%~1\" >nul
-    if exist "%BF_DST%\%~1\__pycache__" rmdir /S /Q "%BF_DST%\%~1\__pycache__"
-    if exist "%BF_DST%\%~1\tests.json" del /Q "%BF_DST%\%~1\tests.json"
-    if exist "%BF_DST%\%~1\requirements.txt" del /Q "%BF_DST%\%~1\requirements.txt"
-    echo     + %~1
-)
 exit /b 0
 
 :fail
