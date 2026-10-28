@@ -15,7 +15,7 @@ export interface CadAppInfoModalsProps {
   // Подтверждение закрытия
   showCloseConfirm: boolean;
   setShowCloseConfirm: (v: boolean) => void;
-  handleSave: () => Promise<void>;
+  handleSave: () => Promise<boolean>;
 
   // О программе
   showAbout: boolean;
@@ -66,7 +66,11 @@ export default function CadAppInfoModals(p: CadAppInfoModalsProps) {
                   Не сохранять
                 </button>
                 <button
-                  onClick={async () => { await p.handleSave(); doClose(); }}
+                  onClick={async () => {
+                    // Закрываем ТОЛЬКО если схема реально записана: при отмене
+                    // окна сохранения или ошибке записи окно остаётся открытым.
+                    if (await p.handleSave()) doClose();
+                  }}
                   className="h-7 px-3 text-[12px] rounded text-white"
                   style={{ background: "var(--c-blue-bg, #2563eb)" }}>
                   Сохранить

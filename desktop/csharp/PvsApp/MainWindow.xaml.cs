@@ -1105,12 +1105,36 @@ public partial class MainWindow : Window
         string path    = root.TryGetProperty("path",    out var p) ? p.GetString() ?? "" : "";
         string content = root.TryGetProperty("content", out var c) ? c.GetString() ?? "" : "";
         string reqId   = root.TryGetProperty("reqId",   out var r) ? r.GetString() ?? "" : "";
+        // Запись через временный файл. Раньше схема перезаписывалась напрямую:
+        // обрыв питания или сетевой папки посреди записи оставлял на диске
+        // половину файла, и схема пропадала целиком. Теперь новая версия
+        // сначала пишется рядом, проверяется и только потом одним шагом
+        // заменяет старую — на диске всегда лежит либо старая, либо новая
+        // схема, но никогда не обрывок.
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            ReplyToJs(reqId, new { error = "Не указан путь к файлу." });
+            return;
+        }
+        if (string.IsNullOrEmpty(content))
+        {
+            ReplyToJs(reqId, new { error = "Пустые данные — запись отменена, чтобы не стереть файл." });
+            return;
+        }
+        string tmp = path + ".pvs-tmp";
         try
         {
-            await File.WriteAllTextAsync(path, content, Encoding.UTF8);
+            await File.WriteAllTextAsync(tmp, content, new UTF8Encoding(false));
+            if (new FileInfo(tmp).Length == 0)
+                throw new IOException("Временный файл записался пустым.");
+            File.Move(tmp, path, overwrite: true);
             ReplyToJs(reqId, new { ok = true });
         }
-        catch (Exception ex) { ReplyToJs(reqId, new { error = ex.Message }); }
+        catch (Exception ex)
+        {
+            try { if (File.Exists(tmp)) File.Delete(tmp); } catch { }
+            ReplyToJs(reqId, new { error = ex.Message });
+        }
     }
 
     private async Task HandleGetPendingFile(JsonElement root)

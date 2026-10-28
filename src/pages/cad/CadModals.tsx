@@ -73,7 +73,7 @@ export interface CadModalsProps {
   // Подтверждение закрытия
   showCloseConfirm: boolean;
   setShowCloseConfirm: (v: boolean) => void;
-  handleSave: () => Promise<void>;
+  handleSave: () => Promise<boolean>;
 
   // О программе
   showAbout: boolean;

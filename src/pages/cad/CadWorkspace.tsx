@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
+import { parseProjectText } from "@/lib/projectFile";
 import TopoCanvas from "@/components/cad/TopoCanvas";
 import { type TopoNode, type TopoBranch, project3D, unprojectToPlane } from "@/lib/topology";
 import InfoPanel from "@/components/cad/InfoPanel";
@@ -794,20 +795,16 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               }
               const reader = new FileReader();
               reader.onload = () => {
-                try {
-                  const data = JSON.parse(reader.result as string);
-                  if (!data.nodes || !Array.isArray(data.nodes)) {
-                    alert("Файл не является проектом Вентиляция-CAD.");
-                    return;
-                  }
-                  if ((nodes.length > 0 || branchesRaw.length > 0) &&
-                      !window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
-                  fileHandleRef.current = null;
-                  filePathRef.current = null;
-                  applyProjectData(data, file.name, true);
-                } catch {
-                  alert("Ошибка чтения файла.");
-                }
+                const parsed = parseProjectText(String(reader.result ?? ""), file.name);
+                if (!parsed.ok) { alert(parsed.error); return; }
+                if ((nodes.length > 0 || branchesRaw.length > 0) &&
+                    !window.confirm(c.isDirty
+                      ? "Открыть проект? Несохранённые изменения текущей схемы будут потеряны."
+                      : "Открыть проект? Текущие данные будут заменены.")) return;
+                fileHandleRef.current = null;
+                filePathRef.current = null;
+                applyProjectData(parsed.data, file.name, true);
+                if (parsed.warning) alert(parsed.warning);
               };
               reader.readAsText(file);
             }}>

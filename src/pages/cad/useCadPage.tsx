@@ -51,6 +51,7 @@ import { type BlastBarrier, type BarrierHit } from "@/lib/blastBarriers";
 import { type LogEntry } from "@/components/cad/LogPanel";
 import { type WorkerPickMode } from "@/components/cad/WorkerPathPanel";
 import { useRecentFiles, saveRecentData, saveHandleToIDB } from "@/lib/useRecentFiles";
+import { parseProjectText, errorText, isUserCancel } from "@/lib/projectFile";
 import { fetchRemoteVersion } from "@/lib/updater";
 import { calcBranchFirePower, type FireStabilityFact } from "@/lib/fireStability";
 import { getStabilitySettings } from "@/lib/stabilitySession";
@@ -123,9 +124,18 @@ export function useCadPage() {
     let registered: EAPI | null = null;
 
     const handler = ({ path, content }: { path: string; content: string }) => {
+      const shownName = (path || "").split(/[\\/]/).pop() || "файл";
+      const parsed = parseProjectText(content, shownName);
+      if (!parsed.ok) {
+        // Раньше повреждённый файл молча пропускался: открывалась пустая
+        // схема, и было непонятно, куда делся проект.
+        alert(parsed.error);
+        return;
+      }
+      if (parsed.warning) alert(parsed.warning);
       try {
-        const data = JSON.parse(content);
-        if (data && data.nodes && Array.isArray(data.nodes)) {
+        const data = parsed.data;
+        if (data) {
           // Имя берём из ИМЕНИ ФАЙЛА на диске, а не из data.name внутри JSON.
           // Иначе схема, сохранённая когда-то под другим именем, открывалась
           // со «старым» названием, не совпадающим с файлом в проводнике.
@@ -136,7 +146,7 @@ export function useCadPage() {
           fileHandleRef.current = null;
           applyProjectDataRef.current?.(data, fileName, true);
         }
-      } catch { /* повреждённый файл — тихо игнорируем */ }
+      } catch (e) { alert("Не удалось открыть схему.\n\n" + errorText(e)); }
     };
 
     // БЫСТРЫЙ ПУТЬ. Оболочка запрашивает файл у себя же ещё до загрузки
@@ -3468,10 +3478,10 @@ export function useCadPage() {
   // Ссылка на FileSystemFileHandle для перезаписи (File System Access API)
   const fileHandleRef = useRef<FileSystemFileHandle | null>(null);
   // Ссылка на актуальную функцию сохранения — для вызова из window (баннер обновления)
-  const handleSaveRef = useRef<(() => Promise<void> | void) | null>(null);
+  const handleSaveRef = useRef<(() => Promise<boolean>) | null>(null);
   // Ссылка на «Сохранить как» — нужна, чтобы «Сохранить» для нового безымянного
   // проекта открыл диалог выбора файла (handleSaveAs объявлен ниже по коду).
-  const handleSaveAsRef = useRef<(() => Promise<void> | void) | null>(null);
+  const handleSaveAsRef = useRef<(() => Promise<boolean>) | null>(null);
   // Текущие параметры вида для сохранения в файл
 
   const buildProjectData = () => ({
@@ -3555,8 +3565,31 @@ export function useCadPage() {
 
   // Отслеживаем изменения проекта — помечаем как «несохранённый»
   const isFirstRender = useRef(true);
+  // «Чистое» состояние после открытия/сохранения. Загрузка схемы и смена
+  // имени файла сами меняют отслеживаемые данные, и раньше этот эффект тут же
+  // ставил звёздочку: только что открытая схема считалась изменённой, а при
+  // выходе программа просила сохранить то, что никто не трогал.
+  // Отметка живёт недолго: если после сохранения ничего не поменялось,
+  // она не должна «съесть» первую настоящую правку пользователя.
+  const cleanPendingRef = useRef(0);
+  const cleanUntilRef = useRef(0);
+  const cleanWindowRef = useRef(0);
+  const markProjectClean = (settleMs = 0) => {
+    cleanPendingRef.current = Date.now() + 400;
+    cleanWindowRef.current = settleMs;
+    setIsDirty(false);
+  };
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
+    if (cleanPendingRef.current && Date.now() < cleanPendingRef.current) {
+      cleanPendingRef.current = 0;
+      // После открытия схема ещё «досчитывает» служебные поля (вид,
+      // масштабы) — эти изменения тоже не считаются правкой пользователя.
+      cleanUntilRef.current = Date.now() + cleanWindowRef.current;
+      setIsDirty(false);
+      return;
+    }
+    if (Date.now() < cleanUntilRef.current) { setIsDirty(false); return; }
     // Пустой безымянный проект не помечаем изменённым.
     if (nodes.length === 0 && branchesRaw.length === 0 && schemaSymbols.length === 0 && !projectFileName) {
       setIsDirty(false);
@@ -3618,7 +3651,7 @@ export function useCadPage() {
   useEffect(() => {
     type W = Window & {
       __pvsIsDirty?: () => boolean;
-      __pvsSaveProject?: () => Promise<void> | void;
+      __pvsSaveProject?: () => Promise<boolean> | undefined;
     };
     const w = window as W;
     w.__pvsIsDirty = () => isDirty;
@@ -3628,9 +3661,16 @@ export function useCadPage() {
 
   // Записать содержимое в уже открытый FileHandle (перезапись)
   const writeToHandle = async (handle: FileSystemFileHandle, data: object) => {
+    // createWritable пишет во временную копию и подменяет файл только на
+    // close(): при сбое abort() отбрасывает копию, исходный файл цел.
     const writable = await handle.createWritable();
-    await writable.write(JSON.stringify(data, null, 2));
-    await writable.close();
+    try {
+      await writable.write(JSON.stringify(data, null, 2));
+      await writable.close();
+    } catch (e) {
+      try { await writable.abort(); } catch { /* ignore */ }
+      throw e;
+    }
   };
 
   // Имя для сохранения. Пока проект безымянный (новый, ещё не сохранённый),
@@ -3699,102 +3739,180 @@ export function useCadPage() {
     }
   };
 
-  const handleSave = async () => {
-    if (isDemo) { setShowLicenseDialog(true); return; }
-    // Новый проект ещё не привязан к файлу — сразу спрашиваем, куда сохранить.
-    if (!projectFileName && !fileHandleRef.current && !filePathRef.current) {
-      await handleSaveAsRef.current?.(); return;
-    }
-    const data = buildProjectData();
+  // Защита от двойного нажатия: второе сохранение, начатое поверх первого,
+  // могло записать файл дважды или открыть два окна «Сохранить как».
+  const savingRef = useRef(false);
 
-    // Проект открыт двойным кликом из проводника: перезаписываем ИСХОДНЫЙ файл
-    // по его пути через десктопный мост — без диалога «Сохранить как».
-    if (filePathRef.current) {
-      type EAPI = { writeFile?: (path: string, content: string) => Promise<{ ok?: boolean; error?: string }> };
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const eAPI = (window as any).electronAPI as EAPI | undefined;
-      if (eAPI?.writeFile) {
-        try {
-          const res = await eAPI.writeFile(
-            filePathRef.current,
-            JSON.stringify({ ...data, name: projectFileName || suggestedFileName() }, null, 2),
-          );
-          if (!res?.error) { setIsDirty(false); return; }
-        } catch { /* файл недоступен — уходим в обычные пути сохранения */ }
-      }
-      // Записать по пути не удалось — больше не пытаемся, идём обычным путём
-      filePathRef.current = null;
-    }
-
-    // Если есть открытый handle — перезаписываем без диалога
-    if (fileHandleRef.current) {
-      try {
-        await writeToHandle(fileHandleRef.current, data);
-        setIsDirty(false);
-        return;
-      } catch {
-        // handle стал недоступен — fallback на скачивание
-        fileHandleRef.current = null;
-      }
-    }
-    // Fallback: скачивание (если File System Access API недоступен)
+  const downloadProject = (data: object, fname: string) => {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = suggestedFileName();
-    a.click();
-    URL.revokeObjectURL(url);
-    setIsDirty(false);
-  };
-  handleSaveRef.current = handleSave;
-
-  const handleSaveAs = async () => {
-    if (isDemo) { setShowLicenseDialog(true); return; }
-    const data = buildProjectData();
-    // File System Access API — показываем диалог выбора файла
-    if ("showSaveFilePicker" in window) {
-      try {
-        const handle = await (window as Window & { showSaveFilePicker: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
-          suggestedName: suggestedFileName(),
-          types: [{ description: "Проект вентиляции", accept: { "application/json": [".vproj", ".json"] } }],
-        });
-        fileHandleRef.current = handle;
-        filePathRef.current = null;
-        const fname = handle.name;
-        setProjectFileName(fname);
-        await writeToHandle(handle, { ...data, name: fname });
-        setIsDirty(false);
-        // Сохраняем handle в IndexedDB — чтобы файл появился в «Последние» с возможностью открыть
-        void saveHandleToIDB(fname, handle).then(() => updateHasHandle(fname, true));
-        return;
-      } catch {
-        // Пользователь отменил — ничего не делаем
-        return;
-      }
-    }
-    // Fallback: prompt + скачивание
-    const name = window.prompt("Имя файла:", suggestedFileName());
-    if (!name) return;
-    const fname = name.endsWith(".vproj") ? name : `${name}.vproj`;
-    setProjectFileName(fname);
-    const blob = new Blob([JSON.stringify({ ...data, name: fname }, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
     a.download = fname;
     a.click();
-    URL.revokeObjectURL(url);
-    setIsDirty(false);
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  };
+
+  /**
+   * Сохранить. Возвращает true ТОЛЬКО если схема действительно записана.
+   * По этому ответу окно «Несохранённые изменения» решает, можно ли закрывать
+   * программу: раньше она закрывалась даже после отмены или ошибки записи.
+   */
+  const handleSave = async (): Promise<boolean> => {
+    if (isDemo) { setShowLicenseDialog(true); return false; }
+    // Новый проект ещё не привязан к файлу — сразу спрашиваем, куда сохранить.
+    if (!projectFileName && !fileHandleRef.current && !filePathRef.current) {
+      return (await handleSaveAsRef.current?.()) === true;
+    }
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    try {
+      const data = { ...buildProjectData(), name: projectFileName || suggestedFileName() };
+
+      // Проект открыт с диска по пути (десктоп): перезаписываем ИСХОДНЫЙ файл.
+      if (filePathRef.current) {
+        type EAPI = { writeFile?: (path: string, content: string) => Promise<{ ok?: boolean; error?: string }> };
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const eAPI = (window as any).electronAPI as EAPI | undefined;
+        if (eAPI?.writeFile) {
+          let err = "";
+          try {
+            const res = await eAPI.writeFile(filePathRef.current, JSON.stringify(data, null, 2));
+            if (!res?.error) { markProjectClean(); return true; }
+            err = res.error;
+          } catch (e) { err = errorText(e); }
+          // Раньше ошибка глоталась, а схема молча уходила в «Загрузки» и
+          // считалась сохранённой. Теперь говорим прямо и предлагаем другое место.
+          addLog("error", `Сохранение не удалось: ${filePathRef.current} — ${err}`);
+          savingRef.current = false;
+          if (!window.confirm(
+            `Не удалось сохранить файл:\n${filePathRef.current}\n\n${err}\n\n` +
+            "Схема НЕ сохранена. Выбрать другое место для сохранения?",
+          )) return false;
+          return (await handleSaveAsRef.current?.()) === true;
+        }
+      }
+
+      // Файл выбран через окно браузера — перезаписываем без диалога.
+      if (fileHandleRef.current) {
+        try {
+          await writeToHandle(fileHandleRef.current, data);
+          markProjectClean();
+          return true;
+        } catch (e) {
+          const err = errorText(e);
+          addLog("error", `Сохранение не удалось: ${fileHandleRef.current.name} — ${err}`);
+          savingRef.current = false;
+          if (!window.confirm(
+            `Не удалось сохранить файл «${fileHandleRef.current.name}».\n\n${err}\n\n` +
+            "Схема НЕ сохранена. Выбрать другое место для сохранения?",
+          )) return false;
+          return (await handleSaveAsRef.current?.()) === true;
+        }
+      }
+
+      // Браузер без доступа к файлам (или проект из «Последних» без файла):
+      // единственный способ — скачать. Куда браузер положит файл, мы не знаем,
+      // поэтому говорим об этом в журнале.
+      if ("showSaveFilePicker" in window) {
+        savingRef.current = false;
+        return (await handleSaveAsRef.current?.()) === true;
+      }
+      downloadProject(data, suggestedFileName());
+      addLog("info", `Схема выгружена в папку загрузок браузера: ${suggestedFileName()}`);
+      markProjectClean();
+      return true;
+    } finally {
+      savingRef.current = false;
+    }
+  };
+  handleSaveRef.current = handleSave;
+
+  const handleSaveAs = async (): Promise<boolean> => {
+    if (isDemo) { setShowLicenseDialog(true); return false; }
+    if (savingRef.current) return false;
+    savingRef.current = true;
+    try {
+      const data = buildProjectData();
+      if ("showSaveFilePicker" in window) {
+        let handle: FileSystemFileHandle;
+        try {
+          handle = await (window as Window & { showSaveFilePicker: (o: object) => Promise<FileSystemFileHandle> }).showSaveFilePicker({
+            suggestedName: suggestedFileName(),
+            types: [{ description: "Проект вентиляции", accept: { "application/json": [".vproj", ".json"] } }],
+          });
+        } catch (e) {
+          if (isUserCancel(e)) return false;
+          addLog("error", `Окно сохранения не открылось: ${errorText(e)}`);
+          alert("Не удалось открыть окно сохранения.\n\n" + errorText(e));
+          return false;
+        }
+        const fname = handle.name;
+        // Имя и привязку к файлу меняем ТОЛЬКО после успешной записи: раньше
+        // заголовок показывал новое имя, даже если файл так и не создался.
+        try {
+          await writeToHandle(handle, { ...data, name: fname });
+        } catch (e) {
+          const err = errorText(e);
+          addLog("error", `Сохранение не удалось: ${fname} — ${err}`);
+          alert(`Не удалось сохранить файл «${fname}».\n\n${err}\n\nСхема НЕ сохранена — попробуйте другую папку.`);
+          return false;
+        }
+        fileHandleRef.current = handle;
+        filePathRef.current = null;
+        setProjectFileName(fname);
+        markProjectClean();
+        void saveHandleToIDB(fname, handle).then(() => updateHasHandle(fname, true));
+        return true;
+      }
+      // Браузер без доступа к файлам: имя + скачивание
+      const name = window.prompt("Имя файла:", suggestedFileName());
+      if (!name || !name.trim()) return false;
+      const clean = name.trim().replace(/[\\/:*?"<>|]/g, "_");
+      const fname = /\.vproj$/i.test(clean) ? clean : `${clean}.vproj`;
+      downloadProject({ ...data, name: fname }, fname);
+      addLog("info", `Схема выгружена в папку загрузок браузера: ${fname}`);
+      fileHandleRef.current = null;
+      filePathRef.current = null;
+      setProjectFileName(fname);
+      markProjectClean();
+      return true;
+    } finally {
+      savingRef.current = false;
+    }
   };
   handleSaveAsRef.current = handleSaveAs;
+  const handleOpenRef = useRef<(() => Promise<void>) | null>(null);
+
+  const confirmReplaceProject = () =>
+    (nodes.length > 0 || branchesRaw.length > 0)
+      ? window.confirm(isDirty
+        ? "Открыть проект? Несохранённые изменения текущей схемы будут потеряны."
+        : "Открыть проект? Текущие данные будут заменены.")
+      : true;
+
+  /** Разбирает текст файла и применяет его. false — файл не подошёл (сообщение уже показано). */
+  const openProjectText = (text: string, fileName: string, bind: () => void): boolean => {
+    const parsed = parseProjectText(text, fileName);
+    if (!parsed.ok) {
+      addLog("error", parsed.error.split("\n")[0]);
+      alert(parsed.error);
+      return false;
+    }
+    if (!confirmReplaceProject()) return false;
+    bind();
+    applyProjectData(parsed.data, fileName, true);
+    if (parsed.warning) { addLog("warn", parsed.warning); alert(parsed.warning); }
+    return true;
+  };
 
   const handleOpen = async () => {
     if (isDemo) { setShowLicenseDialog(true); return; }
-    // File System Access API — открываем с handle для последующей перезаписи
     if ("showOpenFilePicker" in window) {
+      let handle: FileSystemFileHandle | undefined;
+      let pickerFailed = false;
       try {
-        const [handle] = await (window as Window & { showOpenFilePicker: (o: object) => Promise<FileSystemFileHandle[]> }).showOpenFilePicker({
+        [handle] = await (window as Window & { showOpenFilePicker: (o: object) => Promise<FileSystemFileHandle[]> }).showOpenFilePicker({
           types: [{ description: "Проект вентиляции", accept: {
             "application/json": [".vproj", ".json"],
             "text/plain": [".vproj", ".json"],
@@ -3802,27 +3920,29 @@ export function useCadPage() {
           }}],
           excludeAcceptAllOption: false,
         });
-        const file = await handle.getFile();
-        const text = await file.text();
-        const data = JSON.parse(text);
-        if (data.nodes && Array.isArray(data.nodes)) {
-          if (nodes.length > 0 || branchesRaw.length > 0) {
-            if (!window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
-          }
-          fileHandleRef.current = handle;
-          filePathRef.current = null;
-          applyProjectData(data, file.name, true);
-          // Сохраняем handle в IndexedDB — чтобы открывать из «Последние» без диалога
-          void saveHandleToIDB(file.name, handle).then(() => updateHasHandle(file.name, true));
-        } else {
-          alert("Файл не является проектом Вентиляция-CAD.");
+      } catch (e) {
+        if (isUserCancel(e)) return;
+        // Окно выбора недоступно (ограничения браузера) — простой выбор файла ниже.
+        pickerFailed = true;
+      }
+      if (!pickerFailed && handle) {
+        const h = handle;
+        let text: string;
+        try {
+          text = await (await h.getFile()).text();
+        } catch (e) {
+          const err = errorText(e);
+          addLog("error", `Не удалось прочитать файл «${h.name}»: ${err}`);
+          alert(`Не удалось прочитать файл «${h.name}».\n\n${err}`);
+          return;
+        }
+        if (openProjectText(text, h.name, () => { fileHandleRef.current = h; filePathRef.current = null; })) {
+          void saveHandleToIDB(h.name, h).then(() => updateHasHandle(h.name, true));
         }
         return;
-      } catch {
-        // Пользователь отменил или API недоступен — fallback
       }
     }
-    // Fallback: <input type=file>
+    // Запасной путь: <input type=file>
     // На Android accept=".vproj" делает файлы неактивными — используем широкий список типов
     const inp = document.createElement("input");
     inp.type = "file";
@@ -3832,26 +3952,20 @@ export function useCadPage() {
       if (!file) return;
       const reader = new FileReader();
       reader.onload = () => {
-        try {
-          const data = JSON.parse(reader.result as string);
-          if (data.nodes && Array.isArray(data.nodes)) {
-            if (nodes.length > 0 || branchesRaw.length > 0) {
-              if (!window.confirm("Открыть проект? Текущие данные будут заменены.")) return;
-            }
-            fileHandleRef.current = null;
-            filePathRef.current = null;
-            applyProjectData(data, file.name, true);
-          } else {
-            alert("Файл не является проектом Вентиляция-CAD.");
-          }
-        } catch {
-          alert("Ошибка чтения файла.");
-        }
+        openProjectText(String(reader.result ?? ""), file.name, () => {
+          fileHandleRef.current = null;
+          filePathRef.current = null;
+        });
+      };
+      reader.onerror = () => {
+        addLog("error", `Не удалось прочитать файл «${file.name}»`);
+        alert(`Не удалось прочитать файл «${file.name}».`);
       };
       reader.readAsText(file);
     };
     inp.click();
   };
+  handleOpenRef.current = handleOpen;
 
   // Применить данные из JSON — с слиянием дефолтов для ветвей
   // fromDisk=true — проект открыт из РЕАЛЬНОГО файла на диске (проводник,
@@ -3860,6 +3974,10 @@ export function useCadPage() {
   const applyProjectData = (data: Record<string, unknown>, fileName: string, fromDisk?: boolean) => {
     // Блокируем начальный пресет вида — файл загружен
     initialFileLoadedRef.current = true;
+    // История отмены относится к ПРЕЖНЕЙ схеме: без очистки Ctrl+Z сразу
+    // после открытия подменял открытый проект кусками предыдущего.
+    historyRef.current = [];
+    markProjectClean(1500);
     // Режим заливки, выбранный до открытия файла. Нужен для схем, сохранённых
     // старыми версиями: в них режим заливки не записан, и раньше он молча
     // сбрасывался в «выкл» — большая схема открывалась полностью белой.
@@ -4341,7 +4459,8 @@ export function useCadPage() {
     // сохранении (или при открытии .vproj). Заодно снимаем флаг изменений,
     // иначе сброс состояния сам себя пометил бы как «несохранённые данные».
     setProjectFileName("");
-    setIsDirty(false);
+    historyRef.current = [];
+    markProjectClean(1500);
     fileHandleRef.current = null;
     filePathRef.current = null;
     setImportNonce(n => n + 1);
@@ -5943,7 +6062,13 @@ export function useCadPage() {
     selectedNodeId, selectedBranchId, selectedBranchIds,
     selectedSymbolId, selectedSymbolIds, selectedPositionId,
     symbolClipboard, pendingSymbol, leaderDrawMode, lastSPressRef,
-    handleUndo, handleSave, handleSolve, handleDeleteSelected,
+    handleUndo, handleSolve, handleDeleteSelected,
+    // Через ref: обработчик клавиш пересоздаётся не на каждое изменение, и
+    // прямая ссылка могла сохранить устаревшее состояние (например, настройки
+    // расчёта, изменённые после последнего пересоздания).
+    handleSave: () => handleSaveRef.current?.(),
+    handleSaveAs: () => handleSaveAsRef.current?.(),
+    handleOpen: () => handleOpenRef.current?.(),
     handleFlipSymbols, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,

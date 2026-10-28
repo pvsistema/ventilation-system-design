@@ -2,6 +2,7 @@ import Icon from "@/components/ui/icon";
 import SolverParamsPanel, { SOLVER_DEFAULTS, type SolverParams } from "@/components/cad/SolverParamsPanel";
 import { BULKHEAD_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { loadRecentData, hasRecentData, loadHandleFromIDB } from "@/lib/useRecentFiles";
+import { parseProjectText } from "@/lib/projectFile";
 import { INSTALLER_URL } from "@/lib/updater";
 import RibbonSymbolGrid from "@/components/cad/RibbonSymbolGrid";
 import SymbolPicker from "@/components/cad/SymbolPicker";
@@ -702,8 +703,18 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                   const handleOpenRecent = async (rf: typeof recentFiles[0]) => {
                     const confirmReplace = () =>
                       (nodes.length > 0 || branchesRaw.length > 0)
-                        ? window.confirm("Открыть проект? Текущие данные будут заменены.")
+                        ? window.confirm(c.isDirty
+                          ? "Открыть проект? Несохранённые изменения текущей схемы будут потеряны."
+                          : "Открыть проект? Текущие данные будут заменены.")
                         : true;
+                    // Повреждённый файл раньше молча уходил в «запасные» пути и
+                    // открывалась устаревшая копия. Теперь — понятное сообщение.
+                    const parseOrWarn = (text: string): Record<string, unknown> | null => {
+                      const parsed = parseProjectText(text, rf.name);
+                      if (!parsed.ok) { alert(parsed.error); return null; }
+                      if (parsed.warning) alert(parsed.warning);
+                      return parsed.data;
+                    };
 
                     // 1. ДЕСКТОП: читаем файл напрямую по сохранённому пути.
                     // Это главный путь для десктопной версии: ядро программы
@@ -718,8 +729,9 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                       if (eAPI?.readFile) {
                         try {
                           const res = await eAPI.readFile(rf.path);
-                          if (res?.content) {
-                            const data = JSON.parse(res.content) as Record<string, unknown>;
+                          if (res?.content !== undefined && !res?.error) {
+                            const data = parseOrWarn(res.content);
+                            if (!data) return;
                             if (!confirmReplace()) return;
                             // Запоминаем путь: «Сохранить» перезапишет этот же
                             // файл, без диалога «Сохранить как».
@@ -755,7 +767,8 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                           }).requestPermission({ mode: "read" })) === "granted";
                         if (granted) {
                           const file = await handle.getFile();
-                          const data = JSON.parse(await file.text()) as Record<string, unknown>;
+                          const data = parseOrWarn(await file.text());
+                          if (!data) return;
                           if (!confirmReplace()) return;
                           fileHandleRef.current = handle;
                           filePathRef.current = null;
@@ -772,7 +785,12 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                     const data = loadRecentData(rf.name);
                     if (data) {
                       if (!confirmReplace()) return;
+                      // Это КОПИЯ из памяти программы, а не файл: сохранять её
+                      // некуда, поэтому «Сохранить» спросит место (Сохранить как).
+                      fileHandleRef.current = null;
+                      filePathRef.current = null;
                       applyProjectData(data, rf.name);
+                      alert(`Файл «${rf.name}» на диске недоступен — открыта копия, сохранённая программой при последнем открытии.\nОна может быть не самой свежей. При сохранении укажите место для файла.`);
                       setActiveRibbon("home");
                       return;
                     }

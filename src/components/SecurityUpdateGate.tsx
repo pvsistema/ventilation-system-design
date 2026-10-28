@@ -76,9 +76,9 @@ export default function SecurityUpdateGate() {
   // не стоило пользователю несохранённой работы.
   const handleSave = async () => {
     try {
-      const save = (window as Window & { __pvsSaveProject?: () => Promise<void> | void })
+      const save = (window as Window & { __pvsSaveProject?: () => Promise<boolean | void> | boolean | void })
         .__pvsSaveProject;
-      if (typeof save === "function") await save();
+      if (typeof save === "function" && (await save()) === false) return;
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch { /* пользователь сохранит вручную */ }

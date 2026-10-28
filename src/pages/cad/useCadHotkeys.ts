@@ -36,7 +36,11 @@ export interface CadHotkeysDeps {
 
   // Команды
   handleUndo: () => void;
-  handleSave: () => void;
+  handleSave: () => unknown;
+  /** Ctrl+Shift+S — «Сохранить как». */
+  handleSaveAs?: () => unknown;
+  /** Ctrl+O — «Открыть». */
+  handleOpen?: () => unknown;
   handleSolve: () => void;
   handleDeleteSelected: () => void;
   /** Ctrl+R — развернуть выбранные условные обозначения. */
@@ -128,9 +132,20 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
         handleUndo();
         return;
       }
-      if (e.ctrlKey && (e.key === "s" || e.key === "S" || e.key === "ы" || e.key === "Ы")) {
+      // Ctrl+S — сохранить, Ctrl+Shift+S — сохранить как. e.code не зависит
+      // от раскладки: работает и на русской, и на английской.
+      if (e.ctrlKey && !e.altKey && (e.code === "KeyS" || e.key === "s" || e.key === "S" || e.key === "ы" || e.key === "Ы")) {
         e.preventDefault();
-        handleSave();
+        if (e.repeat) return;
+        if (e.shiftKey && d.handleSaveAs) void d.handleSaveAs();
+        else void handleSave();
+        return;
+      }
+      // Ctrl+O — открыть схему
+      if (e.ctrlKey && !e.altKey && !e.shiftKey && (e.code === "KeyO" || e.key === "o" || e.key === "O" || e.key === "щ" || e.key === "Щ")) {
+        e.preventDefault();
+        if (e.repeat) return;
+        void d.handleOpen?.();
         return;
       }
       // Ctrl+F / Ctrl+А — открыть поиск по схеме

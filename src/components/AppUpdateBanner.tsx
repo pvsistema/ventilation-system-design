@@ -149,8 +149,9 @@ export default function AppUpdateBanner() {
   const handleSaveAndReload = async () => {
     setBusy(true);
     try {
-      const save = (window as Window & { __pvsSaveProject?: () => Promise<void> | void }).__pvsSaveProject;
-      if (typeof save === "function") await save();
+      const save = (window as Window & { __pvsSaveProject?: () => Promise<boolean | void> | boolean | void }).__pvsSaveProject;
+      // false — сохранение отменено или не удалось: перезагрузка стёрла бы схему.
+      if (typeof save === "function" && (await save()) === false) { setBusy(false); return; }
     } catch {
       // если сохранение не удалось — не перезагружаем, снимаем занятость
       setBusy(false);
