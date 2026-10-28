@@ -12,6 +12,8 @@ const LS_KEY = "pvs_ui_scale";
 export const UI_SCALE_MIN = 0.8;
 export const UI_SCALE_MAX = 1.2;
 export const UI_SCALE_STEPS = [0.8, 0.9, 1, 1.1, 1.2];
+/** Масштаб по умолчанию — пока пользователь сам не выбрал другой. */
+export const UI_SCALE_DEFAULT = 0.8;
 /** Ширина окна (в CSS-пикселях), ниже которой включается компактный режим. */
 const COMPACT_BELOW = 1400;
 
@@ -23,10 +25,11 @@ type W = Window & {
 
 export function getUiScale(): number {
   try {
-    const v = Number(localStorage.getItem(LS_KEY));
+    const raw = localStorage.getItem(LS_KEY);
+    const v = raw === null ? NaN : Number(raw);
     if (Number.isFinite(v) && v > 0) return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, v));
   } catch { /* ignore */ }
-  return 1;
+  return UI_SCALE_DEFAULT;
 }
 
 function nativeZoom(): boolean {
