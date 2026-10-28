@@ -33,7 +33,7 @@ desktop\csharp\build.bat
 | Node.js 18+ | собрать React-интерфейс | https://nodejs.org |
 | Python 3.11 | собрать расчётное ядро | https://python.org |
 | .NET 8 SDK | собрать PVS.exe | https://dotnet.microsoft.com/download/dotnet/8.0 |
-| Компилятор C (необязательно) | Nuitka переводит ядро в машинный код | Visual Studio Build Tools с «Разработка классических приложений на C++»; если их нет, Nuitka сама скачает MinGW64 при первой сборке (нужен интернет) |
+| Компилятор C (необязательно) | Nuitka переводит ядро в машинный код | Visual Studio Build Tools 2022 с «Разработка классических приложений на C++»; если их нет, сборка один раз скачает MinGW64 (~380 МБ, с докачкой) в `%LOCALAPPDATA%\PVSnk` |
 
 ### Закрытый ключ подписи ядра
 
@@ -348,7 +348,8 @@ desktop\csharp\dist\
 | «значение не похоже на закрытый ключ Ed25519» | в ключ попали пробелы/переносы или скопирован не тот текст | скопировать значение секрета заново, одной строкой |
 | «server.exe is NOT signed» в конце сборки | ключ не введён | ядро уже скомпилировано — подписать его отдельно: `python desktop\csharp\sign_core.py desktop\csharp\dist\server\server.exe`, пересобирать не нужно |
 | Nuitka: `No module named bf_...` / «модуль не найден» | модуль не попал в `--include-module` | проверить `pvs-core-nuitka\modules.txt`; новый файл функции должен лежать рядом с её `index.py` |
-| Nuitka просит компилятор / долго качает | нет Visual Studio C++ | дождаться загрузки MinGW64 (один раз) или поставить Build Tools |
+| Nuitka просит компилятор / долго качает | нет Visual Studio C++ | дождаться загрузки MinGW64 (один раз, ~380 МБ) или поставить Build Tools |
+| `Problem with the downloaded zip file` / `need 'mingw64\bin\gcc.exe'` | архив MinGW64 скачался не полностью (обрыв, прокси, антивирус) | сборка теперь качает его сама с докачкой (`prepare_compiler.py`) — просто запустить `build.bat` ещё раз. Если GitHub недоступен — скачать архив браузером по ссылке из сообщения и положить в указанную папку, либо поставить Visual Studio Build Tools 2022 с C++ |
 | Антивирус удаляет `server.exe` | эвристика на onefile-сборки | добавить папку сборки в исключения; для пользователей — подписать установщик сертификатом |
 
 ---

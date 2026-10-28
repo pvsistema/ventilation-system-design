@@ -224,8 +224,22 @@ if errorlevel 1 (
 set "NK_MODULES="
 for /f "usebackq delims=" %%m in ("%CORE_NK%\modules.txt") do set "NK_MODULES=!NK_MODULES! --include-module=%%m"
 
+REM --- C compiler for Nuitka ---
+REM Without Visual Studio C++ Nuitka downloads MinGW64 (~380 MB) itself, in ONE
+REM request with no resume: a dropped connection, proxy or antivirus leaves a
+REM broken zip ("Problem with the downloaded zip file, deleting it") and every
+REM retry starts from zero. prepare_compiler.py downloads it WITH resume,
+REM verifies the archive and unpacks it exactly where Nuitka looks for it.
+REM A short cache path keeps deep MinGW paths under the Windows 260-char limit.
+set "NUITKA_CACHE_DIR=%LOCALAPPDATA%\PVSnk"
+echo     Preparing C compiler for Nuitka...
+python "%CS_DIR%\prepare_compiler.py" "%NUITKA_CACHE_DIR%"
+if errorlevel 1 (
+    echo ERROR: C compiler for Nuitka is not ready - see the hints above.
+    goto :fail
+)
+
 echo     Compiling server.exe with Nuitka ^(native code, takes 5-20 minutes^)...
-echo     Uses Visual Studio C++ if installed, otherwise downloads MinGW64 automatically ^(first run^).
 if exist "%CS_DIR%\nuitka-build" rmdir /S /Q "%CS_DIR%\nuitka-build"
 cd /d "%CORE_NK%"
 call python -m nuitka --onefile --assume-yes-for-downloads ^
@@ -239,7 +253,13 @@ call python -m nuitka --onefile --assume-yes-for-downloads ^
     server_entry.py
 if errorlevel 1 (
     cd /d "%CS_DIR%"
+    echo.
     echo ERROR: Nuitka compilation failed - see messages above.
+    echo        If the message mentions 'mingw64\bin\gcc.exe' or a broken zip,
+    echo        the C compiler download was cut short. Just run the build again:
+    echo        it resumes the download instead of starting over. If GitHub is
+    echo        blocked on this PC, install Visual Studio Build Tools 2022 with
+    echo        'Desktop development with C++' - then MinGW is not needed at all.
     goto :fail
 )
 cd /d "%CS_DIR%"
