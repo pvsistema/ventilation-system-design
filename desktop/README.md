@@ -1,5 +1,10 @@
 # ПВ-Система Desktop — инструкция по сборке
 
+> ⚠️ **Устарело.** Описанная ниже сборка через Tauri (bun + Rust/cargo + PyInstaller)
+> больше не используется. Актуальная сборка — `desktop\csharp\build.bat`,
+> инструкция — `desktop/csharp/BUILD.md`. Старые `desktop\build.bat` и
+> `desktop\prepare.bat` теперь просто запускают актуальную сборку.
+
 Десктопное приложение на базе **Tauri 2** (Rust WebView) + **Python-сервер** (расчётный backend).
 
 ## Архитектура
