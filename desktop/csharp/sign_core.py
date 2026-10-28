@@ -44,8 +44,8 @@ WHERE_TO_GET = r"""
 
     КАК ПЕРЕДАТЬ ЕГО СБОРКЕ (любой способ на выбор)
       1) Вставить его, когда сборка спросит ключ на шаге подписи ядра
-         (ввод скрыт, при вставке на экране ничего не появится —
-         это нормально).
+         (правой кнопкой мыши по окну; вместо символов появятся
+         звёздочки, даётся 3 попытки).
       2) На один сеанс, в том же окне командной строки:
              set OFFLINE_KEY_PRIVATE=<значение>
              desktop\csharp\build.bat
@@ -67,27 +67,93 @@ def fail(*lines, hint: bool = True) -> None:
     sys.exit(1)
 
 
-def ask_key() -> str:
-    """Ключ из переменной окружения, иначе — скрытым вводом с подсказкой."""
+def read_masked(prompt: str) -> str:
+    """Скрытый ввод, но с '*' на каждый символ: видно, что вставка сработала.
+
+    Обычный getpass на Windows не показывает ничего - после вставки неясно,
+    попал ли ключ в окно, и легко нажать Enter впустую.
+    """
+    if os.name != "nt":
+        return getpass(prompt)
+    import msvcrt
+    sys.stdout.write(prompt)
+    sys.stdout.flush()
+    buf = []
+    while True:
+        ch = msvcrt.getwch()
+        if ch in ("\r", "\n"):
+            break
+        if ch == "\x03":
+            raise KeyboardInterrupt
+        if ch in ("\x00", "\xe0"):
+            msvcrt.getwch()
+            continue
+        if ch == "\b":
+            if buf:
+                buf.pop()
+                sys.stdout.write("\b \b")
+                sys.stdout.flush()
+            continue
+        if ch == "\x16":
+            # Ctrl+V в старой консоли не вставляет текст, а даёт этот символ.
+            sys.stdout.write("\n    Ctrl+V здесь не работает - вставьте ПРАВОЙ кнопкой мыши.\n")
+            sys.stdout.write(prompt + "*" * len(buf))
+            sys.stdout.flush()
+            continue
+        if ch < " ":
+            continue
+        buf.append(ch)
+        sys.stdout.write("*")
+        sys.stdout.flush()
+    sys.stdout.write("\n")
+    sys.stdout.flush()
+    return "".join(buf)
+
+
+ATTEMPTS = 3
+
+
+def ask_key():
+    """Ключ из переменной окружения, иначе - ввод с подсказкой и повторами."""
     priv = os.environ.get("OFFLINE_KEY_PRIVATE", "").strip()
     if priv:
-        return priv
+        sk, err = check_key(priv)
+        if sk is None:
+            fail("ERROR: ключ из переменной OFFLINE_KEY_PRIVATE не подошёл.", *err)
+        return sk
+
     print()
     print("    Для подписи расчётного ядра нужен закрытый ключ OFFLINE_KEY_PRIVATE.")
     print("    Переменная окружения OFFLINE_KEY_PRIVATE не задана.")
     print(WHERE_TO_GET)
     print()
-    try:
-        return getpass("    Вставьте ключ и нажмите Enter (ввод скрыт): ").strip()
-    except (EOFError, KeyboardInterrupt):
-        return ""
+    print("    Вставка: правой кнопкой мыши по окну (или Ctrl+Shift+V / Ctrl+V).")
+    print("    Вместо символов ключа появятся звёздочки - так и должно быть.")
+    for attempt in range(1, ATTEMPTS + 1):
+        print()
+        try:
+            priv = read_masked(f"    Ключ (попытка {attempt} из {ATTEMPTS}), затем Enter: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            priv = ""
+            print()
+            break
+        if not priv:
+            print("    Ничего не вставлено. Скопируйте значение секрета и вставьте ещё раз.")
+            continue
+        print(f"    Получено символов: {len(priv)}")
+        sk, err = check_key(priv)
+        if sk is not None:
+            print("    Ключ подходит.")
+            return sk
+        for line in err:
+            print(line)
+
+    fail("ERROR: закрытый ключ не введён или не подошёл - server.exe НЕ подписан.",
+         "       PVS.exe откажется запускать неподписанное ядро.")
 
 
-def load_key(priv: str):
-    """Разбирает ключ и проверяет, что он подходит именно к этой программе."""
-    if not priv:
-        fail("ERROR: закрытый ключ не введён - server.exe НЕ подписан.",
-             "       PVS.exe откажется запускать неподписанное ядро.")
+def check_key(priv: str):
+    """(ключ, None) если подходит, иначе (None, [строки с причиной])."""
     try:
         Ed25519PrivateKey, Encoding, PublicFormat = _crypto()
     except ImportError:
@@ -98,14 +164,19 @@ def load_key(priv: str):
     try:
         sk = Ed25519PrivateKey.from_private_bytes(decode_private_key(priv))
     except Exception:
-        fail("ERROR: значение не похоже на закрытый ключ Ed25519.",
-             "       Ожидается строка в base64 или hex - скопируйте её целиком,",
-             "       без пробелов и переносов строк.")
+        return None, ["    Это не похоже на закрытый ключ: ожидается строка в base64 или hex.",
+                      "    Скопируйте значение секрета целиком, без лишних символов."]
     pub = b64url(sk.public_key().public_bytes(Encoding.Raw, PublicFormat.Raw))
     if pub != APP_PUBLIC_KEY:
-        fail("ERROR: этот закрытый ключ не подходит к программе.",
-             "       Подписанное им ядро PVS.exe отвергнет.",
-             "       Чаще всего значение скопировано не полностью.")
+        return None, ["    Этот ключ не подходит к программе - подписанное им ядро PVS.exe отвергнет.",
+                      "    Чаще всего значение скопировано не полностью или взят другой секрет."]
+    return sk, None
+
+
+def load_key(priv: str):
+    sk, err = check_key(priv)
+    if sk is None:
+        fail("ERROR: закрытый ключ не подошёл.", *err)
     return sk
 
 
@@ -161,7 +232,7 @@ def main():
         print(f"ERROR: {exe} not found")
         sys.exit(1)
 
-    sk = load_key(ask_key())
+    sk = ask_key()
 
     h = hashlib.sha256()
     with open(exe, "rb") as f:
