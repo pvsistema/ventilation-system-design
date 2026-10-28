@@ -22,11 +22,22 @@ set "CORE_DIR=%ROOT%\desktop\pywebview\pvs-core"
 set "ICON_URL=https://cdn.poehali.dev/projects/564c75d6-cb0f-4378-9852-c88803b7dcf2/bucket/icons/desktop-icon.ico"
 
 REM ---------- Build mode ----------
-REM Optional arg "noobf" builds PVS.exe WITHOUT obfuscation. Use it to check
-REM whether a broken build is caused by obfuscation or by the code itself:
-REM     desktop\csharp\build.bat noobf
+REM Optional args, any order:
+REM   noobf   - build PVS.exe WITHOUT obfuscation. Use it to check whether a
+REM             broken build is caused by obfuscation or by the code itself:
+REM                 desktop\csharp\build.bat noobf
+REM   resume  - skip the long steps (frontend + Nuitka) and continue from
+REM             signing the already compiled dist\server\server.exe:
+REM                 desktop\csharp\build.bat resume
+REM             Used after the signing step failed (no key at hand): the core
+REM             is already built, re-running everything would waste 20 minutes.
 set "OBFUSCATE=1"
-if /i "%~1"=="noobf" set "OBFUSCATE=0"
+set "RESUME=0"
+for %%a in (%*) do (
+    if /i "%%~a"=="noobf" set "OBFUSCATE=0"
+    if /i "%%~a"=="resume" set "RESUME=1"
+    if /i "%%~a"=="continue" set "RESUME=1"
+)
 
 REM ---------- Read server core version (MANUAL) ----------
 REM server.exe (interface + core + backend) updates on the fly by server_version.
@@ -68,6 +79,8 @@ if /i "%VER_CMP%"=="LOW" (
     echo        run the OLD core and look broken.
     echo        Fix: write a number greater than %PUBLISHED_VERSION% into desktop\SERVER_VERSION
     echo        and run the build again.
+    echo        If the core is already compiled, you can finish without rebuilding:
+    echo            desktop\csharp\build.bat resume
     goto :fail
 )
 if /i "%VER_CMP%"=="OK" echo     Core version published in cloud: %PUBLISHED_VERSION% - OK
@@ -169,6 +182,49 @@ REM time; the script only prints where to get it. A WRONG key stops the build.
 echo [0/5] Checking the core signing key...
 python "%CS_DIR%\sign_core.py" --check
 if errorlevel 1 goto :fail
+echo.
+
+REM ---------- Resume an unfinished build ----------
+REM The usual case: everything compiled, but signing failed because the key was
+REM not at hand. Rebuilding from scratch would cost another 20 minutes for
+REM nothing - the core is already in dist\server\server.exe. If it is there but
+REM not signed, the build offers to continue straight from the signing step.
+set "CORE_EXE=%CS_DIR%\dist\server\server.exe"
+set "CORE_SIG=%CS_DIR%\dist\server\server.sig"
+if "%RESUME%"=="1" (
+    if not exist "%CORE_EXE%" (
+        echo     'resume' requested, but there is no compiled core yet - doing a full build.
+        set "RESUME=0"
+    )
+)
+if "%RESUME%"=="0" if exist "%CORE_EXE%" if not exist "%CORE_SIG%" (
+    echo     Found a compiled but UNSIGNED core from a previous run:
+    echo         %CORE_EXE%
+    echo     Continuing from the signing step saves 15-20 minutes.
+    echo     Answer "n" to rebuild everything from scratch.
+    set "RESUME_ANSWER=y"
+    set /p "RESUME_ANSWER=    Continue from signing? [Y/n]: "
+    if /i not "!RESUME_ANSWER!"=="n" set "RESUME=1"
+)
+if "%RESUME%"=="1" (
+    REM The core was compiled earlier, possibly with a different version number.
+    REM The stamp next to it must match that core, so it is NOT rewritten here -
+    REM we only warn when the numbers differ.
+    set "STAMPED="
+    if exist "%CS_DIR%\dist\server\server_version.txt" (
+        for /f "usebackq delims=" %%v in ("%CS_DIR%\dist\server\server_version.txt") do set "STAMPED=%%v"
+    )
+    if not "!STAMPED!"=="" if not "!STAMPED!"=="%SERVER_VERSION%" (
+        echo     WARNING: the compiled core is version !STAMPED!, SERVER_VERSION now says %SERVER_VERSION%.
+        echo              Keeping !STAMPED! - it matches the compiled core.
+        echo              Run a FULL build if you need version %SERVER_VERSION%.
+        REM All later messages must name the version actually being shipped.
+        set "SERVER_VERSION=!STAMPED!"
+    )
+    echo     RESUME: skipping frontend and core compilation, going to signing.
+    echo.
+    goto :sign_core
+)
 echo.
 
 REM ---------- Step 1: frontend ----------
@@ -286,14 +342,16 @@ REM A modified core (e.g. with the license check cut out) will not start.
 REM Needs the OFFLINE_KEY_PRIVATE secret: set it as an environment variable
 REM before the build, or paste it when asked (hidden input, not saved).
 REM sign_core.py prints where to get the key and how to pass it.
+:sign_core
 echo     Signing server.exe...
 python "%CS_DIR%\sign_core.py" "%CS_DIR%\dist\server\server.exe"
 if errorlevel 1 (
     echo.
     echo ERROR: server.exe is NOT signed - PVS.exe would refuse to start it.
-    echo        The compiled core is kept in dist\server\server.exe: once the key
-    echo        is available you can sign it alone, without rebuilding:
-    echo            python desktop\csharp\sign_core.py desktop\csharp\dist\server\server.exe
+    echo        The compiled core is KEPT in dist\server\server.exe - nothing is lost.
+    echo        When the key ^(or the admin password^) is at hand, just run:
+    echo            desktop\csharp\build.bat resume
+    echo        It skips the 20-minute compilation and finishes the build.
     goto :fail
 )
 echo     OK (core compiled to native code with Nuitka and signed, version %SERVER_VERSION%)
@@ -393,7 +451,7 @@ echo ============================================================
 echo   Build finished successfully.
 echo   User folder: %CS_DIR%\dist
 echo     PVS.exe
-echo     server\server.exe   (core version %SERVER_VERSION%, native code)
+echo     server\server.exe   (native code; version in server\server_version.txt)
 echo     server\server.sig   (signature checked by PVS.exe on every start)
 echo   Run: PVS.exe
 echo ------------------------------------------------------------
