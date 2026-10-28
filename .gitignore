@@ -30,3 +30,6 @@ tmp/
 # desktop build artefacts
 desktop/csharp/nuitka-build/
 desktop/csharp/pvs-core-nuitka/
+
+__pycache__/
+*.pyc

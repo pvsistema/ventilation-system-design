@@ -2,7 +2,7 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
-// Vite-конфиг для desktop (Tauri) сборки.
+// Vite-конфиг для desktop-сборки (PVS.exe, интерфейс в WebView2).
 // Защита кода:
 //  1. minify (esbuild) — минификация и переименование переменных
 //  2. Anti-DevTools — модуль src/lib/antiDebug.ts, подключается из main.tsx
