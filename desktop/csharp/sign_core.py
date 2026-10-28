@@ -33,29 +33,63 @@ def _crypto():
 
 APP_PUBLIC_KEY = "MsyBGg0UlSyEns_shvQD_Ob82SJ-9Klds-naVhQl9hc"
 
+# Облачная функция admin-licenses отдаёт ключ подписи по паролю администратора
+# (action=export_signing_key) - тому же паролю, что открывает панель /admin.
+# Так ключ не нужно помнить и копировать: значение секрета в интерфейсе
+# poehali.dev не показывается.
+FUNC2URL = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "..", "..", "backend", "func2url.json")
+ADMIN_URL_FALLBACK = "https://functions.poehali.dev/bd72524f-fb9c-4866-8bcd-69ced85263d4"
+
+
+def admin_url() -> str:
+    try:
+        with open(FUNC2URL, encoding="utf-8") as f:
+            return json.load(f).get("admin-licenses") or ADMIN_URL_FALLBACK
+    except Exception:
+        return ADMIN_URL_FALLBACK
+
+
+def fetch_key_from_cloud(password: str):
+    """(ключ, None) или (None, причина) - ключ запрашивается по паролю админа."""
+    import urllib.error
+    import urllib.request
+    req = urllib.request.Request(
+        admin_url(),
+        data=json.dumps({"action": "export_signing_key", "password": password}).encode(),
+        headers={"Content-Type": "application/json", "User-Agent": "PVS-build"},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read().decode("utf-8"))
+    except urllib.error.HTTPError as e:
+        if e.code == 401:
+            return None, "    Неверный пароль администратора."
+        if e.code == 404:
+            return None, "    В облаке не задан секрет OFFLINE_KEY_PRIVATE."
+        return None, f"    Сервер ответил ошибкой {e.code}."
+    except Exception as e:
+        return None, f"    Нет связи с сервером ({e}). Проверьте интернет."
+    key = str(data.get("offline_key_private") or "").strip()
+    if not key:
+        return None, "    Сервер не вернул ключ."
+    return key, None
+
 # Подсказка печатается всякий раз, когда ключа нет или он не подошёл: без неё
 # сборщик видел только «ключ не задан» и не знал, где его взять и куда вписать.
 WHERE_TO_GET = r"""
     ГДЕ ВЗЯТЬ КЛЮЧ
-      Это секрет проекта OFFLINE_KEY_PRIVATE («Аварийный ключ») на
-      poehali.dev: откройте проект -> Секреты -> OFFLINE_KEY_PRIVATE ->
-      скопируйте значение целиком. Тот же ключ используется скриптом
-      tools/offline-key/make_offline_key.py для выпуска аварийных ключей.
+      Проще всего - никак: при подписи ядра сборка спросит ПАРОЛЬ
+      АДМИНИСТРАТОРА (тот же, что от панели /admin) и сама получит
+      ключ из облака. Ключ при этом не показывается и не сохраняется.
+      Значение секрета OFFLINE_KEY_PRIVATE в интерфейсе poehali.dev
+      скрыто - скопировать его оттуда нельзя, и это нормально.
 
-    КАК ПЕРЕДАТЬ ЕГО СБОРКЕ (любой способ на выбор)
-      1) Вставить его, когда сборка спросит ключ на шаге подписи ядра
-         (правой кнопкой мыши по окну; вместо символов появятся
-         звёздочки, даётся 3 попытки).
-      2) На один сеанс, в том же окне командной строки:
-             set OFFLINE_KEY_PRIVATE=<значение>
-             desktop\csharp\build.bat
-         Сборку нужно запускать из этого же окна, а не двойным щелчком.
-      3) Навсегда (достаточно один раз), затем открыть НОВОЕ окно:
+    ЧТОБЫ НЕ ВВОДИТЬ ПАРОЛЬ КАЖДЫЙ РАЗ (по желанию)
+      Задайте сам ключ в переменной окружения, затем откройте НОВОЕ окно:
              setx OFFLINE_KEY_PRIVATE "<значение>"
-
-    Ключ нигде не сохраняется и никуда не отправляется: им только
-    подписывается server.exe на этом компьютере. Не храните его в файлах
-    рядом с проектом и не передавайте по почте."""
+      Не храните ключ в файлах рядом с проектом и не пересылайте по почте."""
 
 
 def fail(*lines, hint: bool = True) -> None:
@@ -114,7 +148,7 @@ ATTEMPTS = 3
 
 
 def ask_key():
-    """Ключ из переменной окружения, иначе - ввод с подсказкой и повторами."""
+    """Ключ: из переменной окружения, иначе из облака по паролю админа, иначе вручную."""
     priv = os.environ.get("OFFLINE_KEY_PRIVATE", "").strip()
     if priv:
         sk, err = check_key(priv)
@@ -123,10 +157,36 @@ def ask_key():
         return sk
 
     print()
-    print("    Для подписи расчётного ядра нужен закрытый ключ OFFLINE_KEY_PRIVATE.")
-    print("    Переменная окружения OFFLINE_KEY_PRIVATE не задана.")
-    print(WHERE_TO_GET)
+    print("    Для подписи расчётного ядра нужен ключ подписи.")
+    print("    Его можно получить из облака по ПАРОЛЮ АДМИНИСТРАТОРА -")
+    print("    тому же, которым вы входите в панель управления лицензиями (/admin).")
+    print("    Вставка: правой кнопкой мыши по окну. Вместо символов - звёздочки.")
+    print("    Если пароля нет - просто нажмите Enter, чтобы вставить сам ключ.")
+    for attempt in range(1, ATTEMPTS + 1):
+        print()
+        try:
+            pwd = read_masked(f"    Пароль администратора (попытка {attempt} из {ATTEMPTS}): ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            pwd = ""
+        if not pwd:
+            break
+        print("    Запрашиваю ключ подписи в облаке...")
+        priv, err = fetch_key_from_cloud(pwd)
+        if priv is None:
+            print(err)
+            continue
+        sk, err2 = check_key(priv)
+        if sk is not None:
+            print("    Ключ получен и подходит к программе.")
+            return sk
+        for line in err2:
+            print(line)
+        print("    Ключ в облаке не совпадает с ключом программы - вставьте верный ключ вручную.")
+        break
+
     print()
+    print("    Ввод самого ключа OFFLINE_KEY_PRIVATE.")
     print("    Вставка: правой кнопкой мыши по окну (или Ctrl+Shift+V / Ctrl+V).")
     print("    Вместо символов ключа появятся звёздочки - так и должно быть.")
     for attempt in range(1, ATTEMPTS + 1):
@@ -134,11 +194,10 @@ def ask_key():
         try:
             priv = read_masked(f"    Ключ (попытка {attempt} из {ATTEMPTS}), затем Enter: ").strip()
         except (EOFError, KeyboardInterrupt):
-            priv = ""
             print()
             break
         if not priv:
-            print("    Ничего не вставлено. Скопируйте значение секрета и вставьте ещё раз.")
+            print("    Ничего не вставлено.")
             continue
         print(f"    Получено символов: {len(priv)}")
         sk, err = check_key(priv)
@@ -148,7 +207,7 @@ def ask_key():
         for line in err:
             print(line)
 
-    fail("ERROR: закрытый ключ не введён или не подошёл - server.exe НЕ подписан.",
+    fail("ERROR: ключ подписи не получен - server.exe НЕ подписан.",
          "       PVS.exe откажется запускать неподписанное ядро.")
 
 
