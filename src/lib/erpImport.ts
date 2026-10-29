@@ -1475,6 +1475,13 @@ export async function parseErp(
     let fanCurveId = "";
     let fanBladeAngle = 0;
     let fanFixedQ = 0;
+    // Остановленный вентилятор в АэроСети — явно нулевые обороты в
+    // ВЫБРАННОМ режиме проветривания (в «Руссоли»: ГВУ №2 — 0 об/мин в
+    // «Режиме 1», ВМП — 0 в «Реверсе»). Раньше это учитывалось только у
+    // свободно стоящих вентиляторов, а нулевые обороты заменялись
+    // номинальными из характеристики — и остановленный вентилятор работал.
+    const fanStoppedInFile = hasFan && String(ff["Airflow.VentilatorSpeed"] ?? "").trim() !== ""
+      && num(ff["Airflow.VentilatorSpeed"], 1) === 0;
     let fanRpm = hasFan ? num(ff["Airflow.VentilatorSpeed"], 0) : 0;
     if (hasFan && vType === "1") {
       const chrId = ff["Airflow.VentilatorCharacteristicId"] ?? "";
@@ -1700,8 +1707,8 @@ export async function parseErp(
       fanParallel: hasFan ? Math.max(1, Math.round(num(ff["Airflow.VentilatorsInParallel"], 1))) : 1,
       fanRpm,
       fanInstall: fanFree ? FAN_INSTALL_FREE : fanInBulkhead ? "Внутри перемычки" : "Без перемычки",
-      // Явно нулевые обороты у свободного вентилятора — он не работает.
-      ...(fanFree && String(ff["Airflow.VentilatorSpeed"] ?? "").trim() === "0" ? { fanStopped: true } : {}),
+      // Явно нулевые обороты — вентилятор остановлен (при любой установке).
+      ...(fanStoppedInFile ? { fanStopped: true } : {}),
       fanCrossingR: 0,
       fanWindowArea: 0,
       // ── Перемычка ─────────────────────────────────────────────────────

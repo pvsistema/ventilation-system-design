@@ -239,7 +239,9 @@ function fanItemXml(br: TopoBranch, offset: number, reversed: boolean): string {
     + `<field name="Airflow.HasConfusor" value="False" />`
     + `<field name="Airflow.ConfusorLength" value="1" />`
     + `<field name="Airflow.ConfusorDiameter" value="${n(diam > 0 ? diam : 1.2, 3)}" />`
-    + `<field name="Airflow.VentilatorSpeed" value="${n(br.fanRpm || curve?.rpmNominal || 0, 1)}" />`
+    // Остановленный — нулевые обороты: так АэроСеть хранит остановку, и
+    // при обратном импорте вентилятор снова будет остановлен.
+    + `<field name="Airflow.VentilatorSpeed" value="${stopped ? "0" : n(br.fanRpm || curve?.rpmNominal || 0, 1)}" />`
     + `<field name="Airflow.VentilatorsInParallel" value="${Math.max(1, Math.round(br.fanParallel ?? 1))}" />`
     // Свободно стоящий в выработке — способ «1» АэроСети.
     + `<field name="Airflow.VentilatorInstallationType" value="${br.fanInstall === FAN_INSTALL_FREE ? 1 : 0}" />`
