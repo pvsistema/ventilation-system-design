@@ -384,6 +384,20 @@ function hexToArgbString(hex: string): string {
  * экспорте того же проекта идентификаторы не «поедут», и файл останется
  * сравнимым с предыдущей выгрузкой.
  */
+/**
+ * Вид замера «Воздух» в журнале АэроСети — встроенный GUID (в эталонах он
+ * один и тот же и нигде в файле не объявляется).
+ */
+const ERP_MEASURE_TYPE_AIR = "501e2834-fc33-4479-a6cc-02334856ab38";
+
+/** ДД.ММ.ГГГГ → «ММ/ДД/ГГГГ 00:00:00», как пишет АэроСеть; иначе сегодня. */
+function erpMeasureDate(d?: string): string {
+  const m = /^(\d{1,2})\.(\d{1,2})\.(\d{4})/.exec((d ?? "").trim());
+  const now = new Date();
+  const [dd, mm, yy] = m ? [m[1], m[2], m[3]] : [String(now.getDate()), String(now.getMonth() + 1), String(now.getFullYear())];
+  return `${mm.padStart(2, "0")}/${dd.padStart(2, "0")}/${yy} 00:00:00`;
+}
+
 function guidFrom(seed: string): string {
   // Простая хеш-функция FNV-1a, четыре независимых прохода дают 128 бит.
   const hash = (str: string, salt: number): number => {
@@ -507,6 +521,8 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
   const nodeById = new Map(nodes.map(nd => [nd.id, nd]));
   fanTemplates.clear();
   let stationNo = 0;
+  /** Записи журнала замеров (docs/Measurements.DataDocument). */
+  const measurementXml: string[] = [];
 
   // ── Узлы ────────────────────────────────────────────────────────────────
   // В АэроСети отметка узла лежит в поле RibEndNode.Depth, а сами x/y уже
@@ -612,13 +628,35 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       .filter(sy => sy.branchId === br.id && sy.typeId === "measure_station")
       .forEach(sy => {
         stationNo++;
+        const msId = guidFrom(`ms:${br.id}:${sy.id}`);
+        const number = (sy.msNumber ?? "").trim() || String(stationNo);
+        // Замер: скорость и сечение. Если введён только расход — скорость
+        // получаем делением на сечение (станции, иначе выработки).
+        const area = (sy.msArea ?? 0) > 0 ? sy.msArea! : (br.area ?? 0);
+        const vel = (sy.msVelocity ?? 0) > 0 ? sy.msVelocity!
+          : (sy.msFlow ?? 0) > 0 && area > 0 ? sy.msFlow! / area : 0;
+        const hasMeasure = vel > 0 && area > 0;
+        if (hasMeasure) {
+          measurementXml.push(
+            `<m id="${guidFrom(`msm:${br.id}:${sy.id}`)}" d="${erpMeasureDate(sy.msDate)}" t="${ERP_MEASURE_TYPE_AIR}" o="${msId}"><fields>`
+            + `<field name="Air.AirVelocity" value="${n(vel, 4)}" />`
+            + `<field name="Air.CrossSectionType" value="0" />`
+            + `<field name="Air.CrossSectionArea" value="${n(area, 3)}" />`
+            + `<field name="Air.CircleDiameter" value="1" /><field name="Air.RectangleSizeA" value="1" /><field name="Air.RectangleSizeB" value="1" />`
+            + `<field name="Air.TrapeziumSizeA" value="1" /><field name="Air.TrapeziumSizeB" value="1" />`
+            + `<field name="Air.ArcSizeA" value="1" /><field name="Air.ArcSizeB" value="1" /><field name="Air.ArcSizeC" value="2" />`
+            + `</fields></m>`,
+          );
+        }
         items.push(
-          `<ribItem id="${guidFrom(`ms:${br.id}:${sy.id}`)}" itemCode="20" description="${esc(sy.label || sy.description || `№${stationNo}`)}"${itemAttrs(offsetAt(sy.t), 0.5)}>`
+          `<ribItem id="${msId}" itemCode="20" description="${esc(sy.label || sy.description || `Замерная станция №${number}`)}"${itemAttrs(offsetAt(sy.t), 0.5)}>`
           + `<customFields><fields>`
           + `<field name="Position.StationIsUsed" value="True" />`
           + `<field name="Notes" value="" />`
+          + `<field name="VentJournal.StationNumber" value="${esc(number)}" />`
+          + `<field name="VentJournal.StationLocation" value="${esc(sy.msLocation ?? "")}" />`
           + `<field name="Airflow.StationDischargeIsPrecise" value="False" />`
-          + `<field name="Airflow.StationIsUsedInCalculation" value="False" />`
+          + `<field name="Airflow.StationIsUsedInCalculation" value="${hasMeasure ? "True" : "False"}" />`
           + `</fields></customFields>`
           + `<ventModesData><ventModeData id="${VENT_MODE_ID}" type="Bulkheads"><customFields><fields /></customFields></ventModeData></ventModesData>`
           + `</ribItem>`,
@@ -794,6 +832,9 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
       `<erpVentModes><ventMode id="${VENT_MODE_ID}" name="${VENT_MODE_NAME}" color="-8531740" isReversed="False" isNewFormat="True" isSelected="True" /></erpVentModes>`],
     ["VentilatorTemplateService.DataDocument", ventilatorTemplatesXml()],
   ];
+  if (measurementXml.length > 0) {
+    dataDocs.push(["Measurements.DataDocument", `<measurements>${measurementXml.join("")}</measurements>`]);
+  }
   // Справочник труб: по одной записи на каждый размер (наружный Ø × стенка).
   {
     const sizes = new Map<string, { d: number; w: number }>();

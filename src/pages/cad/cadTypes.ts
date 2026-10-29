@@ -49,6 +49,8 @@ export interface SchemaSymbol {
   msArea?: number;
   msFlow?: number;
   msVelocity?: number;
+  /** Дата замера, ДД.ММ.ГГГГ (из журнала АэроСети или введена вручную). */
+  msDate?: string;
   msIndNumber?: boolean;
   msIndLocation?: boolean;
   msIndFlow?: boolean;

@@ -2648,6 +2648,17 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                         <span className="text-gray-400 flex-shrink-0">м/с</span>
                       </div>
 
+                      {/* Дата замера */}
+                      <div className="flex items-center gap-1 mb-2">
+                        <span className="text-gray-500 w-24 flex-shrink-0">Дата замера</span>
+                        <input type="text"
+                          value={sym.msDate ?? ""}
+                          onChange={(e) => updSym({ msDate: e.target.value || undefined })}
+                          placeholder="ДД.ММ.ГГГГ"
+                          className="flex-1 px-1 py-0.5 text-[11px] text-right"
+                          style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
+                      </div>
+
                       {/* Вычисленные значения из расчёта сети */}
                       {brForSym && (brForSym.flow != null || brForSym.velocity != null) && (
                         <div className="text-[10px] text-gray-400 bg-gray-50 rounded p-1.5 mt-1">

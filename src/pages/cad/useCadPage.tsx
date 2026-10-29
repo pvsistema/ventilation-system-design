@@ -3003,6 +3003,7 @@ export function useCadPage() {
           msArea: m.area,
           msFlow: m.flow,
           msVelocity: m.velocity,
+          msDate: m.date,
         }));
     };
 
