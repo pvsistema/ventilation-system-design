@@ -37,11 +37,27 @@ import { autoSumS } from "@/lib/fnp494Network";
 import { safeFixed } from "./cadCompute";
 import type { CadPageState } from "./useCadPage";
 import MsHistoryBlock from "@/components/cad/MsHistoryBlock";
+import { useSchemaAutoFix } from "./useSchemaAutoFix";
 
 // Левая часть: вертикальные вкладки, панель свойств и разделитель ширины.
 export default function CadLeftPanel({ c }: { c: CadPageState }) {
   // Справочник техники (Справочники → Транспорт) — для выбора в очаге пожара
   const vehicleList = useVehicles();
+  // Автоисправление схемы («Проверка» → «Исправить автоматически»)
+  const autoFix = useSchemaAutoFix({
+    activeSide: c.activeSide,
+    nodes: c.nodes,
+    branches: c.branches,
+    symbols: c.schemaSymbols,
+    positions: c.positions,
+    settings: c.checkSettings,
+    pushHistory: c.pushHistory,
+    setNodes: c.setNodes,
+    setBranches: c.setBranches,
+    setSymbols: c.setSchemaSymbols,
+    setPositions: c.setPositions,
+    addLog: c.addLog,
+  });
   const {
     activeSide,
     setActiveSide,
@@ -789,6 +805,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     return { ...b, manualLength: false, length: len };
                   }));
                 }}
+                {...autoFix}
                 onFixZeroLen={(fallbackLen) => {
                   const fixes = new Map<string, Partial<TopoBranch>>();
                   let byCoords = 0, byValue = 0;

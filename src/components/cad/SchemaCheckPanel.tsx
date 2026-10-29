@@ -12,6 +12,8 @@ import { type CheckTab, type FullCheckResult } from "@/pages/cad/useCadSchemaChe
 import {
   type SchemaCheckSettings, DEFAULT_SCHEMA_CHECK_SETTINGS, SCHEMA_CHECK_SETTING_GROUPS, countChangedSettings,
 } from "@/lib/schemaCheckSettings";
+import { CRITICAL_CHECKS as CRITICAL_CHECK_IDS, CHECK_LIST_SHOW } from "@/lib/schemaCheckLevels";
+import { AUTO_FIX_LIST, type AutoFixKind } from "@/lib/schemaAutoFix";
 
 type Level = "error" | "warn" | "info";
 
@@ -21,26 +23,7 @@ const LEVEL_COLOR: Record<Level, string> = {
   info: "var(--c-accent, #1e5a7a)",
 };
 
-/**
- * Критические проверки — из-за них расчёт воздухораспределения невозможен
- * или его результат заведомо неверен (ошибка самой модели сети).
- * Остальные проверки — некритические: расчёт корректен, но есть нарушения
- * норм по его результатам, подозрительные значения или справочные замечания.
- */
-const CRITICAL_CHECKS = new Set<CheckTab>([
-  // Расчёт не прошёл
-  "solveBlock",
-  // Топология: сеть в расчёте не совпадает с чертежом
-  "noFan", "components", "deadFan", "tJunction", "selfLoop",
-  "brokenBranch", "isolatedBranch", "dupes", "surfaceMulti",
-  // Параметры, искажающие сопротивления и тягу
-  "invalidValues", "fanNoCurve", "zeroLen", "zeroR", "badArea",
-  "shortManualLen", "zeroBulkhead", "lostZ",
-  // Результат вентилятора недостоверен
-  "fanAgainst",
-  // Модель не совпадает с замерами — воздухораспределение в модели неверное
-  "measureMismatch",
-]);
+const CRITICAL_CHECKS = CRITICAL_CHECK_IDS as ReadonlySet<CheckTab>;
 
 const tint = (color: string, pct = 14) => `color-mix(in srgb, ${color} ${pct}%, transparent)`;
 const fmt = (v: number, d = 0) => (Number.isFinite(v) ? v.toFixed(d) : "—");
@@ -124,6 +107,67 @@ function ActionBtn({ icon, label, onClick }: { icon: string; label: string; onCl
       <Icon name={icon} size={11} />
       {label}
     </button>
+  );
+}
+
+/**
+ * «Исправить автоматически»: что и сколько будет исправлено. Галочки —
+ * какие виды исправлений применять. Всё применяется одним шагом.
+ */
+function AutoFixBlock({ preview, enabled, onToggle, onApply }: {
+  preview: Record<AutoFixKind, number>;
+  enabled: Record<AutoFixKind, boolean>;
+  onToggle: (kind: AutoFixKind, on: boolean) => void;
+  onApply: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const items = AUTO_FIX_LIST.filter((f) => preview[f.kind] > 0);
+  const total = items.reduce((s, f) => s + (enabled[f.kind] ? preview[f.kind] : 0), 0);
+  if (items.length === 0) return null;
+  return (
+    <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--c-b2, #d5d1c8)", background: "var(--c-s1, #fff)" }}>
+      <button type="button" onClick={() => setOpen((v) => !v)}
+        className="w-full flex items-center gap-1.5 px-2 h-7 text-left hover:bg-[var(--c-s3,#f1efea)]"
+        style={{ background: "transparent", border: "none", cursor: "pointer" }}>
+        <Icon name="Wand2" size={13} style={{ color: "var(--c-accent, #1e5a7a)" }} />
+        <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--c-t1, #1f2328)" }}>Исправить автоматически</span>
+        <span className="text-[10px] px-1.5 rounded-full font-semibold"
+          style={{ fontFamily: "var(--font-num)", background: tint("var(--c-accent, #1e5a7a)"), color: "var(--c-accent, #1e5a7a)" }}>
+          {items.reduce((s, f) => s + preview[f.kind], 0)}
+        </span>
+        <Icon name={open ? "ChevronUp" : "ChevronDown"} size={12} style={{ color: "var(--c-t4, #767f8c)" }} />
+      </button>
+      {open && (
+        <div className="px-2 pb-2 space-y-1">
+          <div className="text-[10px] leading-snug" style={{ color: "var(--c-t3, #6b7280)" }}>
+            Только то, что не требует решения инженера. Применяется одним шагом — отменить можно Ctrl+Z.
+          </div>
+          {items.map((f) => (
+            <label key={f.kind} className="flex items-start gap-1.5 cursor-pointer select-none text-[11px]">
+              <input type="checkbox" checked={enabled[f.kind]} className="mt-0.5"
+                onChange={(e) => onToggle(f.kind, e.target.checked)} />
+              <span className="flex-1 min-w-0">
+                <span style={{ color: "var(--c-t1, #1f2328)" }}>{f.title}</span>
+                <span style={{ color: "var(--c-t4, #767f8c)" }}> — {f.action}</span>
+              </span>
+              <span className="text-[10px] font-semibold" style={{ fontFamily: "var(--font-num)", color: "var(--c-t2, #3d434b)" }}>
+                {preview[f.kind]}
+              </span>
+            </label>
+          ))}
+          <button type="button" disabled={total === 0} onClick={onApply}
+            className="w-full h-7 mt-1 rounded flex items-center justify-center gap-1.5 text-[11px] font-semibold"
+            style={{
+              border: "none", cursor: total === 0 ? "default" : "pointer",
+              background: total === 0 ? "var(--c-s3, #f1efea)" : "var(--c-accent, #1e5a7a)",
+              color: total === 0 ? "var(--c-t4, #767f8c)" : "#fff",
+            }}>
+            <Icon name="Wand2" size={12} />
+            Исправить всё ({total})
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -275,6 +319,13 @@ interface SchemaCheckPanelProps {
   /** Задать длину всем ветвям нулевой длины: по координатам узлов,
    *  а где узлы совпадают — указанное значение (вручную). */
   onFixZeroLen: (fallbackLen: number) => void;
+  /** Сколько объектов будет исправлено по каждому виду (предпросмотр). */
+  autoFixPreview?: Record<AutoFixKind, number> | null;
+  /** Какие виды исправлений включены. */
+  autoFixEnabled: Record<AutoFixKind, boolean>;
+  onAutoFixToggle: (kind: AutoFixKind, on: boolean) => void;
+  /** Применить включённые исправления (одним шагом, Ctrl+Z — отмена). */
+  onAutoFixApply: () => void;
   /** Выделить группу узлов и ветвей и показать её на схеме */
   onFocusGroup: (nodeIds: string[], branchIds: string[], focus?: { x: number; y: number; z: number }) => void;
 }
@@ -312,19 +363,25 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
   const selectAllBtn = (ids: string[]) =>
     ids.length > 1 ? <div className="px-2 pb-1.5"><ActionBtn icon="MousePointerClick" label="Выделить все на схеме" onClick={() => p.onSelectBranches(ids)} /></div> : null;
 
+  // Списки бывают в тысячи строк — показываем первые CHECK_LIST_SHOW,
+  // счётчик же всегда полный.
+  const cap = <T,>(list: T[]) => list.slice(0, CHECK_LIST_SHOW);
+  const more = (n: number) => n > CHECK_LIST_SHOW
+    ? <Hint>Показаны первые {CHECK_LIST_SHOW} из {n}. «Выделить все на схеме» выделяет все {n}.</Hint> : null;
   const branchNotes = (list: BranchNote[], empty: string, selectAll = true) => (
     <>
       {selectAll && selectAllBtn(list.map((x) => x.branch.id))}
-      {list.length === 0 ? <Empty text={empty} /> : list.map(({ branch: b, note }) => branchRow(b, note))}
+      {list.length === 0 ? <Empty text={empty} /> : cap(list).map(({ branch: b, note }) => branchRow(b, note))}
+      {more(list.length)}
     </>
   );
   const nodeNotes = (list: NodeNote[], empty: string) =>
-    list.length === 0 ? <Empty text={empty} /> : list.map(({ node: n, note }) => (
+    list.length === 0 ? <Empty text={empty} /> : <>{cap(list).map(({ node: n, note }) => (
       <ItemRow key={n.id} title={nodeName(n)} detail={note}
         selected={selectedNodeId === n.id} onClick={() => onFocusNode(n.id)} />
-    ));
+    ))}{more(list.length)}</>;
   const groupNotes = (list: GroupNote[], empty: string) =>
-    list.length === 0 ? <Empty text={empty} /> : list.map((g, i) => (
+    list.length === 0 ? <Empty text={empty} /> : cap(list).map((g, i) => (
       <ItemRow key={`${g.title}|${i}`} title={g.title} detail={g.note}
         selected={g.branchIds.includes(selectedBranchId ?? "") || g.nodeIds.includes(selectedNodeId ?? "")}
         onClick={() => p.onFocusGroup(g.nodeIds, g.branchIds, g.focus)} />
@@ -462,11 +519,21 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
       ),
     },
     {
-      id: "badArea", group: "Параметры ветвей", icon: "Square", level: "warn", count: params.badArea.length,
-      title: "Сечение не задано или неправдоподобно",
+      id: "noArea", group: "Параметры ветвей", icon: "Square", level: "error", count: params.noArea.length,
+      title: "Сечение не задано",
       body: () => (
         <>
-          <Hint>Допустимым считается {num(cfg.areaMin)}…{num(cfg.areaMax)} м². Сечение входит в сопротивление в кубе — ошибка в 10 раз меняет R в 1000 раз.</Hint>
+          <Hint>Сечение равно нулю — сопротивление выработки посчитать нельзя.</Hint>
+          {branchNotes(params.noArea, "У всех выработок задано сечение")}
+        </>
+      ),
+    },
+    {
+      id: "badArea", group: "Параметры ветвей", icon: "Square", level: "warn", count: params.badArea.length,
+      title: "Сечение вне типичного диапазона",
+      body: () => (
+        <>
+          <Hint>Типичным считается {num(cfg.areaMin)}…{num(cfg.areaMax)} м². Камеры и скважины бывают и больше, и меньше — проверьте, что это не ошибка ввода (мм² или см вместо м). Сечение входит в сопротивление в кубе.</Hint>
           {branchNotes(params.badArea, "Сечения в норме")}
         </>
       ),
@@ -478,7 +545,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         <>
           <Hint>Выработка не может быть короче прямой между её концами — сопротивление занижено.</Hint>
           {params.shortManualLen.length === 0 ? <Empty text="Таких ветвей нет" /> :
-            params.shortManualLen.map(({ branch: b, note }) => {
+            cap(params.shortManualLen).map(({ branch: b, note }) => {
               const auto = autoLength(b);
               return branchRow(b, note, auto ? <ActionBtn icon="RefreshCw" label="Авто"
                 onClick={() => p.onUpdateBranch(b.id, { manualLength: false, length: auto })} /> : undefined);
@@ -767,7 +834,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
           <Hint>Узел удалили или перенумеровали, а ветвь осталась. Сеть распадается, расчёт обнуляется.</Hint>
           {selectAllBtn(r.brokenBranches.map((x) => x.branch.id))}
           {r.brokenBranches.length === 0 ? <Empty text="Все ветви привязаны к узлам" /> :
-            r.brokenBranches.map(({ branch: b, missing, missingIds }) => branchRow(b,
+            cap(r.brokenBranches).map(({ branch: b, missing, missingIds }) => branchRow(b,
               `Нет ${missing === "both" ? "обоих узлов" : missing === "from" ? "начального узла" : "конечного узла"}: ${missingIds.join(", ")}`))}
         </>
       ),
@@ -785,7 +852,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
           {selectAllBtn(r.isolatedBranches.map((b) => b.id))}
           {r.isolatedBranches.length === 0
             ? (!r.noAtmosphere && <Empty text="Вся сеть связана с поверхностью" />)
-            : r.isolatedBranches.map((b) => branchRow(b, `L ${fmt(b.length)} м · S ${fmt(b.area, 1)} м²`))}
+            : cap(r.isolatedBranches).map((b) => branchRow(b, `L ${fmt(b.length)} м · S ${fmt(b.area, 1)} м²`))}
         </>
       ),
     },
@@ -812,7 +879,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
             );
           })()}
           {r.zeroLenBranches.length === 0 ? <Empty text="Таких ветвей нет" /> :
-            r.zeroLenBranches.map((b) => {
+            cap(r.zeroLenBranches).map((b) => {
               const auto = autoLength(b);
               return branchRow(b, `S ${fmt(b.area, 1)} м²${auto ? ` · по координатам ${auto} м` : ""}`,
                 auto ? <ActionBtn icon="Ruler" label={`${auto} м`}
@@ -828,7 +895,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         <>
           <Hint>Ветвь с R = 0 искажает распределение воздуха.</Hint>
           {r.zeroRBranches.length === 0 ? <Empty text="Таких ветвей нет" /> :
-            r.zeroRBranches.map((b) => branchRow(b, `L ${fmt(b.length)} м · S ${fmt(b.area, 1)} м²`))}
+            cap(r.zeroRBranches).map((b) => branchRow(b, `L ${fmt(b.length)} м · S ${fmt(b.area, 1)} м²`))}
         </>
       ),
     },
@@ -839,7 +906,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         <>
           <Hint>Одну пару узлов соединяют несколько ветвей. Проверьте, не построена ли выработка дважды.</Hint>
           {r.dupBranches.length === 0 ? <Empty text="Повторов нет" /> :
-            r.dupBranches.map(({ branches: grp, key }) => (
+            cap(r.dupBranches).map(({ branches: grp, key }) => (
               <div key={key} className="mb-1 pl-1.5 ml-1" style={{ borderLeft: "2px solid var(--c-b2, #d5d1c8)" }}>
                 {grp.map((b) => branchRow(b, `L ${fmt(b.length)} м · R ${fmt(b.resistance ?? 0, 3)}`))}
               </div>
@@ -855,7 +922,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
           <Hint>Сопротивление выше порога — вероятна ошибка в сечении или длине.</Hint>
           <ThresholdInput label="Порог" unit="кМюрг" value={p.highRThreshold} min={0} step={10} onChange={p.onHighRThreshold} />
           {r.highRBranches.length === 0 ? <Empty text="Таких ветвей нет" /> :
-            r.highRBranches.map((b) => branchRow(b, `R ${fmt(b.resistance ?? 0, 2)} · L ${fmt(b.length)} м · S ${fmt(b.area, 1)} м²`))}
+            cap(r.highRBranches).map((b) => branchRow(b, `R ${fmt(b.resistance ?? 0, 2)} · L ${fmt(b.length)} м · S ${fmt(b.area, 1)} м²`))}
         </>
       ),
     },
@@ -867,7 +934,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
           <Hint>Сопротивление перемычки превышает норматив.</Hint>
           <ThresholdInput label="Норматив" unit="кМюрг" value={p.bulkRThreshold} min={0} step={1} onChange={p.onBulkRThreshold} />
           {r.bulkBranches.length === 0 ? <Empty text="Все перемычки в норме" /> :
-            r.bulkBranches.map(({ branch: b, rKmu }) => branchRow(b, `${r.bulkheads.get(b.id)?.name ?? (b.bulkheadName || "Перемычка")} · R ${fmt(rKmu)} кМюрг`))}
+            cap(r.bulkBranches).map(({ branch: b, rKmu }) => branchRow(b, `${r.bulkheads.get(b.id)?.name ?? (b.bulkheadName || "Перемычка")} · R ${fmt(rKmu)} кМюрг`))}
         </>
       ),
     },
@@ -881,7 +948,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
             <div className="px-2 pb-1.5"><ActionBtn icon="RefreshCw" label="Все по координатам" onClick={p.onAllManualToAuto} /></div>
           )}
           {r.manualLenBranches.length === 0 ? <Empty text="Таких ветвей нет" /> :
-            r.manualLenBranches.map((b) => {
+            cap(r.manualLenBranches).map((b) => {
               const auto = autoLength(b);
               return branchRow(b, `Вручную ${fmt(b.length)} м${auto != null ? ` · по координатам ${auto} м` : ""}`,
                 <ActionBtn icon="RefreshCw" label="Авто"
@@ -898,7 +965,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
           <Hint>Узлы почти совпадают в пространстве, но ветвью не соединены — возможно, выработки не состыкованы.</Hint>
           <ThresholdInput label="Расстояние до" unit="м" value={p.nearThreshold} min={0.01} step={0.1} onChange={p.onNearThreshold} />
           {r.nearPairs.length === 0 ? <Empty text="Таких узлов нет" /> :
-            r.nearPairs.map(({ a, b, dist }) => nodePairRow(a, b, `${fmt(dist, dist < 0.1 ? 3 : dist < 1 ? 2 : 1)} м`))}
+            cap(r.nearPairs).map(({ a, b, dist }) => nodePairRow(a, b, `${fmt(dist, dist < 0.1 ? 3 : dist < 1 ? 2 : 1)} м`))}
         </>
       ),
     },
@@ -909,7 +976,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         <>
           <Hint>Два узла стоят в одной точке — обычно лишний узел после импорта или копирования.</Hint>
           {r.dupes.length === 0 ? <Empty text="Совпадений нет" /> :
-            r.dupes.map(({ a, b }) => nodePairRow(a, b, `X ${fmt(a.x, 2)} · Y ${fmt(a.y, 2)} · Z ${fmt(a.z, 2)}`))}
+            cap(r.dupes).map(({ a, b }) => nodePairRow(a, b, `X ${fmt(a.x, 2)} · Y ${fmt(a.y, 2)} · Z ${fmt(a.z, 2)}`))}
         </>
       ),
     },
@@ -920,7 +987,7 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         <>
           <Hint>К узлу не подходит ни одна ветвь — его можно удалить.</Hint>
           {r.isolated.length === 0 ? <Empty text="Таких узлов нет" /> :
-            r.isolated.map((n) => (
+            cap(r.isolated).map((n) => (
               <ItemRow key={n.id} title={nodeName(n)} selected={selectedNodeId === n.id}
                 detail={`X ${fmt(n.x)} · Y ${fmt(n.y)} · Z ${fmt(n.z)}`} onClick={() => onFocusNode(n.id)} />
             ))}
@@ -988,8 +1055,12 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         {(r.truncated || topo.truncated || params.truncated || solve.truncated || method.truncated) && (
           <div className="text-[10px] flex items-start gap-1" style={{ color: "var(--c-t3, #6b7280)" }}>
             <Icon name="Info" size={11} className="flex-shrink-0 mt-px" />
-            Показаны первые 500 результатов в каждом списке.
+            Схема очень большая — часть результатов не проверялась.
           </div>
+        )}
+        {p.autoFixPreview && (
+          <AutoFixBlock preview={p.autoFixPreview} enabled={p.autoFixEnabled} onToggle={p.onAutoFixToggle}
+            onApply={p.onAutoFixApply} />
         )}
         <button type="button" onClick={() => setShowSettings((v) => !v)}
           className="w-full h-6 px-2 rounded flex items-center gap-1.5 text-[11px] transition-colors hover:bg-[var(--c-s3,#f1efea)]"

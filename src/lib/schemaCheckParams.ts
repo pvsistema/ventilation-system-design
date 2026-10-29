@@ -13,7 +13,9 @@ import { type BranchNote, type NodeNote, pushCapped, fmtNum } from "./schemaChec
 import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
 
 export interface ParamsCheckResult {
-  /** Сечение не задано или неправдоподобно. */
+  /** Сечение не задано (0) — сопротивление не посчитать. Критично. */
+  noArea: BranchNote[];
+  /** Сечение задано, но вне типичного диапазона. Замечание. */
   badArea: BranchNote[];
   /** Ручная длина короче расстояния между узлами. */
   shortManualLen: BranchNote[];
@@ -63,6 +65,7 @@ export function checkParams(
   const push = <T,>(arr: T[], item: T) => { if (!pushCapped(arr, item)) truncated = true; };
 
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
+  const noArea: BranchNote[] = [];
   const badArea: BranchNote[] = [];
   const shortManualLen: BranchNote[] = [];
   const badAlpha: BranchNote[] = [];
@@ -89,7 +92,7 @@ export function checkParams(
 
     // Сечение
     if (!isAux && b.resistanceMode !== "manual") {
-      if (b.area <= 0) push(badArea, { branch: b, note: "Сечение не задано" });
+      if (b.area <= 0) push(noArea, { branch: b, note: "Сечение не задано" });
       else if (b.area < areaMin) push(badArea, { branch: b, note: `S = ${fmtNum(b.area, 2)} м² — слишком мало (ввод в мм² или см?)` });
       else if (b.area > areaMax) push(badArea, { branch: b, note: `S = ${fmtNum(b.area, 1)} м² — слишком много для выработки` });
     }
@@ -169,5 +172,5 @@ export function checkParams(
     }
   }
 
-  return { badArea, shortManualLen, badAlpha, fanNoCurve, zeroBulkhead, invalidValues, lostZ, tinyBranches, truncated };
+  return { noArea, badArea, shortManualLen, badAlpha, fanNoCurve, zeroBulkhead, invalidValues, lostZ, tinyBranches, truncated };
 }

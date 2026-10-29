@@ -31,7 +31,7 @@ export type CheckTab =
   // Связность и стыковка
   | "selfLoop" | "components" | "noFan" | "deadFan" | "deadEnd" | "tJunction" | "crossing"
   // Параметры
-  | "badArea" | "shortManualLen" | "badAlpha" | "fanNoCurve" | "zeroBulkhead"
+  | "noArea" | "badArea" | "shortManualLen" | "badAlpha" | "fanNoCurve" | "zeroBulkhead"
   | "invalidValues" | "lostZ" | "tinyBranch"
   // По результатам расчёта
   | "highV" | "lowV" | "fanAgainst" | "fanRange" | "recirc" | "faceDeficit" | "leakage" | "leakNorm"

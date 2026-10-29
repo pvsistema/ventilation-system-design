@@ -10,6 +10,7 @@
 import type { TopoNode, TopoBranch } from "./topology";
 import { branchBulkheadRkMurg } from "./bulkheads";
 import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
+import { CHECK_MAX_ITEMS } from "./schemaCheckTypes";
 
 export interface NearPair { a: TopoNode; b: TopoNode; dist: number }
 /**
@@ -74,7 +75,7 @@ export function checkSchema(
   const nearThreshold = opts.nearThreshold ?? 0.5;
   const highRThreshold = opts.highRThreshold ?? 100;
   const bulkRThreshold = opts.bulkRThreshold ?? 686;
-  const maxItems = opts.maxItems ?? 500;
+  const maxItems = opts.maxItems ?? CHECK_MAX_ITEMS;
 
   let truncated = false;
   const capReached = (len: number) => len >= maxItems;

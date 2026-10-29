@@ -15,8 +15,13 @@ export interface GroupNote {
   focus?: { x: number; y: number; z: number };
 }
 
-/** Лимит длины каждого списка — защита от зависания интерфейса. */
-export const CHECK_MAX_ITEMS = 500;
+/**
+ * Предел длины списка — только защита от зависания на огромных схемах.
+ * Раньше он был 500, и счётчики врали («Длина задана вручную: 500» при
+ * 800 таких выработках). Теперь списки полные, а панель сама показывает
+ * первые строки (CHECK_LIST_SHOW).
+ */
+export const CHECK_MAX_ITEMS = 50000;
 
 /** Помощник: добавить в список с учётом лимита. Возвращает false, если лимит достигнут. */
 export function pushCapped<T>(arr: T[], item: T, max = CHECK_MAX_ITEMS): boolean {

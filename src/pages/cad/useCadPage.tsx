@@ -42,6 +42,7 @@ import { makeDefaultOpoData, normalizeOpoData, computeOpoNetwork, type OpoData }
 import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
 import { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
+import { isCriticalCheck } from "@/lib/schemaCheckLevels";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type PumpModel } from "@/lib/pumps";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, calcFirePowerFromMaterial, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult } from "@/lib/fireCalculator";
@@ -2337,28 +2338,43 @@ export function useCadPage() {
     if (branches.length === 0) return;
     // Перемычки — с сопротивлением из значков (в т.ч. ручным), как в расчёте.
     const bulkheads = buildBulkheadInfoMap(branches, schemaSymbols, mineBulkheads);
-    const base = checkSchema(nodes, branches, { bulkheads });
-    const topo = checkTopology(nodes, branches);
-    const params = checkParams(nodes, branches, { bulkheads });
-    // [вкладка, текст, число, ошибка(true) / замечание(false)] — по важности
+    // Те же пороги, что в панели «Проверка» (настройки пользователя).
+    const s = checkSettings;
+    const base = checkSchema(nodes, branches, {
+      nearThreshold: s.nearThreshold, highRThreshold: s.highRThreshold, bulkRThreshold: s.bulkRThreshold, bulkheads,
+    });
+    const topo = checkTopology(nodes, branches, {
+      onAxisTolerance: s.onAxisTolerance, crossingZTolerance: s.crossingZTolerance,
+    });
+    const params = checkParams(nodes, branches, {
+      areaMin: s.areaMin, areaMax: s.areaMax, alphaMin: s.alphaMin, alphaMax: s.alphaMax,
+      tinyLength: s.tinyLength, bulkheads,
+    });
+    // [вкладка, текст, число, ошибка(true) / замечание(false)]. Важность —
+    // общая с панелью «Проверка» (schemaCheckLevels), чтобы одна и та же
+    // ошибка не была то критической, то замечанием.
     const found: [CheckTab, string, number, boolean][] = ([
-      ["brokenBranch", "ветви на удалённых узлах", base.brokenBranches.length, true],
-      ["invalidValues", "некорректные числа", params.invalidValues.length, true],
-      ["components", "отдельные части сети", topo.components.length, true],
-      ["tJunction", "примыкания без общего узла", topo.tJunctions.length, true],
-      ["isolatedBranch", "ветви без связи с поверхностью", base.isolatedBranches.length, true],
-      ["noFan", "нет работающего вентилятора", topo.noActiveFan ? 1 : 0, true],
-      ["fanNoCurve", "вентиляторы без характеристики", params.fanNoCurve.length, true],
-      ["zeroLen", "ветви нулевой длины", base.zeroLenBranches.length, true],
-      ["zeroR", "ветви с R = 0", base.zeroRBranches.length, true],
-      ["selfLoop", "замкнутые сами на себя ветви", topo.selfLoops.length, true],
-      ["crossing", "пересечения без узла", topo.crossings.length, false],
-      ["badArea", "неправдоподобные сечения", params.badArea.length, false],
-      ["lostZ", "потерянные отметки Z", params.lostZ.length, false],
-      ["zeroBulkhead", "перемычки без сопротивления", params.zeroBulkhead.length, false],
-      ["dupes", "узлы в одной точке", base.dupes.length, false],
-      ["dupbranch", "повторяющиеся ветви", base.dupBranches.length, false],
-    ] as [CheckTab, string, number, boolean][]).filter(([, , n]) => n > 0);
+      ["brokenBranch", "ветви на удалённых узлах", base.brokenBranches.length],
+      ["invalidValues", "некорректные числа", params.invalidValues.length],
+      ["components", "отдельные части сети", topo.components.length],
+      ["tJunction", "примыкания без общего узла", topo.tJunctions.length],
+      ["isolatedBranch", "ветви без связи с поверхностью", base.isolatedBranches.length],
+      ["noFan", "нет работающего вентилятора", topo.noActiveFan ? 1 : 0],
+      ["fanNoCurve", "вентиляторы без характеристики", params.fanNoCurve.length],
+      ["zeroLen", "ветви нулевой длины", base.zeroLenBranches.length],
+      ["zeroR", "ветви с R = 0", base.zeroRBranches.length],
+      ["noArea", "ветви без сечения", params.noArea.length],
+      ["selfLoop", "замкнутые сами на себя ветви", topo.selfLoops.length],
+      ["lostZ", "потерянные отметки Z", params.lostZ.length],
+      ["dupes", "узлы в одной точке", base.dupes.length],
+      ["crossing", "пересечения без узла", topo.crossings.length],
+      ["badArea", "сечения вне типичного диапазона", params.badArea.length],
+      ["zeroBulkhead", "перемычки без сопротивления", params.zeroBulkhead.length],
+      ["dupbranch", "повторяющиеся ветви", base.dupBranches.length],
+    ] as [CheckTab, string, number][])
+      .filter(([, , n]) => n > 0)
+      .map(([id, t, n]) => [id, t, n, isCriticalCheck(id)] as [CheckTab, string, number, boolean])
+      .sort((a, b) => Number(b[3]) - Number(a[3]));
     if (found.length === 0) {
       addLog("ok", "Проверка после импорта: ошибок в схеме не найдено");
       return;
@@ -5632,7 +5648,9 @@ export function useCadPage() {
     // Перед расчётом проверяем сеть на изолированные ветви: подсети без выхода
     // на поверхность (нет пути к атмосферному узлу) не дают корректно рассчитать
     // воздухораспределение. Предупреждаем и открываем проверку «Нет связи с поверхностью».
-    const check = checkSchema(nodes, branches);
+    const check = checkSchema(nodes, branches, {
+      bulkheads: buildBulkheadInfoMap(branches, schemaSymbols, mineBulkheads),
+    });
     // Обрыв связи проверяем ПЕРВЫМ: ветвь, привязанная к удалённому узлу, —
     // причина, а «сеть распадается на несвязные части» и обнулённый расчёт —
     // лишь следствие. Раньше такой обрыв нигде не показывался, и пользователю
