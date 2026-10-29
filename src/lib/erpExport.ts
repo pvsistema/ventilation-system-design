@@ -610,7 +610,8 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
         items.push(bulkheadItemXml({
           id: guidFrom(`bulk:${br.id}:${sy.id}`), code, r,
           windowArea: sy.bkWindowArea ?? 0, branchArea: br.area ?? 0,
-          name: sy.bkBulkheadName || sy.description || sy.label
+          // Подпись (номер сооружения из АэроСети) — обратно в подпись.
+          name: sy.label || sy.bkBulkheadName || sy.description
             || LEGEND_TYPES.find(l => l.id === sy.typeId)?.name || "",
           offset: offsetAt(sy.t ?? (k + 1) / (bkSyms.length + 1)),
         }));

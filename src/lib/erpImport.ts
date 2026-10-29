@@ -87,7 +87,16 @@
 
 import JSZip from "jszip";
 import { makeNode, makeBranch, FAN_INSTALL_FREE, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
-import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
+import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName, erpSymbolForCode } from "@/lib/erpItemCodes";
+
+/**
+ * Значок по коду АэроСети. Коды, которых нет в таблице (в «Руссоли» —
+ * 93, 94, 95, 97, 100), но с площадью вентиляционного окна — это
+ * сооружения с окном: ставим «дверь с регулируемым окном», а не глухую.
+ */
+function erpSymbolForCodeOrWindow(code: string, windowArea: number): string {
+  return erpSymbolForCode(code) || (windowArea > 0 ? "win_base" : "");
+}
 import { msSortHistory, type MsMeasure } from "@/lib/msHistory";
 
 /** Замерная станция на выработке (<ribItem itemCode="20">). */
@@ -187,6 +196,15 @@ export interface ErpBulkhead {
   name: string;
   /** Код картинки АэроСети (вид и материал). */
   code: string;
+  /**
+   * Наш значок по коду АэроСети (bk_brick, door_wood, …). Пусто — код не
+   * знаком таблице, значок подбирается по названию.
+   */
+  symbolId: string;
+  /** Подпись объекта в АэроСети (обычно номер сооружения: «285», «124/1»). */
+  number: string;
+  /** Площадь вентиляционного окна, м² (0 — окна нет). */
+  windowArea: number;
   /** Сопротивление, кМюрг. */
   r: number;
   /** Положение вдоль выработки, 0…1 (от начального узла нашей ветви). */
@@ -1586,8 +1604,15 @@ export async function parseErp(
       const r = itemR(it) || (sumItemsR > 0 ? 0 : bulkR / bulkItemsAll.length);
       bulkheadItems.push({
         branchId,
-        name: it.description || erpBulkheadName(it.code) || "Перемычка",
+        // Вид и материал задаёт КОД картинки АэроСети, а не подпись: в
+        // подписи у сооружений обычно номер («285», «124/1»). Раньше значок
+        // подбирался по подписи — по номеру ни вид, ни материал не угадать,
+        // и почти все сооружения становились глухими белыми перемычками.
+        name: erpBulkheadName(it.code) || it.description || "Перемычка",
         code: it.code,
+        symbolId: erpSymbolForCodeOrWindow(it.code, num(it.f["Airflow.VentWindowArea"], 0)),
+        number: (it.description ?? "").trim(),
+        windowArea: num(it.f["Airflow.VentWindowArea"], 0),
         r: +r.toFixed(6),
         t: +(flipVmp ? 1 - t0 : t0).toFixed(4),
         surveyQ: num(it.f["Airflow.BulkheadDepressionSurveyDischarge"], 0),

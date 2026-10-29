@@ -2932,10 +2932,12 @@ export function useCadPage() {
           if (existing.some(s => BULKHEAD_SYMBOL_IDS.has(s.typeId) && s.branchId === it.branchId)) return;
           syms.push({
             id: `SYM_BK_ERP_${stamp}_${i}`,
-            typeId: guessBulkheadTypeId(it.name || "Перемычка"),
+            typeId: it.symbolId || guessBulkheadTypeId(it.name || "Перемычка"),
             x: 0, y: 0,
             branchId: it.branchId,
             t: it.t,
+            ...(it.number ? { label: it.number } : {}),
+            ...(it.windowArea > 0 ? { bkWindowArea: it.windowArea } : {}),
             bkResMode: "manual" as const,
             bkManualR: it.r,
             bkBulkheadR: it.r * 1000,
