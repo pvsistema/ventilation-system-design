@@ -19,7 +19,8 @@ import {
 } from "@/lib/bulkheads";
 import UnitsConfigPanel from "@/components/cad/UnitsConfigPanel";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
-import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, type PumpModel } from "@/lib/pumps";
+import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, makeUserPump, type PumpModel } from "@/lib/pumps";
+import UserPumpEditor from "@/components/cad/UserPumpEditor";
 import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, type ConsumerGroup } from "@/lib/waterConsumers";
 import PumpChart from "@/components/cad/PumpChart";
 import { type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
@@ -106,6 +107,9 @@ interface Props {
   /** Типовая толщина перемычек по материалу */
   bulkheadThickness?: BulkheadThicknessTable;
   onBulkheadThicknessChange?: (t: BulkheadThicknessTable) => void;
+  /** Свои насосы (хранятся в проекте) */
+  userPumps?: PumpModel[];
+  onUserPumpsChange?: (list: PumpModel[]) => void;
 }
 
 // ─── Оформление в палитре темы (--c-accent / --c-s* / --c-b* / --c-t*) ────
@@ -1968,34 +1972,93 @@ function EditableTable({ headers, storageKey }: { headers: string[]; storageKey:
 }
 
 // ─── Справочник насосов с картой характеристик (двойной клик по строке) ──────
-function PumpsSection() {
+function PumpsSection({ userPumps, onUserPumpsChange }: {
+  userPumps?: PumpModel[];
+  onUserPumpsChange?: (list: PumpModel[]) => void;
+}) {
   const [selected, setSelected] = useState<PumpModel | null>(null);
+  const [editing, setEditing] = useState<PumpModel | null>(null);
+  const own = userPumps ?? [];
+  const canEdit = !!onUserPumpsChange;
+
+  const save = (p: PumpModel) => {
+    const exists = own.some(x => x.id === p.id);
+    onUserPumpsChange?.(exists ? own.map(x => (x.id === p.id ? p : x)) : [...own, p]);
+    setEditing(null);
+  };
+  const remove = (id: string) => {
+    if (!window.confirm("Удалить насос из справочника? У насосов на схеме, где он выбран, останутся введённые параметры.")) return;
+    onUserPumpsChange?.(own.filter(x => x.id !== id));
+  };
+  const pumpName = (p: PumpModel) => (p.isUser || !p.brand ? p.model : `${p.brand} ${p.model}`);
+
+  const row = (p: PumpModel, user: boolean) => (
+    <tr key={p.id}
+      className="group hover:bg-[var(--c-tint-blue)] cursor-pointer"
+      onClick={() => setSelected(p)}
+      title="Открыть напорную характеристику">
+      <Td>
+        <span className="inline-flex items-center gap-1.5">
+          {pumpName(p)}
+          {user && <span className="text-[9px] px-1 rounded font-semibold"
+            style={{ background: "color-mix(in srgb, var(--c-accent, #1e5a7a) 14%, transparent)", color: "var(--c-accent, #1e5a7a)" }}>СВОЙ</span>}
+        </span>
+      </Td>
+      <Td>{PUMP_TYPE_NAMES[p.type]}</Td>
+      <Td>{p.Qopt} м³/ч</Td>
+      <Td>{Math.round(pumpHead(p, p.Qopt))} м</Td>
+      <Td>{p.rpm} об/мин</Td>
+      <Td>{p.power} кВт</Td>
+      <Td>
+        <span className="inline-flex items-center gap-2 w-full">
+          {Math.round(p.etaMax * 100)} %
+          {user && canEdit && (
+            <span className="ml-auto inline-flex gap-0.5 opacity-0 group-hover:opacity-100">
+              <button title="Изменить" onClick={e => { e.stopPropagation(); setEditing(p); }}
+                className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--c-t3)] hover:bg-[var(--c-s3)]">
+                <Icon name="Pencil" size={12} />
+              </button>
+              <button title="Удалить" onClick={e => { e.stopPropagation(); remove(p.id); }}
+                className="w-6 h-6 inline-flex items-center justify-center rounded text-[var(--c-t3)] hover:text-[var(--c-red)] hover:bg-[var(--c-s3)]">
+                <Icon name="Trash2" size={12} />
+              </button>
+            </span>
+          )}
+        </span>
+      </Td>
+    </tr>
+  );
 
   return (
     <>
+      {canEdit && (
+        <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--c-b1)]">
+          <span className="text-[11px] text-[var(--c-t3)] flex-1">
+            {own.length > 0 ? `Своих насосов: ${own.length}. Хранятся в проекте.` : "Нет нужного насоса? Добавьте свой — с характеристикой по точкам паспорта."}
+          </span>
+          <button className={BTN_PRIMARY} onClick={() => setEditing(makeUserPump())}>
+            <Icon name="Plus" size={12} /> Свой насос
+          </button>
+        </div>
+      )}
       <table className="w-full border-collapse">
         <thead><tr>
           {["Марка", "Тип", "Подача", "Напор", "Обороты", "Мощность", "КПД"].map(h => <Th key={h}>{h}</Th>)}
         </tr></thead>
         <tbody>
-          {PUMP_CATALOG.map((p) => (
-            <tr key={p.id}
-              className="hover:bg-[var(--c-tint-blue)] cursor-pointer"
-              onClick={() => setSelected(p)}
-              title="Открыть напорную характеристику">
-              <Td>{p.brand} {p.model}</Td>
-              <Td>{PUMP_TYPE_NAMES[p.type]}</Td>
-              <Td>{p.Qopt} м³/ч</Td>
-              <Td>{Math.round(pumpHead(p, p.Qopt))} м</Td>
-              <Td>{p.rpm} об/мин</Td>
-              <Td>{p.power} кВт</Td>
-              <Td>{Math.round(p.etaMax * 100)} %</Td>
-            </tr>
-          ))}
+          {own.map(p => row({ ...p, isUser: true }, true))}
+          {PUMP_CATALOG.map(p => row(p, false))}
         </tbody>
       </table>
 
-      {selected && <PumpCharacteristicCard pump={selected} onClose={() => setSelected(null)} />}
+      {selected && <PumpCharacteristicCard pump={selected} onClose={() => setSelected(null)}
+        onEdit={selected.isUser && canEdit ? () => { setEditing(selected); setSelected(null); } : undefined}
+        onCopy={canEdit ? () => {
+          const copy: PumpModel = { ...makeUserPump(), ...selected, id: `user_pump_${Date.now()}`,
+            model: `${pumpName(selected)} (копия)`, brand: "", isUser: true, curvePoints: selected.curvePoints };
+          setSelected(null); setEditing(copy);
+        } : undefined} />}
+      {editing && <UserPumpEditor initial={editing} onSave={save} onClose={() => setEditing(null)} />}
     </>
   );
 }
@@ -2041,7 +2104,13 @@ function ConsumersSection() {
 }
 
 // Модальная карта характеристик выбранного насоса
-function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: () => void }) {
+function PumpCharacteristicCard({ pump, onClose, onEdit, onCopy }: {
+  pump: PumpModel; onClose: () => void;
+  /** Свой насос — изменить характеристику. */
+  onEdit?: () => void;
+  /** Взять за основу своего насоса. */
+  onCopy?: () => void;
+}) {
   return (
     <div className="fixed inset-0 z-[10000] flex items-center justify-center"
       style={{ background: "rgba(0,0,0,0.4)" }}
@@ -2050,8 +2119,11 @@ function PumpCharacteristicCard({ pump, onClose }: { pump: PumpModel; onClose: (
         {/* Заголовок */}
         <div className={MODAL_HEAD}>
           <IconBadge icon="Waves" />
-          <span className="text-[13px] font-semibold text-[var(--c-t1)]">Характеристика насоса — {pump.brand} {pump.model}</span>
-          <button onClick={onClose} className={ICON_BTN + " ml-auto"}><Icon name="X" size={14} /></button>
+          <span className="text-[13px] font-semibold text-[var(--c-t1)]">Характеристика насоса — {pump.isUser ? pump.model : `${pump.brand} ${pump.model}`}</span>
+          <span className="ml-auto" />
+          {onEdit && <button className={BTN} onClick={onEdit}><Icon name="Pencil" size={11} /> Изменить</button>}
+          {onCopy && <button className={BTN} onClick={onCopy} title="Создать свой насос на основе этого"><Icon name="Copy" size={11} /> Взять за основу</button>}
+          <button onClick={onClose} className={ICON_BTN}><Icon name="X" size={14} /></button>
         </div>
 
         <div className="p-4 flex gap-4">
@@ -2275,7 +2347,7 @@ function AirNormsSection({ norms, onChange }: {
   );
 }
 
-function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, bulkheadThickness, onBulkheadThicknessChange }: {
+function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange }: {
   tab: TabId;
   branches?: TopoBranch[];
   onMineFansChange?: (fans: MineFanExport[]) => void;
@@ -2292,6 +2364,8 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
   onBlastThresholdsChange?: (t: ExplosionThresholds) => void;
   bulkheadThickness?: BulkheadThicknessTable;
   onBulkheadThicknessChange?: (t: BulkheadThicknessTable) => void;
+  userPumps?: PumpModel[];
+  onUserPumpsChange?: (list: PumpModel[]) => void;
 }) {
   if (tab === "blastzones") return <BlastZonesSection
     thresholds={blastThresholds ?? DEFAULT_EXPLOSION_THRESHOLDS}
@@ -2308,7 +2382,7 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
     headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]} />;
   if (tab === "typical") return <EditableTable key="typical" storageKey="pv_ref_typical"
     headers={["Мероприятие", "Шагов", "Ответственный", "Время"]} />;
-  if (tab === "pumps") return <PumpsSection />;
+  if (tab === "pumps") return <PumpsSection userPumps={userPumps} onUserPumpsChange={onUserPumpsChange} />;
   if (tab === "consumers") return <ConsumersSection />;
   if (tab === "pipes") return <EditableTable key="pipes" storageKey="pv_ref_pipes"
     headers={["Материал", "DN", "Стенка", "Давление"]} />;
@@ -2327,7 +2401,7 @@ function IconBadge({ icon, size = 24 }: { icon: string; size?: number }) {
   );
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches, bulkheadThickness, onBulkheadThicknessChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
   // Esc закрывает окно (вложенные окна библиотеки/каталога перехватывают клик,
@@ -2455,7 +2529,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} branches={branches} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} bulkheadThickness={bulkheadThickness} onBulkheadThicknessChange={onBulkheadThicknessChange} />
+              <TabContent tab={activeTab} branches={branches} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} bulkheadThickness={bulkheadThickness} onBulkheadThicknessChange={onBulkheadThicknessChange} userPumps={userPumps} onUserPumpsChange={onUserPumpsChange} />
             </div>
           </div>
         </div>

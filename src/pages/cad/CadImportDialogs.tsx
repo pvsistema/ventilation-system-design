@@ -5,6 +5,7 @@
 // реально используется (единый объект props). Поведение 1:1 с исходником.
 // ─────────────────────────────────────────────────────────────────────────────
 import type { BulkheadThicknessTable } from "@/lib/bulkheadThickness";
+import type { PumpModel } from "@/lib/pumps";
 import type React from "react";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
@@ -60,6 +61,9 @@ export interface CadImportDialogsProps {
   /** Типовая толщина перемычек по материалу (Справочники → Перемычки). */
   bulkheadThickness: BulkheadThicknessTable;
   setBulkheadThickness: (t: BulkheadThicknessTable) => void;
+  /** Свои насосы (Справочники → Насосы). */
+  userPumps: PumpModel[];
+  setUserPumps: (list: PumpModel[]) => void;
   ventSections: VentSection[];
   setVentSections: (s: VentSection[]) => void;
   showVentSections: boolean;
@@ -242,6 +246,8 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           onBlastThresholdsChange={p.setBlastThresholds}
           bulkheadThickness={p.bulkheadThickness}
           onBulkheadThicknessChange={p.setBulkheadThickness}
+          userPumps={p.userPumps}
+          onUserPumpsChange={p.setUserPumps}
           branches={p.branches}
         />
       )}

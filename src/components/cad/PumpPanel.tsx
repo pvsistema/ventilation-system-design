@@ -40,7 +40,7 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, wat
   const applyModel = (pump: PumpModel) => {
     onUpdate({
       pumpModelId: pump.id,
-      pumpName: `${pump.brand} ${pump.model}`,
+      pumpName: pump.isUser || !pump.brand ? pump.model : `${pump.brand} ${pump.model}`,
       pumpHead: Math.round(pumpHead(pump, pump.Qopt) * 10) / 10,
       pumpFlow: pump.Qopt,
       pumpRpm: pump.rpm,
@@ -98,7 +98,7 @@ export default function PumpPanel({ sym, userPumps, onUpdate, onAddUserPump, wat
                 <button key={pump.id} onClick={() => applyModel(pump)}
                   className={`w-full text-left px-2 py-1 border-b border-gray-100 hover:bg-red-50 ${isCur ? "bg-red-50" : ""}`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-medium text-gray-800">{pump.brand} {pump.model}</span>
+                    <span className="text-[10px] font-medium text-gray-800">{pump.isUser || !pump.brand ? pump.model : `${pump.brand} ${pump.model}`}</span>
                     {isCur && <Icon name="Check" size={11} className="text-red-600" />}
                   </div>
                   <div className="text-[9px] text-gray-400">
@@ -249,12 +249,13 @@ function AddPumpForm({ onAdd, onCancel }: { onAdd: (p: PumpModel) => void; onCan
     const b = -(0.4 * H0) / (Qmax * Qmax);
     const pump: PumpModel = {
       id: `user_pump_${Date.now()}`,
-      brand: "Пользов.", model: name.trim(), type,
+      brand: "", model: name.trim(), type,
       H0, a: 0, b,
       Qmin: Math.round(Qopt * 0.5), Qmax, Qopt,
       etaMax: eta / 100,
       power, rpm, weight: 0,
       notes: "Пользовательская модель",
+      isUser: true,
     };
     onAdd(pump);
   };

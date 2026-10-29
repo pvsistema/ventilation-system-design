@@ -42,6 +42,11 @@ export interface PumpModel extends EquipmentOptions {
   weight: number;      // кг
   priceRub?: number;
   notes?: string;
+  /** Точки паспортной характеристики (пользовательский насос): по ним
+   *  подобраны H0, a, b. Хранятся, чтобы характеристику можно было править. */
+  curvePoints?: PumpCurvePoint[];
+  /** Насос добавлен пользователем (хранится в проекте). */
+  isUser?: boolean;
 }
 
 // ─── Каталог моделей ────────────────────────────────────────────────────────
@@ -317,4 +322,59 @@ export const PUMP_TYPE_NAMES: Record<PumpType, string> = {
 export function getPumpById(id: string | undefined): PumpModel | undefined {
   if (!id) return undefined;
   return PUMP_CATALOG.find((p) => p.id === id);
+}
+// ─── Пользовательский насос: характеристика по точкам паспорта ─────────────
+
+/** Точка паспортной характеристики: подача, м³/ч, и напор, м. */
+export interface PumpCurvePoint { Q: number; H: number }
+
+/**
+ * Кривая H(Q) = H0 + a·Q + b·Q² по точкам паспорта (метод наименьших
+ * квадратов). Нужны минимум 3 точки с разной подачей. Две точки — прямая
+ * (b = 0). null — точек мало или они вырождены.
+ */
+export function fitPumpCurve(points: PumpCurvePoint[]): { H0: number; a: number; b: number; maxErr: number } | null {
+  const pts = points.filter((p) => Number.isFinite(p.Q) && Number.isFinite(p.H) && p.Q >= 0 && p.H > 0);
+  const distinct = new Set(pts.map((p) => p.Q)).size;
+  if (distinct < 2) return null;
+  let H0: number, a: number, b: number;
+  if (distinct === 2) {
+    const [p1, p2] = [...pts].sort((x, y) => x.Q - y.Q);
+    a = (p2.H - p1.H) / (p2.Q - p1.Q);
+    H0 = p1.H - a * p1.Q;
+    b = 0;
+  } else {
+    // Нормальные уравнения для базиса (1, Q, Q²)
+    let s0 = 0, s1 = 0, s2 = 0, s3 = 0, s4 = 0, t0 = 0, t1 = 0, t2 = 0;
+    for (const { Q, H } of pts) {
+      const q2 = Q * Q;
+      s0 += 1; s1 += Q; s2 += q2; s3 += q2 * Q; s4 += q2 * q2;
+      t0 += H; t1 += H * Q; t2 += H * q2;
+    }
+    const det = (m: number[][]) =>
+      m[0][0] * (m[1][1] * m[2][2] - m[1][2] * m[2][1])
+      - m[0][1] * (m[1][0] * m[2][2] - m[1][2] * m[2][0])
+      + m[0][2] * (m[1][0] * m[2][1] - m[1][1] * m[2][0]);
+    const M = [[s0, s1, s2], [s1, s2, s3], [s2, s3, s4]];
+    const D = det(M);
+    if (Math.abs(D) < 1e-12) return null;
+    const col = (i: number) => M.map((row, r) => row.map((v, c) => (c === i ? [t0, t1, t2][r] : v)));
+    H0 = det(col(0)) / D; a = det(col(1)) / D; b = det(col(2)) / D;
+  }
+  const maxErr = Math.max(...pts.map((p) => Math.abs(H0 + a * p.Q + b * p.Q * p.Q - p.H)));
+  return { H0, a, b, maxErr };
+}
+
+/** Новый пользовательский насос с типовыми значениями. */
+export function makeUserPump(): PumpModel {
+  return {
+    id: `user_pump_${Date.now()}`,
+    brand: "", model: "Новый насос", type: "sectional",
+    H0: 220, a: 0, b: -0.0088,
+    Qmin: 50, Qmax: 150, Qopt: 100,
+    etaMax: 0.7, power: 110, rpm: 1480, weight: 0,
+    curvePoints: [{ Q: 0, H: 220 }, { Q: 50, H: 198 }, { Q: 100, H: 132 }, { Q: 150, H: 22 }],
+    notes: "",
+    isUser: true,
+  };
 }
