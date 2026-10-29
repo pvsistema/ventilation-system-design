@@ -1084,11 +1084,27 @@ export async function parseErp(
   const oyDist = opt("OYDistortion", 1);
   const ozDist = opt("OZDistortion", 1);
   const sinOY = Math.sin(oyAngle) * oyDist;
+  // ProjectionType: 1 — косоугольная (OYAngle/OYDistortion, как у УГОК,
+  // БГОК, Якутского); 0 — аксонометрия «взгляд сверху под углом»
+  // OverheadAngle (как у «Руссоли»). Во второй план сжат по вертикали экрана
+  // в sin(OverheadAngle) раз, а высота входит с весом OZDistortion·cos(…):
+  //   ex = s·X,  ey = −s·( sin(θ)·Y + OZDistortion·cos(θ)·Z ).
+  // Сверено на «Руссоль 2027.I»: стволы на экране строго вертикальны с шагом
+  // 9,271 = 10,5·cos(28°) ед/м, а длины выработок лучше всего сходятся при
+  // сжатии 0,47 = sin(28°). Раньше такой файл читался косоугольной формулой:
+  // план сжимался, а высота «протекала» в него — стволы ложились в план
+  // наклонными линиями длиной в сотни метров.
+  const projType = Math.round(opt("ProjectionType", 1));
+  const overhead = opt("OverheadAngle", Math.PI / 2);
+  const axon = projType === 0 && Math.abs(Math.sin(overhead)) > 1e-6;
+  const sinTh = Math.sin(overhead), ozCos = ozDist * Math.cos(overhead);
 
   if (geoScale <= 1e-9) {
     warnings.push("В файле нет масштаба (GeolocationScale) — координаты взяты как есть, длины выработок при этом верны");
   }
-  log.push(`проекция: scale=${geoScale.toFixed(6)}, OYAngle=${oyAngle.toFixed(4)}, OYDist=${oyDist}, OZDist=${ozDist}`);
+  log.push(axon
+    ? `проекция: аксонометрия, scale=${geoScale.toFixed(6)}, OverheadAngle=${(overhead * 180 / Math.PI).toFixed(1)}°, OZDist=${ozDist}`
+    : `проекция: косоугольная, scale=${geoScale.toFixed(6)}, OYAngle=${oyAngle.toFixed(4)}, OYDist=${oyDist}, OZDist=${ozDist}`);
 
   /**
    * Экранные координаты + отметка → плановые X/Y в метрах.
@@ -1096,6 +1112,7 @@ export async function parseErp(
    * вертикальным разрезом: плановой Y в ней просто нет, ставим 0.
    */
   const toPlan = (ex: number, ey: number, z: number): { x: number; y: number } => {
+    if (axon) return { x: ex / s, y: -(ey / s + ozCos * z) / sinTh };
     if (Math.abs(sinOY) < 1e-9) return { x: ex / s, y: 0 };
     const Y = -(ey / s + ozDist * z) / sinOY;
     const X = ex / s - Math.cos(oyAngle) * oyDist * Y;
