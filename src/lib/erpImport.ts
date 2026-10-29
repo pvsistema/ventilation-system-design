@@ -118,7 +118,7 @@ import {
  * (чтобы «ВОД-21М» не подменялся «ВОД-21»). Слишком короткие названия
  * (≤ 3 символов) не сопоставляются — иначе «ВМ» совпадёт с чем угодно.
  */
-function findCatalogFanByName(...names: (string | undefined | null)[]): FanCurve | undefined {
+export function findCatalogFanByName(...names: (string | undefined | null)[]): FanCurve | undefined {
   const LAT2CYR: Record<string, string> = { a: "а", b: "в", c: "с", e: "е", h: "н", k: "к", m: "м", o: "о", p: "р", t: "т", x: "х", y: "у" };
   const norm = (s: string) => s.toLowerCase().replace(/[abcehkmoptxy]/g, ch => LAT2CYR[ch] ?? ch).replace(/[\s\-_./,№#()«»"']/g, "");
   for (const raw of names) {

@@ -38,6 +38,7 @@ import { safeFixed } from "./cadCompute";
 import type { CadPageState } from "./useCadPage";
 import MsHistoryBlock from "@/components/cad/MsHistoryBlock";
 import { useSchemaAutoFix } from "./useSchemaAutoFix";
+import SuggestFixDialog from "@/components/cad/SuggestFixDialog";
 
 // Левая часть: вертикальные вкладки, панель свойств и разделитель ширины.
 export default function CadLeftPanel({ c }: { c: CadPageState }) {
@@ -57,7 +58,11 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
     setSymbols: c.setSchemaSymbols,
     setPositions: c.setPositions,
     addLog: c.addLog,
+    check: c.schemaCheckResult,
+    bulkheadRefs: c.mineBulkheads,
+    mineTypes: c.mineTypes,
   });
+  const { suggestions, suggestOpen, setSuggestOpen, applySuggest, ...autoFixPanel } = autoFix;
   const {
     activeSide,
     setActiveSide,
@@ -274,6 +279,42 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
     focusSolveBlocker,
     handleFlipFanDirection,
   } = c;
+
+  // Показ объекта на схеме из «Проверки» и из окна исправлений — один и тот же.
+  const checkFocusNode = (id: string) => {
+    setSelectedNodeId(id);
+    setSelectedBranchId(null);
+    setFocusPos(null);
+    setFocusNodeId(id);
+    setFocusNonce(Date.now());
+    const n = nodesById.get(id);
+    flashCheckHighlight(n ? { x: n.x, y: n.y, z: n.z } : null);
+  };
+  const checkFocusBranch = (id: string) => {
+    revealBranchHorizons([id]);
+    setSelectedBranchId(id);
+    setSelectedBranchIds(new Set([id]));
+    setSelectedNodeId(null);
+    // Фокус на узел от прошлого клика сбрасываем: эффект
+    // центрирования проверяет узел раньше ветви, и камера
+    // уезжала к старому узлу вместо выбранной ветви.
+    setFocusNodeId(null);
+    const bPos = bulkheadFocusPosRef.current(id);
+    setFocusPos(bPos);
+    setFocusBranchId(id);
+    setFocusNonce(Date.now());
+    const br = branches.find(b => b.id === id);
+    const fN = br ? nodesById.get(br.fromId) : undefined;
+    const tN = br ? nodesById.get(br.toId) : undefined;
+    if (!bPos && (!fN || !tN)) {
+      toast.error("У ветви нет начального или конечного узла — показать её на схеме нельзя");
+      flashCheckHighlight(null);
+      return;
+    }
+    flashCheckHighlight(bPos ?? {
+      x: (fN!.x + tN!.x) / 2, y: (fN!.y + tN!.y) / 2, z: (fN!.z + tN!.z) / 2,
+    });
+  };
 
   return (
     <>
@@ -728,6 +769,8 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
 
 
             {/* ═══ ВКЛАДКА: ПРОВЕРКА СХЕМЫ ═══════════════════════════════ */}
+            <SuggestFixDialog open={suggestOpen} suggestions={suggestions} onClose={() => setSuggestOpen(false)}
+              onApply={applySuggest} onFocusBranch={checkFocusBranch} onFocusNode={checkFocusNode} />
             {activeSide === "check" && schemaCheckResult && (
               <SchemaCheckPanel
                 result={schemaCheckResult}
@@ -747,40 +790,8 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                 settings={checkSettings}
                 onSettings={setCheckSettings}
                 solveBlockers={solveBlockers}
-                onFocusNode={(id) => {
-                  setSelectedNodeId(id);
-                  setSelectedBranchId(null);
-                  setFocusPos(null);
-                  setFocusNodeId(id);
-                  setFocusNonce(Date.now());
-                  const n = nodesById.get(id);
-                  flashCheckHighlight(n ? { x: n.x, y: n.y, z: n.z } : null);
-                }}
-                onFocusBranch={(id) => {
-                  revealBranchHorizons([id]);
-                  setSelectedBranchId(id);
-                  setSelectedBranchIds(new Set([id]));
-                  setSelectedNodeId(null);
-                  // Фокус на узел от прошлого клика сбрасываем: эффект
-                  // центрирования проверяет узел раньше ветви, и камера
-                  // уезжала к старому узлу вместо выбранной ветви.
-                  setFocusNodeId(null);
-                  const bPos = bulkheadFocusPosRef.current(id);
-                  setFocusPos(bPos);
-                  setFocusBranchId(id);
-                  setFocusNonce(Date.now());
-                  const br = branches.find(b => b.id === id);
-                  const fN = br ? nodesById.get(br.fromId) : undefined;
-                  const tN = br ? nodesById.get(br.toId) : undefined;
-                  if (!bPos && (!fN || !tN)) {
-                    toast.error("У ветви нет начального или конечного узла — показать её на схеме нельзя");
-                    flashCheckHighlight(null);
-                    return;
-                  }
-                  flashCheckHighlight(bPos ?? {
-                    x: (fN!.x + tN!.x) / 2, y: (fN!.y + tN!.y) / 2, z: (fN!.z + tN!.z) / 2,
-                  });
-                }}
+                onFocusNode={checkFocusNode}
+                onFocusBranch={checkFocusBranch}
                 onSelectBranches={(ids) => {
                   if (ids.length === 0) return;
                   revealBranchHorizons(ids);
@@ -805,7 +816,9 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     return { ...b, manualLength: false, length: len };
                   }));
                 }}
-                {...autoFix}
+                {...autoFixPanel}
+                suggestCount={suggestions.length}
+                onOpenSuggest={() => setSuggestOpen(true)}
                 onFixZeroLen={(fallbackLen) => {
                   const fixes = new Map<string, Partial<TopoBranch>>();
                   let byCoords = 0, byValue = 0;

@@ -223,41 +223,9 @@ export function autoFixSchema(input: AutoFixInput, opts: AutoFixOptions = {}): A
     if (cuts.size > 0) {
       // Номера удалённых ветвей не переиспользуем: на них ещё ссылаются
       // значки, которые будут убраны вместе с удалёнными ветвями.
-      const used = new Set([...input.branches.map((b) => b.id), ...branches.map((b) => b.id)]);
-      let nextId = 1;
-      const newId = () => { while (used.has(String(nextId))) nextId++; const id = String(nextId); used.add(id); return id; };
-      const out: TopoBranch[] = [];
-      for (const b of branches) {
-        const list = cuts.get(b.id);
-        if (!list) { out.push(b); continue; }
-        list.sort((p, q) => p.t - q.t);
-        const pts = [{ nodeId: b.fromId, t: 0 }, ...list, { nodeId: b.toId, t: 1 }];
-        const segIds: string[] = [];
-        for (let i = 0; i < pts.length - 1; i++) {
-          const first = i === 0;
-          const id = first ? b.id : newId();
-          segIds.push(id);
-          const share = pts[i + 1].t - pts[i].t;
-          out.push(first
-            ? { ...b, toId: pts[1].nodeId, manualLength: false, ...(b.manualLength ? { length: Math.round(b.length * share) } : {}) }
-            : makeBranch(id, pts[i].nodeId, pts[i + 1].nodeId, {
-              ...b, id, fromId: pts[i].nodeId, toId: pts[i + 1].nodeId, manualLength: false,
-              // Вентилятор и перемычка остаются на первом отрезке — не задваиваем.
-              hasFan: false, fanMode: "constant", fanPressure: 0, fanName: "", fanCurveId: "",
-              fanEfficiency: 0, fanShaftPower: 0, hasBulkhead: false,
-            }));
-        }
-        // Значки ветви — на тот отрезок, куда они попадают по положению.
-        symbols = symbols.map((s) => {
-          if (s.branchId !== b.id || typeof s.t !== "number") return s;
-          const k = pts.findIndex((_, i) => i < pts.length - 1 && s.t! <= pts[i + 1].t);
-          const i = k < 0 ? pts.length - 2 : k;
-          const span = pts[i + 1].t - pts[i].t;
-          return { ...s, branchId: segIds[i], t: span > 0 ? (s.t! - pts[i].t) / span : 0.5 };
-        });
-        counts.tJunction += list.length;
-      }
-      branches = out;
+      const r = splitBranchesAt(branches, symbols, cuts, input.branches.map((b) => b.id));
+      branches = r.branches; symbols = r.symbols;
+      counts.tJunction += r.cuts;
     }
   }
 
@@ -368,4 +336,53 @@ export function autoFixSchema(input: AutoFixInput, opts: AutoFixOptions = {}): A
 
   const total = Object.values(counts).reduce((s, v) => s + v, 0);
   return { nodes, branches, symbols, positions, counts, total };
+}
+
+/**
+ * Разрезать ветви в заданных точках: ветвь → список (узел, доля t вдоль неё).
+ * Первый отрезок сохраняет номер ветви, вентилятор и перемычку; остальные —
+ * новые ветви с теми же параметрами выработки. Значки переходят на тот
+ * отрезок, куда попадают по положению.
+ */
+export function splitBranchesAt(
+  branches: TopoBranch[],
+  symbols: SchemaSymbol[],
+  cuts: Map<string, { nodeId: string; t: number }[]>,
+  reservedIds: string[] = [],
+): { branches: TopoBranch[]; symbols: SchemaSymbol[]; cuts: number } {
+  const used = new Set([...reservedIds, ...branches.map((b) => b.id)]);
+  let nextId = 1;
+  const newId = () => { while (used.has(String(nextId))) nextId++; const id = String(nextId); used.add(id); return id; };
+  const out: TopoBranch[] = [];
+  let total = 0;
+  for (const b of branches) {
+    const list = cuts.get(b.id);
+    if (!list || list.length === 0) { out.push(b); continue; }
+    list.sort((p, q) => p.t - q.t);
+    const pts = [{ nodeId: b.fromId, t: 0 }, ...list, { nodeId: b.toId, t: 1 }];
+    const segIds: string[] = [];
+    for (let i = 0; i < pts.length - 1; i++) {
+      const first = i === 0;
+      const id = first ? b.id : newId();
+      segIds.push(id);
+      const share = pts[i + 1].t - pts[i].t;
+      out.push(first
+        ? { ...b, toId: pts[1].nodeId, manualLength: false, ...(b.manualLength ? { length: Math.round(b.length * share) } : {}) }
+        : makeBranch(id, pts[i].nodeId, pts[i + 1].nodeId, {
+          ...b, id, fromId: pts[i].nodeId, toId: pts[i + 1].nodeId, manualLength: false,
+          // Вентилятор и перемычка остаются на первом отрезке — не задваиваем.
+          hasFan: false, fanMode: "constant", fanPressure: 0, fanName: "", fanCurveId: "",
+          fanEfficiency: 0, fanShaftPower: 0, hasBulkhead: false,
+        }));
+    }
+    symbols = symbols.map((s) => {
+      if (s.branchId !== b.id || typeof s.t !== "number") return s;
+      const k = pts.findIndex((_, i) => i < pts.length - 1 && s.t! <= pts[i + 1].t);
+      const i = k < 0 ? pts.length - 2 : k;
+      const span = pts[i + 1].t - pts[i].t;
+      return { ...s, branchId: segIds[i], t: span > 0 ? (s.t! - pts[i].t) / span : 0.5 };
+    });
+    total += list.length;
+  }
+  return { branches: out, symbols, cuts: total };
 }

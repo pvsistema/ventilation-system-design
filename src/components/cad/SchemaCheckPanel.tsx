@@ -326,6 +326,9 @@ interface SchemaCheckPanelProps {
   onAutoFixToggle: (kind: AutoFixKind, on: boolean) => void;
   /** Применить включённые исправления (одним шагом, Ctrl+Z — отмена). */
   onAutoFixApply: () => void;
+  /** Сколько исправлений с подтверждением можно предложить. */
+  suggestCount: number;
+  onOpenSuggest: () => void;
   /** Выделить группу узлов и ветвей и показать её на схеме */
   onFocusGroup: (nodeIds: string[], branchIds: string[], focus?: { x: number; y: number; z: number }) => void;
 }
@@ -1061,6 +1064,20 @@ export default function SchemaCheckPanel(p: SchemaCheckPanelProps) {
         {p.autoFixPreview && (
           <AutoFixBlock preview={p.autoFixPreview} enabled={p.autoFixEnabled} onToggle={p.onAutoFixToggle}
             onApply={p.onAutoFixApply} />
+        )}
+        {p.suggestCount > 0 && (
+          <button type="button" onClick={p.onOpenSuggest}
+            className="w-full flex items-center gap-1.5 px-2 h-7 rounded-lg text-left hover:bg-[var(--c-s3,#f1efea)]"
+            style={{ border: "1px solid var(--c-b2, #d5d1c8)", background: "var(--c-s1, #fff)", cursor: "pointer" }}
+            title="Программа предложит значения по соседним выработкам и справочникам — вы утверждаете">
+            <Icon name="ListChecks" size={13} style={{ color: "var(--c-accent, #1e5a7a)" }} />
+            <span className="flex-1 text-[11px] font-medium" style={{ color: "var(--c-t1, #1f2328)" }}>Исправления с подтверждением</span>
+            <span className="text-[10px] px-1.5 rounded-full font-semibold"
+              style={{ fontFamily: "var(--font-num)", background: tint("var(--c-accent, #1e5a7a)"), color: "var(--c-accent, #1e5a7a)" }}>
+              {p.suggestCount}
+            </span>
+            <Icon name="ChevronRight" size={12} style={{ color: "var(--c-t4, #767f8c)" }} />
+          </button>
         )}
         <button type="button" onClick={() => setShowSettings((v) => !v)}
           className="w-full h-6 px-2 rounded flex items-center gap-1.5 text-[11px] transition-colors hover:bg-[var(--c-s3,#f1efea)]"
