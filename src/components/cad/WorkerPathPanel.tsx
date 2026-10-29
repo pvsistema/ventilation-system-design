@@ -11,6 +11,7 @@ import {
   WorkerSegment,
   isBulkheadPassable,
 } from "@/lib/rescueCalculator";
+import { cx, cy, layoutWidth, layoutHeight } from "@/lib/uiScale";
 
 void isBulkheadPassable;
 
@@ -114,17 +115,17 @@ function ResultDialog({ result, onClose, nodes }: { result: WorkerPathResult; on
   // ── Перемещаемое окно (drag за заголовок) ──
   const DIALOG_W = 760;
   const [pos, setPos] = useState<{ x: number; y: number }>(() => ({
-    x: Math.max(8, (window.innerWidth - DIALOG_W) / 2),
+    x: Math.max(8, (layoutWidth() - DIALOG_W) / 2),
     y: 90,
   }));
   const dragRef = React.useRef<{ dx: number; dy: number } | null>(null);
   const onDragStart = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button")) return; // не тащим за кнопку закрытия
-    dragRef.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    dragRef.current = { dx: cx(e) - pos.x, dy: cy(e) - pos.y };
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
-      const x = Math.min(window.innerWidth - 60, Math.max(0, ev.clientX - dragRef.current.dx));
-      const y = Math.min(window.innerHeight - 40, Math.max(0, ev.clientY - dragRef.current.dy));
+      const x = Math.min(layoutWidth() - 60, Math.max(0, cx(ev) - dragRef.current.dx));
+      const y = Math.min(layoutHeight() - 40, Math.max(0, cy(ev) - dragRef.current.dy));
       setPos({ x, y });
     };
     const onUp = () => {

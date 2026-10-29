@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import Icon from "@/components/ui/icon";
+import { toLayout, layoutWidth, layoutHeight } from "@/lib/uiScale";
 
 export interface ContextMenuItem {
   id: string;
@@ -20,8 +21,12 @@ interface CadContextMenuProps {
   onClose: () => void;
 }
 
-export default function CadContextMenu({ x, y, items, onSelect, onClose }: CadContextMenuProps) {
+export default function CadContextMenu({ x: clientX, y: clientY, items, onSelect, onClose }: CadContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
+  // Меню получает положение курсора (clientX/Y — экранные пиксели), а стоит
+  // через style.left/top — в пикселях разметки. При масштабе интерфейса 80 %
+  // без пересчёта меню открывалось левее и выше курсора.
+  const x = toLayout(clientX), y = toLayout(clientY);
 
   useEffect(() => {
     const handleDown = (e: MouseEvent) => {
@@ -42,11 +47,10 @@ export default function CadContextMenu({ x, y, items, onSelect, onClose }: CadCo
 
   useEffect(() => {
     if (!menuRef.current) return;
-    const rect = menuRef.current.getBoundingClientRect();
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    if (rect.right > vw) menuRef.current.style.left = `${x - rect.width}px`;
-    if (rect.bottom > vh) menuRef.current.style.top = `${y - rect.height}px`;
+    const r = menuRef.current.getBoundingClientRect();
+    const right = toLayout(r.right), bottom = toLayout(r.bottom), w = toLayout(r.width), h = toLayout(r.height);
+    if (right > layoutWidth()) menuRef.current.style.left = `${Math.max(0, x - w)}px`;
+    if (bottom > layoutHeight()) menuRef.current.style.top = `${Math.max(0, y - h)}px`;
   }, [x, y]);
 
   return createPortal(

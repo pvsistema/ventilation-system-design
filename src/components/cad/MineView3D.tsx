@@ -49,6 +49,7 @@ import { type VentSection, type VentNorms } from "@/lib/ventSections";
 import { flowTime } from "@/lib/flowAnim";
 import Icon from "@/components/ui/icon";
 import { onCanvasFontsReady } from "@/lib/canvasFont";
+import { localPoint, zoomK } from "@/lib/uiScale";
 
 export interface MineView3DProps {
   width: number;
@@ -1404,7 +1405,7 @@ export default function MineView3D(props: MineView3DProps) {
             `S = ${info.area.toFixed(2)} м² — сечение`,
             `v = ${info.velocity.toFixed(2)} м/с`,
           ];
-          const rect = el.getBoundingClientRect();
+          const hp = localPoint(el, e.clientX, e.clientY);
           setHover({
             id: info.id,
             title: info.number
@@ -1413,8 +1414,8 @@ export default function MineView3D(props: MineView3DProps) {
             note: info.location || info.branchTitle,
             lines,
             accent: true,
-            x: e.clientX - rect.left,
-            y: e.clientY - rect.top,
+            x: hp.x,
+            y: hp.y,
           });
           return;
         }
@@ -1439,8 +1440,8 @@ export default function MineView3D(props: MineView3DProps) {
           const note = q > 0.005
             ? `Q = ${q.toFixed(1)} м³/с · v = ${Math.abs(b.velocity ?? 0).toFixed(1)} м/с`
             : "воздух не рассчитан";
-          const rect = el.getBoundingClientRect();
-          setHover({ id: b.id, title, note, x: e.clientX - rect.left, y: e.clientY - rect.top });
+          const hp = localPoint(el, e.clientX, e.clientY);
+          setHover({ id: b.id, title, note, x: hp.x, y: hp.y });
         } else if (hoverIdRef.current === null) {
           setHover(prev => (prev ? null : prev));
         }
@@ -1563,9 +1564,12 @@ export default function MineView3D(props: MineView3DProps) {
         // курсору ровно на ту долю, на которую изменился масштаб.
         const rect = el.getBoundingClientRect();
         if (rect.width > 0 && rect.height > 0) {
-          // Смещение курсора от центра холста, в пикселях.
-          const offX = e.clientX - rect.left - rect.width / 2;
-          const offY = e.clientY - rect.top - rect.height / 2;
+          // Смещение курсора от центра холста, в пикселях разметки (в них
+          // же sizeRef) — иначе при масштабе интерфейса 80 % точка под
+          // курсором при зуме уезжала.
+          const zk = zoomK(el, rect);
+          const offX = (e.clientX - rect.left - rect.width / 2) / zk;
+          const offY = (e.clientY - rect.top - rect.height / 2) / zk;
           // При зуме (prev → next) мировая точка под курсором уезжает; k —
           // насколько сдвинуть центр, чтобы она вернулась под курсор.
           const k = 1 - next / prev;

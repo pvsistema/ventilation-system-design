@@ -14,7 +14,7 @@
 //      дальше ограничивается только пределами, а не долей окна.
 // ─────────────────────────────────────────────────────────────────────────────
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { layoutWidth } from "@/lib/uiScale";
+import { layoutWidth, cx } from "@/lib/uiScale";
 
 const LS_LEFT = "pvs_left_panel_w";
 const LS_RIGHT = "pvs_right_panel_w";
@@ -88,7 +88,7 @@ export function useCadPanelsLayout() {
     const onMove = (e: MouseEvent) => {
       const d = drag.current;
       if (!d) return;
-      const dx = e.clientX - d.startX;
+      const dx = cx(e) - d.startX;
       if (d.side === "left") setUserLeft(clamp(d.startW + dx, LEFT_MIN, LEFT_MAX));
       else setUserRight(clamp(d.startW - dx, RIGHT_MIN, RIGHT_MAX));
     };
@@ -108,7 +108,7 @@ export function useCadPanelsLayout() {
   }, []);
 
   const startDrag = (side: "left" | "right", startW: number) => (e: React.MouseEvent) => {
-    drag.current = { side, startX: e.clientX, startW };
+    drag.current = { side, startX: cx(e), startW };
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     e.preventDefault();

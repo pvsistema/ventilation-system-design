@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
+import { cx, cy } from "@/lib/uiScale";
 
 export interface LogEntry {
   id: number;
@@ -39,10 +40,10 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
     l === "error" ? "✕" : l === "warn" ? "⚠" : l === "ok" ? "✓" : "·";
 
   const onMouseDownDrag = (e: React.MouseEvent) => {
-    dragRef.current = { sx: e.clientX, sy: e.clientY, ox: pos.x, oy: pos.y };
+    dragRef.current = { sx: cx(e), sy: cy(e), ox: pos.x, oy: pos.y };
     const onMove = (ev: MouseEvent) => {
       if (!dragRef.current) return;
-      setPos({ x: dragRef.current.ox + ev.clientX - dragRef.current.sx, y: dragRef.current.oy + ev.clientY - dragRef.current.sy });
+      setPos({ x: dragRef.current.ox + cx(ev) - dragRef.current.sx, y: dragRef.current.oy + cy(ev) - dragRef.current.sy });
     };
     const onUp = () => { dragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
     window.addEventListener("mousemove", onMove);
@@ -51,12 +52,12 @@ export default function LogPanel({ entries, onClose, onClear }: LogPanelProps) {
   };
 
   const onMouseDownResize = (e: React.MouseEvent) => {
-    resizeRef.current = { sx: e.clientX, sy: e.clientY, ow: size.w, oh: size.h };
+    resizeRef.current = { sx: cx(e), sy: cy(e), ow: size.w, oh: size.h };
     const onMove = (ev: MouseEvent) => {
       if (!resizeRef.current) return;
       setSize({
-        w: Math.max(320, resizeRef.current.ow + ev.clientX - resizeRef.current.sx),
-        h: Math.max(180, resizeRef.current.oh + ev.clientY - resizeRef.current.sy),
+        w: Math.max(320, resizeRef.current.ow + cx(ev) - resizeRef.current.sx),
+        h: Math.max(180, resizeRef.current.oh + cy(ev) - resizeRef.current.sy),
       });
     };
     const onUp = () => { resizeRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };

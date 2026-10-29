@@ -23,6 +23,7 @@ import type { BulkheadRef } from "@/lib/bulkheadResistance";
 import type { Position } from "@/lib/positions";
 import { buildBulkheadInfoMap } from "@/lib/branchBulkheadInfo";
 import type { SideTab } from "./cadTypes";
+import { cx } from "@/lib/uiScale";
 
 export type CheckTab =
   | "near" | "isolated" | "dupes" | "dupbranch" | "zeroR"
@@ -157,7 +158,7 @@ export function useCadLeftPanelResize() {
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!leftDragRef.current) return;
-      const dx = e.clientX - leftDragRef.current.startX;
+      const dx = cx(e) - leftDragRef.current.startX;
       const next = Math.min(640, Math.max(220, leftDragRef.current.startW + dx));
       setLeftPanelWidth(next);
     };
@@ -167,7 +168,7 @@ export function useCadLeftPanelResize() {
     return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   }, []);
   const startLeftDrag = (e: React.MouseEvent) => {
-    leftDragRef.current = { startX: e.clientX, startW: leftPanelWidth };
+    leftDragRef.current = { startX: cx(e), startW: leftPanelWidth };
     document.body.style.cursor = "col-resize";
     e.preventDefault();
   };

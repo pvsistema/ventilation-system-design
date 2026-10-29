@@ -3,6 +3,7 @@ import Icon from "@/components/ui/icon";
 import type { TopoNode, TopoBranch } from "@/lib/topology";
 import { findMainRoute, buildPointsFromBranchIds, blockedBranchIds } from "./depressogram-utils";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
+import { cx, cy, layoutWidth, layoutHeight } from "@/lib/uiScale";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Депрессиограмма — перетаскиваемый диалог без overlay-блокировки
@@ -122,14 +123,14 @@ function useDraggable(initialPos: { x: number; y: number }) {
 
   const onMouseDown = useCallback((e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest("button,input,select,textarea,a")) return;
-    dragRef.current = { startX: e.clientX, startY: e.clientY, posX: pos.x, posY: pos.y };
+    dragRef.current = { startX: cx(e), startY: cy(e), posX: pos.x, posY: pos.y };
     e.preventDefault();
   }, [pos]);
 
   useEffect(() => {
     const onMove = (e: MouseEvent) => {
       if (!dragRef.current) return;
-      setPos({ x: dragRef.current.posX + e.clientX - dragRef.current.startX, y: dragRef.current.posY + e.clientY - dragRef.current.startY });
+      setPos({ x: dragRef.current.posX + cx(e) - dragRef.current.startX, y: dragRef.current.posY + cy(e) - dragRef.current.startY });
     };
     const onUp = () => { dragRef.current = null; };
     window.addEventListener("mousemove", onMove);
@@ -152,12 +153,12 @@ export default function DepressogramDialog({
   const [mode, setMode] = useState<"auto" | "manual">("auto");
 
   // Начальная позиция — по центру сверху, немного ниже ribbon
-  const initX = Math.max(20, (window.innerWidth - Math.min(window.innerWidth - 40, 1000)) / 2);
+  const initX = Math.max(20, (layoutWidth() - Math.min(layoutWidth() - 40, 1000)) / 2);
   const initY = 100;
   const { pos, onMouseDown: onHeaderDrag } = useDraggable({ x: initX, y: initY });
 
-  const W = Math.min(window.innerWidth - 40, 1000);
-  const chartH = Math.max(window.innerHeight - pos.y - 200, 280);
+  const W = Math.min(layoutWidth() - 40, 1000);
+  const chartH = Math.max(layoutHeight() - pos.y - 200, 280);
 
   // Список ВГП (главных вентиляторов) для выбора стартовой точки маршрута.
   const fanBranchList = useMemo(
@@ -437,7 +438,7 @@ export default function DepressogramDialog({
 
   return (
     // Без overlay-фона — диалог плавает поверх схемы, схема остаётся кликабельной
-    <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9000, width: W, maxHeight: window.innerHeight - pos.y - 20, background: "white", borderRadius: "var(--radius-ui)", boxShadow: "0 8px 40px rgba(0,0,0,0.32)", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--c-b2, #cbd5e1)" }}>
+    <div style={{ position: "fixed", left: pos.x, top: pos.y, zIndex: 9000, width: W, maxHeight: layoutHeight() - pos.y - 20, background: "white", borderRadius: "var(--radius-ui)", boxShadow: "0 8px 40px rgba(0,0,0,0.32)", display: "flex", flexDirection: "column", overflow: "hidden", border: "1px solid var(--c-b2, #cbd5e1)" }}>
 
       {/* ── Заголовок (перетаскивание) ── */}
       <div

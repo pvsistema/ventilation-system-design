@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { cx, cy, layoutWidth, layoutHeight } from "@/lib/uiScale";
 
 /**
  * Изменение размера плавающего окна: тянуть за правый/нижний край или угол.
@@ -17,8 +18,8 @@ export function useResizableWindow(opts: {
   const { defaultWidth, defaultHeight, minWidth = 640, minHeight = 420, storageKey } = opts;
 
   const clamp = (w: number, h: number) => ({
-    w: Math.round(Math.min(window.innerWidth - 8, Math.max(Math.min(minWidth, window.innerWidth - 8), w))),
-    h: Math.round(Math.min(window.innerHeight - 8, Math.max(Math.min(minHeight, window.innerHeight - 8), h))),
+    w: Math.round(Math.min(layoutWidth() - 8, Math.max(Math.min(minWidth, layoutWidth() - 8), w))),
+    h: Math.round(Math.min(layoutHeight() - 8, Math.max(Math.min(minHeight, layoutHeight() - 8), h))),
   });
 
   const [size, setSize] = useState<{ w: number; h: number }>(() => {
@@ -75,14 +76,14 @@ export function useResizableWindow(opts: {
       if (e.button !== 0 || maximized) return;
       e.preventDefault();
       e.stopPropagation();
-      drag.current = { x: e.clientX, y: e.clientY, w: sizeRef.current.w, h: sizeRef.current.h, dir };
+      drag.current = { x: cx(e), y: cy(e), w: sizeRef.current.w, h: sizeRef.current.h, dir };
       e.currentTarget.setPointerCapture(e.pointerId);
     },
     onPointerMove: (e: PointerEvent<HTMLElement>) => {
       const d = drag.current;
       if (!d) return;
-      const w = d.dir === "s" ? d.w : d.w + (e.clientX - d.x);
-      const h = d.dir === "e" ? d.h : d.h + (e.clientY - d.y);
+      const w = d.dir === "s" ? d.w : d.w + (cx(e) - d.x);
+      const h = d.dir === "e" ? d.h : d.h + (cy(e) - d.y);
       setSize(clamp(w, h));
     },
     onPointerUp: (e: PointerEvent<HTMLElement>) => {

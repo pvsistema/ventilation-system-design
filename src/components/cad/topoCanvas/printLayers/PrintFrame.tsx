@@ -5,6 +5,7 @@ import { computeTitleLayout, wrapTitleLines, TITLE_FONT_MIN, TITLE_FONT_MAX } fr
 import type {
   PrintHorizon, PrintLayerCfg, UnprojFrame, FrameWorldBounds, FrameCorner,
 } from "./printLayersScene";
+import { cx, cy } from "@/lib/uiScale";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Рамка листа: подложка, внешняя/внутренняя рамка, заголовок, подсветка
@@ -65,11 +66,11 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
           e.preventDefault();
           // Перенос листа — в экранных координатах: лист идёт строго за мышью
           // в любом виде (план/ИЗО/фронт), без пересчёта через плоскость мира.
-          const sx0 = e.clientX, sy0 = e.clientY;
+          const sx0 = cx(e), sy0 = cy(e);
           const r0 = { rx, ry, rw, rh };
           setDraggingPrintCorner({ horizonId: h.id, corner: "move", startWx: 0, startWy: 0, startBounds: wb });
           const onMove = (me: MouseEvent) => {
-            const r = { ...r0, rx: r0.rx + me.clientX - sx0, ry: r0.ry + me.clientY - sy0 };
+            const r = { ...r0, rx: r0.rx + cx(me) - sx0, ry: r0.ry + cy(me) - sy0 };
             onPrintLayerChange?.(h.id, { frameNorm: screenToFrameNorm(r, proj, xyScale ?? 1, zScale ?? 1) });
           };
           const onUp = () => {
@@ -136,11 +137,11 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
         const startResize = (e: React.MouseEvent) => {
           if (e.button !== 0) return;
           e.stopPropagation(); e.preventDefault();
-          const sx0 = e.clientX, sy0 = e.clientY;
+          const sx0 = cx(e), sy0 = cy(e);
           const s0 = pl.titleFontScale ?? 1;
           const h0 = Math.max(4, blockH);
           const onMove = (me: MouseEvent) => {
-            const d = Math.max(me.clientY - sy0, (me.clientX - sx0) * (h0 / Math.max(4, textW)));
+            const d = Math.max(cy(me) - sy0, (cx(me) - sx0) * (h0 / Math.max(4, textW)));
             const s = Math.min(TITLE_FONT_MAX, Math.max(TITLE_FONT_MIN, s0 * (h0 + d) / h0));
             onPrintLayerChange?.(h.id, { titleFontScale: Math.round(s * 100) / 100 });
           };
@@ -168,14 +169,14 @@ export function PrintFrameBase(props: PrintFrameBaseProps) {
               e.preventDefault();
               const startOffX = pl.titleOffsetX ?? 0;
               const startOffY = pl.titleOffsetY ?? 0;
-              const startSx = e.clientX;
-              const startSy = e.clientY;
+              const startSx = cx(e);
+              const startSy = cy(e);
               setDraggingPrintTitle({ horizonId: h.id, startSx, startSy, startOffX, startOffY, pxPerMm });
               const pxmm = pxPerMm || 1;
               const onMove = (me: MouseEvent) => {
                 onPrintLayerChange?.(h.id, {
-                  titleOffsetX: startOffX + (me.clientX - startSx) / pxmm,
-                  titleOffsetY: startOffY + (me.clientY - startSy) / pxmm,
+                  titleOffsetX: startOffX + (cx(me) - startSx) / pxmm,
+                  titleOffsetY: startOffY + (cy(me) - startSy) / pxmm,
                 });
               };
               const onUp = () => {
@@ -262,13 +263,13 @@ export function PrintFrameHandles(props: PrintFrameHandlesProps) {
     if (e.button !== 0) return;
     e.stopPropagation();
     e.preventDefault();
-    const sx0 = e.clientX, sy0 = e.clientY;
+    const sx0 = cx(e), sy0 = cy(e);
     const r0 = { rx, ry, rw, rh };
     const cx0 = rx + rw / 2, cy0 = ry + rh / 2;
     const minW = 60;
     setDraggingPrintCorner({ horizonId: h.id, corner: key.length === 2 ? key as Corner : "br", startWx: 0, startWy: 0, startBounds: wb });
     const onMove = (me: MouseEvent) => {
-      const dx = me.clientX - sx0, dy = me.clientY - sy0;
+      const dx = cx(me) - sx0, dy = cy(me) - sy0;
       const fromCenter = me.shiftKey;
       // Новая ширина по смещению мыши; для угловых ручек — по оси, которая
       // при пропорциях листа даёт большее изменение (курсор не «отрывается»).

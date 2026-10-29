@@ -1,5 +1,5 @@
 import React from "react";
-import { localPoint } from "@/lib/uiScale";
+import { localPoint, cx, cy } from "@/lib/uiScale";
 import { type TopoBranch } from "@/lib/topology";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolSvgContent, isFireVehicleSymbol, uprightAlongBranch } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
@@ -213,7 +213,7 @@ export function renderSymbolNode(
         if (e.button !== 0 || tool !== "select") return;
         e.stopPropagation(); e.preventDefault();
         onSelectSymbol?.(sym.id);
-        const startX = e.clientX, startY = e.clientY;
+        const startX = cx(e), startY = cy(e);
         let didDrag = false;
         if (sym.branchId && hasBranchPts) {
           const snapFsx = fsx, snapFsy = fsy, snapTsx = tsx2, snapTsy = tsy2;
@@ -221,12 +221,12 @@ export function renderSymbolNode(
           const origOx = sym.offsetX ?? 0, origOy = sym.offsetY ?? 0;
           const svgEl = (e.currentTarget as SVGElement).closest("svg")!;
           const onMove = (me: MouseEvent) => {
-            if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+            if (!didDrag && Math.hypot(cx(me) - startX, cy(me) - startY) < 4) return;
             // Начало перетаскивания: гасим тяжёлый оверлей УО, пока тащим.
             if (!didDrag) { onSymbolDragStart?.(sym.id); setDraggingSymbolId?.(sym.id); }
             didDrag = true;
             me.preventDefault();
-            const dx = me.clientX - startX, dy = me.clientY - startY;
+            const dx = cx(me) - startX, dy = cy(me) - startY;
             if (me.ctrlKey || me.altKey) {
               onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
             } else {
@@ -263,12 +263,12 @@ export function renderSymbolNode(
           const b = pY.sx - p0.sx, d = pY.sy - p0.sy;   // экранный сдвиг от +1 м по Y
           const det = a * d - b * c;
           const onMove = (me: MouseEvent) => {
-            if (!didDrag && Math.hypot(me.clientX - startX, me.clientY - startY) < 4) return;
+            if (!didDrag && Math.hypot(cx(me) - startX, cy(me) - startY) < 4) return;
             // Начало перетаскивания: гасим тяжёлый оверлей УО, пока тащим.
             if (!didDrag) { onSymbolDragStart?.(sym.id); setDraggingSymbolId?.(sym.id); }
             didDrag = true;
             me.preventDefault();
-            const dx = me.clientX - startX, dy = me.clientY - startY;
+            const dx = cx(me) - startX, dy = cy(me) - startY;
             // Вид «сбоку» (плоскость XY видна ребром) — обратить нельзя,
             // двигаем только по горизонтали экрана, как раньше.
             if (Math.abs(det) < 1e-9) {
@@ -692,12 +692,12 @@ export function renderSymbolNode(
               onMouseDown={(e) => {
                 if (tool !== "select") return;
                 e.stopPropagation();
-                const startX = e.clientX, startY = e.clientY;
+                const startX = cx(e), startY = cy(e);
                 const origOx = sym.indOffsetX ?? 0;
                 const origOy = sym.indOffsetY ?? 0;
                 const sfDrag = (_branchObjSF * _indZoomSF) || 1;
                 const onMove = (me: MouseEvent) => {
-                  onSymbolIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
+                  onSymbolIndOffset?.(sym.id, origOx + (cx(me) - startX) / sfDrag, origOy + (cy(me) - startY) / sfDrag);
                 };
                 const onUp = () => {
                   window.removeEventListener("mousemove", onMove);
@@ -780,11 +780,11 @@ export function renderSymbolNode(
               onMouseDown={(e) => {
                 if (tool !== "select") return;
                 e.stopPropagation();
-                const startX = e.clientX, startY = e.clientY;
+                const startX = cx(e), startY = cy(e);
                 const origOx = sym.fanIndOffsetX ?? 0;
                 const origOy = sym.fanIndOffsetY ?? 0;
                 const onMove = (me: MouseEvent) => {
-                  onSymbolFanIndOffset?.(sym.id, origOx + (me.clientX - startX) / fanDragSF, origOy + (me.clientY - startY) / fanDragSF);
+                  onSymbolFanIndOffset?.(sym.id, origOx + (cx(me) - startX) / fanDragSF, origOy + (cy(me) - startY) / fanDragSF);
                 };
                 const onUp = () => {
                   window.removeEventListener("mousemove", onMove);
@@ -865,12 +865,12 @@ export function renderSymbolNode(
               onMouseDown={(e) => {
                 if (tool !== "select") return;
                 e.stopPropagation();
-                const startX = e.clientX, startY = e.clientY;
+                const startX = cx(e), startY = cy(e);
                 const origOx = sym.msIndOffsetX ?? 0;
                 const origOy = sym.msIndOffsetY ?? 0;
                 const sfDrag = (_branchObjSF * _indZoomSF) || 1;
                 const onMove = (me: MouseEvent) => {
-                  onSymbolMsIndOffset?.(sym.id, origOx + (me.clientX - startX) / sfDrag, origOy + (me.clientY - startY) / sfDrag);
+                  onSymbolMsIndOffset?.(sym.id, origOx + (cx(me) - startX) / sfDrag, origOy + (cy(me) - startY) / sfDrag);
                 };
                 const onUp = () => {
                   window.removeEventListener("mousemove", onMove);

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type PointerEvent } from "react";
+import { cx, cy, layoutWidth, layoutHeight } from "@/lib/uiScale";
 
 /**
  * Перетаскивание плавающего окна за шапку.
@@ -23,8 +24,8 @@ export function useDraggableWindow(opts: {
   const { width, height = 500, initial, storageKey } = opts;
 
   const clamp = (x: number, y: number) => {
-    const maxX = Math.max(0, window.innerWidth - width);
-    const maxY = Math.max(0, window.innerHeight - 60);
+    const maxX = Math.max(0, layoutWidth() - width);
+    const maxY = Math.max(0, layoutHeight() - 60);
     return { x: Math.min(Math.max(0, x), maxX), y: Math.min(Math.max(0, y), maxY) };
   };
 
@@ -36,7 +37,7 @@ export function useDraggableWindow(opts: {
       } catch { /* нет сохранённой позиции */ }
     }
     if (initial) return clamp(initial.x, initial.y);
-    return clamp((window.innerWidth - width) / 2, Math.max(40, (window.innerHeight - height) / 2));
+    return clamp((layoutWidth() - width) / 2, Math.max(40, (layoutHeight() - height) / 2));
   });
 
   // При изменении размера окна браузера — вернуть окно в видимую область.
@@ -54,12 +55,12 @@ export function useDraggableWindow(opts: {
   const onPointerDown = (e: PointerEvent<HTMLElement>) => {
     if (e.button !== 0) return;
     if ((e.target as HTMLElement).closest("button, input, select, textarea, a")) return;
-    drag.current = { dx: e.clientX - posRef.current.x, dy: e.clientY - posRef.current.y };
+    drag.current = { dx: cx(e) - posRef.current.x, dy: cy(e) - posRef.current.y };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onPointerMove = (e: PointerEvent<HTMLElement>) => {
     if (!drag.current) return;
-    setPos(clamp(e.clientX - drag.current.dx, e.clientY - drag.current.dy));
+    setPos(clamp(cx(e) - drag.current.dx, cy(e) - drag.current.dy));
   };
   const onPointerUp = (e: PointerEvent<HTMLElement>) => {
     if (!drag.current) return;

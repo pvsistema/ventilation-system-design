@@ -108,3 +108,25 @@ export function zoomK(el: Element, r: DOMRect = el.getBoundingClientRect()): num
   }
   return 1;
 }
+
+/**
+ * CSS-масштаб интерфейса (zoom на <html>): во сколько раз экранный пиксель
+ * (clientX, getBoundingClientRect, innerWidth) больше пикселя разметки
+ * (style.left/top/width окон, размеры панелей). 1 — масштаба нет или он
+ * делается оболочкой (WebView2 ZoomFactor), тогда пересчёт не нужен.
+ */
+export function uiZoom(): number {
+  return cssZoomOf(document.documentElement);
+}
+
+/** Экранные пиксели → пиксели разметки. */
+export const toLayout = (v: number) => v / uiZoom();
+
+/** Высота окна в пикселях разметки. */
+export function layoutHeight(): number {
+  return window.innerHeight / uiZoom();
+}
+
+/** Координата курсора в пикселях разметки (для style.left/top и сдвигов). */
+export const cx = (e: { clientX: number }) => e.clientX / uiZoom();
+export const cy = (e: { clientY: number }) => e.clientY / uiZoom();

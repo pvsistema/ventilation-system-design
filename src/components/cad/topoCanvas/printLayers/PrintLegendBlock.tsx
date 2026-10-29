@@ -2,6 +2,7 @@ import { type TopoBranch, type PaperFormat, PAPER_SIZES_MM } from "@/lib/topolog
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, FAN_SVG_STATION, FAN_SVG_PROPELLER } from "@/lib/schemaSymbols";
 import { type Props } from "@/components/cad/topoCanvas/topoCanvasTypes";
 import type { PrintHorizon, PrintLayerCfg } from "./printLayersScene";
+import { cx, cy } from "@/lib/uiScale";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Блок условных обозначений (УО) на листе. Перенесено из
@@ -108,10 +109,10 @@ export function LegendBlock(props: LegendBlockProps) {
           style={{ cursor: "move" }}
           onMouseDown={(e) => {
             e.stopPropagation(); e.preventDefault();
-            const startX = e.clientX, startY = e.clientY;
+            const startX = cx(e), startY = cy(e);
             const startOX = pl.legendOffsetX ?? 0, startOY = pl.legendOffsetY ?? 0;
             const pxmm = pxPerMmL || 1;
-            const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, { legendOffsetX: startOX + (me.clientX - startX) / pxmm, legendOffsetY: startOY + (me.clientY - startY) / pxmm });
+            const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, { legendOffsetX: startOX + (cx(me) - startX) / pxmm, legendOffsetY: startOY + (cy(me) - startY) / pxmm });
             const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
             window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
           }}

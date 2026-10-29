@@ -9,6 +9,7 @@ import CadModals from "./CadModals";
 import BlastBulkheadCalcDialog from "@/components/cad/BlastBulkheadCalcDialog";
 import BlastBarrierChartDialog from "@/components/cad/BlastBarrierChartDialog";
 import type { CadPageState } from "./useCadPage";
+import { zoomK } from "@/lib/uiScale";
 
 // Диалоги и модальные окна страницы CAD.
 export default function CadDialogs({ c }: { c: CadPageState }) {
@@ -330,7 +331,9 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
             if (overlapsX && Math.max(leftFree, rightFree) >= 150) {
               x = leftFree >= rightFree ? leftFree / 2 : cv.width - rightFree / 2;
             }
-            setFocusScreenReq({ nonce, x, y: cv.height / 2 });
+            // Экранные пиксели → пиксели схемы (масштаб интерфейса).
+            const zk = liveCanvasRef.current ? zoomK(liveCanvasRef.current, cv) : 1;
+            setFocusScreenReq({ nonce, x: x / zk, y: cv.height / 2 / zk });
           } else {
             setFocusScreenReq(null);
           }

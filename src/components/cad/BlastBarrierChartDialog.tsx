@@ -31,6 +31,7 @@ import { barrierDisplayName, barrierArrival, type BlastBarrier, type BarrierHit 
 import { reflectedPressure } from "@/lib/blastBulkhead";
 import { waveFrontSpeed, type ExplosionResult } from "@/lib/explosionCalculator";
 import { exportBlastBarriersExcel, logBounds } from "@/lib/blastBarrierExcel";
+import { cx, cy, layoutWidth, layoutHeight, toLayout } from "@/lib/uiScale";
 
 interface Props {
   branches: TopoBranch[];
@@ -64,7 +65,7 @@ function useDraggable() {
     if ((e.target as HTMLElement).closest("button, input, select")) return;
     const r = boxRef.current?.getBoundingClientRect();
     if (!r) return;
-    drag.current = { sx: e.clientX, sy: e.clientY, px: r.left, py: r.top };
+    drag.current = { sx: cx(e), sy: cy(e), px: toLayout(r.left), py: toLayout(r.top) };
     e.preventDefault();
   }, []);
   useEffect(() => {
@@ -73,8 +74,8 @@ function useDraggable() {
       if (!d) return;
       const w = boxRef.current?.offsetWidth ?? 400;
       setPos({
-        x: Math.min(Math.max(d.px + e.clientX - d.sx, 40 - w), window.innerWidth - 40),
-        y: Math.min(Math.max(d.py + e.clientY - d.sy, 0), window.innerHeight - 40),
+        x: Math.min(Math.max(d.px + cx(e) - d.sx, 40 - w), layoutWidth() - 40),
+        y: Math.min(Math.max(d.py + cy(e) - d.sy, 0), layoutHeight() - 40),
       });
     };
     const up = () => { drag.current = null; };

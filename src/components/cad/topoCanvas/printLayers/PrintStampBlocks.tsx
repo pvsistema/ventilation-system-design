@@ -10,6 +10,7 @@ import {
 } from "@/lib/approverTemplate";
 import { type Props } from "@/components/cad/topoCanvas/topoCanvasTypes";
 import type { PrintHorizon, PrintLayerCfg } from "./printLayersScene";
+import { cx, cy } from "@/lib/uiScale";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Табличные блоки листа: «УТВЕРЖДАЮ» и штамп ГОСТ 185×55 мм.
@@ -70,12 +71,12 @@ export function ApproverBlock(props: ApproverBlockProps) {
   const startDrag = (e: React.MouseEvent) => {
     if (!canEdit || e.button !== 0) return;
     e.stopPropagation(); e.preventDefault();
-    const sx0 = e.clientX, sy0 = e.clientY;
+    const sx0 = cx(e), sy0 = cy(e);
     const ox = rec[keys.offX] ?? 0, oy = rec[keys.offY] ?? 0;
     const pxmm = sheetPxPerMm || 1;
     const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, {
-      [keys.offX]: ox + (me.clientX - sx0) / pxmm,
-      [keys.offY]: oy + (me.clientY - sy0) / pxmm,
+      [keys.offX]: ox + (cx(me) - sx0) / pxmm,
+      [keys.offY]: oy + (cy(me) - sy0) / pxmm,
     } as Partial<import("@/lib/topology").HorizonPrintLayer>);
     const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
     window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
@@ -85,12 +86,12 @@ export function ApproverBlock(props: ApproverBlockProps) {
   const startResize = (e: React.MouseEvent) => {
     if (!canEdit || e.button !== 0) return;
     e.stopPropagation(); e.preventDefault();
-    const sx0 = e.clientX, sy0 = e.clientY;
+    const sx0 = cx(e), sy0 = cy(e);
     const s0 = rec[keys.scale] ?? 1;
     const ox = rec[keys.offX] ?? 0;
     const w0 = apW;
     const onMove = (me: MouseEvent) => {
-      const d = Math.max(me.clientX - sx0, (me.clientY - sy0) * (apW / apH));
+      const d = Math.max(cx(me) - sx0, (cy(me) - sy0) * (apW / apH));
       const s = Math.min(SIGN_SCALE_MAX, Math.max(SIGN_SCALE_MIN, s0 * (w0 + d) / w0));
       const patch: Record<string, number> = { [keys.scale]: Math.round(s * 100) / 100 };
       if (kind === "approve") patch[keys.offX] = ox + (75 * (s - s0));
@@ -338,9 +339,9 @@ export function StampBlock(props: StampBlockProps) {
         <rect x={sx2} y={sy2} width={Math.max(6, pxPerMm * 2)} height={stH} fill="transparent" style={{ cursor: "move" }}
           onMouseDown={(e) => {
             e.stopPropagation(); e.preventDefault();
-            const startX = e.clientX, startY = e.clientY;
+            const startX = cx(e), startY = cy(e);
             const startOX = pl.stampOffsetX ?? 0, startOY = pl.stampOffsetY ?? 0;
-            const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, { stampOffsetX: startOX + me.clientX - startX, stampOffsetY: startOY + me.clientY - startY });
+            const onMove = (me: MouseEvent) => onPrintLayerChange?.(h.id, { stampOffsetX: startOX + cx(me) - startX, stampOffsetY: startOY + cy(me) - startY });
             const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
             window.addEventListener("mousemove", onMove); window.addEventListener("mouseup", onUp);
           }}

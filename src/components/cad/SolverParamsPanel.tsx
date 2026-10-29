@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode, type PointerEvent } from "react";
 import Icon from "@/components/ui/icon";
+import { cx, cy, layoutWidth, layoutHeight } from "@/lib/uiScale";
 
 export type CalcMode = "cross" | "mkr";
 export type Season = "winter" | "summer";
@@ -141,8 +142,8 @@ function Note({ children, tone = "muted" }: { children: ReactNode; tone?: "muted
 
 /** Не даём увести окно за край экрана: шапка всегда остаётся доступной. */
 function clampPos(x: number, y: number, width: number) {
-  const maxX = Math.max(0, window.innerWidth - width);
-  const maxY = Math.max(0, window.innerHeight - 120);
+  const maxX = Math.max(0, layoutWidth() - width);
+  const maxY = Math.max(0, layoutHeight() - 120);
   return { x: Math.min(Math.max(0, x), maxX), y: Math.min(Math.max(0, y), maxY) };
 }
 
@@ -164,18 +165,18 @@ export default function SolverParamsPanel({ values: v, onChange, onResetSolver, 
       const saved = JSON.parse(localStorage.getItem("pvs.solverParamsPos") || "null");
       if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) return clampPos(saved.x, saved.y, WIDTH);
     } catch { /* нет сохранённой позиции */ }
-    return clampPos(window.innerWidth - WIDTH - 16, 160, WIDTH);
+    return clampPos(layoutWidth() - WIDTH - 16, 160, WIDTH);
   });
   const drag = useRef<{ dx: number; dy: number } | null>(null);
 
   const onDragStart = (e: PointerEvent<HTMLDivElement>) => {
     if ((e.target as HTMLElement).closest("button")) return;
-    drag.current = { dx: e.clientX - pos.x, dy: e.clientY - pos.y };
+    drag.current = { dx: cx(e) - pos.x, dy: cy(e) - pos.y };
     e.currentTarget.setPointerCapture(e.pointerId);
   };
   const onDragMove = (e: PointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;
-    setPos(clampPos(e.clientX - drag.current.dx, e.clientY - drag.current.dy, WIDTH));
+    setPos(clampPos(cx(e) - drag.current.dx, cy(e) - drag.current.dy, WIDTH));
   };
   const onDragEnd = (e: PointerEvent<HTMLDivElement>) => {
     if (!drag.current) return;

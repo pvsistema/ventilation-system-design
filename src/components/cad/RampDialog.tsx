@@ -17,6 +17,7 @@ import {
   buildRamp, buildSpiral, type RampMode, type RampResult, type SpiralResult,
   RAMP_WORK_ANGLE, RAMP_LIMIT_ANGLE,
 } from "@/lib/rampBuilder";
+import { cx, cy, layoutWidth, layoutHeight, toLayout } from "@/lib/uiScale";
 
 interface Props {
   nodes: TopoNode[];
@@ -78,8 +79,8 @@ export default function RampDialog({
       const el = boxRef.current;
       const w = el?.offsetWidth ?? 470;
       // Не даём утащить окно за край экрана: шапка всегда остаётся кликабельной.
-      const x = Math.min(Math.max(e.clientX - d.dx, 8 - w + 80), window.innerWidth - 80);
-      const y = Math.min(Math.max(e.clientY - d.dy, 0), window.innerHeight - 30);
+      const x = Math.min(Math.max(cx(e) - d.dx, 8 - w + 80), layoutWidth() - 80);
+      const y = Math.min(Math.max(cy(e) - d.dy, 0), layoutHeight() - 30);
       setPos({ x, y });
     };
     // После перетаскивания браузер шлёт click на общего предка — оверлей.
@@ -101,8 +102,9 @@ export default function RampDialog({
     const el = boxRef.current;
     if (!el) return;
     const r = el.getBoundingClientRect();
-    dragRef.current = { dx: e.clientX - r.left, dy: e.clientY - r.top };
-    setPos({ x: r.left, y: r.top });
+    const left = toLayout(r.left), top = toLayout(r.top);
+    dragRef.current = { dx: cx(e) - left, dy: cy(e) - top };
+    setPos({ x: left, y: top });
     e.preventDefault();
   };
 

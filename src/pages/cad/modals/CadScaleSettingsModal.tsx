@@ -5,6 +5,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 import { useEffect, useRef, useState } from "react";
 import Icon from "@/components/ui/icon";
+import { cx, cy, layoutWidth, layoutHeight } from "@/lib/uiScale";
 
 export interface CadScaleSettingsModalProps {
   scaleSettingsOpen: boolean;
@@ -116,7 +117,7 @@ export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
         ws: p.widthBySectionOn, t3: p.tube3dOn, pMin: p.scalePositionMin, pMax: p.scalePositionMax,
         gost: p.positionGostMm, bh: p.bulkheadScale, fan: p.fanScale,
       };
-      setPos(prev => prev ?? { x: Math.max(8, window.innerWidth - W - 340), y: 150 });
+      setPos(prev => prev ?? { x: Math.max(8, layoutWidth() - W - 340), y: 150 });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [p.scaleSettingsOpen]);
@@ -153,15 +154,15 @@ export default function CadScaleSettingsModal(p: CadScaleSettingsModalProps) {
 
   const onDragStart = (e: React.PointerEvent) => {
     if (e.button !== 0 || (e.target as HTMLElement).closest("button") || !pos) return;
-    drag.current = { dx: e.clientX - livePos.current.x, dy: e.clientY - livePos.current.y };
+    drag.current = { dx: cx(e) - livePos.current.x, dy: cy(e) - livePos.current.y };
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     setDragging(true);
   };
   const onDragMove = (e: React.PointerEvent) => {
     if (!drag.current) return;
     livePos.current = {
-      x: clamp(e.clientX - drag.current.dx, 0, window.innerWidth - W),
-      y: clamp(e.clientY - drag.current.dy, 0, window.innerHeight - 40),
+      x: clamp(cx(e) - drag.current.dx, 0, layoutWidth() - W),
+      y: clamp(cy(e) - drag.current.dy, 0, layoutHeight() - 40),
     };
     if (!raf.current) raf.current = requestAnimationFrame(applyTransform);
   };

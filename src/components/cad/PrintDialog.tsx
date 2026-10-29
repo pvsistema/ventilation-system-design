@@ -31,6 +31,7 @@ import PrintSettingsPanel from "@/components/cad/printPreview/PrintSettingsPanel
 import PrintExportDialog from "@/components/cad/printPreview/PrintExportDialog";
 import { PHeader } from "@/components/cad/printPreview/printUi";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
+import { cx, cy, layoutWidth, layoutHeight, localPoint, toLayout } from "@/lib/uiScale";
 
 // ── Печать через скрытый iframe (работает в Electron и браузере без всплывающих окон) ──
 
@@ -197,7 +198,7 @@ export default function PrintDialog({
 
   // ─── Drag & Resize окна ─────────────────────────────────────────────
   const [winPos, setWinPos] = useState<{ x: number; y: number } | null>(null);
-  const [winSize, setWinSize] = useState<{ w: number; h: number }>({ w: 1060, h: Math.min(window.innerHeight * 0.96, 860) });
+  const [winSize, setWinSize] = useState<{ w: number; h: number }>({ w: 1060, h: Math.min(layoutHeight() * 0.96, 860) });
   const winDragRef = useRef<{ startX: number; startY: number; origX: number; origY: number } | null>(null);
   const resizeRef = useRef<{ startX: number; startY: number; origW: number; origH: number; dir: string } | null>(null);
   const winRef = useRef<HTMLDivElement>(null);
@@ -205,8 +206,8 @@ export default function PrintDialog({
   const getWinPos = () => {
     if (winPos) return winPos;
     return {
-      x: Math.max(0, (window.innerWidth  - winSize.w) / 2),
-      y: Math.max(0, (window.innerHeight - winSize.h) / 2),
+      x: Math.max(0, (layoutWidth()  - winSize.w) / 2),
+      y: Math.max(0, (layoutHeight() - winSize.h) / 2),
     };
   };
 
@@ -214,12 +215,12 @@ export default function PrintDialog({
     if ((e.target as HTMLElement).closest("button")) return;
     e.preventDefault();
     const pos = getWinPos();
-    winDragRef.current = { startX: e.clientX, startY: e.clientY, origX: pos.x, origY: pos.y };
+    winDragRef.current = { startX: cx(e), startY: cy(e), origX: pos.x, origY: pos.y };
     const onMove = (ev: MouseEvent) => {
       if (!winDragRef.current) return;
-      const nx = winDragRef.current.origX + ev.clientX - winDragRef.current.startX;
-      const ny = winDragRef.current.origY + ev.clientY - winDragRef.current.startY;
-      setWinPos({ x: Math.max(0, Math.min(window.innerWidth - 200, nx)), y: Math.max(0, Math.min(window.innerHeight - 60, ny)) });
+      const nx = winDragRef.current.origX + cx(ev) - winDragRef.current.startX;
+      const ny = winDragRef.current.origY + cy(ev) - winDragRef.current.startY;
+      setWinPos({ x: Math.max(0, Math.min(layoutWidth() - 200, nx)), y: Math.max(0, Math.min(layoutHeight() - 60, ny)) });
     };
     const onUp = () => { winDragRef.current = null; window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
     window.addEventListener("mousemove", onMove);
@@ -229,11 +230,11 @@ export default function PrintDialog({
   const onResizeMouseDown = (e: React.MouseEvent, dir: string) => {
     e.preventDefault();
     e.stopPropagation();
-    resizeRef.current = { startX: e.clientX, startY: e.clientY, origW: winSize.w, origH: winSize.h, dir };
+    resizeRef.current = { startX: cx(e), startY: cy(e), origW: winSize.w, origH: winSize.h, dir };
     const onMove = (ev: MouseEvent) => {
       if (!resizeRef.current) return;
-      const dx = ev.clientX - resizeRef.current.startX;
-      const dy = ev.clientY - resizeRef.current.startY;
+      const dx = cx(ev) - resizeRef.current.startX;
+      const dy = cy(ev) - resizeRef.current.startY;
       const { origW, origH, dir: d } = resizeRef.current;
       let nw = origW, nh = origH;
       if (d.includes("e")) nw = Math.max(600, origW + dx);
@@ -249,7 +250,7 @@ export default function PrintDialog({
 
   const handleTileContextMenu = useCallback((e: React.MouseEvent, tileIdx: number) => {
     e.preventDefault();
-    setCtxMenu({ x: e.clientX, y: e.clientY, tileIdx });
+    setCtxMenu({ x: cx(e), y: cy(e), tileIdx });
   }, []);
 
   const closeCtxMenu = useCallback(() => setCtxMenu(null), []);
@@ -268,8 +269,8 @@ export default function PrintDialog({
     if (e.button !== 0) return;  // только ЛКМ
     e.preventDefault();
     dragRef.current = {
-      startMouseX: e.clientX,
-      startMouseY: e.clientY,
+      startMouseX: cx(e),
+      startMouseY: cy(e),
       startOffsetX: 0,   // заполняется ниже через baseView
       startOffsetY: 0,
       prevToPage: prevToPageRatio,
@@ -283,8 +284,8 @@ export default function PrintDialog({
 
   const handlePreviewMouseMove = useCallback((e: React.MouseEvent) => {
     if (!dragRef.current) return;
-    const dx = e.clientX - dragRef.current.startMouseX;
-    const dy = e.clientY - dragRef.current.startMouseY;
+    const dx = cx(e) - dragRef.current.startMouseX;
+    const dy = cy(e) - dragRef.current.startMouseY;
     // Экранные px → превью-px (убираем viewZoom) → печатные px (делим на prevToPage)
     const zoom = viewZoomRef.current;
     const printDx = dx / zoom / dragRef.current.prevToPage;
@@ -309,10 +310,11 @@ export default function PrintDialog({
     e.preventDefault();
     const container = previewContainerRef.current;
     if (!container) return;
-    const rect = container.getBoundingClientRect();
-    // Позиция курсора относительно контента (с учётом текущего скролла)
-    const mouseX = e.clientX - rect.left + container.scrollLeft;
-    const mouseY = e.clientY - rect.top  + container.scrollTop;
+    // Позиция курсора относительно контента (с учётом текущего скролла),
+    // в пикселях разметки — в них же scrollLeft/scrollTop.
+    const lp = localPoint(container, e.clientX, e.clientY);
+    const mouseX = lp.x + container.scrollLeft;
+    const mouseY = lp.y + container.scrollTop;
     const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
     setViewZoom(prev => {
       const next = Math.max(0.1, Math.min(10, prev * factor));
@@ -320,8 +322,8 @@ export default function PrintDialog({
       // Компенсируем скролл, чтобы точка под курсором не смещалась
       const ratio = next / prev;
       requestAnimationFrame(() => {
-        container.scrollLeft = mouseX * ratio - (e.clientX - rect.left);
-        container.scrollTop  = mouseY * ratio - (e.clientY - rect.top);
+        container.scrollLeft = mouseX * ratio - lp.x;
+        container.scrollTop  = mouseY * ratio - lp.y;
       });
       return next;
     });
