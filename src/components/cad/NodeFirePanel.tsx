@@ -1,6 +1,6 @@
 import { type TopoNode, type TopoBranch } from "@/lib/topology";
 import { type WaterNodeResult, connectedOpenConsumers } from "@/lib/waterHydraulics";
-import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, getConsumerById, type ConsumerGroup } from "@/lib/waterConsumers";
+import { allConsumers, CONSUMER_GROUP_NAMES, getConsumerById, type ConsumerGroup } from "@/lib/waterConsumers";
 import { SectionHeader } from "@/components/cad/BranchPropsPrimitives";
 
 interface NodeFirePanelProps {
@@ -255,8 +255,8 @@ export default function NodeFirePanel({ node, onUpdate, waterResult, allNodes = 
             <option value="">— выбрать вручную —</option>
             {(Object.keys(CONSUMER_GROUP_NAMES) as ConsumerGroup[]).map((g) => (
               <optgroup key={g} label={CONSUMER_GROUP_NAMES[g]}>
-                {CONSUMER_CATALOG.filter((c) => c.group === g).map((c) => (
-                  <option key={c.id} value={c.id}>{c.name}</option>
+                {allConsumers().filter((c) => c.group === g).map((c) => (
+                  <option key={c.id} value={c.id}>{c.isUser ? `${c.name} (свой)` : c.name}</option>
                 ))}
               </optgroup>
             ))}

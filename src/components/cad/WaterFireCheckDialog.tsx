@@ -6,7 +6,7 @@ import {
   DEFAULT_WATER_NORMS, DEFAULT_FIRE_WATER_OPTIONS, DEFAULT_RESCUE_WATER_OPTIONS,
   type WaterNorms, } from "@/lib/waterFireCheck";
 import { exportWaterCheckAct } from "@/lib/waterCheckExport";
-import { CONSUMER_CATALOG } from "@/lib/waterConsumers";
+import { getConsumerById } from "@/lib/waterConsumers";
 import { withWaterPumps, type PumpSymbolLite } from "@/lib/waterHydraulics";
 // Блоки диалога вынесены в отдельные файлы (перенос 1:1, без правок логики)
 import FireSourceSettings from "@/components/cad/waterFireCheck/FireSourceSettings";
@@ -28,7 +28,7 @@ interface Props {
 // Название модели ствола по её id (для колонки «Тип ствола»)
 function consumerName(id: string | undefined): string {
   if (!id) return "";
-  return CONSUMER_CATALOG.find(m => m.id === id)?.name ?? "";
+  return getConsumerById(id)?.name ?? "";
 }
 
 export default function WaterFireCheckDialog({

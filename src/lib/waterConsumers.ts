@@ -20,6 +20,10 @@ export interface WaterConsumerModel {
   jetRange: string;          // дальность вод. струи
   workPressureMPa: string;   // рабочее давление, МПа
   workPressureAtm: string;   // рабочее давление, кгс/см²
+  /** Добавлен пользователем (хранится в проекте). */
+  isUser?: boolean;
+  /** Примечание пользователя. */
+  notes?: string;
 }
 
 export const CONSUMER_GROUP_NAMES: Record<ConsumerGroup, string> = {
@@ -76,7 +80,43 @@ export const CONSUMER_CATALOG: WaterConsumerModel[] = [
     jetRange: "30 м", workPressureMPa: "0,3–0,5", workPressureAtm: "3–5" },
 ];
 
+// ─── Свои потребители (хранятся в проекте) ─────────────────────────────────
+// Реестр общий для всей программы: справочник, свойства узла и проверка
+// водопровода видят одни и те же модели. Заполняет его страница при
+// открытии проекта и при правке справочника (registerUserConsumers).
+let userConsumers: WaterConsumerModel[] = [];
+
+export function registerUserConsumers(list: WaterConsumerModel[]) {
+  userConsumers = list.filter((c) => c && c.id).map((c) => ({ ...c, isUser: true }));
+}
+
+/** Все потребители: сначала свои, затем каталог. */
+export function allConsumers(): WaterConsumerModel[] {
+  return [...userConsumers, ...CONSUMER_CATALOG];
+}
+
 export function getConsumerById(id: string | undefined): WaterConsumerModel | undefined {
   if (!id) return undefined;
-  return CONSUMER_CATALOG.find((c) => c.id === id);
+  return userConsumers.find((c) => c.id === id) ?? CONSUMER_CATALOG.find((c) => c.id === id);
+}
+
+/** Пересчёт расхода и давления: из л/с — в м³/ч и л/мин, из МПа — в кгс/см². */
+export const lpsToM3h = (lps: number) => Math.round(lps * 3.6 * 10) / 10;
+export const lpsToLmin = (lps: number) => Math.round(lps * 60);
+export function mpaToAtm(mpa: string): string {
+  return mpa.replace(/\d+(?:[.,]\d+)?/g, (v) => {
+    const x = parseFloat(v.replace(",", ".")) * 10.197;
+    return String(Math.round(x * 10) / 10).replace(".", ",");
+  });
+}
+
+/** Новый свой потребитель с типовыми значениями (как ствол РС-50). */
+export function makeUserConsumer(group: ConsumerGroup = "barrel"): WaterConsumerModel {
+  return {
+    id: `user_cons_${Date.now()}`,
+    name: "", group,
+    outletDiameter: 13, flowLps: 3.7, flowM3h: lpsToM3h(3.7), flowLmin: lpsToLmin(3.7),
+    extinguishArea: 25, jetRange: "28 м", workPressureMPa: "0,4–0,6", workPressureAtm: "4–6",
+    isUser: true,
+  };
 }

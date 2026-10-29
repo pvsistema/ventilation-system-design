@@ -21,7 +21,8 @@ import UnitsConfigPanel from "@/components/cad/UnitsConfigPanel";
 import { type UnitsConfig, DEFAULT_UNITS_CONFIG } from "@/lib/unitsConfig";
 import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, makeUserPump, type PumpModel } from "@/lib/pumps";
 import UserPumpEditor from "@/components/cad/UserPumpEditor";
-import { CONSUMER_CATALOG, CONSUMER_GROUP_NAMES, type ConsumerGroup } from "@/lib/waterConsumers";
+import type { WaterConsumerModel } from "@/lib/waterConsumers";
+import ConsumersSection from "@/components/cad/ConsumersSection";
 import PumpChart from "@/components/cad/PumpChart";
 import { type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
 import {
@@ -110,6 +111,9 @@ interface Props {
   /** Свои насосы (хранятся в проекте) */
   userPumps?: PumpModel[];
   onUserPumpsChange?: (list: PumpModel[]) => void;
+  /** Свои потребители воды (хранятся в проекте) */
+  userConsumers?: WaterConsumerModel[];
+  onUserConsumersChange?: (list: WaterConsumerModel[]) => void;
 }
 
 // ─── Оформление в палитре темы (--c-accent / --c-s* / --c-b* / --c-t*) ────
@@ -2063,46 +2067,6 @@ function PumpsSection({ userPumps, onUserPumpsChange }: {
   );
 }
 
-// ─── Справочник потребителей воды (пожарные стволы, распылители, пеногенераторы)
-function ConsumersSection() {
-  return (
-    <>
-      <div className="text-[11px] text-[var(--c-t3)] px-3 pt-3 pb-1 leading-snug">
-        Библиотека потребителей противопожарного водопровода. Выбрать модель для узла можно
-        в свойствах узла-потребителя (вкладка «Трубы» → «Модель из библиотеки») —
-        требуемый расход и диаметр выходного отверстия подставятся автоматически.
-      </div>
-      {(Object.keys(CONSUMER_GROUP_NAMES) as ConsumerGroup[]).map((g) => (
-        <div key={g} className="mb-3">
-          <div className="text-[11px] font-semibold uppercase tracking-wider px-3 py-2 text-[var(--c-t2)]">
-            {CONSUMER_GROUP_NAMES[g]}
-          </div>
-          <table className="w-full border-collapse">
-            <thead><tr>
-              {["Наименование", "Ø отв., мм", "Расход, л/с", "Расход, м³/ч", "Расход, л/мин", "Площадь туш., м²", "Дальность струи", "Раб. давл., МПа", "кгс/см²"].map(h => <Th key={h}>{h}</Th>)}
-            </tr></thead>
-            <tbody>
-              {CONSUMER_CATALOG.filter(c => c.group === g).map((c) => (
-                <tr key={c.id} className="hover:bg-[var(--c-s2)]">
-                  <Td>{c.name}</Td>
-                  <Td>{c.outletDiameter > 0 ? c.outletDiameter : "—"}</Td>
-                  <Td>{c.flowLps.toLocaleString("ru")}</Td>
-                  <Td>{c.flowM3h.toLocaleString("ru")}</Td>
-                  <Td>{c.flowLmin.toLocaleString("ru")}</Td>
-                  <Td>{c.extinguishArea.toLocaleString("ru")}</Td>
-                  <Td>{c.jetRange}</Td>
-                  <Td>{c.workPressureMPa}</Td>
-                  <Td>{c.workPressureAtm}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ))}
-    </>
-  );
-}
-
 // Модальная карта характеристик выбранного насоса
 function PumpCharacteristicCard({ pump, onClose, onEdit, onCopy }: {
   pump: PumpModel; onClose: () => void;
@@ -2347,7 +2311,7 @@ function AirNormsSection({ norms, onChange }: {
   );
 }
 
-function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange }: {
+function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange, userConsumers, onUserConsumersChange }: {
   tab: TabId;
   branches?: TopoBranch[];
   onMineFansChange?: (fans: MineFanExport[]) => void;
@@ -2366,6 +2330,8 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
   onBulkheadThicknessChange?: (t: BulkheadThicknessTable) => void;
   userPumps?: PumpModel[];
   onUserPumpsChange?: (list: PumpModel[]) => void;
+  userConsumers?: WaterConsumerModel[];
+  onUserConsumersChange?: (list: WaterConsumerModel[]) => void;
 }) {
   if (tab === "blastzones") return <BlastZonesSection
     thresholds={blastThresholds ?? DEFAULT_EXPLOSION_THRESHOLDS}
@@ -2383,7 +2349,7 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
   if (tab === "typical") return <EditableTable key="typical" storageKey="pv_ref_typical"
     headers={["Мероприятие", "Шагов", "Ответственный", "Время"]} />;
   if (tab === "pumps") return <PumpsSection userPumps={userPumps} onUserPumpsChange={onUserPumpsChange} />;
-  if (tab === "consumers") return <ConsumersSection />;
+  if (tab === "consumers") return <ConsumersSection userConsumers={userConsumers} onUserConsumersChange={onUserConsumersChange} />;
   if (tab === "pipes") return <EditableTable key="pipes" storageKey="pv_ref_pipes"
     headers={["Материал", "DN", "Стенка", "Давление"]} />;
   if (tab === "transport") return <VehicleCatalogSection />;
@@ -2401,7 +2367,7 @@ function IconBadge({ icon, size = 24 }: { icon: string; size?: number }) {
   );
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange, userConsumers, onUserConsumersChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
   // Esc закрывает окно (вложенные окна библиотеки/каталога перехватывают клик,
@@ -2529,7 +2495,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} branches={branches} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} bulkheadThickness={bulkheadThickness} onBulkheadThicknessChange={onBulkheadThicknessChange} userPumps={userPumps} onUserPumpsChange={onUserPumpsChange} />
+              <TabContent tab={activeTab} branches={branches} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} bulkheadThickness={bulkheadThickness} onBulkheadThicknessChange={onBulkheadThicknessChange} userPumps={userPumps} onUserPumpsChange={onUserPumpsChange} userConsumers={userConsumers} onUserConsumersChange={onUserConsumersChange} />
             </div>
           </div>
         </div>

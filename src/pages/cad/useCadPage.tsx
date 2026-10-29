@@ -43,6 +43,7 @@ import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
 import { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
 import { isCriticalCheck } from "@/lib/schemaCheckLevels";
+import { registerUserConsumers, type WaterConsumerModel } from "@/lib/waterConsumers";
 import { type BulkheadThicknessTable, DEFAULT_BULKHEAD_THICKNESS, normalizeThicknessTable } from "@/lib/bulkheadThickness";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type PumpModel } from "@/lib/pumps";
@@ -1911,6 +1912,13 @@ export function useCadPage() {
   );
   // Пользовательские модели насосов (сохраняются в проекте)
   const [userPumps, setUserPumps] = useState<PumpModel[]>([]);
+  // Свои потребители воды (Справочники → Потребители). Реестр общий для всей
+  // программы: его видят свойства узла и проверка водопровода.
+  const [userConsumers, setUserConsumersState] = useState<WaterConsumerModel[]>([]);
+  const setUserConsumers = useCallback((list: WaterConsumerModel[]) => {
+    registerUserConsumers(list);
+    setUserConsumersState(list);
+  }, []);
   // Участки рудника и нормы расхода воздуха (ФНиП № 505 п.155) — в проекте
   const [ventSections, setVentSections] = useState<VentSection[]>([]);
   const [ventNorms, setVentNorms] = useState<VentNorms>(DEFAULT_VENT_NORMS);
@@ -3535,6 +3543,7 @@ export function useCadPage() {
     schemaSymbols,
     mineFans,
     userPumps,
+    userConsumers,
     mineBulkheads,
     mineTypes,
     bulkheadThickness,
@@ -3638,7 +3647,7 @@ export function useCadPage() {
       return;
     }
     setIsDirty(true);
-  }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, mineBulkheads, mineTypes, bulkheadThickness,
+  }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, userConsumers, mineBulkheads, mineTypes, bulkheadThickness,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
       showFlowArrows, pollutionThreshold, flowDisplay, zScale, xyScale, projectFileName, inspectionRoutes]);
@@ -4214,6 +4223,7 @@ export function useCadPage() {
       setMineFans(mf);
     }
     setUserPumps(Array.isArray(data.userPumps) ? (data.userPumps as PumpModel[]) : []);
+    setUserConsumers(Array.isArray(data.userConsumers) ? (data.userConsumers as WaterConsumerModel[]) : []);
     // В проектах без справочника толщин — значения по умолчанию.
     setBulkheadThickness(normalizeThicknessTable(data.bulkheadThickness));
     {
@@ -4497,6 +4507,7 @@ export function useCadPage() {
       color: item.color,
     })));
     setMineTypes([]);
+    setUserConsumers([]);
     setBulkheadThickness(DEFAULT_BULKHEAD_THICKNESS);
 
     // ── Имя файла и вид ──
@@ -6637,6 +6648,8 @@ export function useCadPage() {
     vdsBulkheads,
     userPumps,
     setUserPumps,
+    userConsumers,
+    setUserConsumers,
     ventSections,
     setVentSections,
     ventNorms,

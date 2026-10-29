@@ -162,6 +162,8 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
     setBulkheadThickness,
     userPumps,
     setUserPumps,
+    userConsumers,
+    setUserConsumers,
     blastMixId,
     setBlastMixId,
     showBlastBulkheadCalc,
@@ -382,6 +384,8 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
       setBulkheadThickness={setBulkheadThickness}
       userPumps={userPumps}
       setUserPumps={setUserPumps}
+      userConsumers={userConsumers}
+      setUserConsumers={setUserConsumers}
       ventSections={ventSections}
       setVentSections={setVentSections}
       showVentSections={showVentSections}

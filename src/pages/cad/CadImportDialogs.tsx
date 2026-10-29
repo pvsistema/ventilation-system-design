@@ -35,6 +35,7 @@ import { type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { type UnitsConfig } from "@/lib/unitsConfig";
 import VentSectionsDialog from "@/components/cad/VentSectionsDialog";
 import { type VentNorms, type VentSection } from "@/lib/ventSections";
+import type { WaterConsumerModel } from "@/lib/waterConsumers";
 
 // Тип-псевдонимы берём из React-компонентов, чтобы сигнатуры совпадали 1:1
 type EquipTab = React.ComponentProps<typeof EquipmentRefDialog>["activeTab"];
@@ -64,6 +65,9 @@ export interface CadImportDialogsProps {
   /** Свои насосы (Справочники → Насосы). */
   userPumps: PumpModel[];
   setUserPumps: (list: PumpModel[]) => void;
+  /** Свои потребители воды (Справочники → Потребители). */
+  userConsumers: WaterConsumerModel[];
+  setUserConsumers: (list: WaterConsumerModel[]) => void;
   ventSections: VentSection[];
   setVentSections: (s: VentSection[]) => void;
   showVentSections: boolean;
@@ -248,6 +252,8 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           onBulkheadThicknessChange={p.setBulkheadThickness}
           userPumps={p.userPumps}
           onUserPumpsChange={p.setUserPumps}
+          userConsumers={p.userConsumers}
+          onUserConsumersChange={p.setUserConsumers}
           branches={p.branches}
         />
       )}
