@@ -23,6 +23,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
   const [withBulkheads, setWithBulkheads] = useState(true);
   const [withFans, setWithFans] = useState(true);
   const [withPositions, setWithPositions] = useState(true);
+  const [withStations, setWithStations] = useState(true);
   const inputRef = useRef<HTMLInputElement>(null);
   // Файл держим в памяти, чтобы перечитать его при смене единиц без
   // повторного выбора на диске.
@@ -57,7 +58,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
   // Снятые галочки убирают объекты ещё до передачи в схему: тогда не будет ни
   // значков на плане, ни их вклада в расчёт сети.
   const applyOptions = (r: ErpImportResult): ErpImportResult => {
-    if (withBulkheads && withFans && withPositions) return r;
+    if (withBulkheads && withFans && withPositions && withStations) return r;
     return {
       ...r,
       branches: r.branches.map(b => {
@@ -73,11 +74,13 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
       positions: withPositions ? r.positions : [],
       fanCurves: withFans ? r.fanCurves : [],
       bulkheadItems: withBulkheads ? r.bulkheadItems : [],
+      measureStations: withStations ? (r.measureStations ?? []) : [],
       stats: {
         ...r.stats,
         bulkheads: withBulkheads ? r.stats.bulkheads : 0,
         fans: withFans ? r.stats.fans : 0,
         positions: withPositions ? r.stats.positions : 0,
+        measureStations: withStations ? (r.stats.measureStations ?? 0) : 0,
       },
     };
   };
@@ -99,6 +102,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
             <div className="text-green-700">Сопротивления, расходы воздуха, слои-горизонты</div>
             <div className="text-green-700">Вентиляторы и перемычки</div>
             <div className="text-green-700">Позиции ПЛА: номера, цвета, выноски и выработки</div>
+            <div className="text-green-700">Замерные станции: номера, место и последний замер</div>
             <div className="text-green-700">Водопровод: трубы, краны, резервуары, задвижки, редукционные клапаны, насосы</div>
             <div className="text-gray-500 text-[10px] mt-1">Файл проекта АэроСети целиком — выгружать ничего не нужно</div>
           </div>
@@ -159,6 +163,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
                   { label: "Вент.", value: result.stats.fans },
                   { label: "Перем.", value: result.stats.bulkheads },
                   { label: "Позиций", value: result.stats.positions },
+                  { label: "Замерн.", value: result.stats.measureStations ?? 0 },
                   { label: "Водопр.", value: result.stats.waterPipes ?? 0 },
                   { label: "Кранов", value: result.stats.hydrants ?? 0 },
                 ].map(s => (
@@ -191,6 +196,7 @@ export default function ErpImportDialog({ onImport, onClose }: Props) {
                   { on: withBulkheads, set: setWithBulkheads, label: "Перемычки", count: result.stats.bulkheads, hint: "Вентиляционные сооружения и их сопротивление" },
                   { on: withFans, set: setWithFans, label: "Вентиляторы", count: result.stats.fans, hint: "Напор и параметры вентиляторов на выработках" },
                   { on: withPositions, set: setWithPositions, label: "Позиции ПЛА", count: result.stats.positions, hint: "Номера, цвета и выноски плана ликвидации аварий" },
+                  { on: withStations, set: setWithStations, label: "Замерные станции", count: result.stats.measureStations ?? 0, hint: "Номер, место установки и последний замер: скорость, сечение, расход" },
                 ].map(o => (
                   <label key={o.label} className="flex items-start gap-2 cursor-pointer">
                     <input type="checkbox" checked={o.on} onChange={e => o.set(e.target.checked)} className="w-3 h-3 mt-0.5" />

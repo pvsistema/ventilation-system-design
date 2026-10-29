@@ -2988,6 +2988,24 @@ export function useCadPage() {
       return syms;
     };
 
+    // Замерные станции: номер, место и последний замер из журнала АэроСети.
+    // Расход замера кладём в значок — по нему «Проверка схемы» сверяет модель.
+    const erpMeasureSymbols = (existing: SchemaSymbol[]) => {
+      const stamp = Date.now();
+      return (result.measureStations ?? [])
+        .filter(m => !existing.some(s => s.typeId === "measure_station" && s.branchId === m.branchId
+          && (s.msNumber ?? "") === m.number))
+        .map((m, i): SchemaSymbol => ({
+          id: `SYM_MS_ERP_${stamp}_${i}`, typeId: "measure_station", x: 0, y: 0,
+          branchId: m.branchId, t: m.t,
+          msNumber: m.number,
+          msLocation: m.location,
+          msArea: m.area,
+          msFlow: m.flow,
+          msVelocity: m.velocity,
+        }));
+    };
+
     // Вентиляторы «по характеристике» из справочника АэроСети: регистрируем
     // кривые ДО расчёта (getFanById) и заносим в справочник рудника, чтобы
     // они сохранились в проекте и были видны в справочнике оборудования.
@@ -3012,12 +3030,12 @@ export function useCadPage() {
     if (mode === "replace") {
       setNodes(result.nodes);
       setBranches(result.branches);
-      setSchemaSymbols([...fanSymbolsWithDir([]), ...erpBulkheadSymbols([]), ...erpWaterSymbols([])]);
+      setSchemaSymbols([...fanSymbolsWithDir([]), ...erpBulkheadSymbols([]), ...erpWaterSymbols([]), ...erpMeasureSymbols([])]);
       setSelectedNodeId(null); setSelectedBranchId(null);
     } else {
       setNodes(prev => [...prev, ...result.nodes]);
       setBranches(prev => [...prev, ...result.branches]);
-      setSchemaSymbols(prev => [...prev, ...fanSymbolsWithDir(prev), ...erpBulkheadSymbols(prev), ...erpWaterSymbols(prev)]);
+      setSchemaSymbols(prev => [...prev, ...fanSymbolsWithDir(prev), ...erpBulkheadSymbols(prev), ...erpWaterSymbols(prev), ...erpMeasureSymbols(prev)]);
     }
     // Слои АэроСети становятся горизонтами, «Общий вид» при этом сохраняем.
     if (result.horizons.length > 0) {
@@ -3061,7 +3079,7 @@ export function useCadPage() {
     }
 
     result.warnings.forEach(w => addLog("warn", `Импорт АэроСеть: ${w}`));
-    addLog("info", `Импорт АэроСеть (.erp): узлов ${result.stats.nodes}, выработок ${result.stats.branches}, вентиляторов ${result.stats.fans}, перемычек ${result.stats.bulkheads}, позиций ПЛА ${result.stats.positions}`);
+    addLog("info", `Импорт АэроСеть (.erp): узлов ${result.stats.nodes}, выработок ${result.stats.branches}, вентиляторов ${result.stats.fans}, перемычек ${result.stats.bulkheads}, позиций ПЛА ${result.stats.positions}, замерных станций ${result.stats.measureStations ?? 0}`);
     setImportNonce(n => n + 1);
     postImportCheckRef.current = true;
     setShowErpImport(false);

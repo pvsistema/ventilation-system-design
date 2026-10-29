@@ -88,6 +88,9 @@
 import JSZip from "jszip";
 import { makeNode, makeBranch, FAN_INSTALL_FREE, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
+
+/** Замерная станция на выработке (<ribItem itemCode="20">). */
+const ERP_ITEM_MEASURE_STATION = "20";
 import { buildUserFanCurve } from "@/lib/userFanFit";
 import { USER_FAN_PREFIX, FAN_CATALOG, fanHAngle, type FanCurve } from "@/lib/fanCurves";
 import { ERP_PVS_PROJECT_ENTRY, hashText } from "@/lib/erpExport";
@@ -190,6 +193,29 @@ export interface ErpBulkhead {
   surveyQ: number;
 }
 
+/**
+ * Замерная станция АэроСети (объект выработки itemCode="20") вместе с
+ * ПОСЛЕДНИМ замером из журнала docs/Measurements.DataDocument.
+ */
+export interface ErpMeasureStation {
+  /** Наш id выработки. */
+  branchId: string;
+  /** Номер станции (VentJournal.StationNumber), как в АэроСети: «4», «38*». */
+  number: string;
+  /** Место установки (VentJournal.StationLocation). */
+  location: string;
+  /** Положение вдоль выработки, 0…1 (от начального узла нашей ветви). */
+  t: number;
+  /** Последний замер: скорость, м/с; сечение, м²; расход = v·S, м³/с. */
+  velocity?: number;
+  area?: number;
+  flow?: number;
+  /** Дата последнего замера, ДД.ММ.ГГГГ. */
+  date?: string;
+  /** Всего замеров этой станции в журнале. */
+  measureCount: number;
+}
+
 export interface ErpImportResult {
   nodes: TopoNode[];
   branches: TopoBranch[];
@@ -202,6 +228,8 @@ export interface ErpImportResult {
   bulkheadItems: ErpBulkhead[];
   /** Насосы водопровода по выработкам — из них ставятся значки «Насос». */
   pumpItems: ErpPumpOnBranch[];
+  /** Замерные станции с последним замером — из них ставятся значки ЗС. */
+  measureStations: ErpMeasureStation[];
   /**
    * Вентиляторы из справочника АэроСети (VentilatorTemplateService), на
    * которые ссылаются выработки в режиме «по характеристике». Заводятся в
@@ -219,7 +247,7 @@ export interface ErpImportResult {
    */
   pvsProject?: Record<string, unknown>;
   warnings: string[];
-  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number; waterPipes: number; hydrants: number };
+  stats: { nodes: number; branches: number; fans: number; bulkheads: number; horizons: number; positions: number; waterPipes: number; hydrants: number; measureStations: number };
   debug: string;
 }
 
@@ -698,6 +726,7 @@ export function remapErpIdsForAppend(
     })),
     bulkheadItems: result.bulkheadItems.map(it => ({ ...it, branchId: bMap.get(it.branchId) ?? it.branchId })),
     pumpItems: (result.pumpItems ?? []).map(it => ({ ...it, branchId: bMap.get(it.branchId) ?? it.branchId })),
+    measureStations: (result.measureStations ?? []).map(it => ({ ...it, branchId: bMap.get(it.branchId) ?? it.branchId })),
   };
 }
 
@@ -801,6 +830,30 @@ export async function parseErp(
   const pipeTemplates = ptEntry ? parsePipeTemplates(decodeXml(await ptEntry.async("uint8array"))) : new Map();
   const pmEntry = zip.file(/PumpTemplateService\.DataDocument$/i)[0];
   const pumpTemplates = pmEntry ? parsePumpTemplates(decodeXml(await pmEntry.async("uint8array"))) : [];
+  // ── Журнал замеров (docs/Measurements.DataDocument) ─────────────────────
+  // <m id d="ММ/ДД/ГГГГ чч:мм:сс" o="GUID объекта"> с полями Air.AirVelocity
+  // и Air.CrossSectionArea. Объект — замерная станция на выработке. Берём
+  // ПОСЛЕДНИЙ по дате замер каждой станции: им и сверяют модель.
+  const lastMeasure = new Map<string, { time: number; date: string; v: number; s: number }>();
+  const measureCount = new Map<string, number>();
+  const msEntry = zip.file(/Measurements\.DataDocument$/i)[0];
+  if (msEntry) {
+    const msDoc = new DOMParser().parseFromString(decodeXml(await msEntry.async("uint8array")), "application/xml");
+    msDoc.querySelectorAll("m").forEach(m => {
+      const o = m.getAttribute("o");
+      if (!o) return;
+      const fl: Record<string, string> = {};
+      m.querySelectorAll("field").forEach(x => { const n = x.getAttribute("name"); if (n) fl[n] = x.getAttribute("value") ?? ""; });
+      const dm = /^(\d{1,2})\/(\d{1,2})\/(\d{4})/.exec(m.getAttribute("d") ?? "");
+      const time = dm ? Date.UTC(+dm[3], +dm[1] - 1, +dm[2]) : 0;
+      const date = dm ? `${dm[2].padStart(2, "0")}.${dm[1].padStart(2, "0")}.${dm[3]}` : "";
+      measureCount.set(o, (measureCount.get(o) ?? 0) + 1);
+      const prev = lastMeasure.get(o);
+      if (prev && prev.time > time) return;
+      lastMeasure.set(o, { time, date, v: num(fl["Air.AirVelocity"], 0), s: num(fl["Air.CrossSectionArea"], 0) });
+    });
+  }
+
   const vtEntry = zip.file(/VentilatorTemplateService\.DataDocument$/i)[0];
   if (vtEntry) {
     const vtDoc = new DOMParser().parseFromString(decodeXml(await vtEntry.async("uint8array")), "application/xml");
@@ -920,7 +973,7 @@ export async function parseErp(
   // Слой АэроСети — это группа выработок (Стволы, Слой 1). Отметку слоя файл
   // не хранит, поэтому z горизонта вычислим ниже как медиану отметок его узлов.
   interface RawItem {
-    code: string; description: string; f: Record<string, string>; reversed: boolean;
+    id: string; code: string; description: string; f: Record<string, string>; reversed: boolean;
     /**
      * Поля САМОГО объекта, без данных режима проветривания. В них АэроСеть
      * пишет результат последнего расчёта (рабочий напор вентилятора,
@@ -962,6 +1015,7 @@ export async function parseErp(
       const items: RawItem[] = [];
       rib.querySelectorAll("ribItem").forEach(it => {
         items.push({
+          id: it.getAttribute("id") ?? "",
           code: it.getAttribute("itemCode") ?? "",
           description: it.getAttribute("description") ?? "",
           f: readItemFields(it, ventModeId),
@@ -1252,6 +1306,7 @@ export async function parseErp(
   const missingFanNames = new Set<string>();
   const bulkheadItems: ErpBulkhead[] = [];
   const pumpItems: ErpPumpOnBranch[] = [];
+  const measureStations: ErpMeasureStation[] = [];
   const waterStat = { pipes: 0, gates: 0, gatesClosed: 0, reducers: 0, air: 0 };
   let fansInBulkhead = 0;
   const fanBulkheadNotes: string[] = [];
@@ -1519,6 +1574,25 @@ export async function parseErp(
     if (water.hasAirPipe) waterStat.air++;
     // Если ВМП развернули, «прямо/обратно» у объектов тоже меняется местами.
     if (flipVmp && water.wpComputedFlow) water.wpComputedFlow = -water.wpComputedFlow;
+    // ── Замерные станции ────────────────────────────────────────────────
+    rb.items.filter(it => it.code === ERP_ITEM_MEASURE_STATION).forEach(it => {
+      const t0 = tOfItem(it);
+      const descNo = /№\s*([\w*]+)/.exec(it.description || "")?.[1] ?? "";
+      const lm = lastMeasure.get(it.id);
+      const v = lm && lm.v > 0 ? +lm.v.toFixed(3) : undefined;
+      const s = lm && lm.s > 0 ? +lm.s.toFixed(2) : undefined;
+      measureStations.push({
+        branchId,
+        number: (it.f["VentJournal.StationNumber"] ?? "").trim() || descNo,
+        location: (it.f["VentJournal.StationLocation"] ?? "").trim(),
+        t: +(flipVmp ? 1 - t0 : t0).toFixed(4),
+        velocity: v,
+        area: s,
+        flow: v != null && s != null ? +(v * s).toFixed(2) : undefined,
+        date: lm?.date || undefined,
+        measureCount: measureCount.get(it.id) ?? 0,
+      });
+    });
     rb.items.filter(it => it.code === ERP_ITEM_PUMP).forEach(it => {
       const name = (it.description || "").replace(/\s*\(?\d+\s*шт\.?\)?\s*$/i, "").trim() || "Насос";
       const tpl = pumpTemplates.find(p => p.name && name.toUpperCase().startsWith(p.name.toUpperCase()));
@@ -1724,7 +1798,14 @@ export async function parseErp(
     log.push(`позиций ПЛА: ${positions.length}, с привязанными выработками: ${posLinked}`);
   }
 
-  log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans}, перемычек ${bulkheads}, позиций ${positions.length}`);
+  if (measureStations.length > 0) {
+    const withM = measureStations.filter(m => m.flow != null).length;
+    log.push(`замерных станций: ${measureStations.length}, с замерами: ${withM}`);
+    if (withM < measureStations.length) {
+      warnings.push(`Замерных станций без замеров в журнале АэроСети: ${measureStations.length - withM} — перенесены номер и место, расход не заполнен`);
+    }
+  }
+  log.push(`импортировано: узлов ${nodes.length}, ветвей ${branches.length}, вент. ${fans}, перемычек ${bulkheads}, позиций ${positions.length}, замерных станций ${measureStations.length}`);
 
   // ── Вложенная копия проекта ПВ-Системы ────────────────────────────────────
   // Её кладёт наш экспорт. Берём, только если схема в файле та же, что была
@@ -1754,6 +1835,7 @@ export async function parseErp(
     positions,
     bulkheadItems,
     pumpItems,
+    measureStations,
     fanCurves: [...fanCurveByTpl.values()].filter((c): c is FanCurve => !!c && fanCurveIds.has(c.id)),
     ventModeName,
     resistanceUnit: rUnit,
@@ -1763,6 +1845,7 @@ export async function parseErp(
       horizons: horizons.length, positions: positions.length,
       waterPipes: waterStat.pipes,
       hydrants: nodes.filter(nd => nd.fireNodeType === "consumer").length,
+      measureStations: measureStations.length,
     },
     debug: log.join("\n"),
   };
