@@ -4,6 +4,7 @@
 // Логика и состояние остаются в CadPage; сюда прокидывается только то, что
 // реально используется (единый объект props). Поведение 1:1 с исходником.
 // ─────────────────────────────────────────────────────────────────────────────
+import type { BulkheadThicknessTable } from "@/lib/bulkheadThickness";
 import type React from "react";
 import type { SchemaSymbol } from "@/pages/cad/cadTypes";
 import DxfImportDialog from "@/components/cad/DxfImportDialog";
@@ -56,6 +57,9 @@ export interface CadImportDialogsProps {
   /** Пороги зон поражения взрывом (вкладка «Аварии → Зоны поражения взрывом») */
   blastThresholds: ExplosionThresholds;
   setBlastThresholds: (t: ExplosionThresholds) => void;
+  /** Типовая толщина перемычек по материалу (Справочники → Перемычки). */
+  bulkheadThickness: BulkheadThicknessTable;
+  setBulkheadThickness: (t: BulkheadThicknessTable) => void;
   ventSections: VentSection[];
   setVentSections: (s: VentSection[]) => void;
   showVentSections: boolean;
@@ -236,6 +240,8 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           onVentNormsChange={p.setVentNorms}
           blastThresholds={p.blastThresholds}
           onBlastThresholdsChange={p.setBlastThresholds}
+          bulkheadThickness={p.bulkheadThickness}
+          onBulkheadThicknessChange={p.setBulkheadThickness}
           branches={p.branches}
         />
       )}

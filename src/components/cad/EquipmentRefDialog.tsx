@@ -34,6 +34,7 @@ import {
   isVehicleEdited, newVehicleId, VEHICLE_TYPES, type MineVehicle,
 } from "@/lib/mineVehicles";
 import { useResizableWindow } from "@/hooks/useResizableWindow";
+import { type BulkheadThicknessTable, DEFAULT_BULKHEAD_THICKNESS, BULKHEAD_MATERIALS } from "@/lib/bulkheadThickness";
 import { PHeader } from "@/components/cad/printPreview/printUi";
 
 const FONT_MIN = 0.8, FONT_MAX = 1.4;
@@ -102,6 +103,9 @@ interface Props {
   onBlastThresholdsChange?: (t: ExplosionThresholds) => void;
   /** Ветви схемы — для рабочих точек вентиляторов из расчёта сети */
   branches?: TopoBranch[];
+  /** Типовая толщина перемычек по материалу */
+  bulkheadThickness?: BulkheadThicknessTable;
+  onBulkheadThicknessChange?: (t: BulkheadThicknessTable) => void;
 }
 
 // ─── Оформление в палитре темы (--c-accent / --c-s* / --c-b* / --c-t*) ────
@@ -1270,7 +1274,77 @@ function rFmt(r: number): string {
   return `${Math.round(r)} Мюрг`;
 }
 
-function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void; initialMineBulkheads?: MineBulkheadExport[] }) {
+/**
+ * Типовая толщина перемычек по материалу. Подставляется в предложениях
+ * «Проверка → Исправления с подтверждением», когда у сооружения толщина
+ * не задана.
+ */
+function ThicknessTablePanel({ value, onChange }: {
+  value: BulkheadThicknessTable;
+  onChange: (t: BulkheadThicknessTable) => void;
+}) {
+  const changed = BULKHEAD_MATERIALS.filter(m => value[m.id] !== DEFAULT_BULKHEAD_THICKNESS[m.id]).length;
+  return (
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
+        <IconBadge icon="Ruler" size={26} />
+        <span className="text-[13px] font-bold text-[var(--c-t1)] flex-1">Типовая толщина перемычек</span>
+        <button disabled={changed === 0} onClick={() => onChange({ ...DEFAULT_BULKHEAD_THICKNESS })}
+          className={BTN} title="Вернуть значения программы">
+          <Icon name="RotateCcw" size={11} /> По умолчанию
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto px-3 py-2">
+        <div className="text-[11px] text-[var(--c-t3)] leading-snug pb-2">
+          Толщина по материалу сооружения. Подставляется, когда у перемычки на схеме толщина
+          не задана: «Проверка» → «Исправления с подтверждением» → «Толщина перемычек».
+          Укажите значения из проектов перемычек вашего рудника. Хранится в проекте.
+        </div>
+        {BULKHEAD_MATERIALS.map(m => {
+          const v = value[m.id];
+          const def = DEFAULT_BULKHEAD_THICKNESS[m.id];
+          const bad = !(v >= 0.02 && v <= 10);
+          return (
+            <div key={m.id} className="flex items-center gap-2 py-1.5" style={{ borderBottom: "1px solid var(--c-b1, #e7e4dd)" }}>
+              <div className="flex-1 min-w-0">
+                <div className="text-[12px] text-[var(--c-t1)]">{m.label}</div>
+                <div className="text-[10px] text-[var(--c-t4)] leading-snug">
+                  {m.hint}{v !== def ? ` · в программе ${String(def).replace(".", ",")} м` : ""}
+                </div>
+              </div>
+              <input type="number" step="0.01" min="0.02" max="10" value={v}
+                onChange={e => {
+                  const x = parseFloat(e.target.value.replace(",", "."));
+                  onChange({ ...value, [m.id]: Number.isFinite(x) && x > 0 ? x : def });
+                }}
+                className="text-[12px] px-1.5 text-right flex-shrink-0"
+                style={{
+                  background: "var(--c-s1, #fff)", color: "var(--c-t1, #1f2328)",
+                  border: `1px solid ${bad ? "var(--c-red, #dc2626)" : "var(--c-b2, #d5d1c8)"}`,
+                  borderRadius: 6, height: 28, width: 90, outline: "none", fontFamily: "var(--font-num)",
+                }} />
+              <span className="text-[11px] text-[var(--c-t3)] flex-shrink-0" style={{ width: 16 }}>м</span>
+            </div>
+          );
+        })}
+        {BULKHEAD_MATERIALS.some(m => !(value[m.id] >= 0.02 && value[m.id] <= 10)) && (
+          <div className="mt-2 px-2 py-1.5 rounded-md text-[10px]"
+            style={{ background: "var(--c-tint-amber, #fffbeb)", border: "1px solid var(--c-tint-amber2, #fef3c7)", color: "var(--c-amber-ink, #865412)" }}>
+            Толщина вне 0,02…10 м — проверьте единицы: значения задаются в метрах.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads, thickness, onThicknessChange }: {
+  onMineBulkheadsChange?: (b: MineBulkheadExport[]) => void;
+  initialMineBulkheads?: MineBulkheadExport[];
+  thickness?: BulkheadThicknessTable;
+  onThicknessChange?: (t: BulkheadThicknessTable) => void;
+}) {
+  const [showThickness, setShowThickness] = useState(false);
   const [mineBulkheads, setMineBulkheads] = useState<MineBulkheadExport[]>(() => {
     if (initialMineBulkheads && initialMineBulkheads.length > 0) return initialMineBulkheads;
     // Автоматически загружаем весь каталог при первом открытии
@@ -1392,7 +1466,7 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
             </div>
           ) : mineBulkheads.map(b => (
             <div key={b.id}
-              onClick={() => { setSelectedId(b.id); setIsEditing(false); }}
+              onClick={() => { setSelectedId(b.id); setIsEditing(false); setShowThickness(false); }}
               className="group flex items-start justify-between px-2 py-2 cursor-pointer border-b border-[var(--c-b1)] select-none hover:bg-[var(--c-tint-blue)]"
               style={{ background: selectedId === b.id ? "var(--c-tint-blue2, #dbeafe)" : undefined }}>
               <div className="flex items-start gap-1.5 flex-1 min-w-0">
@@ -1423,10 +1497,21 @@ function BulkheadsSection({ onMineBulkheadsChange, initialMineBulkheads }: { onM
             <Icon name="Edit3" size={11} /> Своя
           </button>
         </div>
+        {onThicknessChange && (
+          <button onClick={() => { setShowThickness(true); setSelectedId(null); setIsEditing(false); }}
+            className="flex items-center gap-1.5 px-2 py-1.5 text-[11px] border-t border-[var(--c-b1)] flex-shrink-0 text-left hover:bg-[var(--c-tint-blue)]"
+            style={{ background: showThickness ? "var(--c-tint-blue2, #dbeafe)" : "var(--c-s1, #fff)", color: "var(--c-t1)" }}>
+            <Icon name="Ruler" size={12} style={{ color: "var(--c-accent, #1e5a7a)" }} />
+            <span className="flex-1">Типовая толщина по материалу</span>
+            <Icon name="ChevronRight" size={11} className="text-[var(--c-t4)]" />
+          </button>
+        )}
       </div>
 
       {/* Правая панель */}
-      {selected ? (
+      {showThickness && onThicknessChange ? (
+        <ThicknessTablePanel value={thickness ?? DEFAULT_BULKHEAD_THICKNESS} onChange={onThicknessChange} />
+      ) : selected ? (
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Шапка */}
           <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--c-b1)] flex-shrink-0" style={{ background: "var(--c-s2, #f8f8f8)" }}>
@@ -2190,7 +2275,7 @@ function AirNormsSection({ norms, onChange }: {
   );
 }
 
-function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange }: {
+function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, bulkheadThickness, onBulkheadThicknessChange }: {
   tab: TabId;
   branches?: TopoBranch[];
   onMineFansChange?: (fans: MineFanExport[]) => void;
@@ -2205,6 +2290,8 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
   onVentNormsChange?: (n: VentNorms) => void;
   blastThresholds?: ExplosionThresholds;
   onBlastThresholdsChange?: (t: ExplosionThresholds) => void;
+  bulkheadThickness?: BulkheadThicknessTable;
+  onBulkheadThicknessChange?: (t: BulkheadThicknessTable) => void;
 }) {
   if (tab === "blastzones") return <BlastZonesSection
     thresholds={blastThresholds ?? DEFAULT_EXPLOSION_THRESHOLDS}
@@ -2214,7 +2301,8 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
     norms={ventNorms ?? DEFAULT_VENT_NORMS}
     onChange={onVentNormsChange ?? (() => {})} />;
   if (tab === "types") return <TypesSection initialTypes={initialBranchTypes} onBranchTypesChange={onBranchTypesChange} />;
-  if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} initialMineBulkheads={initialMineBulkheads} />;
+  if (tab === "bulkheads") return <BulkheadsSection onMineBulkheadsChange={onMineBulkheadsChange} initialMineBulkheads={initialMineBulkheads}
+    thickness={bulkheadThickness} onThicknessChange={onBulkheadThicknessChange} />;
   if (tab === "units") return <UnitsConfigPanel unitsConfig={unitsConfig ?? DEFAULT_UNITS_CONFIG} onChange={onUnitsConfigChange ?? (() => {})} />;
   if (tab === "sensors") return <EditableTable key="sensors" storageKey="pv_ref_sensors"
     headers={["Марка", "Измеряет", "Диапазон", "Класс", "Примечание"]} />;
@@ -2239,7 +2327,7 @@ function IconBadge({ icon, size = 24 }: { icon: string; size?: number }) {
   );
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches, bulkheadThickness, onBulkheadThicknessChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
   // Esc закрывает окно (вложенные окна библиотеки/каталога перехватывают клик,
@@ -2367,7 +2455,7 @@ export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, on
               </div>
             </div>
             <div className="flex-1 overflow-auto">
-              <TabContent tab={activeTab} branches={branches} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} />
+              <TabContent tab={activeTab} branches={branches} onMineFansChange={onMineFansChange} onMineBulkheadsChange={onMineBulkheadsChange} onBranchTypesChange={onBranchTypesChange} initialMineFans={initialMineFans} initialBranchTypes={initialBranchTypes} initialMineBulkheads={initialMineBulkheads} unitsConfig={unitsConfig} onUnitsConfigChange={onUnitsConfigChange} ventNorms={ventNorms} onVentNormsChange={onVentNormsChange} blastThresholds={blastThresholds} onBlastThresholdsChange={onBlastThresholdsChange} bulkheadThickness={bulkheadThickness} onBulkheadThicknessChange={onBulkheadThicknessChange} />
             </div>
           </div>
         </div>

@@ -43,6 +43,7 @@ import { type RenumberOptions } from "@/components/cad/RenumberDialog";
 import { type MoveSchemaOptions, type MoveArea } from "@/components/cad/MoveSchemaDialog";
 import { type HorizonAlign } from "@/components/cad/HorizonShiftBlock";
 import { isCriticalCheck } from "@/lib/schemaCheckLevels";
+import { type BulkheadThicknessTable, DEFAULT_BULKHEAD_THICKNESS, normalizeThicknessTable } from "@/lib/bulkheadThickness";
 import { LEGEND_TYPES, BULKHEAD_SYMBOL_IDS, FIRE_SYMBOL_IDS, EXPLOSION_SYMBOL_IDS, FAN_SYMBOL_IDS } from "@/lib/schemaSymbols";
 import { type PumpModel } from "@/lib/pumps";
 import { calcFireTemp, calcThermalDepressionUnified, fireSourceTempForMethod, computeHotNodeTemps, calcFirePowerFromMaterial, isSignificantReversal, getThermalDepMethod, setThermalDepMethod, getNormativeFireTime, setNormativeFireTime, NORMATIVE_TIME_MAX_MIN, type ThermalDepMethod, type FireCalculationResult } from "@/lib/fireCalculator";
@@ -244,6 +245,8 @@ export function useCadPage() {
     }))
   );
   const [mineTypes, setMineTypes] = useState<BranchType[]>([]);
+  // Типовая толщина перемычек по материалу (Справочники → Перемычки)
+  const [bulkheadThickness, setBulkheadThickness] = useState<BulkheadThicknessTable>(DEFAULT_BULKHEAD_THICKNESS);
 
   // ─── Топология ─────────────────────────────────────────────────────────
   const [nodes, setNodes] = useState<TopoNode[]>([]);
@@ -3534,6 +3537,7 @@ export function useCadPage() {
     userPumps,
     mineBulkheads,
     mineTypes,
+    bulkheadThickness,
     opoData,
     ventSections,
     ventNorms,
@@ -3634,7 +3638,7 @@ export function useCadPage() {
       return;
     }
     setIsDirty(true);
-  }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, mineBulkheads, mineTypes,
+  }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, mineBulkheads, mineTypes, bulkheadThickness,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
       showFlowArrows, pollutionThreshold, flowDisplay, zScale, xyScale, projectFileName, inspectionRoutes]);
@@ -4210,6 +4214,8 @@ export function useCadPage() {
       setMineFans(mf);
     }
     setUserPumps(Array.isArray(data.userPumps) ? (data.userPumps as PumpModel[]) : []);
+    // В проектах без справочника толщин — значения по умолчанию.
+    setBulkheadThickness(normalizeThicknessTable(data.bulkheadThickness));
     {
       const loaded = data.mineBulkheads as MineBulkheadExport[] | undefined;
       if (loaded && loaded.length > 0) {
@@ -4491,6 +4497,7 @@ export function useCadPage() {
       color: item.color,
     })));
     setMineTypes([]);
+    setBulkheadThickness(DEFAULT_BULKHEAD_THICKNESS);
 
     // ── Имя файла и вид ──
     // Новый проект — БЕЗ имени: файла ещё нет. Имя появится при первом
@@ -6247,6 +6254,8 @@ export function useCadPage() {
     setMineBulkheads,
     mineTypes,
     setMineTypes,
+    bulkheadThickness,
+    setBulkheadThickness,
     nodes,
     setNodes,
     branchesRaw,

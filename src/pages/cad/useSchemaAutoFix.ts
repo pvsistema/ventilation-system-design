@@ -11,6 +11,7 @@ import type { SchemaCheckSettings } from "@/lib/schemaCheckSettings";
 import { autoFixSchema, AUTO_FIX_LIST, type AutoFixKind } from "@/lib/schemaAutoFix";
 import { buildSuggestions, applySuggestions, SUGGEST_GROUPS, type Suggestion, type SuggestCheck } from "@/lib/schemaSuggestFix";
 import type { MineBulkheadExport, BranchType } from "@/components/cad/EquipmentRefDialog";
+import type { BulkheadThicknessTable } from "@/lib/bulkheadThickness";
 
 const DEFAULT_ON = Object.fromEntries(AUTO_FIX_LIST.map((f) => [f.kind, f.defaultOn])) as Record<AutoFixKind, boolean>;
 
@@ -32,6 +33,7 @@ export function useSchemaAutoFix(p: {
   check: SuggestCheck | null;
   bulkheadRefs: MineBulkheadExport[];
   mineTypes: BranchType[];
+  thickness: BulkheadThicknessTable;
 }) {
   const [enabled, setEnabled] = useState<Record<AutoFixKind, boolean>>(DEFAULT_ON);
   const opts = useMemo(() => ({
@@ -84,10 +86,10 @@ export function useSchemaAutoFix(p: {
       {
         areaMin: p.settings.areaMin, areaMax: p.settings.areaMax,
         alphaMin: p.settings.alphaMin, alphaMax: p.settings.alphaMax,
-        bulkheadRefs: p.bulkheadRefs, mineTypes: p.mineTypes,
+        bulkheadRefs: p.bulkheadRefs, mineTypes: p.mineTypes, thickness: p.thickness,
       },
     );
-  }, [p.activeSide, p.check, p.nodes, p.branches, p.symbols, p.positions, p.settings, p.bulkheadRefs, p.mineTypes]);
+  }, [p.activeSide, p.check, p.nodes, p.branches, p.symbols, p.positions, p.settings, p.bulkheadRefs, p.mineTypes, p.thickness]);
 
   const applySuggest = (chosen: Suggestion[]) => {
     if (chosen.length === 0) return;

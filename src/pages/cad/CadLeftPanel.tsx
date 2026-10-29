@@ -61,6 +61,7 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
     check: c.schemaCheckResult,
     bulkheadRefs: c.mineBulkheads,
     mineTypes: c.mineTypes,
+    thickness: c.bulkheadThickness,
   });
   const { suggestions, suggestOpen, setSuggestOpen, applySuggest, ...autoFixPanel } = autoFix;
   const {

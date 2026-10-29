@@ -30,6 +30,7 @@ import type { NearPair } from "./schemaCheck";
 import type { BranchBulkheadInfo } from "./branchBulkheadInfo";
 import { splitBranchesAt } from "./schemaAutoFix";
 import type { MineBulkheadExport, BranchType } from "@/components/cad/EquipmentRefDialog";
+import { type BulkheadThicknessTable, DEFAULT_BULKHEAD_THICKNESS, BULKHEAD_MATERIALS, bulkheadMaterialOf } from "./bulkheadThickness";
 
 export type SuggestKind =
   | "area" | "alpha" | "bulkheadR" | "bulkheadFailure" | "bulkheadThickness"
@@ -44,7 +45,7 @@ export const SUGGEST_GROUPS: { kind: SuggestKind; title: string; hint: string }[
   { kind: "near", title: "Близкие несоединённые узлы", hint: "Узлы сливаются в один. Если это разные выработки, случайно сблизившиеся, — снимите галочку." },
   { kind: "surfaceMulti", title: "Поверхностный узел с несколькими ветвями", hint: "Каждая ветвь получает свой узел выхода на поверхность. Воздухораспределение не меняется." },
   { kind: "bulkheadFailure", title: "Давление разрушения перемычек", hint: "Из справочника перемычек рудника, иначе — по материалу (прил. 28 ФНП № 494)." },
-  { kind: "bulkheadThickness", title: "Толщина перемычек", hint: "Типовая толщина по материалу. Сверьте с проектом перемычки." },
+  { kind: "bulkheadThickness", title: "Толщина перемычек", hint: "Типовая толщина по материалу из «Справочники → Перемычки → Типовая толщина». Сверьте с проектом перемычки." },
 ];
 
 type Payload =
@@ -97,6 +98,8 @@ export interface SuggestOptions {
   bulkheadRefs: MineBulkheadExport[];
   /** Типы выработок рудника. */
   mineTypes: BranchType[];
+  /** Типовая толщина перемычек по материалу (справочник рудника). */
+  thickness?: BulkheadThicknessTable;
 }
 
 const median = (arr: number[]) => {
@@ -135,15 +138,6 @@ export function bulkheadRefFor(typeId: string, refs: MineBulkheadExport[]): Mine
   return byMat ?? ofType[0];
 }
 
-/** Типовая толщина перемычки по материалу, м. */
-function typicalThickness(typeId: string): number {
-  if (typeId.startsWith("bk_blast")) return 1.0;
-  if (/(conc|concrete)$/.test(typeId)) return 0.5;
-  if (/brick$/.test(typeId)) return 0.5;
-  if (/wood$/.test(typeId)) return 0.2;
-  if (/metal$/.test(typeId)) return 0.05;
-  return 0.3;
-}
 
 export function buildSuggestions(input: SuggestInput, check: SuggestCheck, opts: SuggestOptions): Suggestion[] {
   const { nodes, branches, symbols } = input;
@@ -302,10 +296,12 @@ export function buildSuggestions(input: SuggestInput, check: SuggestCheck, opts:
       });
     }
     if (thickIds.has(b.id) && s.typeId !== "sail" && !((s.bkThickness ?? 0) > 0)) {
-      const t = typicalThickness(s.typeId);
+      const mat = bulkheadMaterialOf(s.typeId);
+      const t = (opts.thickness ?? DEFAULT_BULKHEAD_THICKNESS)[mat];
+      const matLabel = BULKHEAD_MATERIALS.find((m) => m.id === mat)?.label.toLowerCase() ?? "";
       out.push({
         id: `thick:${s.id}`, kind: "bulkheadThickness", title: name, branchId: b.id,
-        from: "не задана", to: `${fmtNum(t, 2)} м`, source: "типовая по материалу",
+        from: "не задана", to: `${fmtNum(t, 2)} м`, source: `справочник: типовая толщина, ${matLabel}`,
         defaultOn: true, payload: { t: "symbol", symbolId: s.id, patch: { bkThickness: t } },
       });
     }
