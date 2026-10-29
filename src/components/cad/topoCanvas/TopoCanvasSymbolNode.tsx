@@ -1,4 +1,5 @@
 import React from "react";
+import { localPoint } from "@/lib/uiScale";
 import { type TopoBranch } from "@/lib/topology";
 import { BULKHEAD_SYMBOL_IDS, HEATER_SYMBOL_IDS, VENT_JET_SYMBOL_IDS, FAN_SYMBOL_IDS, SHAFT_MOUTH_SYMBOL_IDS, shaftMouthSize, fanSvgContent, symbolSvgContent, isFireVehicleSymbol, uprightAlongBranch } from "@/lib/schemaSymbols";
 import { getUnit } from "@/lib/unitsConfig";
@@ -230,8 +231,7 @@ export function renderSymbolNode(
               onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
             } else {
               if (brLen2 < 1) return;
-              const r = svgEl.getBoundingClientRect();
-              const mx = me.clientX - r.left, my = me.clientY - r.top;
+              const { x: mx, y: my } = localPoint(svgEl, me.clientX, me.clientY);
               const raw = ((mx - snapFsx) * (snapTsx - snapFsx) + (my - snapFsy) * (snapTsy - snapFsy)) / brLen2;
               onSymbolMoveAlongBranch?.(sym.id, Math.max(0.02, Math.min(0.98, raw)));
             }

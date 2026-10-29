@@ -49,6 +49,7 @@ import { msIndicatorFlags, msIndicatorLines } from "@/lib/msIndicatorLines";
 import { computePollutedBranchIds, DEFAULT_POLLUTION_THRESHOLD } from "@/lib/airPollution";
 import { measureLabelW } from "@/lib/canvasFont";
 import { SEL_COLOR, SEL_MULTI_COLOR, SEL_HOVER_COLOR } from "@/lib/canvasRenderer";
+import { localPoint, zoomK } from "@/lib/uiScale";
 
 export type { CadTool, FlowDisplayMode } from "@/components/cad/topoCanvas/topoCanvasTypes";
 
@@ -475,9 +476,7 @@ export default function TopoCanvas(props: Props) {
       if (zoomStopTimerRef.current) clearTimeout(zoomStopTimerRef.current);
       zoomStopTimerRef.current = setTimeout(() => setIsZooming(false), 200);
 
-      const rect = el.getBoundingClientRect();
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
+      const { x: px, y: py } = localPoint(el, e.clientX, e.clientY);
 
       // Нормализуем дельту: deltaMode 0=px, 1=lines, 2=pages
       const rawY = e.deltaY;
@@ -708,26 +707,25 @@ export default function TopoCanvas(props: Props) {
     if (!svg) return;
     const ts = (e: TouchEvent) => {
       e.preventDefault();
-      const rect = svg.getBoundingClientRect();
       if (e.touches.length === 1) {
         const t = e.touches[0];
-        touchRef.current = { x: t.clientX - rect.left, y: t.clientY - rect.top, ox: viewRef.current.offsetX, oy: viewRef.current.offsetY };
+        const lp = localPoint(svg, t.clientX, t.clientY);
+        touchRef.current = { x: lp.x, y: lp.y, ox: viewRef.current.offsetX, oy: viewRef.current.offsetY };
       } else if (e.touches.length === 2) {
         const t1 = e.touches[0], t2 = e.touches[1];
         const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
-        const cx = (t1.clientX + t2.clientX) / 2 - rect.left;
-        const cy = (t1.clientY + t2.clientY) / 2 - rect.top;
+        const { x: cx, y: cy } = localPoint(svg, (t1.clientX + t2.clientX) / 2, (t1.clientY + t2.clientY) / 2);
         touchRef.current = { x: cx, y: cy, ox: viewRef.current.offsetX, oy: viewRef.current.offsetY, dist, scale: viewRef.current.scale };
       }
     };
     const tm = (e: TouchEvent) => {
       e.preventDefault();
       if (!touchRef.current) return;
-      const rect = svg.getBoundingClientRect();
       if (e.touches.length === 1 && touchRef.current.dist === undefined) {
         const t = e.touches[0];
-        const dx = (t.clientX - rect.left) - touchRef.current.x;
-        const dy = (t.clientY - rect.top)  - touchRef.current.y;
+        const lp = localPoint(svg, t.clientX, t.clientY);
+        const dx = lp.x - touchRef.current.x;
+        const dy = lp.y - touchRef.current.y;
         const newView = { ...viewRef.current, offsetX: touchRef.current.ox + dx, offsetY: touchRef.current.oy + dy };
         viewRef.current = newView;
         setView(newView);
@@ -752,8 +750,7 @@ export default function TopoCanvas(props: Props) {
       e.preventDefault();
       if (e.changedTouches.length === 1 && touchRef.current && touchRef.current.dist === undefined) {
         const t = e.changedTouches[0];
-        const rect = svg.getBoundingClientRect();
-        const sx = t.clientX - rect.left, sy = t.clientY - rect.top;
+        const { x: sx, y: sy } = localPoint(svg, t.clientX, t.clientY);
         const moved = Math.hypot(sx - touchRef.current.x, sy - touchRef.current.y);
         if (moved < 10 && touchHitRef.current) {
           const { projNodes: pn, projNodesMap: pnm, branches: br, onSelectNode: selN, onSelectBranch: selB, view: v, xyScale: xys, branchWidth: bw } = touchHitRef.current;
@@ -957,9 +954,7 @@ export default function TopoCanvas(props: Props) {
   // ─── Контекстное меню по правой кнопке ─────────────────────────────────
   const onContextMenuSVG = (e: React.MouseEvent<SVGSVGElement>) => {
     e.preventDefault();
-    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { x: sx, y: sy } = localPoint(containerRef.current ?? e.currentTarget as Element, e.clientX, e.clientY);
     const hitN = hitNode(sx, sy, hitNodeVisible);
     if (hitN) {
       // При правом клике НЕ сбрасываем мультивыбор — передаём только контекстное меню.
@@ -1043,12 +1038,10 @@ export default function TopoCanvas(props: Props) {
     // containerRef всегда отражает реальный размер/позицию холста —
     // используем его вместо e.currentTarget, чтобы корректно работать
     // и в SVG-режиме, и в Canvas-режиме (asS-cast меняет тип currentTarget)
-    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
+    const { x: sx, y: sy } = localPoint(containerRef.current ?? e.currentTarget as Element, e.clientX, e.clientY);
 
     // ─── РЕЖИМ РАЗМЕЩЕНИЯ МАРКЕРА ПОЗИЦИИ ──────────────────────────────
     if (positionPlaceMode && onPositionPlace && e.button === 0) {
-      const sx = e.clientX - rect.left;
-      const sy = e.clientY - rect.top;
       const w = screenToWorld(sx, sy);
       if (w) {
         // screenToWorld уже возвращает реальные мировые координаты (делённые на xyScale/zScale)
@@ -1057,8 +1050,6 @@ export default function TopoCanvas(props: Props) {
       e.stopPropagation();
       return;
     }
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
 
     // ─── ПЕРЕТАСКИВАНИЕ ПОДПИСИ ВЕТВИ (canvas-режим) ──────────────────
     // В SVG подпись двигается своим onMouseDown. В canvas подписи рисуются
@@ -1313,9 +1304,7 @@ export default function TopoCanvas(props: Props) {
   };
 
   const onMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
-    const sx = e.clientX - rect.left;
-    const sy = e.clientY - rect.top;
+    const { x: sx, y: sy } = localPoint(containerRef.current ?? e.currentTarget as Element, e.clientX, e.clientY);
 
     // ── Drag рамки/угла слоя печати ──
     // Перенос и размер листа ведут обработчики ручек (window mousemove, в
@@ -1400,8 +1389,9 @@ export default function TopoCanvas(props: Props) {
       return;
     }
     if (panStart) {
-      const dx = e.clientX - panStart.x;
-      const dy = e.clientY - panStart.y;
+      const zk = zoomK(containerRef.current ?? e.currentTarget as Element);
+      const dx = (e.clientX - panStart.x) / zk;
+      const dy = (e.clientY - panStart.y) / zk;
       scheduleViewUpdate(() => {
         setView((v) => ({ ...v, offsetX: panStart.ox + dx, offsetY: panStart.oy + dy }));
       });
@@ -1657,8 +1647,8 @@ export default function TopoCanvas(props: Props) {
   // (как onDoubleClick подписи в SVG). Ловим попадание в bbox подписи.
   const onDoubleClickCanvas = (e: React.MouseEvent<HTMLCanvasElement>) => {
     if (!onBranchLabelOffset) return;
-    const rect = (containerRef.current ?? e.currentTarget as Element).getBoundingClientRect();
-    const lblId = hitBranchLabelCanvas(e.clientX - rect.left, e.clientY - rect.top);
+    const lp = localPoint(containerRef.current ?? e.currentTarget as Element, e.clientX, e.clientY);
+    const lblId = hitBranchLabelCanvas(lp.x, lp.y);
     if (lblId) { e.stopPropagation(); onBranchLabelOffset(lblId, 0, -16); }
   };
   // Touch для canvas теперь регистрируются нативно в CanvasLayer (passive:false)
@@ -1986,8 +1976,8 @@ export default function TopoCanvas(props: Props) {
                   onMouseDown={(e) => {
                     e.stopPropagation();
                     const plane: WorkPlane = { axis: "z", value: h.z };
-                    const esx = e.clientX - (e.currentTarget.closest("svg")?.getBoundingClientRect().left ?? 0);
-                    const esy = e.clientY - (e.currentTarget.closest("svg")?.getBoundingClientRect().top ?? 0);
+                    const svgHost = e.currentTarget.closest("svg");
+                    const { x: esx, y: esy } = svgHost ? localPoint(svgHost, e.clientX, e.clientY) : { x: e.clientX, y: e.clientY };
                     const wp = is3D ? unprojectToPlane(esx, esy, proj, plane) : unproject2D(esx, esy, proj, h.z);
                     if (!wp) return;
                     const xyS = xyScale ?? 1;
@@ -3046,9 +3036,7 @@ export default function TopoCanvas(props: Props) {
                       onSymbolOffset?.(sym.id, origOx + dx, origOy + dy);
                     } else {
                       if (brLen2 < 1) return;
-                      const svgRect = svgEl.getBoundingClientRect();
-                      const mx = me.clientX - svgRect.left;
-                      const my = me.clientY - svgRect.top;
+                      const { x: mx, y: my } = localPoint(svgEl, me.clientX, me.clientY);
                       const raw = ((mx - snapFsx) * (snapTsx - snapFsx) + (my - snapFsy) * (snapTsy - snapFsy)) / brLen2;
                       const t = Math.max(0.02, Math.min(0.98, raw));
                       onSymbolMoveAlongBranch?.(sym.id, t);

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { localPoint, zoomK } from "@/lib/uiScale";
 import Icon from "@/components/ui/icon";
 import { parseProjectText } from "@/lib/projectFile";
 import TopoCanvas from "@/components/cad/TopoCanvas";
@@ -551,9 +552,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
             }}
             onMouseMove={(e) => {
               const vs = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
-              const rect = e.currentTarget.getBoundingClientRect();
-              const sx = e.clientX - rect.left;
-              const sy = e.clientY - rect.top;
+              const { x: sx, y: sy } = localPoint(e.currentTarget, e.clientX, e.clientY);
               // Режим рисования выноски — snap к ближайшей ветви
               if (leaderDrawMode) {
                 setLeaderCursorScreen({ sx, sy });
@@ -681,9 +680,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               // Режим текстового блока — создаём блок в точке клика
               if (tool === "textblock") {
                 const vs2 = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
-                const rect = e.currentTarget.getBoundingClientRect();
-                const sx2 = e.clientX - rect.left;
-                const sy2 = e.clientY - rect.top;
+                const { x: sx2, y: sy2 } = localPoint(e.currentTarget, e.clientX, e.clientY);
                 const w = unprojectToPlane(sx2, sy2, vs2, { axis: "z", value: 0 });
                 if (w) {
                   const xy = xyScale ?? 1;
@@ -739,9 +736,7 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
               } else {
                 // Свободная точка
                 const vs2 = savedViewStateRef.current ?? { scale: 1, offsetX: 0, offsetY: 0, azimuth: 0, elevation: 90 };
-                const rect = e.currentTarget.getBoundingClientRect();
-                const sx2 = e.clientX - rect.left;
-                const sy2 = e.clientY - rect.top;
+                const { x: sx2, y: sy2 } = localPoint(e.currentTarget, e.clientX, e.clientY);
                 const drawPos = positions.find(p => p.id === leaderDrawMode);
                 // Если z позиции = 0 и есть узлы — берём z ближайшего узла чтобы не улететь при больших координатах
                 let pz = drawPos?.z ?? 0;
@@ -2190,7 +2185,9 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                           setSelectedInspectionRouteId(l.id);
                           setDraggingMpoLabelId(l.id);
                           mpoLabelDragRef.current = {
-                            id: l.id, startSx: e.clientX - cr.left, startSy: e.clientY - cr.top,
+                            id: l.id,
+                            startSx: (e.clientX - cr.left) / zoomK(e.currentTarget.closest(".relative") as HTMLElement, cr),
+                            startSy: (e.clientY - cr.top) / zoomK(e.currentTarget.closest(".relative") as HTMLElement, cr),
                             startWx: l.x, startWy: l.y, wz: l.z, moved: false,
                           };
                         }}
@@ -2486,11 +2483,10 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                         onMouseDown={(e) => {
                           e.stopPropagation();
                           if (leaderDrawMode) { setLeaderDrawMode(null); setLeaderCursorScreen(null); setLeaderSnapBranch(null); }
-                          const containerRect = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
-                          if (!containerRect) return;
+                          const containerEl = e.currentTarget.closest(".relative") as HTMLElement | null;
+                          if (!containerEl) return;
 
-                          const startSx = e.clientX - containerRect.left;
-                          const startSy = e.clientY - containerRect.top;
+                          const { x: startSx, y: startSy } = localPoint(containerEl, e.clientX, e.clientY);
 
                           // Детектируем двойной клик вручную (надёжнее браузерного dblclick)
                           const now = Date.now();
@@ -2564,10 +2560,9 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                           style={{ cursor: draggingTextId === tb.id ? "grabbing" : isSel ? "grab" : "pointer", pointerEvents: "all" }}
                           onMouseDown={(e) => {
                             e.stopPropagation();
-                            const cr = (e.currentTarget.closest(".relative") as HTMLElement)?.getBoundingClientRect();
-                            if (!cr) return;
-                            const startSx = e.clientX - cr.left;
-                            const startSy = e.clientY - cr.top;
+                            const crEl = e.currentTarget.closest(".relative") as HTMLElement | null;
+                            if (!crEl) return;
+                            const { x: startSx, y: startSy } = localPoint(crEl, e.clientX, e.clientY);
                             const now = Date.now();
                             const el = e.currentTarget as SVGGElement & { _lastClick?: number };
                             const isDbl = now - (el._lastClick ?? 0) < 350;

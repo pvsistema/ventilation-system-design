@@ -82,3 +82,29 @@ export function installUiScale() {
   applyUiScale();
   window.addEventListener("resize", updateCompact);
 }
+
+/**
+ * Координаты курсора относительно элемента — в пикселях РАЗМЕТКИ, в которых
+ * рисуется схема (холст, SVG, проекция узлов).
+ *
+ * При CSS-масштабе интерфейса (zoom на <html>, по умолчанию 80 %) браузер
+ * отдаёт clientX и getBoundingClientRect в экранных пикселях, а размеры
+ * элемента (clientWidth) и отрисовка — в пикселях разметки. Без пересчёта
+ * курсор «промахивался» на 20 %: щелчок по ветви не попадал в неё и в 3D
+ * превращался во вращение схемы.
+ */
+export function localPoint(el: Element, clientX: number, clientY: number): { x: number; y: number } {
+  const r = el.getBoundingClientRect();
+  const k = zoomK(el, r);
+  return { x: (clientX - r.left) / k, y: (clientY - r.top) / k };
+}
+
+/** Во сколько раз экранный пиксель больше пикселя разметки у элемента (1 — без масштаба). */
+export function zoomK(el: Element, r: DOMRect = el.getBoundingClientRect()): number {
+  const w = (el as HTMLElement).offsetWidth || (el as SVGSVGElement).clientWidth || 0;
+  if (w > 0 && r.width > 0) {
+    const k = r.width / w;
+    if (Number.isFinite(k) && k > 0.2 && k < 5) return k;
+  }
+  return 1;
+}
