@@ -88,6 +88,7 @@
 import JSZip from "jszip";
 import { makeNode, makeBranch, FAN_INSTALL_FREE, type TopoNode, type TopoBranch, type Horizon } from "@/lib/topology";
 import { ERP_BULKHEAD_CODES, ERP_FAN_LOCAL, erpBulkheadName } from "@/lib/erpItemCodes";
+import { msSortHistory, type MsMeasure } from "@/lib/msHistory";
 
 /** Замерная станция на выработке (<ribItem itemCode="20">). */
 const ERP_ITEM_MEASURE_STATION = "20";
@@ -214,6 +215,8 @@ export interface ErpMeasureStation {
   date?: string;
   /** Всего замеров этой станции в журнале. */
   measureCount: number;
+  /** Все замеры станции по возрастанию даты. */
+  history: MsMeasure[];
 }
 
 export interface ErpImportResult {
@@ -836,6 +839,8 @@ export async function parseErp(
   // ПОСЛЕДНИЙ по дате замер каждой станции: им и сверяют модель.
   const lastMeasure = new Map<string, { time: number; date: string; v: number; s: number }>();
   const measureCount = new Map<string, number>();
+  /** Все замеры каждой станции — для истории в карточке. */
+  const measureHistory = new Map<string, MsMeasure[]>();
   const msEntry = zip.file(/Measurements\.DataDocument$/i)[0];
   if (msEntry) {
     const msDoc = new DOMParser().parseFromString(decodeXml(await msEntry.async("uint8array")), "application/xml");
@@ -848,6 +853,12 @@ export async function parseErp(
       const time = dm ? Date.UTC(+dm[3], +dm[1] - 1, +dm[2]) : 0;
       const date = dm ? `${dm[2].padStart(2, "0")}.${dm[1].padStart(2, "0")}.${dm[3]}` : "";
       measureCount.set(o, (measureCount.get(o) ?? 0) + 1);
+      const hv = num(fl["Air.AirVelocity"], 0), hs = num(fl["Air.CrossSectionArea"], 0);
+      if (hv > 0 && hs > 0) {
+        const list = measureHistory.get(o) ?? [];
+        list.push({ date, velocity: +hv.toFixed(3), area: +hs.toFixed(2), flow: +(hv * hs).toFixed(2) });
+        measureHistory.set(o, list);
+      }
       const prev = lastMeasure.get(o);
       if (prev && prev.time > time) return;
       lastMeasure.set(o, { time, date, v: num(fl["Air.AirVelocity"], 0), s: num(fl["Air.CrossSectionArea"], 0) });
@@ -1591,6 +1602,7 @@ export async function parseErp(
         flow: v != null && s != null ? +(v * s).toFixed(2) : undefined,
         date: lm?.date || undefined,
         measureCount: measureCount.get(it.id) ?? 0,
+        history: msSortHistory(measureHistory.get(it.id)),
       });
     });
     rb.items.filter(it => it.code === ERP_ITEM_PUMP).forEach(it => {

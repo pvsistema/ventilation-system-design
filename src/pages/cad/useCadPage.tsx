@@ -3004,6 +3004,7 @@ export function useCadPage() {
           msFlow: m.flow,
           msVelocity: m.velocity,
           msDate: m.date,
+          ...(m.history?.length ? { msHistory: m.history } : {}),
         }));
     };
 

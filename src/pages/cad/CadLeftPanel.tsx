@@ -36,6 +36,7 @@ import { useVehicles } from "@/lib/mineVehicles";
 import { autoSumS } from "@/lib/fnp494Network";
 import { safeFixed } from "./cadCompute";
 import type { CadPageState } from "./useCadPage";
+import MsHistoryBlock from "@/components/cad/MsHistoryBlock";
 
 // Левая часть: вертикальные вкладки, панель свойств и разделитель ширины.
 export default function CadLeftPanel({ c }: { c: CadPageState }) {
@@ -2658,6 +2659,8 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                           className="flex-1 px-1 py-0.5 text-[11px] text-right"
                           style={{ border: "1px solid var(--c-b2, #c8c8c8)", outline: "none", background: "white", borderRadius: "var(--radius-ui)" }} />
                       </div>
+
+                      <MsHistoryBlock sym={sym} branchArea={brForSym?.area ?? 0} onChange={updSym} />
 
                       {/* Вычисленные значения из расчёта сети */}
                       {brForSym && (brForSym.flow != null || brForSym.velocity != null) && (

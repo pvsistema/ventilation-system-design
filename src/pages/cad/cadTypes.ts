@@ -1,3 +1,4 @@
+import type { MsMeasure } from "@/lib/msHistory";
 // ─── Типы и интерфейсы CAD-страницы ─────────────────────────────────────────
 
 export type RibbonTab = "file" | "home" | "view" | "schema" | "vent" | "thermo" | "accidents" | "involve" | "pipes" | "costs" | "refs" | "general";
@@ -51,6 +52,8 @@ export interface SchemaSymbol {
   msVelocity?: number;
   /** Дата замера, ДД.ММ.ГГГГ (из журнала АэроСети или введена вручную). */
   msDate?: string;
+  /** История замеров станции по датам (из АэроСети или записанная вручную). */
+  msHistory?: MsMeasure[];
   msIndNumber?: boolean;
   msIndLocation?: boolean;
   msIndFlow?: boolean;

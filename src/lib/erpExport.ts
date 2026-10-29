@@ -53,6 +53,7 @@ import { getFanById, fanCurveAtAngle, fanHAngle, fanEfficiencyAngle, type FanCur
 import { resistanceFromAlpha } from "@/lib/aerodynamics";
 import { OVERVIEW_HORIZON_ID, FAN_INSTALL_FREE } from "@/lib/topology";
 import { LEGEND_TYPES } from "@/lib/schemaSymbols";
+import { msFullHistory } from "@/lib/msHistory";
 import { erpNodeWaterXml, erpBranchWaterXml, erpBranchWaterItemsXml } from "@/lib/erpWater";
 import {
   ERP_FAN_MAIN, ERP_FAN_LOCAL, erpCodeForSymbol, erpCodeForName,
@@ -630,24 +631,23 @@ export async function buildErp(opts: ErpExportOptions): Promise<Blob> {
         stationNo++;
         const msId = guidFrom(`ms:${br.id}:${sy.id}`);
         const number = (sy.msNumber ?? "").trim() || String(stationNo);
-        // Замер: скорость и сечение. Если введён только расход — скорость
-        // получаем делением на сечение (станции, иначе выработки).
-        const area = (sy.msArea ?? 0) > 0 ? sy.msArea! : (br.area ?? 0);
-        const vel = (sy.msVelocity ?? 0) > 0 ? sy.msVelocity!
-          : (sy.msFlow ?? 0) > 0 && area > 0 ? sy.msFlow! / area : 0;
-        const hasMeasure = vel > 0 && area > 0;
-        if (hasMeasure) {
+        // Вся история замеров станции (плюс текущий, если его в ней нет).
+        // Если введён только расход — скорость получаем делением на сечение
+        // (станции, иначе выработки).
+        const history = msFullHistory(sy, br.area ?? 0);
+        const hasMeasure = history.length > 0;
+        history.forEach((hm, k) => {
           measurementXml.push(
-            `<m id="${guidFrom(`msm:${br.id}:${sy.id}`)}" d="${erpMeasureDate(sy.msDate)}" t="${ERP_MEASURE_TYPE_AIR}" o="${msId}"><fields>`
-            + `<field name="Air.AirVelocity" value="${n(vel, 4)}" />`
+            `<m id="${guidFrom(`msm:${br.id}:${sy.id}:${hm.date}:${k}`)}" d="${erpMeasureDate(hm.date)}" t="${ERP_MEASURE_TYPE_AIR}" o="${msId}"><fields>`
+            + `<field name="Air.AirVelocity" value="${n(hm.velocity, 4)}" />`
             + `<field name="Air.CrossSectionType" value="0" />`
-            + `<field name="Air.CrossSectionArea" value="${n(area, 3)}" />`
+            + `<field name="Air.CrossSectionArea" value="${n(hm.area, 3)}" />`
             + `<field name="Air.CircleDiameter" value="1" /><field name="Air.RectangleSizeA" value="1" /><field name="Air.RectangleSizeB" value="1" />`
             + `<field name="Air.TrapeziumSizeA" value="1" /><field name="Air.TrapeziumSizeB" value="1" />`
             + `<field name="Air.ArcSizeA" value="1" /><field name="Air.ArcSizeB" value="1" /><field name="Air.ArcSizeC" value="2" />`
             + `</fields></m>`,
           );
-        }
+        });
         items.push(
           `<ribItem id="${msId}" itemCode="20" description="${esc(sy.label || sy.description || `Замерная станция №${number}`)}"${itemAttrs(offsetAt(sy.t), 0.5)}>`
           + `<customFields><fields>`
