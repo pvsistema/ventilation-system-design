@@ -6,6 +6,7 @@ import {
   DEFAULT_WATER_NORMS, DEFAULT_FIRE_WATER_OPTIONS, DEFAULT_RESCUE_WATER_OPTIONS,
   type WaterNorms, } from "@/lib/waterFireCheck";
 import { exportWaterCheckAct } from "@/lib/waterCheckExport";
+import ActMetaFields, { loadActMeta, type ActMetaInput } from "@/components/cad/waterFireCheck/ActMetaFields";
 import { getConsumerById } from "@/lib/waterConsumers";
 import { withWaterPumps, type PumpSymbolLite } from "@/lib/waterHydraulics";
 // Блоки диалога вынесены в отдельные файлы (перенос 1:1, без правок логики)
@@ -135,8 +136,10 @@ export default function WaterFireCheckDialog({
     ? (fireResult?.hydrants ?? [])
     : (onlyFailed ? result.rows.filter(r => !r.ok) : result.rows);
 
+  const [actMeta, setActMeta] = useState<ActMetaInput>(loadActMeta);
+
   function handleExport() {
-    exportWaterCheckAct(result, { projectName }, { result: pipeNorms, kind: pipeKind });
+    exportWaterCheckAct(result, { projectName, ...actMeta }, { result: pipeNorms, kind: pipeKind });
     onClose();
   }
 
@@ -274,6 +277,8 @@ export default function WaterFireCheckDialog({
           resultError={result.error}
           onlyFailed={onlyFailed}
         />
+
+        <ActMetaFields value={actMeta} onChange={setActMeta} />
 
         {/* Итог + действия */}
         <div className="px-4 py-2.5 flex items-center justify-between"
