@@ -25,6 +25,8 @@ export interface RemoteVersion {
   minSecureVersion: string;
   /** Короткое пояснение, почему обновление обязательно. */
   securityNotes: string;
+  /** Опубликованная версия расчётного ядра (с ним упакован интерфейс десктопа). */
+  serverVersion: string;
 }
 
 /** Десктопная сборка (WebView2/C#) инжектирует window.__IS_DESKTOP__ = true. */
@@ -98,6 +100,7 @@ export async function fetchRemoteVersion(force = false): Promise<RemoteVersion> 
       exeSha256: String(d.exe_sha256 || ""),
       minSecureVersion: String(d.min_secure_version || ""),
       securityNotes: String(d.security_notes || ""),
+      serverVersion: String(d.server_version || ""),
     };
     versionCache = { at: Date.now(), data };
     return data;

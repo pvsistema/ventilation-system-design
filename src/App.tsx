@@ -43,6 +43,7 @@ const PageLoading = () => (
 import MobileStub from "./components/MobileStub";
 import { LicenseProvider } from "./context/LicenseContext";
 import AppUpdateBanner from "./components/AppUpdateBanner";
+import StaleUiBanner from "./components/StaleUiBanner";
 import LicenseExpiryBanner from "./components/LicenseExpiryBanner";
 import SecurityUpdateGate from "./components/SecurityUpdateGate";
 
@@ -118,6 +119,7 @@ const App = () => {
           </Suspense>
         </Router>
         <AppUpdateBanner />
+        <StaleUiBanner />
         <LicenseExpiryBanner />
         <SecurityUpdateGate />
       </LicenseProvider>

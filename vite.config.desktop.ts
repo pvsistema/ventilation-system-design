@@ -1,6 +1,14 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
+import fs from "fs";
+
+// Версия ядра, в которое упаковывается этот интерфейс. Зашивается в сборку:
+// программа сравнит её с опубликованной и предупредит, если интерфейс старый.
+const UI_CORE_VERSION = (() => {
+  try { return fs.readFileSync(path.resolve(__dirname, "desktop/SERVER_VERSION"), "utf8").trim(); }
+  catch { return ""; }
+})();
 
 // Vite-конфиг для desktop-сборки (PVS.exe, интерфейс в WebView2).
 // Защита кода:
@@ -35,6 +43,7 @@ export default defineConfig({
   define: {
     __DESKTOP_SERVER__: JSON.stringify(LOCAL_SERVER),
     __IS_DESKTOP__: JSON.stringify(true),
+    __UI_CORE_VERSION__: JSON.stringify(UI_CORE_VERSION),
   },
   build: {
     outDir: "dist-desktop",
