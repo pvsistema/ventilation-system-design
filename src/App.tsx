@@ -44,7 +44,6 @@ import MobileStub from "./components/MobileStub";
 import { LicenseProvider } from "./context/LicenseContext";
 import AppUpdateBanner from "./components/AppUpdateBanner";
 import LicenseExpiryBanner from "./components/LicenseExpiryBanner";
-import MirrorFailoverBanner from "./components/MirrorFailoverBanner";
 import SecurityUpdateGate from "./components/SecurityUpdateGate";
 
 const queryClient = new QueryClient();
@@ -120,7 +119,6 @@ const App = () => {
         </Router>
         <AppUpdateBanner />
         <LicenseExpiryBanner />
-        <MirrorFailoverBanner />
         <SecurityUpdateGate />
       </LicenseProvider>
     </TooltipProvider>
