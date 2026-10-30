@@ -1246,7 +1246,7 @@ def handler(event: dict, context) -> dict:
             cur.execute("DELETE FROM offline_key_seats WHERE offline_key_id = %s", (oid,))
             cur.execute("""
                 UPDATE offline_keys
-                SET bound_fp = NULL, autobind = TRUE
+                SET bound_fp = NULL, autobind = TRUE, ping_requested_at = NULL
                 WHERE id = %s RETURNING org, seats
             """, (oid,))
             row = cur.fetchone()

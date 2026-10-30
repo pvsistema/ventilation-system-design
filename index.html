@@ -247,7 +247,13 @@
     <script>
     (function () {
       var VERSION_URL = "https://functions.poehali.dev/0ddfea8a-386f-4cb2-9fe0-37274caf2e16";
-      var POLL_MS = 5 * 60 * 1000;   // как часто опрашивать сервер
+      // ЭКОНОМИЯ ВЫЗОВОВ. Раньше опрос шёл раз в 5 минут в КАЖДОЙ открытой
+      // вкладке, даже свёрнутой, — около 290 обращений в сутки на вкладку,
+      // главный расход функции версий. Теперь: раз в 2 часа, только когда
+      // вкладка на экране, и при возврате на вкладку не чаще раза в 30 минут.
+      var POLL_MS = 2 * 60 * 60 * 1000;     // как часто опрашивать сервер
+      var MIN_GAP_MS = 30 * 60 * 1000;      // не чаще этого при переключениях
+      var lastPoll = 0;
       var bootVersion = null;        // версия сервера на момент загрузки вкладки
       var shown = false;             // баннер уже показан
       var isDesktop = !!window.__IS_DESKTOP__ || window.location.protocol === "file:";
@@ -334,6 +340,9 @@
       }
 
       function poll() {
+        if (document.visibilityState !== "visible") return;
+        if (Date.now() - lastPoll < MIN_GAP_MS) return;
+        lastPoll = Date.now();
         fetchVersion().then(function (v) {
           if (!v) return;
           if (bootVersion === null) { bootVersion = v; return; }  // первая фиксация
@@ -343,6 +352,7 @@
       }
 
       // Стартовая фиксация версии — как только доступен fetch.
+      lastPoll = Date.now();
       fetchVersion().then(function (v) { if (v) bootVersion = v; });
       // Периодический опрос + опрос при возврате на вкладку.
       setInterval(poll, POLL_MS);

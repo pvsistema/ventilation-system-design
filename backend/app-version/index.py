@@ -178,6 +178,11 @@ def handler(event: dict, context) -> dict:
     method = event.get("httpMethod", "GET")
     s3     = get_s3()
     params = event.get("queryStringParameters") or {}
+    # Кто обращается: помогает найти внешние опросы (мониторинги и т.п.).
+    hdrs = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+    ip = ((event.get("requestContext") or {}).get("identity") or {}).get("sourceIp", "")
+    print(f"[app-version] {method} params={dict(params)} ip={ip} "
+          f"ua={(hdrs.get('user-agent') or '')[:120]!r} origin={hdrs.get('origin') or hdrs.get('referer') or ''}")
 
     # ── GET ?file=exe|server: редирект на скачивание с правильным именем ────────
     # Файл большой (80+ МБ) — проксировать через функцию нельзя (лимит размера

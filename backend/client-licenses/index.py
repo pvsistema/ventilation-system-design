@@ -229,7 +229,8 @@ def handler(event: dict, context) -> dict:
                            AND s.bound_at IS NOT NULL
                          ORDER BY s.bound_at ASC LIMIT 1),
                        o.revoked_at,
-                       o.ping_requested_at
+                       CASE WHEN o.ping_requested_at > NOW() - INTERVAL '1 day'
+                            THEN o.ping_requested_at END
                 FROM offline_keys o
                 WHERE o.org_group = %s
                 ORDER BY o.org
@@ -292,7 +293,8 @@ def handler(event: dict, context) -> dict:
             if not row:
                 return resp(404, {"error": "not_found"})
             cur.execute("DELETE FROM offline_key_seats WHERE offline_key_id = %s", (oid,))
-            cur.execute("UPDATE offline_keys SET bound_fp = NULL, autobind = TRUE WHERE id = %s", (oid,))
+            cur.execute("UPDATE offline_keys SET bound_fp = NULL, autobind = TRUE, "
+                        "ping_requested_at = NULL WHERE id = %s", (oid,))
             log_client(cur, login, "offline_binding_reset",
                        f"сброшена привязка аварийного ключа «{row[0]}» (key_id={oid}), "
                        f"ключ закрепится заново (мест {row[1]})", ip=ip)
