@@ -120,6 +120,117 @@ export function findPipe(od: number, wall: number, material: string): WaterPipeM
   return allPipes().find((x) => x.outerDiameter === od && x.wall === wall && x.material === material);
 }
 
+// ─── Толщина стенки: сверка с сортаментом ГОСТ и прочность ───────────────────
+//
+// ГОСТ 3262-75 — стенка жёстко задана для каждого DN и исполнения
+//   (лёгкая / обыкновенная / усиленная). Испытательное давление:
+//   2,5 МПа — лёгкие и обыкновенные, 3,2 МПа — усиленные.
+// ГОСТ 8732-78 и ГОСТ 10704-91 — для каждого наружного Ø задан диапазон
+//   стенок и ряд стандартных толщин; ниже — минимальная стенка сортамента.
+//
+// Допустимое рабочее давление — по формуле тонкостенной трубы с запасом:
+//   P = 2·φ·[σ]·(s − c) / (D − (s − c)),
+// где [σ] = 140 МПа (сталь 20 / Ст3 при 20 °C), φ — коэффициент прочности
+// шва (1,0 бесшовные, 0,8 сварные), c = 1 мм — прибавка на коррозию
+// (шахтная вода агрессивна). Для ГОСТ 3262 дополнительно не выше
+// испытательного давления / 1,25.
+
+/** ГОСТ 3262-75: наружный Ø и стенки (лёгкая, обыкновенная, усиленная) по DN. */
+export const GOST_3262: Record<number, { od: number; light: number; ordinary: number; reinforced: number }> = {
+  15: { od: 21.3, light: 2.5, ordinary: 2.8, reinforced: 3.2 },
+  20: { od: 26.8, light: 2.5, ordinary: 2.8, reinforced: 3.2 },
+  25: { od: 33.5, light: 2.8, ordinary: 3.2, reinforced: 4.0 },
+  32: { od: 42.3, light: 2.8, ordinary: 3.2, reinforced: 4.0 },
+  40: { od: 48.0, light: 3.0, ordinary: 3.5, reinforced: 4.0 },
+  50: { od: 60.0, light: 3.0, ordinary: 3.5, reinforced: 4.5 },
+  65: { od: 75.5, light: 3.2, ordinary: 4.0, reinforced: 4.5 },
+  80: { od: 88.5, light: 3.5, ordinary: 4.0, reinforced: 4.5 },
+  90: { od: 101.3, light: 3.5, ordinary: 4.0, reinforced: 4.5 },
+  100: { od: 114.0, light: 4.0, ordinary: 4.5, reinforced: 5.0 },
+  125: { od: 140.0, light: 4.0, ordinary: 4.5, reinforced: 5.5 },
+  150: { od: 165.0, light: 4.0, ordinary: 4.5, reinforced: 5.5 },
+};
+
+/** ГОСТ 8732-78: минимальная стенка сортамента по наружному Ø. */
+export const GOST_8732_MIN_WALL: Record<number, number> = {
+  57: 3.0, 76: 3.0, 89: 3.5, 108: 4.0, 114: 4.0, 133: 4.0, 159: 4.5,
+  168: 5.0, 219: 6.0, 273: 7.0, 325: 8.0,
+};
+/** ГОСТ 10704-91: минимальная стенка сортамента по наружному Ø. */
+export const GOST_10704_MIN_WALL: Record<number, number> = {
+  57: 1.0, 76: 1.4, 89: 1.4, 108: 1.6, 114: 1.6, 133: 1.8, 159: 1.8,
+  168: 1.8, 219: 2.0, 273: 2.5, 325: 2.5,
+};
+/** Стандартный ряд толщин стенок (ГОСТ 8732-78, ГОСТ 10704-91), мм. */
+export const WALL_SERIES = [
+  1, 1.2, 1.4, 1.5, 1.6, 1.8, 2, 2.2, 2.5, 2.8, 3, 3.2, 3.5, 3.8, 4, 4.5, 5, 5.5,
+  6, 7, 8, 9, 10, 11, 12, 14, 16, 18, 20,
+];
+
+/** Минимальная стенка для шахтной трубы ППЗ: 3 мм, чтобы после коррозии
+ *  (прибавка 1 мм) и ударов при доставке по выработкам труба держала давление. */
+export const MINE_MIN_WALL = 3;
+export const CORROSION_MM = 1;
+const SIGMA_MPA = 140;
+
+export type WallStatus = "ok" | "thin" | "off-series" | "unknown";
+
+export interface WallCheck {
+  status: WallStatus;
+  /** Что предписывает ГОСТ: «обыкновенная 4,5», «от 4,0» и т. п. */
+  gostText: string;
+  /** Пояснение для подсказки */
+  note: string;
+}
+
+const g = (gost: string) => (gost.includes("3262") ? "3262" : gost.includes("8732") ? "8732" : gost.includes("10704") ? "10704" : "");
+const ru = (v: number) => String(v).replace(".", ",");
+
+/** Сверка толщины стенки с ГОСТ и шахтным минимумом. */
+export function checkWall(m: Pick<WaterPipeModel, "gost" | "dn" | "outerDiameter" | "wall">): WallCheck {
+  const std = g(m.gost);
+  if (std === "3262") {
+    const row = GOST_3262[m.dn];
+    if (!row) return { status: "unknown", gostText: "—", note: `DN ${m.dn} нет в ГОСТ 3262-75` };
+    const kinds = [["лёгкая", row.light], ["обыкновенная", row.ordinary], ["усиленная", row.reinforced]] as const;
+    const hit = kinds.find(([, w]) => Math.abs(w - m.wall) < 0.01);
+    const gostText = `${ru(row.light)} / ${ru(row.ordinary)} / ${ru(row.reinforced)}`;
+    if (Math.abs(row.od - m.outerDiameter) > 0.1)
+      return { status: "off-series", gostText, note: `По ГОСТ 3262-75 у DN ${m.dn} наружный Ø ${ru(row.od)} мм` };
+    if (!hit) return { status: "off-series", gostText, note: "Такой стенки нет в ГОСТ 3262-75 (лёгкая / обыкновенная / усиленная)" };
+    if (hit[0] === "лёгкая") return { status: "thin", gostText, note: "Лёгкие трубы не применяются для ППЗ в выработках — нужна обыкновенная или усиленная" };
+    return { status: m.wall < MINE_MIN_WALL ? "thin" : "ok", gostText, note: `ГОСТ 3262-75, ${hit[0]}` };
+  }
+  if (std === "8732" || std === "10704") {
+    const table = std === "8732" ? GOST_8732_MIN_WALL : GOST_10704_MIN_WALL;
+    const minG = table[m.outerDiameter];
+    const gostText = minG !== undefined ? `от ${ru(minG)}` : "—";
+    if (minG === undefined) return { status: "unknown", gostText, note: `Наружного Ø ${ru(m.outerDiameter)} мм нет в таблице сортамента` };
+    if (m.wall < minG) return { status: "off-series", gostText, note: `По ГОСТ ${std === "8732" ? "8732-78" : "10704-91"} стенка для Ø${ru(m.outerDiameter)} — от ${ru(minG)} мм` };
+    if (!WALL_SERIES.some((w) => Math.abs(w - m.wall) < 0.01)) return { status: "off-series", gostText, note: "Толщины нет в стандартном ряду сортамента" };
+    if (m.wall < MINE_MIN_WALL) return { status: "thin", gostText, note: `Тоньше ${MINE_MIN_WALL} мм — мало для шахты с учётом коррозии` };
+    return { status: "ok", gostText, note: `Соответствует ГОСТ ${std === "8732" ? "8732-78" : "10704-91"}` };
+  }
+  if (m.wall < MINE_MIN_WALL) return { status: "thin", gostText: "—", note: `Тоньше ${MINE_MIN_WALL} мм — мало для шахты с учётом коррозии` };
+  return { status: "unknown", gostText: "—", note: "ГОСТ не указан — сортамент не сверялся" };
+}
+
+/** Допустимое рабочее давление, МПа (с прибавкой на коррозию). */
+export function allowedPressureMPa(m: Pick<WaterPipeModel, "gost" | "dn" | "outerDiameter" | "wall" | "material">): number {
+  if (m.material !== "Сталь" && m.material !== "Чугун") return 0;
+  const s = m.wall - CORROSION_MM;
+  if (s <= 0 || m.outerDiameter <= s) return 0;
+  const std = g(m.gost);
+  const phi = std === "8732" ? 1 : 0.8;
+  let p = (2 * phi * SIGMA_MPA * s) / (m.outerDiameter - s);
+  if (std === "3262") {
+    const row = GOST_3262[m.dn];
+    const test = row && Math.abs(row.reinforced - m.wall) < 0.01 ? 3.2 : 2.5;
+    p = Math.min(p, test / 1.25);
+  }
+  return Math.round(p * 10) / 10;
+}
+
 export function makeUserPipe(): WaterPipeModel {
   return {
     id: `user_pipe_${Date.now()}`, name: "", gost: "", material: "Сталь",

@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import { MATERIAL_ROUGHNESS_MM } from "@/lib/waterSolver";
-import { capacityM3h, V_TECH, V_FIRE, type WaterPipeModel } from "@/lib/waterPipes";
+import { capacityM3h, V_TECH, V_FIRE, checkWall, allowedPressureMPa, CORROSION_MM, type WaterPipeModel } from "@/lib/waterPipes";
 
 const INPUT =
   "w-full h-8 px-2 text-[12px] rounded-md outline-none border border-[var(--c-b2)] bg-[var(--c-s1)] text-[var(--c-t1)] focus:border-[var(--c-accent)]";
@@ -40,9 +40,12 @@ export default function UserPipeEditor({ initial, onSave, onClose }: {
   if (!(w > 0)) errors.push("Укажите толщину стенки, мм");
   if (o > 0 && w > 0 && !(inner > 1)) errors.push("Стенка больше половины диаметра — проверьте размеры");
   if (!(d > 0)) errors.push("Укажите условный проход DN, мм");
-  const warn = o > 1000 ? "Диаметр больше 1000 мм — проверьте единицы (мм)" : "";
   const ok = errors.length === 0;
   const dims = { outerDiameter: o, wall: w };
+  const wc = ok ? checkWall({ gost, dn: d, outerDiameter: o, wall: w }) : null;
+  const pa = ok ? allowedPressureMPa({ gost, dn: d, outerDiameter: o, wall: w, material }) : 0;
+  const warn = o > 1000 ? "Диаметр больше 1000 мм — проверьте единицы (мм)"
+    : wc && (wc.status === "thin" || wc.status === "off-series") ? `Стенка: ${wc.note}` : "";
 
   const save = () => {
     if (!ok) return;
@@ -111,6 +114,12 @@ export default function UserPipeEditor({ initial, onSave, onClose }: {
             Шероховатость для расчёта: <b>{fmt(MATERIAL_ROUGHNESS_MM[material] ?? 0.5)} мм</b> ({material.toLowerCase()}, в эксплуатации).
             {ok && <> Пропускает <b>{Math.round(capacityM3h(dims, V_TECH))} м³/ч</b> при {V_TECH} м/с
               и <b>{Math.round(capacityM3h(dims, V_FIRE))} м³/ч</b> при {V_FIRE} м/с (пожаротушение).</>}
+            {ok && pa > 0 && <> Допустимое давление — <b>{String(pa).replace(".", ",")} МПа</b> (с запасом на коррозию {CORROSION_MM} мм).</>}
+            {wc && (
+              <div className="mt-1" style={{ color: wc.status === "ok" ? "var(--c-green, #15803d)" : wc.status === "unknown" ? "var(--c-t3)" : "var(--c-amber-ink, #865412)" }}>
+                Стенка по ГОСТ: {wc.gostText} мм — {wc.note}.
+              </div>
+            )}
           </div>
 
           <div>

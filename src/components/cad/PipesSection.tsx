@@ -8,7 +8,8 @@ import UserPipeEditor from "@/components/cad/UserPipeEditor";
 import { MATERIAL_ROUGHNESS_MM } from "@/lib/waterSolver";
 import {
   PIPE_CATALOG, PIPE_LINE_NAMES, PIPE_LINE_HINT, MIN_DN, V_TECH, V_FIRE,
-  innerDiameter, capacityM3h, pipeLineFor, makeUserPipe,
+  innerDiameter, capacityM3h, pipeLineFor, makeUserPipe, checkWall, allowedPressureMPa,
+  MINE_MIN_WALL, CORROSION_MM, type WallStatus,
   type WaterPipeModel, type PipeLine,
 } from "@/lib/waterPipes";
 
@@ -22,6 +23,12 @@ const LINE_ICON: Record<PipeLine, string> = { main: "GitCommitHorizontal", secti
 const KIND_KEY = "pv_pipes_kind";
 
 const f1 = (v: number) => (+v.toFixed(1)).toLocaleString("ru");
+const WALL_TONE: Record<WallStatus, { color: string; icon: string; label: string }> = {
+  ok:           { color: "var(--c-green, #15803d)",     icon: "CircleCheck",   label: "по ГОСТ" },
+  thin:         { color: "var(--c-red, #dc2626)",       icon: "CircleAlert",   label: "тонкая" },
+  "off-series": { color: "var(--c-amber-ink, #865412)", icon: "TriangleAlert", label: "не по ГОСТ" },
+  unknown:      { color: "var(--c-t4, #9ca3af)",        icon: "CircleHelp",    label: "не сверено" },
+};
 
 function Seg<T extends string>({ value, options, onChange }: {
   value: T; options: { id: T; label: string; count?: number }[]; onChange: (v: T) => void;
@@ -136,6 +143,9 @@ export default function PipesSection({ userPipes, onUserPipesChange }: {
                 <th className={TH + " text-left"}>Труба, мм</th>
                 <th className={TH + " text-left"}>Сортамент</th>
                 <th className={TH + " text-right"}>DN</th>
+                <th className={TH + " text-right"} title={`Толщина стенки и сверка с сортаментом ГОСТ. Для шахты — не менее ${MINE_MIN_WALL} мм`}>Стенка, мм</th>
+                <th className={TH + " text-right"} title="Толщины стенок по ГОСТ для этого размера: для ГОСТ 3262 — лёгкая / обыкновенная / усиленная, для 8732 и 10704 — минимальная">По ГОСТ, мм</th>
+                <th className={TH + " text-right"} title={`Допустимое рабочее давление с запасом на коррозию ${CORROSION_MM} мм`}>P доп., МПа</th>
                 <th className={TH + " text-right"} title="Наружный диаметр − 2 × стенка">Внутр. Ø, мм</th>
                 <th className={TH + " text-right"} title="Эквивалентная шероховатость для расчёта (трубы в эксплуатации)">Шерох., мм</th>
                 <th className={TH + " text-right"} title={`Пропускная способность при ${V_TECH} м/с (технологический расход)`}>Q при {V_TECH} м/с</th>
@@ -146,7 +156,7 @@ export default function PipesSection({ userPipes, onUserPipesChange }: {
             {groups.map(({ l, items }) => (
               <tbody key={l}>
                 <tr>
-                  <td colSpan={8} className="px-3 pt-3 pb-1.5 border-b border-[var(--c-b1)]">
+                  <td colSpan={11} className="px-3 pt-3 pb-1.5 border-b border-[var(--c-b1)]">
                     <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-[var(--c-t2)]">
                       <Icon name={LINE_ICON[l]} size={12} fallback="GitBranch" style={{ color: "var(--c-accent, #1e5a7a)" }} />
                       {PIPE_LINE_NAMES[l]}
@@ -160,6 +170,9 @@ export default function PipesSection({ userPipes, onUserPipesChange }: {
                 {items.map((m) => {
                   const din = innerDiameter(m);
                   const e = MATERIAL_ROUGHNESS_MM[m.material] ?? 0.5;
+                  const wc = checkWall(m);
+                  const tone = WALL_TONE[wc.status];
+                  const pa = allowedPressureMPa(m);
                   return (
                     <tr key={m.id} className="group hover:bg-[var(--c-tint-blue)]">
                       <td className={TD}>
@@ -178,6 +191,15 @@ export default function PipesSection({ userPipes, onUserPipesChange }: {
                         <div className="text-[10px] text-[var(--c-t4)]">{[m.material, m.notes].filter(Boolean).join(" · ")}</div>
                       </td>
                       <td className={TD + " text-right"} style={NUM}>{m.dn}</td>
+                      <td className={TD + " text-right whitespace-nowrap"} title={wc.note}>
+                        <span className="inline-flex items-center gap-1 justify-end">
+                          <span className="font-semibold" style={NUM}>{f1(m.wall)}</span>
+                          <Icon name={tone.icon} size={12} fallback="Circle" style={{ color: tone.color }} />
+                        </span>
+                        {wc.status !== "ok" && <div className="text-[10px]" style={{ color: tone.color }}>{tone.label}</div>}
+                      </td>
+                      <td className={TD + " text-right text-[var(--c-t3)] whitespace-nowrap"} style={NUM} title={wc.note}>{wc.gostText}</td>
+                      <td className={TD + " text-right"} style={NUM}>{pa > 0 ? f1(pa) : "—"}</td>
                       <td className={TD + " text-right font-semibold"} style={NUM}>{f1(din)}</td>
                       <td className={TD + " text-right text-[var(--c-t3)]"} style={NUM}>{String(e).replace(".", ",")}</td>
                       <td className={TD + " text-right"} style={NUM}>{Math.round(capacityM3h(m, V_TECH))} <span className="text-[10px] text-[var(--c-t4)]">м³/ч</span></td>
