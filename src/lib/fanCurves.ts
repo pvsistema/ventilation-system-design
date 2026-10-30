@@ -930,6 +930,20 @@ export function registerUserFanCurves(list: (FanCurve | undefined | null)[]) {
   for (const c of list) if (c && c.id) userFans.set(c.id, { ...c, isUser: true });
 }
 
+/**
+ * Каталожные вентиляторы, сохранённые в проекте. Программа старой версии
+ * (например, десктоп, собранный до появления модели) не знает новую модель —
+ * берём её характеристику из файла проекта. Если модель есть в каталоге,
+ * используется каталожная версия.
+ */
+export function registerProjectCatalogFans(list: (FanCurve | undefined | null)[]) {
+  for (const c of list) {
+    if (!c || !c.id || c.isUser || isUserFanId(c.id)) continue;
+    if (FAN_CATALOG.some(f => f.id === c.id)) continue;
+    userFans.set(c.id, { ...c, isUser: false });
+  }
+}
+
 /** Личная библиотека пользовательских вентиляторов (браузер). */
 export function getUserFanLibrary(): FanCurve[] {
   try {

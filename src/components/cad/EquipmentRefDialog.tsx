@@ -2,7 +2,7 @@
 import { useState, useCallback, useEffect } from "react";
 import Icon from "@/components/ui/icon";
 import {
-  FAN_CATALOG, fanHAngle, fanQMax, getFanById, isUserFanId, getUserFanLibrary,
+  FAN_CATALOG, fanHAngle, fanQMax, getFanById, isUserFanId, getUserFanLibrary, registerProjectCatalogFans,
   saveToUserFanLibrary, removeFromUserFanLibrary, registerUserFanCurves, fanCurveAtAngle,
   type FanCurve,
 } from "@/lib/fanCurves";
@@ -53,6 +53,8 @@ export interface MineFanExport {
   rpmMax: number;
   /** Характеристика СВОЕГО вентилятора — сохраняется в проекте вместе с ним */
   userCurve?: FanCurve;
+  /** Характеристика каталожной модели — чтобы проект открывался в версии программы без этой модели */
+  catalogCurve?: FanCurve;
 }
 
 export interface MineBulkheadExport {
@@ -518,6 +520,7 @@ function catalogToMineFan(c: FanCurve): MineFan {
 
 function exportToMineFan(exp: MineFanExport): MineFan {
   if (exp.userCurve) registerUserFanCurves([exp.userCurve]);
+  if (exp.catalogCurve) registerProjectCatalogFans([exp.catalogCurve]);
   const catalog = getFanById(exp.catalogId);
   const defaultAngles = catalog && catalog.bladeAngles.length > 0 ? catalog.bladeAngles : [0];
   return {
@@ -560,8 +563,12 @@ function FansSection({ onMineFansChange, initialMineFans, branches }: { onMineFa
   const updateFans = (next: MineFan[]) => {
     setFans(next);
     onMineFansChange?.(next.map(f => {
-      const uc = isUserFanId(f.catalogId) ? getFanById(f.catalogId) : undefined;
-      return { catalogId: f.catalogId, name: f.name, diameter: f.diameter, rpmMin: f.rpmMin, rpmMax: f.rpmMax, ...(uc ? { userCurve: uc } : {}) };
+      const isUser = isUserFanId(f.catalogId);
+      const c = getFanById(f.catalogId);
+      return {
+        catalogId: f.catalogId, name: f.name, diameter: f.diameter, rpmMin: f.rpmMin, rpmMax: f.rpmMax,
+        ...(c ? (isUser ? { userCurve: c } : { catalogCurve: c }) : {}),
+      };
     }));
   };
 

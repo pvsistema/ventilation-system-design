@@ -7,7 +7,7 @@ import { RAMP_WORK_ANGLE, RAMP_LIMIT_ANGLE } from "@/lib/rampBuilder";
 import { CANVAS_THRESHOLD } from "@/lib/canvasRenderer";
 import { SURFACE_TYPES, calcSection } from "@/lib/aerodynamics";
 import { type SolveResult } from "@/lib/networkSolver";
-import { getFanById, findFanByName, fanEfficiencyAngle, fanShaftPower, fanCurveAtAngle, registerUserFanCurves, type FanCurve } from "@/lib/fanCurves";
+import { getFanById, findFanByName, fanEfficiencyAngle, fanShaftPower, fanCurveAtAngle, registerUserFanCurves, registerProjectCatalogFans, type FanCurve } from "@/lib/fanCurves";
 import type { HQDiagramData } from "@/lib/hqDiagramExcel";
 import type { WaterNodeResult, WaterBranchResult } from "@/lib/waterHydraulics";
 import { withWaterPumps, waterInputsFingerprint } from "@/lib/waterHydraulics";
@@ -4237,6 +4237,7 @@ export function useCadPage() {
       // Пользовательские вентиляторы проекта — в общий реестр до расчёта
       const mf = data.mineFans as MineFanExport[];
       registerUserFanCurves(mf.map(f => f.userCurve as FanCurve | undefined));
+      registerProjectCatalogFans(mf.map(f => f.catalogCurve as FanCurve | undefined));
       setMineFans(mf);
     }
     setUserPumps(Array.isArray(data.userPumps) ? (data.userPumps as PumpModel[]) : []);
