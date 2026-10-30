@@ -208,19 +208,30 @@ if "%RESUME%"=="0" if exist "%CORE_EXE%" if not exist "%CORE_SIG%" (
 )
 if "%RESUME%"=="1" (
     REM The core was compiled earlier, possibly with a different version number.
-    REM The stamp next to it must match that core, so it is NOT rewritten here -
-    REM we only warn when the numbers differ.
+    REM If it differs from SERVER_VERSION, offer a full rebuild - default answer -
+    REM otherwise an OLD core would be shipped under the new installer.
     set "STAMPED="
     if exist "%CS_DIR%\dist\server\server_version.txt" (
         for /f "usebackq delims=" %%v in ("%CS_DIR%\dist\server\server_version.txt") do set "STAMPED=%%v"
     )
     if not "!STAMPED!"=="" if not "!STAMPED!"=="%SERVER_VERSION%" (
-        echo     WARNING: the compiled core is version !STAMPED!, SERVER_VERSION now says %SERVER_VERSION%.
-        echo              Keeping !STAMPED! - it matches the compiled core.
-        echo              Run a FULL build if you need version %SERVER_VERSION%.
-        REM All later messages must name the version actually being shipped.
-        set "SERVER_VERSION=!STAMPED!"
+        echo.
+        echo     WARNING: the compiled core is version !STAMPED!, but SERVER_VERSION is %SERVER_VERSION%.
+        echo              Continuing would ship the OLD core !STAMPED!.
+        echo              A full rebuild makes core %SERVER_VERSION% ^(takes about 20 minutes^).
+        set "REBUILD_ANSWER=y"
+        set /p "REBUILD_ANSWER=    Rebuild the core as %SERVER_VERSION%? [Y/n]: "
+        if /i "!REBUILD_ANSWER!"=="n" (
+            echo     Keeping core !STAMPED! - it matches the compiled server.exe.
+            REM All later messages must name the version actually being shipped.
+            set "SERVER_VERSION=!STAMPED!"
+        ) else (
+            echo     Full rebuild: the old core will be replaced.
+            set "RESUME=0"
+        )
     )
+)
+if "%RESUME%"=="1" (
     echo     RESUME: skipping frontend and core compilation, going to signing.
     REM The jump below skips step 2, where the build deps are installed. Signing
     REM needs the cryptography library, so install the pinned deps here too -
