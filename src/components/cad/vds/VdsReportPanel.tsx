@@ -1,5 +1,6 @@
 // «Отчёт ВДС» — защищённый кодом доступа модуль вкладки ВДС.
 // Код выдаётся администратором вместе с лицензионным ключом (админ-панель).
+import { fillFromRequisites, saveRequisites } from "@/lib/actRequisites";
 import { useEffect, useMemo, useState } from "react";
 import Icon from "@/components/ui/icon";
 import type { TopoBranch, TopoNode } from "@/lib/topology";
@@ -73,13 +74,14 @@ export default function VdsReportPanel({ branches, nodes, solved, bulkheads, pro
   const [form, setFormState] = useState<VdsReportForm>(() => {
     try {
       const s = localStorage.getItem(FORM_LS(projectName));
-      if (s) return { ...emptyVdsForm(), ...JSON.parse(s) };
+      if (s) return fillFromRequisites({ ...emptyVdsForm(), ...JSON.parse(s) }, { companyName: "orgName" });
     } catch { /* ignore */ }
-    return emptyVdsForm();
+    return fillFromRequisites(emptyVdsForm(), { companyName: "orgName" });
   });
   const setForm = (fn: (f: VdsReportForm) => VdsReportForm) => setFormState(prev => {
     const next = fn(prev);
     try { localStorage.setItem(FORM_LS(projectName), JSON.stringify(next)); } catch { /* ignore */ }
+    if (next.companyName !== prev.companyName) saveRequisites({ orgName: next.companyName });
     return next;
   });
 

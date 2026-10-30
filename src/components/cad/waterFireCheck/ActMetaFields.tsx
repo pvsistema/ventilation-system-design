@@ -1,10 +1,9 @@
 import { useState } from "react";
 import Icon from "@/components/ui/icon";
 import type { WaterActMeta } from "@/lib/waterCheckExport";
+import { loadRequisites, saveRequisites } from "@/lib/actRequisites";
 
 export type ActMetaInput = Omit<WaterActMeta, "date" | "projectName">;
-
-const KEY = "pv_water_act_meta";
 
 function defaultPeriod(): string {
   const d = new Date();
@@ -12,16 +11,17 @@ function defaultPeriod(): string {
 }
 
 export function loadActMeta(): ActMetaInput {
-  const base: ActMetaInput = { orgName: "", approverTitle: "Главный инженер", approverName: "", period: defaultPeriod() };
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (raw) return { ...base, ...JSON.parse(raw) };
-  } catch { /* ignore */ }
-  return base;
+  const r = loadRequisites();
+  return {
+    orgName: r.orgName,
+    approverTitle: r.approverTitle || "Главный инженер",
+    approverName: r.approverName,
+    period: r.period || defaultPeriod(),
+  };
 }
 
 function saveActMeta(m: ActMetaInput) {
-  try { localStorage.setItem(KEY, JSON.stringify(m)); } catch { /* ignore */ }
+  saveRequisites(m);
 }
 
 const FIELDS: { key: keyof ActMetaInput; label: string; placeholder: string; wide?: boolean }[] = [
@@ -50,7 +50,7 @@ export default function ActMetaFields({ value, onChange }: { value: ActMetaInput
         <span className="text-gray-400">
           {filled === FIELDS.length
             ? `${value.orgName} · ${value.approverTitle} ${value.approverName} · ${value.period}`
-            : `заполнено ${filled} из ${FIELDS.length} — попадут на титул акта`}
+            : `заполнено ${filled} из ${FIELDS.length} — общие для всех актов программы`}
         </span>
       </button>
       {open && (

@@ -1,5 +1,8 @@
 // Реквизиты титульного листа «Акта проверки устойчивости» — хранятся в
-// localStorage, по умолчанию пустые.
+// localStorage, по умолчанию пустые. Организация, утверждающий и период —
+// общие с другими актами (actRequisites).
+
+import { fillFromRequisites, saveRequisites, type ActRequisites } from "./actRequisites";
 
 export interface ActTitleFields {
   approverTitle: string;
@@ -49,12 +52,18 @@ export const ACT_TITLE_HINTS: Partial<Record<keyof ActTitleFields, string>> = {
 
 const LS_KEY = "pvs_stability_act_title_v2";
 
+const SHARED: Partial<Record<keyof ActTitleFields, keyof ActRequisites>> = {
+  orgName: "orgName", approverTitle: "approverTitle", approverOrg: "approverOrg",
+  approverName: "approverName", period: "period",
+};
+
 export function loadActTitle(): ActTitleFields {
+  let t: ActTitleFields = { ...DEFAULT_ACT_TITLE, members: DEFAULT_ACT_TITLE.members.map(m => ({ ...m })) };
   try {
     const s = localStorage.getItem(LS_KEY);
-    if (s) return { ...DEFAULT_ACT_TITLE, ...JSON.parse(s) };
+    if (s) t = { ...DEFAULT_ACT_TITLE, ...JSON.parse(s) };
   } catch { /* ignore */ }
-  return { ...DEFAULT_ACT_TITLE, members: DEFAULT_ACT_TITLE.members.map(m => ({ ...m })) };
+  return fillFromRequisites(t, SHARED);
 }
 
 /** Заполнен ли титул хотя бы частично. */
@@ -65,6 +74,10 @@ export function isActTitleFilled(f: ActTitleFields): boolean {
 
 export function saveActTitle(f: ActTitleFields): void {
   try { localStorage.setItem(LS_KEY, JSON.stringify(f)); } catch { /* ignore */ }
+  saveRequisites({
+    orgName: f.orgName, approverTitle: f.approverTitle, approverOrg: f.approverOrg,
+    approverName: f.approverName, period: f.period,
+  });
 }
 
 export const ACT_LOGO_URL = "/files/bashmed-logo.png";

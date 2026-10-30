@@ -16,6 +16,7 @@ import {
   type GasSample, type ExplosibilityResult,
 } from "@/lib/explosibility";
 import { exportExplosibilityReport } from "@/lib/explosibilityReport";
+import { loadRequisites } from "@/lib/actRequisites";
 
 interface Props {
   projectName?: string;
@@ -72,7 +73,7 @@ export default function ExplosibilityDialog({ projectName = "Подземный 
 
   function handleExport() {
     const all = journalResults.length ? [...journalResults, result] : [result];
-    exportExplosibilityReport(result, all, { projectName });
+    exportExplosibilityReport(result, all, { projectName, orgName: loadRequisites().orgName });
   }
 
   const field = (
