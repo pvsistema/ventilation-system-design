@@ -4,11 +4,34 @@
 //   • Титул — шапка акта
 //   • «Проверка точек» — таблица по всем пожарным кранам
 //   • «Мероприятия» — что сделать по несоответствующим точкам
+//   • «Трубы» — замечания по трубам: диаметр линии, скорость, давление
 //   • «Выводы» — итог проверки
 // ─────────────────────────────────────────────────────────────────────────────
 
 import * as XLSX from "xlsx";
 import type { WaterCheckResult, WaterCheckRow } from "./waterFireCheck";
+import { PIPE_ISSUE_LABEL, type PipeNormsResult } from "./waterPipeNorms";
+import { MIN_DN, V_TECH, V_FIRE, CORROSION_MM } from "./waterPipes";
+
+/** Проверка труб по нормам — для листа «Трубы» и выводов акта. */
+export interface PipeActData {
+  result: PipeNormsResult;
+  kind: "ore" | "coal";
+}
+
+/** «1 участок», «3 участка», «5 участков» (род. падеж для «Проверено/Выявлено»). */
+function uch(n: number): string {
+  const m10 = n % 10, m100 = n % 100;
+  const w = m10 === 1 && m100 !== 11 ? "участок" : m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14) ? "участка" : "участков";
+  return `${n} ${w}`;
+}
+const uchGen = (n: number) => `${n} ${n % 10 === 1 && n % 100 !== 11 ? "участке" : "участках"}`;
+
+const LINE_ONE = { main: "Магистральная", section: "Участковая", face: "Забойная" } as const;
+const KIND_TEXT = {
+  ore: "рудник — ФНиП «Правила безопасности при ведении горных работ…» (приказ Ростехнадзора № 505)",
+  coal: "угольная шахта — РД 05-366-00",
+} as const;
 
 export interface WaterActMeta {
   projectName: string;
@@ -81,7 +104,7 @@ function titleStyle(): XLSX.CellStyle {
 }
 
 // ─── Титульный лист ──────────────────────────────────────────────────────────
-function buildTitleSheet(meta: WaterActMeta, result: WaterCheckResult): XLSX.WorkSheet {
+function buildTitleSheet(meta: WaterActMeta, result: WaterCheckResult, pipes?: PipeActData): XLSX.WorkSheet {
   const n = result.norms;
   const rows: string[][] = [
     ["", "", "", "", "", "", "", "", "", "", "", "УТВЕРЖДАЮ:"],
@@ -109,6 +132,15 @@ function buildTitleSheet(meta: WaterActMeta, result: WaterCheckResult): XLSX.Wor
     [`   • количество одновременно работающих стволов — ${n.simultaneous};`],
     [`   • максимальная скорость воды в трубопроводе — ${n.maxVelocity} м/с.`],
     [""],
+    ...(pipes
+      ? [
+          [`Требования к трубам (${KIND_TEXT[pipes.kind]}):`],
+          [`   • диаметр магистральных линий — не менее DN ${MIN_DN[pipes.kind].main}, участковых — не менее DN ${MIN_DN[pipes.kind].section};`],
+          [`   • скорость воды — не более ${V_TECH} м/с при технологическом расходе и ${V_FIRE} м/с при пожаротушении;`],
+          [`   • давление в трубе — не выше допустимого для толщины стенки (запас на коррозию ${CORROSION_MM} мм).`],
+          [""],
+        ]
+      : []),
     ...(result.pumpCount > 0
       ? [
           ["В расчёте учтена работа насосных станций противопожарного водопровода:"],
@@ -192,8 +224,9 @@ function buildTableSheet(result: WaterCheckResult): XLSX.WorkSheet {
 }
 
 // ─── Лист «Мероприятия» ──────────────────────────────────────────────────────
-function buildMeasuresSheet(result: WaterCheckResult): XLSX.WorkSheet {
+function buildMeasuresSheet(result: WaterCheckResult, pipes?: PipeActData): XLSX.WorkSheet {
   const bad: WaterCheckRow[] = result.rows.filter(r => !r.ok);
+  const pipeIssues = pipes?.result.issues ?? [];
   const aoa: (string | number)[][] = [];
   aoa.push(["Мероприятия по обеспечению нормативных параметров пожаротушения"]);
   aoa.push([]);
@@ -225,11 +258,101 @@ function buildMeasuresSheet(result: WaterCheckResult): XLSX.WorkSheet {
       }
     });
   }
+
+  // Мероприятия по трубам — отдельным блоком ниже
+  if (pipeIssues.length > 0) {
+    const start = aoa.length + 1;
+    const add: (string | number)[][] = [
+      [],
+      ["Для участков трубопровода, не отвечающих нормативным требованиям, предусмотреть:"],
+      [],
+      ["№", "Участок", "Труба, мм", "Выявленное несоответствие", "Мероприятие"],
+      ...pipeIssues.map((it, i) => [
+        i + 1, it.title, it.size,
+        it.kinds.map(k => PIPE_ISSUE_LABEL[k]).join(", "),
+        it.recommendation,
+      ]),
+    ];
+    XLSX.utils.sheet_add_aoa(ws, add, { origin: { r: start - 1, c: 0 } });
+    const head = start - 1 + 3;
+    for (let c = 0; c < 5; c++) {
+      const ref = XLSX.utils.encode_cell({ r: head, c });
+      if (ws[ref]) ws[ref].s = headerStyle();
+    }
+    pipeIssues.forEach((_, i) => {
+      for (let c = 0; c < 5; c++) {
+        const ref = XLSX.utils.encode_cell({ r: head + 1 + i, c });
+        if (ws[ref]) ws[ref].s = cellStyle(i);
+      }
+    });
+    const sub = XLSX.utils.encode_cell({ r: start, c: 0 });
+    if (ws[sub]) ws[sub].s = { font: { bold: true, sz: 10 } };
+  }
+  return ws;
+}
+
+// ─── Лист «Трубы» ─────────────────────────────────────────────────────────────
+const PIPE_HEADERS = [
+  "№ п/п", "Участок (узлы)", "Линия", "Труба, мм", "DN", "Норма DN",
+  "Давление, МПа", "Допустимое, МПа", "Скорость, м/с", `Скорость при пожаре, м/с`,
+  "Несоответствие", "Мероприятие",
+];
+
+function buildPipesSheet(pipes: PipeActData): XLSX.WorkSheet {
+  const { result, kind } = pipes;
+  const aoa: (string | number)[][] = [];
+  aoa.push(["Проверка трубопровода по нормам: диаметр линии, скорость воды, давление на стенку трубы"]);
+  aoa.push([`Проверено участков: ${result.total}. С замечаниями: ${result.issues.length}.` +
+    (result.noLine > 0 ? ` Без назначения линии (диаметр не проверялся): ${result.noLine}.` : "")]);
+  aoa.push([`Нормы: ${KIND_TEXT[kind]}; магистральные — не менее DN ${MIN_DN[kind].main}, участковые — не менее DN ${MIN_DN[kind].section}; ` +
+    `скорость — до ${V_TECH} м/с (технологический расход) и до ${V_FIRE} м/с (пожаротушение).`]);
+  aoa.push([]);
+  aoa.push([...PIPE_HEADERS]);
+
+  if (result.issues.length === 0) {
+    aoa.push(PIPE_HEADERS.map((_, i) => (i === 1 ? "Замечаний по трубам нет" : "")));
+  }
+  result.issues.forEach((it, i) => {
+    aoa.push([
+      i + 1, it.title, it.line ? LINE_ONE[it.line] : "не указана", it.size, it.dn, it.minDn ?? "—",
+      it.pressure ?? "—", it.allowedPressure ?? "—", it.techVelocity ?? "—", it.fireVelocity ?? "—",
+      it.kinds.map(k => PIPE_ISSUE_LABEL[k]).join(", "), it.recommendation,
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [
+    { wch: 6 }, { wch: 16 }, { wch: 15 }, { wch: 11 }, { wch: 7 }, { wch: 9 },
+    { wch: 11 }, { wch: 12 }, { wch: 11 }, { wch: 13 }, { wch: 30 }, { wch: 60 },
+  ];
+  ws["!merges"] = [0, 1, 2].map(r => ({ s: { r, c: 0 }, e: { r, c: PIPE_HEADERS.length - 1 } }));
+  ws["!rows"] = [{ hpx: 22 }, { hpx: 16 }, { hpx: 28 }, { hpx: 6 }, { hpx: 40 }];
+  const t = XLSX.utils.encode_cell({ r: 0, c: 0 });
+  if (ws[t]) ws[t].s = { font: { bold: true, sz: 10 } };
+  const nr = XLSX.utils.encode_cell({ r: 2, c: 0 });
+  if (ws[nr]) ws[nr].s = { font: { sz: 9, color: { rgb: "555555" } }, alignment: { wrapText: true, vertical: "top" } };
+  PIPE_HEADERS.forEach((_, ci) => {
+    const ref = XLSX.utils.encode_cell({ r: 4, c: ci });
+    if (ws[ref]) ws[ref].s = headerStyle();
+  });
+  result.issues.forEach((it, ri) => {
+    // Красным — те ячейки, где нарушение
+    const badCols = new Set<number>([10]);
+    if (it.kinds.includes("small-diameter")) { badCols.add(4); badCols.add(5); }
+    if (it.kinds.includes("over-pressure")) { badCols.add(6); badCols.add(7); }
+    if (it.kinds.includes("tech-velocity")) badCols.add(8);
+    if (it.kinds.includes("fire-velocity")) badCols.add(9);
+    for (let ci = 0; ci < PIPE_HEADERS.length; ci++) {
+      const ref = XLSX.utils.encode_cell({ r: ri + 5, c: ci });
+      if (ws[ref]) ws[ref].s = cellStyle(ri, badCols.has(ci));
+    }
+  });
+  ws["!freeze"] = { xSplit: 0, ySplit: 5 };
   return ws;
 }
 
 // ─── Лист «Выводы» ────────────────────────────────────────────────────────────
-function buildConclusionsSheet(result: WaterCheckResult): XLSX.WorkSheet {
+function buildConclusionsSheet(result: WaterCheckResult, pipes?: PipeActData): XLSX.WorkSheet {
   const total = result.total;
   const failed = result.failed;
   const ok = total - failed;
@@ -261,6 +384,29 @@ function buildConclusionsSheet(result: WaterCheckResult): XLSX.WorkSheet {
     aoa.push([`   Пожарно-оросительный трубопровод обеспечивает тушение пожара во всех точках сети.`]);
   }
 
+  if (pipes) {
+    const iss = pipes.result.issues;
+    const cnt = (k: keyof typeof PIPE_ISSUE_LABEL) => iss.filter(i => i.kinds.includes(k)).length;
+    aoa.push([]);
+    aoa.push([`5. Проверено ${uch(pipes.result.total)} трубопровода на соответствие нормам по диаметру, скорости воды и давлению.`]);
+    if (iss.length === 0) {
+      aoa.push([`   Несоответствий не выявлено.`]);
+    } else {
+      aoa.push([`   Замечания выявлены на ${uchGen(iss.length)} (см. лист «Трубы»):`]);
+      const lines: [keyof typeof PIPE_ISSUE_LABEL, string][] = [
+        ["small-diameter", "диаметр меньше нормы для линии"],
+        ["over-pressure", "давление выше допустимого для стенки трубы"],
+        ["tech-velocity", `скорость воды выше ${V_TECH} м/с при технологическом расходе`],
+        ["fire-velocity", `скорость воды выше ${V_FIRE} м/с при пожаротушении`],
+      ];
+      lines.forEach(([k, txt]) => { const c = cnt(k); if (c > 0) aoa.push([`   • ${txt} — ${c};`]); });
+      aoa.push([`   Мероприятия по ним приведены на листе «Мероприятия».`]);
+    }
+    if (pipes.result.noLine > 0) {
+      aoa.push([`   На ${uchGen(pipes.result.noLine)} не указано назначение линии — диаметр по норме для них не проверялся.`]);
+    }
+  }
+
   aoa.push([]);
   aoa.push([`Расчёт выполнен в программном обеспечении «ПВ-Система».`]);
 
@@ -272,14 +418,15 @@ function buildConclusionsSheet(result: WaterCheckResult): XLSX.WorkSheet {
 }
 
 // ─── Главная функция экспорта ────────────────────────────────────────────────
-export function exportWaterCheckAct(result: WaterCheckResult, meta?: Partial<WaterActMeta>): void {
+export function exportWaterCheckAct(result: WaterCheckResult, meta?: Partial<WaterActMeta>, pipes?: PipeActData): void {
   const m = { ...DEFAULT_META, ...meta };
   const wb = XLSX.utils.book_new();
 
-  XLSX.utils.book_append_sheet(wb, buildTitleSheet(m, result), "Титул");
+  XLSX.utils.book_append_sheet(wb, buildTitleSheet(m, result, pipes), "Титул");
   XLSX.utils.book_append_sheet(wb, buildTableSheet(result), "Проверка точек");
-  XLSX.utils.book_append_sheet(wb, buildMeasuresSheet(result), "Мероприятия");
-  XLSX.utils.book_append_sheet(wb, buildConclusionsSheet(result), "Выводы");
+  if (pipes && pipes.result.total > 0) XLSX.utils.book_append_sheet(wb, buildPipesSheet(pipes), "Трубы");
+  XLSX.utils.book_append_sheet(wb, buildMeasuresSheet(result, pipes), "Мероприятия");
+  XLSX.utils.book_append_sheet(wb, buildConclusionsSheet(result, pipes), "Выводы");
 
   const date = new Date().toISOString().slice(0, 10);
   const filename = `Акт_проверки_ППЗ_${m.projectName || "рудник"}_${date}.xlsx`;

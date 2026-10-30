@@ -136,7 +136,7 @@ export default function WaterFireCheckDialog({
     : (onlyFailed ? result.rows.filter(r => !r.ok) : result.rows);
 
   function handleExport() {
-    exportWaterCheckAct(result, { projectName });
+    exportWaterCheckAct(result, { projectName }, { result: pipeNorms, kind: pipeKind });
     onClose();
   }
 
