@@ -4,9 +4,9 @@
 // тысяч отдельных элементов. Значение настраивается пользователем в панели.
 // Математика проекции полностью переиспользуется из topology.ts
 // ─────────────────────────────────────────────────────────────────────────────
-import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, sectionKind, SECTION_KIND_COLORS } from "./topology";
+import { type TopoNode, type TopoBranch, type Horizon, type ProjOptions, project3D, sectionKind, SECTION_KIND_COLORS, surveyXYZ } from "./topology";
 import { type InfoDisplayConfig } from "./infoConfig";
-import { type UnitsConfig } from "./unitsConfig";
+import { type UnitsConfig, getUnit } from "./unitsConfig";
 import { type WaterNodeResult, type WaterBranchResult } from "./waterHydraulics";
 import { branchLabelLines } from "./branchLabelLines";
 import { medianSection, widthBySection as widthBySectionFn } from "./branchWidthBySection";
@@ -2032,6 +2032,29 @@ export function renderCanvas(opts: CanvasRenderOptions) {
           if (n.name) nlines.push(n.name);
         } else {
           if (ic.nodeNumber && n.number) nlines.push(`${n.number}`);
+          // Координаты, давление и температура узла. Раньше эти переключатели
+          // работали только в старой (SVG) отрисовке, а на холсте их не было.
+          if (ic.nodeX || ic.nodeY || ic.nodeZ) {
+            const uLen = getUnit(unitsConfig, "length");
+            const p = surveyXYZ(n);
+            const f = (v: number) => `${uLen.fromBase(v).toFixed(uLen.decimals)}${uLen.symbol}`;
+            if (ic.nodeX) nlines.push(`X=${f(p.x)}`);
+            if (ic.nodeY) nlines.push(`Y=${f(p.y)}`);
+            if (ic.nodeZ) nlines.push(`Z=${f(p.z)}`);
+          }
+          // «Давление вентиляции» — распределение напора вентилятора по сети
+          // (депрессия узла относительно атмосферы), появляется после расчёта.
+          if (ic.nodePressure && Number.isFinite(n.computedFanPressure) && n.computedFanPressure !== 0) {
+            const uP = getUnit(unitsConfig, "pressure");
+            nlines.push(`P=${uP.fromBase(n.computedFanPressure).toFixed(uP.decimals)}${uP.symbol}`);
+          }
+          if (ic.nodeTemp) {
+            const t = Number.isFinite(n.computedAirTemp) && n.computedAirTemp !== 0 ? n.computedAirTemp : n.airTemp;
+            if (Number.isFinite(t)) {
+              const uT = getUnit(unitsConfig, "temperature");
+              nlines.push(`T=${uT.fromBase(t).toFixed(uT.decimals)}${uT.symbol}`);
+            }
+          }
         }
         // ─── Водопроводные показатели узла (управляются вкладкой «Водопровод») ───
         if (ic && rawFireType === "consumer") {

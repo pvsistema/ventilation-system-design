@@ -21,7 +21,6 @@ const NODE_ROWS: Row[] = [
   ["nodeZ", "Отметка Z", "м"],
   ["nodePressure", "Давление вентиляции", "даПа"],
   ["nodeTemp", "Температура", "°C"],
-  ["nodeMethane", "Метан CH₄", "%"],
 ];
 
 const BRANCH_ROWS: Row[] = [
