@@ -149,6 +149,10 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
     closeSolverParams,
     setShowFireStability,
     setShowWaterCheck,
+    recalcWater,
+    waterStale,
+    waterCalcBusy,
+    hasWaterPipes,
     setShowEvacRisk,
     setShowFireControl,
     setShowVds,
@@ -1675,6 +1679,19 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
               sublabel="при пожаре"
               title="Проверка устойчивости вентиляционных режимов при пожаре и формирование Акта устойчивости"
               onClick={() => setShowFireStability(true)}
+            />
+            <RibbonBigBtn
+              icon={waterCalcBusy ? "Loader" : "RefreshCw"}
+              label="Пересчёт"
+              sublabel="водопровода"
+              disabled={!hasWaterPipes || waterCalcBusy}
+              active={waterStale}
+              title={!hasWaterPipes
+                ? "На схеме нет водопровода"
+                : waterStale
+                  ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды"
+                  : "Пересчитать напоры и расходы воды в водопроводе (данные не менялись с прошлого расчёта)"}
+              onClick={recalcWater}
             />
             <RibbonBigBtn
               icon="Droplets"

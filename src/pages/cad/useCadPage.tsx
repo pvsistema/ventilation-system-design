@@ -1977,17 +1977,27 @@ export function useCadPage() {
   );
   const lastWaterFpRef = useRef<string | null>(null);
 
+  // ЭКОНОМИЯ ВЫЗОВОВ. Раньше расчёт уходил на сервер сам через 0,9 с после
+  // каждой правки водопровода — это был основной расход вызовов. Теперь
+  // пересчёт ТОЛЬКО по кнопке «Пересчёт водопровода» на ленте; пока схема
+  // водопровода изменена после расчёта, кнопка подсвечена (waterStale).
+  const [waterCalcFp, setWaterCalcFp] = useState<string | null>(null);
+  const [waterCalcBusy, setWaterCalcBusy] = useState(false);
+  const hasWaterPipes = useMemo(() => branches.some(b => b.hasWaterPipe), [branches]);
+  const waterStale = hasWaterPipes && waterCalcFp !== waterFp;
+
   useEffect(() => {
-    const hasWater = branches.some(b => b.hasWaterPipe);
-    if (!hasWater) {
-      lastWaterFpRef.current = null;
-      setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
-      return;
-    }
-    // Данные водопровода не изменились → результат прежний, сервер не тревожим.
-    if (lastWaterFpRef.current === waterFp) return;
-    // Дебаунс 900мс — при вводе значений и перетаскивании не спамим запросами
-    const tid = setTimeout(() => {
+    if (hasWaterPipes) return;
+    lastWaterFpRef.current = null;
+    setWaterCalcFp(null);
+    setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
+  }, [hasWaterPipes]);
+
+  const recalcWater = () => {
+    if (!hasWaterPipes || waterCalcBusy) return;
+    setWaterCalcBusy(true);
+    const fpAtStart = waterFp;
+
       // Отправляем только водопроводные ветви и связанные узлы — уменьшаем payload.
       // Параметры насосных станций со схемы «впечатываем» в поля ветвей общей
       // функцией withWaterPumps — той же, что использует проверка ППЗ, чтобы
@@ -2000,7 +2010,7 @@ export function useCadPage() {
       const waterNodes = nodes.filter(n => waterNodeIds.has(n.id));
       // Запоминаем отпечаток ДО запроса: пока ответ в пути, повторные правки
       // с тем же составом данных не должны порождать второй такой же запрос.
-      lastWaterFpRef.current = waterFp;
+      lastWaterFpRef.current = fpAtStart;
       fetch(WATER_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2011,18 +2021,16 @@ export function useCadPage() {
         (data.nodeResults ?? []).forEach((n: WaterNodeResult) => nr.set(n.nodeId, n));
         (data.branchResults ?? []).forEach((b: WaterBranchResult) => br.set(b.branchId, b));
         setWaterNetwork({ nodeResults: nr, branchResults: br });
+        setWaterCalcFp(fpAtStart);
+        addLog("info", "Водопровод пересчитан");
       }).catch((err) => {
         // Запрос не прошёл — сбрасываем отпечаток, чтобы следующая правка
         // (или повторный вход в панель) снова попыталась посчитать.
         lastWaterFpRef.current = null;
         console.error("[water-hydraulics] fetch error:", err);
-      });
-    }, 900);
-    return () => clearTimeout(tid);
-    // Намеренно зависим ТОЛЬКО от отпечатка водопровода: nodes/branches/schemaSymbols
-    // читаются внутри и всегда актуальны, но сами по себе перезапуск не вызывают.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [waterFp]);
+        toast.error("Не удалось пересчитать водопровод — нет связи с сервером расчёта");
+      }).finally(() => setWaterCalcBusy(false));
+  };
 
   const [symbolClipboard, setSymbolClipboard] = useState<SchemaSymbol | null>(null);
   const [selectedSymbolId, setSelectedSymbolId] = useState<string | null>(null);
@@ -4068,6 +4076,7 @@ export function useCadPage() {
     setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
     setExplosionCalcDone(false);
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
+    setWaterCalcFp(null);
     setVcSolving(false);
     setVcError(null);
     // Предпросмотр варианта относится к прежней схеме — см. сброс проекта.
@@ -4437,6 +4446,7 @@ export function useCadPage() {
     setExplosionResult(null); setExplosionResultByBranch(new Map()); setExplosionBarriers(null);
     setExplosionCalcDone(false);
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
+    setWaterCalcFp(null);
     setVcSolving(false);
     setVcError(null);
     // Предпросмотр подобранного варианта — расходы ИСЧЕЗНУВШЕЙ схемы. Оставить
@@ -6480,6 +6490,10 @@ export function useCadPage() {
     setShowFireStability,
     showWaterCheck,
     setShowWaterCheck,
+    recalcWater,
+    waterStale,
+    waterCalcBusy,
+    hasWaterPipes,
     showEvacRisk,
     setShowEvacRisk,
     showFireControl,

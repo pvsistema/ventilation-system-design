@@ -159,7 +159,7 @@ def handler(event: dict, context) -> dict:
             cur.execute("""
                 SELECT l.id, l.key, l.owner_name, l.max_seats, l.is_active,
                        l.expires_at, COUNT(s.id), MAX(s.last_seen_at),
-                       COUNT(s.id) FILTER (WHERE s.last_seen_at > NOW() - INTERVAL '45 minutes')
+                       COUNT(s.id) FILTER (WHERE s.last_seen_at > NOW() - INTERVAL '90 minutes')
                 FROM licenses l
                 LEFT JOIN license_seats s ON s.license_id = l.id
                 WHERE l.org_group = %s
@@ -182,7 +182,7 @@ def handler(event: dict, context) -> dict:
                 return resp(404, {"error": "not_found"})
             cur.execute("""
                 SELECT id, hostname, platform, app_version, activated_at, last_seen_at,
-                       (last_seen_at > NOW() - INTERVAL '45 minutes')
+                       (last_seen_at > NOW() - INTERVAL '90 minutes')
                 FROM license_seats WHERE license_id = %s
                 ORDER BY last_seen_at DESC
             """, (lic_id,))
