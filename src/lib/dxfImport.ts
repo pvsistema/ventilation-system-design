@@ -126,6 +126,19 @@ function polygonPerimeter(pts: Pt3[]): number {
  *                      автоматически. Список нужен окну импорта, где пользователь
  *                      снимает галочки с лишних слоёв чертежа.
  */
+// Минимум/максимум без развёртки массива в аргументы: Math.max(...arr) на
+// крупном чертеже (сотни тысяч координат) падает с «Maximum call stack size».
+function arrMax(a: number[]): number {
+  let m = -Infinity;
+  for (let i = 0; i < a.length; i++) if (a[i] > m) m = a[i];
+  return m;
+}
+function arrMin(a: number[]): number {
+  let m = Infinity;
+  for (let i = 0; i < a.length; i++) if (a[i] < m) m = a[i];
+  return m;
+}
+
 export function parseDxf(
   content: string,
   epsilonOverride?: number,
@@ -541,9 +554,10 @@ export function parseDxf(
     // Есть CIRCLE-узлы: ищем слой с наибольшим % сегментов, соединяющих пары CIRCLE
     const hitsByLayer = new Map<string, number>();
     const totalByLayer = new Map<string, number>();
+    const circleR1 = arrMax(circles.map(c => c.r)) * 4 || 50;
     for (const s of segments) {
       totalByLayer.set(s.layer, (totalByLayer.get(s.layer) ?? 0) + 1);
-      const r1 = Math.max(...circles.map(c => c.r)) * 4 || 50;
+      const r1 = circleR1;
       const hit1 = circles.some(c => Math.sqrt((s.x1-c.cx)**2+(s.y1-c.cy)**2+(s.z1-c.cz)**2) < r1);
       const hit2 = circles.some(c => Math.sqrt((s.x2-c.cx)**2+(s.y2-c.cy)**2+(s.z2-c.cz)**2) < r1);
       if (hit1 && hit2) hitsByLayer.set(s.layer, (hitsByLayer.get(s.layer) ?? 0) + 1);
@@ -678,7 +692,7 @@ export function parseDxf(
     getCircle: (c: CircleEnt) => number,
   ): number => {
     const vals: number[] = [];
-    for (const s of segments) vals.push(...get(s));
+    for (const s of segments) for (const v of get(s)) vals.push(v);
     // Раньше сюда добавлялись сразу cx, cy и cz каждой окружности, из-за чего
     // в «размах по X» попадали координаты Y и Z. У маркшейдерского плана X
     // отрицательный, а Y положительный, поэтому размах получался равен
@@ -695,7 +709,7 @@ export function parseDxf(
   const spanX = spanOf(s => [s.x1, s.x2], c => c.cx);
   const spanY = spanOf(s => [s.y1, s.y2], c => c.cy);
   const span = Math.max(spanX, spanY);
-  const maxCoord = allAbsCoords.length > 0 ? Math.max(...allAbsCoords) : 0;
+  const maxCoord = allAbsCoords.length > 0 ? arrMax(allAbsCoords) : 0;
   let scale = 1;
   if (span > 200000) { scale = 0.001; warnings.push("Единицы: мм → конвертированы в м."); }
   else if (span > 20000) { scale = 0.01; warnings.push("Единицы: см → конвертированы в м."); }
@@ -741,8 +755,8 @@ export function parseDxf(
   // ── Диапазон Z ───────────────────────────────────────────────────────────
   const zsRaw = (topoSegments.length > 0 ? topoSegments : segments).flatMap(s => [s.z1, s.z2]);
   for (const c of circles) zsRaw.push(c.cz);
-  const zMin = zsRaw.length > 0 ? Math.min(...zsRaw) : 0;
-  const zMax = zsRaw.length > 0 ? Math.max(...zsRaw) : 0;
+  const zMin = zsRaw.length > 0 ? arrMin(zsRaw) : 0;
+  const zMax = zsRaw.length > 0 ? arrMax(zsRaw) : 0;
   const hasZ = (zMax - zMin) * scale > 0.1;
 
   // ── Строим узловые точки ─────────────────────────────────────────────────
@@ -757,7 +771,7 @@ export function parseDxf(
   ]);
   const roughEps = Math.min(5, Math.max(0.5, (() => {
     const xs = endPtsRaw.map(p => p.x), ys = endPtsRaw.map(p => p.y);
-    return Math.max(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys), 1) * 0.005;
+    return Math.max(arrMax(xs) - arrMin(xs), arrMax(ys) - arrMin(ys), 1) * 0.005;
   })()));
   const { clusters: roughClusters } = clusterPoints(endPtsRaw, roughEps);
 
