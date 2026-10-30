@@ -117,11 +117,11 @@ function LengthField({ manual, value, branchLen, onManual, onChange }: {
 }
 
 /** Выбор трубы из справочника: подставляет наружный Ø, стенку и материал. */
-function PipeModelSelect({ od, wall, material, onPick }: {
-  od: number; wall: number; material: string;
+function PipeModelSelect({ od, wall, material, modelId, onPick }: {
+  od: number; wall: number; material: string; modelId?: string;
   onPick: (patch: Partial<TopoBranch>) => void;
 }) {
-  const cur = findPipe(od, wall, material);
+  const cur = findPipe(od, wall, material, modelId);
   const kind: "ore" | "coal" = (() => { try { return localStorage.getItem("pv_pipes_kind") === "coal" ? "coal" : "ore"; } catch { return "ore"; } })();
   const lines: PipeLine[] = ["main", "section", "face"];
   const list = allPipes();
@@ -130,7 +130,7 @@ function PipeModelSelect({ od, wall, material, onPick }: {
       title="Труба из справочника (Справочники → Трубы). Подставит наружный Ø, стенку и материал."
       onChange={(e) => {
         const m = getPipeById(e.target.value);
-        if (m) onPick({ wpDiameter: m.outerDiameter, wpWallThickness: m.wall, wpMaterial: m.material });
+        if (m) onPick({ wpDiameter: m.outerDiameter, wpWallThickness: m.wall, wpMaterial: m.material, wpPipeModelId: m.id });
       }}>
       <option value="">{cur ? "" : "— свои размеры —"}</option>
       {lines.map((l) => {
@@ -234,7 +234,7 @@ export default function BranchWaterPipeTab({
           </select>
         </Row>
         <Row label="Из справочника">
-          <PipeModelSelect od={wpDiam} wall={wall} material={material} onPick={onUpdate} />
+          <PipeModelSelect od={wpDiam} wall={wall} material={material} modelId={b.wpPipeModelId} onPick={onUpdate} />
         </Row>
         <div className="grid grid-cols-3 gap-1.5">
           <Field label="Наружный Ø">

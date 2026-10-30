@@ -115,9 +115,14 @@ export function getPipeById(id: string | undefined): WaterPipeModel | undefined 
   return userPipes.find((x) => x.id === id) ?? PIPE_CATALOG.find((x) => x.id === id);
 }
 
-/** Труба каталога/своя с теми же размерами и материалом, что у ветви. */
-export function findPipe(od: number, wall: number, material: string): WaterPipeModel | undefined {
-  return allPipes().find((x) => x.outerDiameter === od && x.wall === wall && x.material === material);
+/** Труба каталога/своя с теми же размерами и материалом, что у ветви.
+ *  Если у ветви запомнена модель и она совпадает по размерам — берём её
+ *  (одинаковые размеры бывают в разных ГОСТ с разной прочностью). */
+export function findPipe(od: number, wall: number, material: string, modelId?: string): WaterPipeModel | undefined {
+  const same = (x: WaterPipeModel) => x.outerDiameter === od && x.wall === wall && x.material === material;
+  const byId = getPipeById(modelId);
+  if (byId && same(byId)) return byId;
+  return allPipes().find(same);
 }
 
 // ─── Толщина стенки: сверка с сортаментом ГОСТ и прочность ───────────────────

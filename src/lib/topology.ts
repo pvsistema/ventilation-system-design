@@ -226,6 +226,8 @@ export interface TopoBranch {
   wpMaterial: string;              // материал трубы
   /** Назначение линии ППЗ — для проверки минимального диаметра по нормам. */
   wpLine?: "main" | "section" | "face";
+  /** id трубы из справочника (ГОСТ различает трубы одного размера по прочности). */
+  wpPipeModelId?: string;
   wpLengthManual: boolean;         // длина задана вручную
   wpLength: number;                // м — длина трубопровода
   wpRoughnessMode: "material" | "smooth" | "rough" | "manual" | "shevelev"; // способ расчёта сопротивления ("shevelev" — устар., = material)

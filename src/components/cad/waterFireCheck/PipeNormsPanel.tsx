@@ -56,7 +56,8 @@ export default function PipeNormsPanel({ result, kind, onKind, onHighlightBranch
           <div className="text-[10px] text-gray-500 py-1">
             Норма: магистральные — не менее DN {min.main}, участковые — не менее DN {min.section};
             скорость воды — до {V_TECH} м/с при обычном расходе и до {V_FIRE} м/с при пожаротушении
-            (худший из пожарных сценариев проверки). Назначение линии задаётся в свойствах ветви («Трубы» → «Линия»).
+            (худший из пожарных сценариев проверки); давление в трубе (при закрытых кранах) — не выше
+            допустимого для её стенки с запасом на коррозию. Назначение линии задаётся в свойствах ветви («Трубы» → «Линия»).
           </div>
           {ok ? null : (
             <div className="overflow-auto" style={{ maxHeight: 180 }}>
@@ -67,6 +68,7 @@ export default function PipeNormsPanel({ result, kind, onKind, onHighlightBranch
                     <th className="text-left font-semibold px-2 py-1">Линия</th>
                     <th className="text-right font-semibold px-2 py-1">Труба, мм</th>
                     <th className="text-right font-semibold px-2 py-1">DN / норма</th>
+                    <th className="text-right font-semibold px-2 py-1" title="Наибольшее давление в трубе / допустимое для её стенки">P / P доп., МПа</th>
                     <th className="text-right font-semibold px-2 py-1">v, м/с</th>
                     <th className="text-right font-semibold px-2 py-1">v пожар, м/с</th>
                     <th className="text-left font-semibold px-2 py-1">Замечание и что сделать</th>
@@ -83,6 +85,10 @@ export default function PipeNormsPanel({ result, kind, onKind, onHighlightBranch
                       <td className="px-2 py-1 text-right"
                         style={{ color: it.kinds.includes("small-diameter") ? "var(--c-red, #dc2626)" : undefined, fontWeight: it.kinds.includes("small-diameter") ? 600 : 400 }}>
                         {it.dn}{it.minDn ? ` / ${it.minDn}` : ""}
+                      </td>
+                      <td className="px-2 py-1 text-right whitespace-nowrap"
+                        style={{ color: it.kinds.includes("over-pressure") ? "var(--c-red, #dc2626)" : undefined, fontWeight: it.kinds.includes("over-pressure") ? 600 : 400 }}>
+                        {fmt(it.pressure)} / {fmt(it.allowedPressure)}
                       </td>
                       <td className="px-2 py-1 text-right"
                         style={{ color: it.kinds.includes("tech-velocity") ? "var(--c-red, #dc2626)" : undefined, fontWeight: it.kinds.includes("tech-velocity") ? 600 : 400 }}>
