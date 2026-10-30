@@ -10,36 +10,69 @@
       "name": "Unauthorized without password",
       "method": "POST",
       "path": "/",
-      "body": {"action": "list_licenses"},
+      "body": {
+        "action": "list_licenses"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "unauthorized"},
+      "expectedBody": {
+        "error": "unauthorized"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Wrong password returns 401",
       "method": "POST",
       "path": "/",
-      "body": {"action": "generate_key", "password": "wrong"},
+      "body": {
+        "action": "generate_key",
+        "password": "wrong"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "unauthorized"},
+      "expectedBody": {
+        "error": "unauthorized"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "Offline key requires auth",
       "method": "POST",
       "path": "/",
-      "body": {"action": "create_offline_key", "org": "Test", "password": "wrong"},
+      "body": {
+        "action": "create_offline_key",
+        "org": "Test",
+        "password": "wrong"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "unauthorized"},
+      "expectedBody": {
+        "error": "unauthorized"
+      },
       "bodyMatcher": "partial"
     },
     {
       "name": "List offline keys requires auth",
       "method": "POST",
       "path": "/",
-      "body": {"action": "list_offline_keys", "password": "wrong"},
+      "body": {
+        "action": "list_offline_keys",
+        "password": "wrong"
+      },
       "expectedStatus": 401,
-      "expectedBody": {"error": "unauthorized"},
+      "expectedBody": {
+        "error": "unauthorized"
+      },
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "Sync export requires auth",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "action": "export_sync"
+      },
+      "expectedStatus": 401,
+      "expectedBody": {
+        "error": "unauthorized"
+      },
       "bodyMatcher": "partial"
     }
   ]

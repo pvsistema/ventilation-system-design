@@ -110,7 +110,10 @@ systemctl restart pvs-mirror
 crontab -e
 ```
 
-Добавьте строку (синхронизация каждый час):
+Добавьте строку (синхронизация каждый час). Каждый запуск — **один** вызов
+облака: передаются только изменившиеся таблицы, из журнала событий — только
+новые записи. Отпечатки хранятся в `storage/sync_state.json`; принудительно
+забрать всё целиком: `sync_from_cloud.py --full`.
 
 ```
 0 * * * * /opt/pvs/mirror-server/.venv/bin/python /opt/pvs/mirror-server/sync_from_cloud.py >> /var/log/pvs-sync.log 2>&1

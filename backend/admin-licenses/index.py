@@ -54,6 +54,7 @@ import string
 import hashlib
 import re
 import base64
+import gzip
 from datetime import datetime, timezone, timedelta
 import psycopg2
 
@@ -153,6 +154,89 @@ EXPORT_TABLES = [
 ]
 
 
+# Журнальные таблицы: строки только добавляются, поэтому резерв догружает
+# лишь новые записи (id больше последнего известного), а не всю таблицу.
+APPEND_TABLES = {"license_events"}
+
+# Родитель → дочерние таблицы (внешние ключи). Если родитель изменился,
+# зеркало пересоздаёт его вместе с детьми — иначе очистка родителя
+# упёрлась бы в ссылки из дочерней таблицы.
+CHILD_TABLES = {
+    "licenses": ["license_seats"],
+    "offline_keys": ["offline_key_seats"],
+    "client_access": ["client_sessions"],
+}
+
+
+def _table_hash(cur, t: str) -> str:
+    """Отпечаток содержимого таблицы: меняется при любой правке строки."""
+    cur.execute(
+        f'SELECT md5(COALESCE(string_agg(md5(x::text), \'\' ORDER BY md5(x::text)), \'\')), COUNT(*) FROM "{t}" x')
+    h, cnt = cur.fetchone()
+    return f"{h}:{cnt}"
+
+
+def _version_info() -> dict:
+    """Запись о версии программы (updates/version.json в хранилище)."""
+    try:
+        import boto3
+        s3 = boto3.client("s3", endpoint_url="https://bucket.poehali.dev",
+                          aws_access_key_id=os.environ["AWS_ACCESS_KEY_ID"],
+                          aws_secret_access_key=os.environ["AWS_SECRET_ACCESS_KEY"])
+        raw = s3.get_object(Bucket="files", Key="updates/version.json")["Body"].read().decode()
+        v = json.loads(raw)
+        return json.loads(v) if isinstance(v, str) else v
+    except Exception as ex:  # noqa: BLE001
+        print(f"[admin] export_sync: version.json not read: {ex}")
+        return {}
+
+
+def export_sync(cur, conn, body: dict) -> dict:
+    """Синхронизация резервного зеркала ОДНИМ вызовом.
+
+    Зеркало присылает отпечатки своих таблиц (known: {table: hash}) и для
+    журналов — последний id (since: {table: id}). В ответ — только таблицы,
+    отпечаток которых изменился, плюс версия программы и (по запросу) ключ
+    подписи. Всё упаковано gzip+base64, чтобы ответ был компактным.
+    """
+    known = body.get("known") or {}
+    since = body.get("since") or {}
+    full = bool(body.get("full"))
+    out_tables = {}
+    hashes = {}
+    for t in EXPORT_TABLES:
+        try:
+            hashes[t] = _table_hash(cur, t)
+        except Exception as ex:  # noqa: BLE001
+            conn.rollback()
+            print(f"[admin] export_sync skip {t}: {ex}")
+    changed = {t for t, h in hashes.items() if full or known.get(t) != h}
+    for parent, kids in CHILD_TABLES.items():
+        if parent in changed:
+            changed.update(k for k in kids if k in hashes)
+    for t in EXPORT_TABLES:
+        if t not in changed:
+            continue
+        h = hashes[t]
+        if t in APPEND_TABLES and not full and t in since:
+            cur.execute(f'SELECT * FROM "{t}" WHERE id > %s ORDER BY id', (int(since[t] or 0),))
+            mode = "append"
+        else:
+            cur.execute(f'SELECT * FROM "{t}" ORDER BY 1')
+            mode = "replace"
+        cols = [d[0] for d in cur.description]
+        rows = [list(r) for r in cur.fetchall()]
+        out_tables[t] = {"mode": mode, "columns": cols, "rows": rows,
+                         "total": int(h.rsplit(":", 1)[1])}
+    payload = {"hashes": hashes, "tables": out_tables, "version": _version_info()}
+    if body.get("want_signing_key"):
+        payload["offline_key_private"] = os.environ.get("OFFLINE_KEY_PRIVATE", "").strip()
+    raw = json.dumps(payload, default=str, ensure_ascii=False).encode()
+    packed = base64.b64encode(gzip.compress(raw, 6)).decode()
+    print(f"[admin] export_sync: changed={list(out_tables)} raw={len(raw)} packed={len(packed)}")
+    return {"gzip_b64": packed, "changed": list(out_tables)}
+
+
 def get_conn():
     dsn = os.environ["DATABASE_URL"]
     schema = os.environ.get("MAIN_DB_SCHEMA", "public")
@@ -238,6 +322,9 @@ def handler(event: dict, context) -> dict:
                     conn.rollback()
                     print(f"[admin] export skip {t}: {ex}")
             return resp(200, {"tables": tables})
+
+        if action == "export_sync":
+            return resp(200, export_sync(cur, conn, body))
 
         if action == "export_table":
             table = str(body.get("table") or "")
