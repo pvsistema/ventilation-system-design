@@ -13,6 +13,8 @@ import FireSourceSettings from "@/components/cad/waterFireCheck/FireSourceSettin
 import FireVerdictBanner from "@/components/cad/waterFireCheck/FireVerdictBanner";
 import WaterNormsPanel from "@/components/cad/waterFireCheck/WaterNormsPanel";
 import WaterCheckTable from "@/components/cad/waterFireCheck/WaterCheckTable";
+import PipeNormsPanel from "@/components/cad/waterFireCheck/PipeNormsPanel";
+import { checkPipeNorms } from "@/lib/waterPipeNorms";
 
 interface Props {
   branches: TopoBranch[];
@@ -22,6 +24,8 @@ interface Props {
   projectName?: string;
   /** Подсветить точку на схеме по клику в таблице */
   onHighlightNode?: (nodeId: string) => void;
+  /** Подсветить трубу на схеме по клику в таблице «Трубы по нормам» */
+  onHighlightBranch?: (branchId: string) => void;
   onClose: () => void;
 }
 
@@ -33,7 +37,7 @@ function consumerName(id: string | undefined): string {
 
 export default function WaterFireCheckDialog({
   branches: rawBranches, nodes, schemaSymbols = [],
-  projectName = "Подземный рудник", onHighlightNode, onClose,
+  projectName = "Подземный рудник", onHighlightNode, onHighlightBranch, onClose,
 }: Props) {
   // Впечатываем напор насосных станций со схемы в поля ветвей — без этого
   // насос на схеме есть, а давление в проверке не поднимается.
@@ -112,6 +116,20 @@ export default function WaterFireCheckDialog({
   }, [mode, activeFireBranch, nodes, branches, hoseLength, maxHoses, intensity,
       minPressure, maxPressure, minFlow, minDuration,
       baseNodeId, hoseDeployTime, idaWorkTime]);
+
+  // Трубы по нормам: диаметр линии и скорость воды. Тип предприятия общий
+  // со справочником труб (Справочники → Трубы).
+  const [pipeKind, setPipeKindState] = useState<"ore" | "coal">(() => {
+    try { return localStorage.getItem("pv_pipes_kind") === "coal" ? "coal" : "ore"; } catch { return "ore"; }
+  });
+  const setPipeKind = (k: "ore" | "coal") => {
+    setPipeKindState(k);
+    try { localStorage.setItem("pv_pipes_kind", k); } catch { /* ignore */ }
+  };
+  const pipeNorms = useMemo(
+    () => checkPipeNorms(nodes, branches, pipeKind, result.fireVelocityByBranch),
+    [nodes, branches, pipeKind, result],
+  );
 
   const visibleRows = mode === "fire"
     ? (fireResult?.hydrants ?? [])
@@ -216,6 +234,12 @@ export default function WaterFireCheckDialog({
           maxVelocity={maxVelocity} setMaxVelocity={setMaxVelocity}
           numInput={numInput}
         />
+
+        {/* Трубы по нормам: диаметр линии и скорость воды */}
+        {mode === "network" && pipeNorms.total > 0 && (
+          <PipeNormsPanel result={pipeNorms} kind={pipeKind} onKind={setPipeKind}
+            onHighlightBranch={onHighlightBranch} />
+        )}
 
         {/* Сводка */}
         {mode === "network" && !result.error && (

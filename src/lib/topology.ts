@@ -224,6 +224,8 @@ export interface TopoBranch {
   wpDiameterKind?: "inner" | "outer"; // устарело: не используется, диаметр всегда наружный
   wpWallThickness?: number;        // мм — толщина стенки (внутренний Ø = наружный − 2 × стенка)
   wpMaterial: string;              // материал трубы
+  /** Назначение линии ППЗ — для проверки минимального диаметра по нормам. */
+  wpLine?: "main" | "section" | "face";
   wpLengthManual: boolean;         // длина задана вручную
   wpLength: number;                // м — длина трубопровода
   wpRoughnessMode: "material" | "smooth" | "rough" | "manual" | "shevelev"; // способ расчёта сопротивления ("shevelev" — устар., = material)

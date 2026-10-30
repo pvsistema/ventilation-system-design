@@ -418,6 +418,11 @@ export default function CadToolDialogs(p: CadToolDialogsProps) {
           nodes={p.nodes}
           schemaSymbols={p.schemaSymbols}
           projectName={p.projectFileName.replace(/\.vproj$/, "")}
+          onHighlightBranch={(id) => {
+            p.setSelectedBranchId(id);
+            p.setSelectedBranchIds(new Set([id]));
+            p.setSelectedNodeId(null);
+          }}
           onClose={() => p.setShowWaterCheck(false)}
         />
       )}

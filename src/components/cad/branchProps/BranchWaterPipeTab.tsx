@@ -223,6 +223,16 @@ export default function BranchWaterPipeTab({
       <PipeCard icon="Droplets" title="Водопровод ППЗ" enabled={hasWater}
         subtitle={`Ø${wpDiam}×${wall} мм · ${material}`}
         onToggle={(v) => onUpdate({ hasWaterPipe: v })}>
+        <Row label="Линия">
+          <select className={inputCls} style={selectStyle} value={b.wpLine ?? ""}
+            title="Назначение линии — по нему проверка ППЗ сверяет диаметр с нормой"
+            onChange={(e) => onUpdate({ wpLine: (e.target.value || undefined) as TopoBranch["wpLine"] })}>
+            <option value="">— не указано —</option>
+            <option value="main">Магистральная</option>
+            <option value="section">Участковая</option>
+            <option value="face">Забойная</option>
+          </select>
+        </Row>
         <Row label="Из справочника">
           <PipeModelSelect od={wpDiam} wall={wall} material={material} onPick={onUpdate} />
         </Row>

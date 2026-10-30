@@ -126,6 +126,8 @@ export interface WaterCheckResult {
   pumpHeadTotal: number;
   /** Прибавка давления от насосов, МПа */
   pumpBoostMPa: number;
+  /** Наибольшая скорость воды в каждой трубе по всем пожарным сценариям, м/с */
+  fireVelocityByBranch: Map<string, number>;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -594,7 +596,7 @@ export function checkWaterNetwork(
 
   const empty = (error: string): WaterCheckResult =>
     ({ rows: [], norms, total: 0, failed: 0, worst: null, error,
-       pumpCount, pumpHeadTotal, pumpBoostMPa: 0 });
+       pumpCount, pumpHeadTotal, pumpBoostMPa: 0, fireVelocityByBranch: new Map() });
 
   if (waterBranches.length === 0) return empty("В схеме нет участков водопровода. Отметьте выработки с трубопроводом ППЗ.");
   if (reservoirs.length === 0)    return empty("В схеме нет резервуара (источника воды). Добавьте узел типа «Резервуар».");
@@ -610,6 +612,7 @@ export function checkWaterNetwork(
 
   const consumerIds = new Set(consumers.map(c => c.id));
   const rows: WaterCheckRow[] = [];
+  const fireVelocityByBranch = new Map<string, number>();
 
   consumers.forEach((c, i) => {
     // ── Сценарий: открыт проверяемый кран + ближайшие (одновременная работа)
@@ -645,7 +648,11 @@ export function checkWaterNetwork(
     let maxVel = 0;
     let pumpBoost = 0;
     branchResults.forEach(br => {
-      if ((br.flow ?? 0) > 0.01) maxVel = Math.max(maxVel, br.velocity ?? 0);
+      if ((br.flow ?? 0) > 0.01) {
+        maxVel = Math.max(maxVel, br.velocity ?? 0);
+        const id = br.branchId;
+        fireVelocityByBranch.set(id, Math.max(fireVelocityByBranch.get(id) ?? 0, br.velocity ?? 0));
+      }
       if (br.pumpActive) pumpBoost += br.pumpDeltaP ?? 0;
     });
 
@@ -751,5 +758,6 @@ export function checkWaterNetwork(
     pumpCount,
     pumpHeadTotal,
     pumpBoostMPa: +(1000 * 9.81 * pumpHeadTotal / 1e6).toFixed(4),
+    fireVelocityByBranch,
   };
 }
