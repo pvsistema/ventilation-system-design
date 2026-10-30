@@ -23,6 +23,8 @@ import { PUMP_CATALOG, PUMP_TYPE_NAMES, pumpHead, makeUserPump, type PumpModel }
 import UserPumpEditor from "@/components/cad/UserPumpEditor";
 import type { WaterConsumerModel } from "@/lib/waterConsumers";
 import ConsumersSection from "@/components/cad/ConsumersSection";
+import PipesSection from "@/components/cad/PipesSection";
+import type { WaterPipeModel } from "@/lib/waterPipes";
 import PumpChart from "@/components/cad/PumpChart";
 import { type VentNorms, DEFAULT_VENT_NORMS } from "@/lib/ventSections";
 import {
@@ -114,6 +116,9 @@ interface Props {
   /** Свои потребители воды (хранятся в проекте) */
   userConsumers?: WaterConsumerModel[];
   onUserConsumersChange?: (list: WaterConsumerModel[]) => void;
+  /** Свои трубы ППЗ (хранятся в проекте) */
+  userPipes?: WaterPipeModel[];
+  onUserPipesChange?: (list: WaterPipeModel[]) => void;
 }
 
 // ─── Оформление в палитре темы (--c-accent / --c-s* / --c-b* / --c-t*) ────
@@ -153,7 +158,7 @@ const TABS: { id: TabId; label: string; icon: string; group: string; hint: strin
   { id: "consumers", label: "Потребители",         icon: "Flame",     group: "Трубопровод",
     hint: "Пожарные стволы, распылители, пеногенераторы. Модель выбирается в свойствах узла-потребителя." },
   { id: "pipes",     label: "Трубы",               icon: "GitBranch", group: "Трубопровод",
-    hint: "Трубы рудника. Заполняется вручную. В расчётах пока не используется." },
+    hint: "Стальные трубы ППЗ по ГОСТ: магистральные, участковые и забойные. Можно добавить свои." },
   { id: "transport", label: "Транспорт",           icon: "Truck",     group: "Общее",
     hint: "Масса горючих материалов на машине (резина, дизель, масло). Нажмите на строку, чтобы изменить; можно добавить свою технику." },
   { id: "units",     label: "Единицы измерения",   icon: "Ruler",     group: "Общее",
@@ -2311,7 +2316,7 @@ function AirNormsSection({ norms, onChange }: {
   );
 }
 
-function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange, userConsumers, onUserConsumersChange }: {
+function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange, userConsumers, onUserConsumersChange, userPipes, onUserPipesChange }: {
   tab: TabId;
   branches?: TopoBranch[];
   onMineFansChange?: (fans: MineFanExport[]) => void;
@@ -2332,6 +2337,8 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
   onUserPumpsChange?: (list: PumpModel[]) => void;
   userConsumers?: WaterConsumerModel[];
   onUserConsumersChange?: (list: WaterConsumerModel[]) => void;
+  userPipes?: WaterPipeModel[];
+  onUserPipesChange?: (list: WaterPipeModel[]) => void;
 }) {
   if (tab === "blastzones") return <BlastZonesSection
     thresholds={blastThresholds ?? DEFAULT_EXPLOSION_THRESHOLDS}
@@ -2350,8 +2357,7 @@ function TabContent({ tab, branches, onMineFansChange, onMineBulkheadsChange, on
     headers={["Мероприятие", "Шагов", "Ответственный", "Время"]} />;
   if (tab === "pumps") return <PumpsSection userPumps={userPumps} onUserPumpsChange={onUserPumpsChange} />;
   if (tab === "consumers") return <ConsumersSection userConsumers={userConsumers} onUserConsumersChange={onUserConsumersChange} />;
-  if (tab === "pipes") return <EditableTable key="pipes" storageKey="pv_ref_pipes"
-    headers={["Материал", "DN", "Стенка", "Давление"]} />;
+  if (tab === "pipes") return <PipesSection userPipes={userPipes} onUserPipesChange={onUserPipesChange} />;
   if (tab === "transport") return <VehicleCatalogSection />;
   return null;
 }
@@ -2367,7 +2373,7 @@ function IconBadge({ icon, size = 24 }: { icon: string; size?: number }) {
   );
 }
 
-export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange, userConsumers, onUserConsumersChange }: Props) {
+export default function EquipmentRefDialog({ activeTab, onTabChange, onClose, onMineFansChange, onMineBulkheadsChange, onBranchTypesChange, initialMineFans, initialBranchTypes, initialMineBulkheads, unitsConfig, onUnitsConfigChange, ventNorms, onVentNormsChange, blastThresholds, onBlastThresholdsChange, branches, bulkheadThickness, onBulkheadThicknessChange, userPumps, onUserPumpsChange, userConsumers, onUserConsumersChange, userPipes, onUserPipesChange }: Props) {
   const currentTab = TABS.find(t => t.id === activeTab) ?? TABS[0];
 
   // Esc закрывает окно (вложенные окна библиотеки/каталога перехватывают клик,

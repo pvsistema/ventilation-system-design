@@ -21,6 +21,7 @@ import { type WaterBranchResult, MATERIAL_ROUGHNESS_MM, SMOOTH_ROUGHNESS_MM } fr
 import { SHEVELEV_MATERIALS, shevelevLambda, pipeRoughnessMode } from "@/lib/waterSolver";
 import { PRESSURE_REDUCING_VALVES, getValveById, MPA_TO_ATM } from "@/lib/pressureReducingValves";
 import Icon from "@/components/ui/icon";
+import { allPipes, findPipe, getPipeById, PIPE_LINE_NAMES, pipeLineFor, MIN_DN, type PipeLine } from "@/lib/waterPipes";
 import {
   Card, Field, Row, NumInput, ReadValue, Segmented, Stat, KV, inputCls, inputStyle,
 } from "@/components/cad/propUi";
@@ -115,6 +116,42 @@ function LengthField({ manual, value, branchLen, onManual, onChange }: {
   );
 }
 
+/** Выбор трубы из справочника: подставляет наружный Ø, стенку и материал. */
+function PipeModelSelect({ od, wall, material, onPick }: {
+  od: number; wall: number; material: string;
+  onPick: (patch: Partial<TopoBranch>) => void;
+}) {
+  const cur = findPipe(od, wall, material);
+  const kind: "ore" | "coal" = (() => { try { return localStorage.getItem("pv_pipes_kind") === "coal" ? "coal" : "ore"; } catch { return "ore"; } })();
+  const lines: PipeLine[] = ["main", "section", "face"];
+  const list = allPipes();
+  return (
+    <select className={inputCls} style={selectStyle} value={cur?.id ?? ""}
+      title="Труба из справочника (Справочники → Трубы). Подставит наружный Ø, стенку и материал."
+      onChange={(e) => {
+        const m = getPipeById(e.target.value);
+        if (m) onPick({ wpDiameter: m.outerDiameter, wpWallThickness: m.wall, wpMaterial: m.material });
+      }}>
+      <option value="">{cur ? "" : "— свои размеры —"}</option>
+      {lines.map((l) => {
+        const items = list.filter((m) => pipeLineFor(m.dn, kind) === l);
+        if (!items.length) return null;
+        const min = MIN_DN[kind];
+        const hint = l === "main" ? `от DN ${min.main}` : l === "section" ? `от DN ${min.section}` : `меньше DN ${min.section}`;
+        return (
+          <optgroup key={l} label={`${PIPE_LINE_NAMES[l]} (${hint})`}>
+            {items.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} · DN {m.dn} · {m.gost || m.material}{m.notes ? ` · ${m.notes}` : ""}{m.isUser ? " (своя)" : ""}
+              </option>
+            ))}
+          </optgroup>
+        );
+      })}
+    </select>
+  );
+}
+
 function MaterialSelect({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <select className={inputCls} style={selectStyle} value={value} onChange={(e) => onChange(e.target.value)}>
@@ -186,6 +223,9 @@ export default function BranchWaterPipeTab({
       <PipeCard icon="Droplets" title="Водопровод ППЗ" enabled={hasWater}
         subtitle={`Ø${wpDiam}×${wall} мм · ${material}`}
         onToggle={(v) => onUpdate({ hasWaterPipe: v })}>
+        <Row label="Из справочника">
+          <PipeModelSelect od={wpDiam} wall={wall} material={material} onPick={onUpdate} />
+        </Row>
         <div className="grid grid-cols-3 gap-1.5">
           <Field label="Наружный Ø">
             <NumInput value={wpDiam} min={0} step={1} unit="мм" onChange={(v) => onUpdate({ wpDiameter: v })} />

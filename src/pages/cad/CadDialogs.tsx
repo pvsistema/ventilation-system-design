@@ -164,6 +164,8 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
     setUserPumps,
     userConsumers,
     setUserConsumers,
+    userPipes,
+    setUserPipes,
     blastMixId,
     setBlastMixId,
     showBlastBulkheadCalc,
@@ -386,6 +388,8 @@ export default function CadDialogs({ c }: { c: CadPageState }) {
       setUserPumps={setUserPumps}
       userConsumers={userConsumers}
       setUserConsumers={setUserConsumers}
+      userPipes={userPipes}
+      setUserPipes={setUserPipes}
       ventSections={ventSections}
       setVentSections={setVentSections}
       showVentSections={showVentSections}

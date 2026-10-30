@@ -80,6 +80,7 @@ import { useCadHeaters } from "./useCadHeaters";
 import { buildVentPipeLine as buildVentPipeLineImpl } from "./buildVentPipeLine";
 import { collectVentPipeLine, removeVentPipeLine } from "./ventPipeLineOps";
 import { planBranchDeletion, type DeleteBranchPlan } from "./deleteBranchPlan";
+import { registerUserPipes, type WaterPipeModel } from "@/lib/waterPipes";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Состояние и логика страницы CAD (вынесено из src/pages/Cad.tsx без изменений).
@@ -1919,6 +1920,12 @@ export function useCadPage() {
     registerUserConsumers(list);
     setUserConsumersState(list);
   }, []);
+  // Свои трубы ППЗ (Справочники → Трубы) — тоже общий реестр.
+  const [userPipes, setUserPipesState] = useState<WaterPipeModel[]>([]);
+  const setUserPipes = useCallback((list: WaterPipeModel[]) => {
+    registerUserPipes(list);
+    setUserPipesState(list);
+  }, []);
   // Участки рудника и нормы расхода воздуха (ФНиП № 505 п.155) — в проекте
   const [ventSections, setVentSections] = useState<VentSection[]>([]);
   const [ventNorms, setVentNorms] = useState<VentNorms>(DEFAULT_VENT_NORMS);
@@ -3544,6 +3551,7 @@ export function useCadPage() {
     mineFans,
     userPumps,
     userConsumers,
+    userPipes,
     mineBulkheads,
     mineTypes,
     bulkheadThickness,
@@ -3647,7 +3655,7 @@ export function useCadPage() {
       return;
     }
     setIsDirty(true);
-  }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, userConsumers, mineBulkheads, mineTypes, bulkheadThickness,
+  }, [nodes, branchesRaw, schemaSymbols, mineFans, userPumps, userConsumers, userPipes, mineBulkheads, mineTypes, bulkheadThickness,
       calcMode, solverTolerance, solverMaxIter, solverAlpha, surfaceTemp,
       infoConfig, unitsConfig, branchWidth, branchBorder, colorByHorizon,
       showFlowArrows, pollutionThreshold, flowDisplay, zScale, xyScale, projectFileName, inspectionRoutes]);
@@ -4224,6 +4232,7 @@ export function useCadPage() {
     }
     setUserPumps(Array.isArray(data.userPumps) ? (data.userPumps as PumpModel[]) : []);
     setUserConsumers(Array.isArray(data.userConsumers) ? (data.userConsumers as WaterConsumerModel[]) : []);
+    setUserPipes(Array.isArray(data.userPipes) ? (data.userPipes as WaterPipeModel[]) : []);
     // В проектах без справочника толщин — значения по умолчанию.
     setBulkheadThickness(normalizeThicknessTable(data.bulkheadThickness));
     {
@@ -4508,6 +4517,7 @@ export function useCadPage() {
     })));
     setMineTypes([]);
     setUserConsumers([]);
+    setUserPipes([]);
     setBulkheadThickness(DEFAULT_BULKHEAD_THICKNESS);
 
     // ── Имя файла и вид ──
@@ -6650,6 +6660,8 @@ export function useCadPage() {
     setUserPumps,
     userConsumers,
     setUserConsumers,
+    userPipes,
+    setUserPipes,
     ventSections,
     setVentSections,
     ventNorms,

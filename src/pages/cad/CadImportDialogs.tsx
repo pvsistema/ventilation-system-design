@@ -36,6 +36,7 @@ import { type UnitsConfig } from "@/lib/unitsConfig";
 import VentSectionsDialog from "@/components/cad/VentSectionsDialog";
 import { type VentNorms, type VentSection } from "@/lib/ventSections";
 import type { WaterConsumerModel } from "@/lib/waterConsumers";
+import type { WaterPipeModel } from "@/lib/waterPipes";
 
 // Тип-псевдонимы берём из React-компонентов, чтобы сигнатуры совпадали 1:1
 type EquipTab = React.ComponentProps<typeof EquipmentRefDialog>["activeTab"];
@@ -68,6 +69,9 @@ export interface CadImportDialogsProps {
   /** Свои потребители воды (Справочники → Потребители). */
   userConsumers: WaterConsumerModel[];
   setUserConsumers: (list: WaterConsumerModel[]) => void;
+  /** Свои трубы ППЗ (Справочники → Трубы). */
+  userPipes: WaterPipeModel[];
+  setUserPipes: (list: WaterPipeModel[]) => void;
   ventSections: VentSection[];
   setVentSections: (s: VentSection[]) => void;
   showVentSections: boolean;
@@ -254,6 +258,8 @@ export default function CadImportDialogs(p: CadImportDialogsProps) {
           onUserPumpsChange={p.setUserPumps}
           userConsumers={p.userConsumers}
           onUserConsumersChange={p.setUserConsumers}
+          userPipes={p.userPipes}
+          onUserPipesChange={p.setUserPipes}
           branches={p.branches}
         />
       )}
