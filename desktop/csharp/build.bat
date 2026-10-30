@@ -222,6 +222,11 @@ if "%RESUME%"=="1" (
         set "SERVER_VERSION=!STAMPED!"
     )
     echo     RESUME: skipping frontend and core compilation, going to signing.
+    REM The jump below skips step 2, where the build deps are installed. Signing
+    REM needs the cryptography library, so install the pinned deps here too -
+    REM otherwise resume on a fresh PC fails with "cryptography is not installed".
+    echo     Installing build dependencies ^(needed for signing^)...
+    python -m pip install -r "%CS_DIR%\requirements-build.txt" || goto :fail
     echo.
     goto :sign_core
 )

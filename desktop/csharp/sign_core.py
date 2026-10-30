@@ -27,7 +27,17 @@ from getpass import getpass
 # до установки зависимостей сборки, и обычный import на верхнем уровне ронял бы
 # её с ImportError ещё до того, как сборка дошла бы до pip install.
 def _crypto():
-    from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    try:
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+    except ImportError:
+        # Библиотеки нет (например, сборка продолжена через resume на другом
+        # Python) - ставим её в ТОТ ЖЕ интерпретатор, что запускает подпись.
+        import subprocess
+        print("    Библиотека cryptography не найдена - устанавливаю...")
+        subprocess.call([sys.executable, "-m", "pip", "install", "cryptography==44.0.0"])
+        import importlib
+        importlib.invalidate_caches()
+        from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
     from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
     return Ed25519PrivateKey, Encoding, PublicFormat
 
