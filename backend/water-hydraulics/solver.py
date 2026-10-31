@@ -13,7 +13,12 @@
       между ними — линейная интерполяция (переходная зона).
   • Насос — постоянный прирост напора в направлении качания, с обратным клапаном.
   • Редукционный клапан — дросселирует так, чтобы давление за ним не
-    превышало уставку; обратного тока не пропускает.
+    превышало уставку; обратного тока не пропускает. Давление на входе
+    берётся В МЕСТЕ УСТАНОВКИ клапана на ветви (wpReducerT — доля длины от
+    начала ветви, по значку на схеме): напор верхнего узла минус потери на
+    участке до клапана минус столб воды до его отметки. wpReducerPlace:
+    "symbol" (по значку, по умолчанию) | "inlet" | "outlet" — в начале или
+    в конце ветви по ходу воды.
 В каждом узле выполняется баланс расходов (1-й закон Кирхгофа), в каждом
 контуре — баланс потерь (2-й закон): кольца и развилки считаются честно.
 """
@@ -244,6 +249,22 @@ def ldl_solve(n, diag, off, rhs, order):
 
 # ─── Основной расчёт ──────────────────────────────────────────────────────────
 
+def reducer_place(b):
+    pl = b.get("wpReducerPlace") or "symbol"
+    return pl if pl in ("symbol", "inlet", "outlet") else "symbol"
+
+
+def reducer_up_frac(L):
+    """Доля длины трубы от ВЕРХНЕГО (по ходу воды) узла до клапана."""
+    pl = L["redPlace"]
+    if pl == "inlet":
+        return 0.0
+    if pl == "outlet":
+        return 1.0
+    s = L["redS"]
+    return s if L["d"] >= 0 else 1.0 - s
+
+
 def _zero_branch(bid):
     return {
         "branchId": bid, "flow": 0.0, "velocity": 0.0, "deltaP": 0.0, "resistance": 0.0,
@@ -321,6 +342,8 @@ def calc_water_network(nodes_in, branches_in):
             "d": d, "pump": pump_head * RHO_G_MPA if pump_head > 0 else 0.0,
             "pumpHeadM": pump_head, "red": has_red,
             "redTarget": _f(b.get("wpReducerOutPressure"), 0.5) if has_red else 0.0,
+            "redPlace": reducer_place(b),
+            "redS": min(1.0, max(0.0, _f(b.get("wpReducerT"), 0.5))),
             "dv": 0.0, "q": (d or 1) * p.A * 0.5, "open": True,
         })
     for r in reservoirs:
@@ -355,6 +378,15 @@ def calc_water_network(nodes_in, branches_in):
         if L["red"] and L["d"]:
             h += L["d"] * L["dv"]
         return h, dh
+
+    def reducer_inlet_p(L, H):
+        """Давление (МПа) на входе клапана — в точке его установки на ветви."""
+        up = L["i"] if L["d"] > 0 else L["j"]
+        f = reducer_up_frac(L)
+        s_from_i = f if L["d"] > 0 else 1.0 - f
+        h_loss = abs(L["pipe"].loss(L["q"])[0]) if L["q"] * L["d"] > 0 else 0.0
+        z = node_z(node_map.get(L["i"])) * (1.0 - s_from_i) + node_z(node_map.get(L["j"])) * s_from_i
+        return head_of(up, H) - f * h_loss - RHO_G_MPA * z
 
     def link_f0(L):
         f0 = 0.0
@@ -447,8 +479,7 @@ def calc_water_network(nodes_in, branches_in):
             for L in links:
                 if not (L["red"] and L["d"]):
                     continue
-                up = L["i"] if L["d"] > 0 else L["j"]
-                p_up = head_of(up, H) - RHO_G_MPA * node_z(node_map.get(up))
+                p_up = reducer_inlet_p(L, H)
                 target = max(0.0, p_up - L["redTarget"])
                 if abs(target - L["dv"]) > 1e-6:
                     changed = True
@@ -500,6 +531,8 @@ def calc_water_network(nodes_in, branches_in):
         up = b["fromId"] if from_to else b["toId"]
         p_up = head_of(up, H) - RHO_G_MPA * node_z(node_map.get(up))
         dv = L["dv"] if L["red"] and L["d"] else 0.0
+        if L["red"] and L["d"]:
+            p_up = reducer_inlet_p(L, H)
         pump_on = L["pump"] > 0 and L["open"] and aq > 1e-9
         max_flow = _f(b.get("wpReducerMaxFlow"), 0.0)
         branch_results[bid] = {

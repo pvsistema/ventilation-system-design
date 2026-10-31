@@ -244,6 +244,10 @@ export interface TopoBranch {
   wpReducerModel: string;          // ID модели из справочника pressureReducingValves
   wpReducerOutPressure: number;    // МПа — настроенное выходное давление
   wpReducerMaxFlow: number;        // м³/ч — макс. расход (для ручного режима)
+  /** Место клапана на ветви: по значку (по умолчанию), в начале или в конце по ходу воды */
+  wpReducerPlace?: "symbol" | "inlet" | "outlet";
+  /** Доля длины ветви от начала до значка клапана — заполняется перед расчётом */
+  wpReducerT?: number;
   // ─── Запорный вентиль на водопроводе ─────────────────────
   wpHasGate?: boolean;             // на ветви установлен запорный вентиль
   wpGateClosed?: boolean;          // вентиль закрыт → течение воды перекрыто

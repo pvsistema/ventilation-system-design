@@ -12,7 +12,8 @@ POST: {
   branches: [{id, fromId, toId,
               hasWaterPipe, wpDiameter, wpLengthManual, wpLength, length,
               wpRoughnessMode, wpRoughness, wpManualR, wpLocalXi,
-              wpHasReducer, wpReducerOutPressure, wpReducerMaxFlow, z,
+              wpHasReducer, wpReducerOutPressure, wpReducerMaxFlow,
+              wpReducerPlace, wpReducerT, z,
               wpHasPump, wpPumpHead, wpPumpReverse}]
 }
 

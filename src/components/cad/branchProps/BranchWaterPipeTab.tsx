@@ -364,7 +364,7 @@ export default function BranchWaterPipeTab({
             <Card dense collapsible persistKey="pipes.reducer" icon="Gauge" title="Редукционный клапан"
               aside={<>
                 <span className="px-1.5 py-0.5 rounded text-[10px] font-semibold"
-                  title={active ? "Клапан срезает давление" : "Давление на входе ниже настройки — клапан не работает"}
+                  title={active ? "Клапан срезает давление" : "Давление в месте установки клапана ниже настройки — клапан не работает"}
                   style={{
                     background: active ? "var(--c-tint-amber2, #fef3c7)" : "var(--c-s3, #f1efea)",
                     color: active ? "var(--c-amber, #a66b0d)" : "var(--c-t3, #6b7280)",
@@ -389,6 +389,15 @@ export default function BranchWaterPipeTab({
                   {PRESSURE_REDUCING_VALVES.map((v) => <option key={v.id} value={v.id}>{v.name}</option>)}
                 </select>
               </Row>
+              <Field label="Место установки">
+                <Segmented size="sm" value={b.wpReducerPlace ?? "symbol"}
+                  onChange={(v) => onUpdate({ wpReducerPlace: v })}
+                  options={[
+                    { value: "symbol", label: "По значку", title: "Клапан работает там, где стоит его значок на ветви: учитывается столб воды и потери до этой точки" },
+                    { value: "inlet", label: "В начале", title: "Клапан в начале ветви по ходу воды" },
+                    { value: "outlet", label: "В конце", title: "Клапан в конце ветви по ходу воды — срезает всё давление, набранное в стволе" },
+                  ]} />
+              </Field>
               <div className="grid grid-cols-2 gap-1.5">
                 <Field label={`P выхода, ${fmt(outMinAtm, 0)}–${fmt(outMaxAtm, 0)}`}>
                   <NumInput value={+((b.wpReducerOutPressure ?? 0.5) * MPA_TO_ATM).toFixed(1)}
@@ -402,6 +411,11 @@ export default function BranchWaterPipeTab({
                   </Field>
                 )}
               </div>
+              {!active && solved && (
+                <Hint icon="Info">
+                  {`Давление в месте клапана ${fmt((r?.reducerInP ?? 0) * MPA_TO_ATM, 1)} атм не превышает настройку — срезать нечего. Перенесите значок ниже по ветви или выберите «В конце».`}
+                </Hint>
+              )}
               {active && (
                 <div>
                   <KV label="На входе" value={atm(r?.reducerInP)} />

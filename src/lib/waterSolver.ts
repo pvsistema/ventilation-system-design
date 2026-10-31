@@ -280,6 +280,23 @@ interface Link {
   b?: TopoBranch; pipe?: Pipe; R?: number; hAtm?: number;
   d: number; pump: number; pumpHeadM: number;
   red: boolean; redTarget: number; dv: number; q: number; open: boolean;
+  /** Где стоит редуктор: по значку, в начале или в конце ветви по ходу воды. */
+  redPlace?: "symbol" | "inlet" | "outlet";
+  /** Доля длины ветви от fromId до значка редуктора. */
+  redS?: number;
+}
+
+export function reducerPlace(b: Partial<TopoBranch>): "symbol" | "inlet" | "outlet" {
+  const p = (b as { wpReducerPlace?: string }).wpReducerPlace;
+  return p === "inlet" || p === "outlet" ? p : "symbol";
+}
+
+/** Доля длины трубы от ВЕРХНЕГО (по ходу воды) узла до клапана. */
+function reducerUpFrac(L: Link): number {
+  if (L.redPlace === "inlet") return 0;
+  if (L.redPlace === "outlet") return 1;
+  const s = L.redS ?? 0.5;
+  return L.d >= 0 ? s : 1 - s;
 }
 
 export function solveWaterNetwork(
@@ -335,6 +352,8 @@ export function solveWaterNetwork(
       kind: "pipe", b, i: b.fromId, j: b.toId, pipe: p, d,
       pump: pumpHead > 0 ? pumpHead * RHO_G_MPA : 0, pumpHeadM: pumpHead,
       red: hasRed, redTarget: hasRed ? num(b.wpReducerOutPressure, 0.5) : 0,
+      redPlace: reducerPlace(b),
+      redS: Math.min(1, Math.max(0, num((b as { wpReducerT?: number }).wpReducerT, 0.5))),
       dv: 0, q: (d || 1) * p.A * 0.5, open: true,
     });
   }
@@ -354,6 +373,19 @@ export function solveWaterNetwork(
     if (f !== undefined) return f;
     const k = idx.get(id);
     return k !== undefined ? H[k] : 0;
+  };
+
+  // Давление на входе редуктора — в МЕСТЕ его установки на ветви: напор
+  // верхнего узла минус потери на участке до клапана минус столб воды до его
+  // отметки. Раньше бралось давление верхнего узла: в вертикальном стволе
+  // наверху давления почти нет, и клапан всегда числился «не активным».
+  const reducerInletP = (L: Link): number => {
+    const up = L.d > 0 ? L.i : L.j!;
+    const f = reducerUpFrac(L);
+    const sFromI = L.d > 0 ? f : 1 - f;
+    const hLoss = L.q * L.d > 0 ? Math.abs(L.pipe!.loss(L.q)[0]) : 0;
+    const z = nodeZ(nodeMap.get(L.i)) * (1 - sFromI) + nodeZ(nodeMap.get(L.j!)) * sFromI;
+    return headOf(up) - f * hLoss - RHO_G_MPA * z;
   };
 
   const linkF = (L: Link, q: number): [number, number] => {
@@ -443,8 +475,7 @@ export function solveWaterNetwork(
       });
       for (const L of links) {
         if (!(L.red && L.d)) continue;
-        const up = L.d > 0 ? L.i : L.j!;
-        const pUp = headOf(up) - RHO_G_MPA * nodeZ(nodeMap.get(up));
+        const pUp = reducerInletP(L);
         const target = Math.max(0, pUp - L.redTarget);
         if (Math.abs(target - L.dv) > 1e-6) changed = true;
         L.dv += 0.8 * (target - L.dv);
@@ -489,6 +520,7 @@ export function solveWaterNetwork(
     const up = fromTo ? b.fromId : b.toId;
     const pUp = headOf(up) - RHO_G_MPA * nodeZ(nodeMap.get(up));
     const dv = L.red && L.d ? L.dv : 0;
+    const pUpRed = L.red && L.d ? reducerInletP(L) : pUp;
     const pumpOn = L.pump > 0 && L.open && aq > 1e-9;
     const maxFlow = num(b.wpReducerMaxFlow, 0);
     const r4 = (v: number, k = 4) => Math.round(v * 10 ** k) / 10 ** k;
@@ -499,8 +531,8 @@ export function solveWaterNetwork(
       deltaP: r4(hLoss, 5),
       resistance: r4(p.equivR(q), 6),
       reducerActive: L.red && dv > 1e-6,
-      reducerInP: r4(Math.max(0, pUp)),
-      reducerOutP: r4(Math.max(0, pUp - dv)),
+      reducerInP: r4(Math.max(0, pUpRed)),
+      reducerOutP: r4(Math.max(0, pUpRed - dv)),
       reducerDeltaP: r4(dv),
       reducerOverCapacity: L.red && maxFlow > 0 && qh > maxFlow,
       pumpActive: pumpOn,

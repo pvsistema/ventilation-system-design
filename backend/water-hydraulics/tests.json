@@ -337,6 +337,70 @@
         ]
       },
       "bodyMatcher": "partial"
+    },
+    {
+      "name": "Редуктор в конце вертикального ствола срезает давление",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "nodes": [
+          {
+            "id": "A",
+            "fireNodeType": "reservoir",
+            "fireInitPressure": 0.0,
+            "fireCapacity": 100,
+            "z": 0
+          },
+          {
+            "id": "B",
+            "z": -137
+          },
+          {
+            "id": "C",
+            "fireNodeType": "consumer",
+            "fireHydrantOpen": true,
+            "fireHydrantDiameter": 19,
+            "z": -140
+          }
+        ],
+        "branches": [
+          {
+            "id": "AB",
+            "fromId": "A",
+            "toId": "B",
+            "hasWaterPipe": true,
+            "wpDiameter": 108,
+            "wpWallThickness": 4,
+            "length": 137,
+            "wpHasReducer": true,
+            "wpReducerOutPressure": 0.5,
+            "wpReducerPlace": "outlet"
+          },
+          {
+            "id": "BC",
+            "fromId": "B",
+            "toId": "C",
+            "hasWaterPipe": true,
+            "wpDiameter": 108,
+            "wpWallThickness": 4,
+            "length": 50
+          }
+        ]
+      },
+      "expectedStatus": 200,
+      "expectedBody": {
+        "nodeResults": [
+          {
+            "nodeId": "A",
+            "flow": 30.209
+          },
+          {
+            "nodeId": "C",
+            "staticP": 0.5175
+          }
+        ]
+      },
+      "bodyMatcher": "partial"
     }
   ]
 }

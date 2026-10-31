@@ -101,6 +101,7 @@ export interface PumpSymbolLite {
   pumpHead?: number;      // м вод. ст. — номинальный напор одного насоса
   pumpParallel?: number;  // число параллельно работающих насосов
   airDirection?: string;  // "reverse" = качает против направления ветви
+  t?: number;             // доля длины ветви от начала до значка
 }
 
 /**
@@ -116,11 +117,16 @@ export function withWaterPumps<T extends TopoBranch>(
   symbols: PumpSymbolLite[],
 ): T[] {
   const pumpByBranch = new Map<string, PumpSymbolLite>();
+  const reducerT = new Map<string, number>();
   for (const s of symbols) {
     if (s.typeId === "pump" && s.branchId) pumpByBranch.set(s.branchId, s);
+    // Место редуктора на ветви — по его значку на схеме.
+    if (s.typeId === "valve_reduce" && s.branchId) reducerT.set(s.branchId, s.t ?? 0.5);
   }
-  if (pumpByBranch.size === 0) return branches;
-  return branches.map(b => {
+  if (pumpByBranch.size === 0 && reducerT.size === 0) return branches;
+  return branches.map(b0 => {
+    const t = reducerT.get(b0.id);
+    const b = t !== undefined && b0.wpHasReducer ? { ...b0, wpReducerT: t } : b0;
     const pump = pumpByBranch.get(b.id);
     if (!pump) return b;
     const head = (pump.pumpHead ?? 0) * (pump.pumpParallel ?? 1);
@@ -169,7 +175,7 @@ export function waterInputsFingerprint(
       x.wpDiameter, x.wpWallThickness, x.wpMaterial, x.wpLength, x.wpLengthManual, b.length,
       x.wpRoughness, x.wpRoughnessMode, x.wpLocalXi, x.wpManualR,
       x.wpHasGate, x.wpGateClosed,
-      x.wpHasReducer, x.wpReducerOutPressure, x.wpReducerMaxFlow,
+      x.wpHasReducer, x.wpReducerOutPressure, x.wpReducerMaxFlow, x.wpReducerPlace,
       x.wpHasPump, x.wpPumpHead, x.wpPumpReverse,
     ].join(","));
   }
@@ -203,6 +209,11 @@ export function waterInputsFingerprint(
   for (const s of symbols) {
     if (s.typeId !== "pump" || !s.branchId) continue;
     parts.push(["p", s.branchId, s.pumpHead, s.pumpParallel, s.airDirection].join(","));
+  }
+  // Положение значка редуктора на ветви — от него зависит давление на входе.
+  for (const s of symbols) {
+    if (s.typeId !== "valve_reduce" || !s.branchId) continue;
+    parts.push(["r", s.branchId, s.t != null ? s.t.toFixed(3) : ""].join(","));
   }
 
   return parts.join(";");
