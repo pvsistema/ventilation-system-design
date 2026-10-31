@@ -1043,6 +1043,24 @@ table td.tabular-nums,
 }
 .btn-brand:focus-visible { outline: 2px solid var(--brand-ink); outline-offset: 1px; }
 .btn-brand:disabled { cursor: wait; filter: saturate(.8); }
+.btn-water {
+  border-radius: 6px;
+  font-weight: 700;
+  letter-spacing: .01em;
+  color: #fff;
+  background: linear-gradient(180deg, #7cc4fa, #3b9ae8);
+  border: 1px solid #2b7fc7;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .45), 0 1px 2px rgba(20, 80, 140, .25);
+  cursor: pointer;
+  transition: filter .12s ease, transform .12s ease, box-shadow .12s ease;
+}
+.btn-water:not(:disabled):hover {
+  filter: brightness(1.06);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .5), 0 3px 8px -2px rgba(30, 110, 190, .45);
+}
+.btn-water:not(:disabled):active { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15); }
+.btn-water[data-stale] { outline: 2px solid #3b9ae8; outline-offset: 1px; }
+.btn-water:disabled { cursor: default; filter: grayscale(.6); opacity: .5; }
 .btn-brand-kbd {
   font-family: var(--font-num);
   font-size: 10px;

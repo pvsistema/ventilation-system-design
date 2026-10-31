@@ -289,6 +289,10 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
     setCtxMenu,
     applyFireControlActions,
     handleSolve,
+    recalcWater,
+    waterStale,
+    waterCalcBusy,
+    hasWaterPipes,
     handleDeleteSelected,
   } = c;
 
@@ -3216,6 +3220,17 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 <Icon name={vcSolving ? "Loader" : "Play"} size={12} className={vcSolving ? "animate-spin" : ""} />
                 {vcSolving && solveProgress !== null ? `Расчёт… ${solveProgress}%` : "Расчёт"}
                 <kbd className="btn-brand-kbd">F9</kbd>
+              </button>
+              <button onClick={recalcWater} disabled={!hasWaterPipes || waterCalcBusy}
+                className="btn-water flex-1 h-7 text-xs flex items-center justify-center gap-1.5"
+                data-stale={waterStale ? "1" : undefined}
+                title={!hasWaterPipes
+                  ? "На схеме нет водопровода"
+                  : waterStale
+                    ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды"
+                    : "Расчёт напоров и расходов воды в водопроводе"}>
+                <Icon name={waterCalcBusy ? "Loader" : "Droplets"} size={12} className={waterCalcBusy ? "animate-spin" : ""} />
+                Расчёт
               </button>
               {([
                 { on: thinLines, toggle: () => setThinLines((v) => !v), icon: "Minus", title: "Тонкие линии (F6)" },
