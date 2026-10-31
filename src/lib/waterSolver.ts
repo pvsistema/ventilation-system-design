@@ -305,7 +305,13 @@ function reducerUpFrac(L: Link): number {
 export function solveWaterNetwork(
   nodes: TopoNode[],
   branches: TopoBranch[],
-): { nodeResults: Map<string, SolverNodeResult>; branchResults: Map<string, SolverBranchResult>; iterations: number } {
+): {
+  nodeResults: Map<string, SolverNodeResult>;
+  branchResults: Map<string, SolverBranchResult>;
+  iterations: number;
+  /** Давление (МПа) во ВСЕХ узлах сети с резервуаром — не только у кранов. */
+  pressures: Map<string, number>;
+} {
   const nodeResults = new Map<string, SolverNodeResult>();
   const branchResults = new Map<string, SolverBranchResult>();
   const nodeMap = new Map(nodes.map(n => [n.id, n]));
@@ -584,5 +590,8 @@ export function solveWaterNetwork(
     nodeResults.set(n.id, res);
   }
 
-  return { nodeResults, branchResults, iterations };
+  const pressures = new Map<string, number>();
+  for (const id of freeIds) pressures.set(id, Math.max(0, headOf(id) - RHO_G_MPA * nodeZ(nodeMap.get(id))));
+
+  return { nodeResults, branchResults, iterations, pressures };
 }

@@ -16,6 +16,8 @@ import WaterNormsPanel from "@/components/cad/waterFireCheck/WaterNormsPanel";
 import WaterCheckTable from "@/components/cad/waterFireCheck/WaterCheckTable";
 import PipeNormsPanel from "@/components/cad/waterFireCheck/PipeNormsPanel";
 import { checkPipeNorms } from "@/lib/waterPipeNorms";
+import ShaftPressurePanel from "@/components/cad/waterFireCheck/ShaftPressurePanel";
+import { checkShaftPressure } from "@/lib/waterShaftPressure";
 
 interface Props {
   branches: TopoBranch[];
@@ -132,6 +134,13 @@ export default function WaterFireCheckDialog({
     [nodes, branches, pipeKind, result],
   );
 
+  // Давление в стволах: где внизу выше «P макс» — подсказка поставить бак разрыва струи.
+  const maxPressureNum = num(maxPressure, DEFAULT_WATER_NORMS.maxPressure);
+  const shaftPressure = useMemo(
+    () => checkShaftPressure(nodes, branches, maxPressureNum),
+    [nodes, branches, maxPressureNum],
+  );
+
   const visibleRows = mode === "fire"
     ? (fireResult?.hydrants ?? [])
     : (onlyFailed ? result.rows.filter(r => !r.ok) : result.rows);
@@ -241,6 +250,12 @@ export default function WaterFireCheckDialog({
         {/* Трубы по нормам: диаметр линии и скорость воды */}
         {mode === "network" && pipeNorms.total > 0 && (
           <PipeNormsPanel result={pipeNorms} kind={pipeKind} onKind={setPipeKind}
+            onHighlightBranch={onHighlightBranch} />
+        )}
+
+        {/* Давление в стволах: подсказка про баки разрыва струи */}
+        {mode === "network" && shaftPressure.total > 0 && (
+          <ShaftPressurePanel result={shaftPressure} maxPressure={maxPressureNum}
             onHighlightBranch={onHighlightBranch} />
         )}
 
