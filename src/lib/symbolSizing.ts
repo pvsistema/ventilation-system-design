@@ -18,7 +18,7 @@ import {
 
 /** УО, размер которых задан процентом «Вентиляторы» (fanScale). */
 export const FAN_LIKE_SYMBOL_IDS = new Set([
-  "fan", "pump", "valve_water", "valve_reduce",
+  "fan", "pump", "valve_water", "valve_reduce", "break_tank",
 ]);
 
 /** Контекст масштабирования: одинаково считается на экране и на листе. */

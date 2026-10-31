@@ -82,7 +82,7 @@ export async function drawSymbolsToCanvas(
     if (infoConfig) {
       if (sym.typeId === "valve_water" && !infoConfig.waterGateValve) continue;
       if (sym.typeId === "pump" && !infoConfig.waterPumpStation) continue;
-      if (sym.typeId === "valve_reduce" && !infoConfig.waterReducer) continue;
+      if ((sym.typeId === "valve_reduce" || sym.typeId === "break_tank") && !infoConfig.waterReducer) continue;
     }
 
     let basePx = 0, basePy = 0;

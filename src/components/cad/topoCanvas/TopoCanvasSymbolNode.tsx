@@ -97,7 +97,7 @@ export function renderSymbolNode(
   // Видимость насоса (УО «Насос» = «Насосная станция» в панели информации)
   if (sym.typeId === "pump" && infoConfig && !infoConfig.waterPumpStation) return null;
   // Видимость редукционного клапана
-  if (sym.typeId === "valve_reduce" && infoConfig && !infoConfig.waterReducer) return null;
+  if ((sym.typeId === "valve_reduce" || sym.typeId === "break_tank") && infoConfig && !infoConfig.waterReducer) return null;
   // Ветвь символа (один раз) — переиспользуем ниже вместо branches.find.
   const symBr = sym.branchId ? branchById.get(sym.branchId) : null;
 
@@ -163,7 +163,7 @@ export function renderSymbolNode(
     // Устье ствола — ровно того же размера, что и узел этой ветви.
     const mBw = symbolHostWidth(symBr, branchById, branchWidth);
     SZ = shaftMouthSize(Math.max(mBw * _branchObjSF, 1.0), sc);
-  } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce") && sym.branchId && hasBranchPts) {
+  } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce" || sym.typeId === "break_tank") && sym.branchId && hasBranchPts) {
     // Вентилятор, насос, запорный вентиль и редукционный клапан
     // масштабируются от ширины ветви (как перемычка) — синхронно
     // с масштабом схемы, не «плавают» при зуме.

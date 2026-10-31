@@ -2899,7 +2899,7 @@ export default function TopoCanvas(props: Props) {
           // Видимость насоса (УО «Насос» = «Насосная станция» в панели информации)
           if (sym.typeId === "pump" && infoConfig && !infoConfig.waterPumpStation) return null;
           // Видимость редукционного клапана
-          if (sym.typeId === "valve_reduce" && infoConfig && !infoConfig.waterReducer) return null;
+          if ((sym.typeId === "valve_reduce" || sym.typeId === "break_tank") && infoConfig && !infoConfig.waterReducer) return null;
 
           // Ветвь символа (один раз, O(1)) — переиспользуем ниже.
           const symBrSvg = sym.branchId ? branchById.get(sym.branchId) : null;
@@ -2960,7 +2960,7 @@ export default function TopoCanvas(props: Props) {
             // Устье ствола — ровно того же размера, что и узел этой ветви.
             const mBwSh = symbolHostWidth(sym.branchId ? branchById.get(sym.branchId) : null, branchById, branchWidth);
             SZ = shaftMouthSize(Math.max(mBwSh * _branchObjSF, 1.0), sc);
-          } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce") && sym.branchId && hasBranchPts) {
+          } else if ((sym.typeId === "fan" || sym.typeId === "pump" || sym.typeId === "valve_water" || sym.typeId === "valve_reduce" || sym.typeId === "break_tank") && sym.branchId && hasBranchPts) {
             // Вентилятор, насос, запорный вентиль и редукционный клапан
             // масштабируются от ширины ветви (как перемычка), поэтому синхронны
             // с масштабом схемы и не «плавают» при зуме.

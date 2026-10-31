@@ -307,7 +307,7 @@ export function buildMineSymbols(input: SymbolsInput): MineSymbols | null {
     // Перемычка в объёме — не карточка, а плита по контуру сечения выработки
     // (mineBulkheads.ts). Плоский значок ей в этом режиме не нужен.
     if (input.skipBulkheads && BULKHEAD_SYMBOL_IDS.has(sym.typeId)) continue;
-    if (input.skipWaterFittings && (sym.typeId === "valve_water" || sym.typeId === "valve_reduce" || sym.typeId === "pump")) continue;
+    if (input.skipWaterFittings && (sym.typeId === "valve_water" || sym.typeId === "valve_reduce" || sym.typeId === "break_tank" || sym.typeId === "pump")) continue;
     if (input.skipFire && (sym.typeId === "fire_source"
       || (sym.typeId === "heat_selfprop" && sym.id.startsWith("SYM_FIREVEH_")))) continue;
     // Свободные значки (без привязки к выработке) в объёме поставить некуда:

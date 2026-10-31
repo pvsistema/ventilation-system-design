@@ -2374,6 +2374,11 @@ export default function CadLeftPanel({ c }: { c: CadPageState }) {
                     wpReducerMaxFlow: 25,
                   });
                 } : undefined}
+                onRemoveBreakTank={selectedBranch.wpHasBreakTank ? () => {
+                  const sym = schemaSymbols.find(s => s.typeId === "break_tank" && s.branchId === selectedBranch.id);
+                  if (sym) removeSymbol(sym.id);
+                  updateBranch(selectedBranch.id, { wpHasBreakTank: false });
+                } : undefined}
                 onRemoveGate={selectedBranch.wpHasGate ? () => {
                   const sym = schemaSymbols.find(s => s.typeId === "valve_water" && s.branchId === selectedBranch.id);
                   if (sym) removeSymbol(sym.id);

@@ -5880,6 +5880,9 @@ export function useCadPage() {
         if (sym.typeId === "valve_water" && sym.branchId) {
           updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
         }
+        if (sym.typeId === "break_tank" && sym.branchId) {
+          updateBranch(sym.branchId, { wpHasBreakTank: false }, false);
+        }
         // Значок техники под очагом удалён — больше не подставлять
         if (sym.id.startsWith("SYM_FIREVEH_") && sym.branchId) {
           updateBranch(sym.branchId, { fireVehicleSymbolOff: true }, false);
@@ -5935,6 +5938,9 @@ export function useCadPage() {
       // При удалении запорного вентиля — сбрасываем флаг и открываем ветвь
       if (sym?.typeId === "valve_water" && sym.branchId) {
         updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
+      }
+      if (sym?.typeId === "break_tank" && sym.branchId) {
+        updateBranch(sym.branchId, { wpHasBreakTank: false }, false);
       }
       // Значок техники под очагом удалён — больше не подставлять
       if (sym?.id.startsWith("SYM_FIREVEH_") && sym.branchId) {

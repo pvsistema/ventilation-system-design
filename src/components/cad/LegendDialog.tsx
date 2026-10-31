@@ -561,6 +561,17 @@ const ITEMS: LegendItem[] = [
     </svg>,
   },
   {
+    id: "break_tank", group: "Водопровод", name: "Бак разрыва струи",
+    svg: <svg width={48} height={40} viewBox="0 0 48 40">
+      <line x1={24} y1={2} x2={24} y2={10} stroke={S} strokeWidth={1.5} />
+      <line x1={24} y1={32} x2={24} y2={38} stroke={S} strokeWidth={1.5} />
+      <path d="M12,10 L12,32 L36,32 L36,10" fill="white" stroke={S} strokeWidth={1.8} />
+      <rect x={13} y={21} width={22} height={10} fill="#7cc4fa" />
+      <line x1={13} y1={21} x2={35} y2={21} stroke={S} strokeWidth={1} />
+      <line x1={24} y1={10} x2={24} y2={17} stroke={S} strokeWidth={1.5} strokeDasharray="2 1.5" />
+    </svg>,
+  },
+  {
     id: "valve_water", group: "Водопровод", name: "Вентиль запорный на водопроводе",
     svg: <svg width={48} height={40} viewBox="0 0 48 40">
       <line x1={2} y1={20} x2={46} y2={20} stroke="#2196f3" strokeWidth={1.5} />

@@ -32,6 +32,7 @@ interface Props {
   waterBranchResult?: WaterBranchResult;
   onRemoveGate?: () => void;
   onRemoveReducer?: () => void;
+  onRemoveBreakTank?: () => void;
   reducerSymbolScale?: number;
   onReducerSymbolScale?: (scale: number) => void;
 }
@@ -203,7 +204,7 @@ function Hint({ icon = "Info", children }: { icon?: string; children: ReactNode 
 
 export default function BranchWaterPipeTab({
   branch: b, onUpdate, waterBranchResult: r, onRemoveGate,
-  onRemoveReducer, reducerSymbolScale, onReducerSymbolScale,
+  onRemoveReducer, onRemoveBreakTank, reducerSymbolScale, onReducerSymbolScale,
 }: Props) {
   const hasWater = b.hasWaterPipe ?? false;
   const hasAir   = b.hasAirPipe ?? false;
@@ -348,6 +349,22 @@ export default function BranchWaterPipeTab({
               <StateBtn on={!!b.wpGateClosed} tone="red" icon="CircleX" label="Закрыт"
                 onClick={() => onUpdate({ wpGateClosed: true })} />
             </div>
+          </Card>
+        )}
+
+        {/* ═══ Бак разрыва струи ═════════════════════════════════════════ */}
+        {b.wpHasBreakTank && (
+          <Card dense icon="Container" title="Бак разрыва струи"
+            aside={onRemoveBreakTank && <RemoveBtn title="Убрать бак с ветви и схемы" onClick={onRemoveBreakTank} />}>
+            <Hint icon="Info">
+              Открытая ёмкость в месте значка: давление сбрасывается до атмосферного, ниже напор набирается заново. Ставится каскадом через 100–150 м высоты ствола.
+            </Hint>
+            {solved && r?.breakTank && (
+              <div>
+                <KV label="Давление на входе" value={`${fmt(r.reducerInP, 3)} МПа · ${fmt((r.reducerInP ?? 0) * MPA_TO_ATM, 1)} атм`} />
+                <KV label="Сброшено" value={`${fmt(r.reducerDeltaP, 3)} МПа`} />
+              </div>
+            )}
           </Card>
         )}
 

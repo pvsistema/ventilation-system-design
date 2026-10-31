@@ -1066,6 +1066,9 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 if (sym?.typeId === "valve_water" && sym.branchId) {
                   updateBranch(sym.branchId, { wpHasGate: false, wpGateClosed: false }, false);
                 }
+                if (sym?.typeId === "break_tank" && sym.branchId) {
+                  updateBranch(sym.branchId, { wpHasBreakTank: false }, false);
+                }
                 removeSymbol(id);
                 setSelectedSymbolId(null);
                 setSelectedSymbolIds(new Set());
@@ -1899,6 +1902,20 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                     setSelectedBranchId(branchId);
                     setSelectedNodeId(null);
                     setFanSymbolBranchId(null);
+                    setActiveSide("waterpipes");
+                  } else if (typeId === "break_tank" && branchId) {
+                    // Бак разрыва струи — давление в месте установки
+                    // сбрасывается до атмосферного (каскад в глубоких стволах).
+                    const br = branches.find(b => b.id === branchId);
+                    const newSym: SchemaSymbol = {
+                      id: `SYM_BT_${Date.now()}`,
+                      typeId, x, y, branchId, t: t ?? 0.5,
+                    };
+                    setSchemaSymbols(prev => [...prev.filter(s => !(s.typeId === "break_tank" && s.branchId === branchId)), newSym]);
+                    if (br) updateBranch(branchId, { wpHasBreakTank: true });
+                    setSelectedSymbolId(newSym.id);
+                    setSelectedBranchId(branchId);
+                    setSelectedNodeId(null);
                     setActiveSide("waterpipes");
                   } else if (typeId === "valve_water" && branchId) {
                     // Запорный вентиль на водопроводе — перекрывает/открывает

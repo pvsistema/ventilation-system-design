@@ -19,6 +19,9 @@
     участке до клапана минус столб воды до его отметки. wpReducerPlace:
     "symbol" (по значку, по умолчанию) | "inlet" | "outlet" — в начале или
     в конце ветви по ходу воды.
+  • Бак разрыва струи (wpHasBreakTank) — открытая ёмкость в стволе: в месте
+    установки (wpBreakTankT) давление сбрасывается до атмосферного, ниже
+    напор набирается заново. Считается как редуктор с уставкой 0.
 В каждом узле выполняется баланс расходов (1-й закон Кирхгофа), в каждом
 контуре — баланс потерь (2-й закон): кольца и развилки считаются честно.
 """
@@ -332,7 +335,8 @@ def calc_water_network(nodes_in, branches_in):
         if b["fromId"] not in live:
             continue
         pump_head = _f(b.get("wpPumpHead"), 0.0) if b.get("wpHasPump") else 0.0
-        has_red = bool(b.get("wpHasReducer"))
+        has_tank = bool(b.get("wpHasBreakTank"))
+        has_red = bool(b.get("wpHasReducer")) or has_tank
         d = 0
         if pump_head > 0:
             d = -1 if b.get("wpPumpReverse") else 1
@@ -341,9 +345,10 @@ def calc_water_network(nodes_in, branches_in):
             "b": b, "kind": "pipe", "i": b["fromId"], "j": b["toId"], "pipe": p,
             "d": d, "pump": pump_head * RHO_G_MPA if pump_head > 0 else 0.0,
             "pumpHeadM": pump_head, "red": has_red,
-            "redTarget": _f(b.get("wpReducerOutPressure"), 0.5) if has_red else 0.0,
-            "redPlace": reducer_place(b),
-            "redS": min(1.0, max(0.0, _f(b.get("wpReducerT"), 0.5))),
+            "redTarget": 0.0 if has_tank else (_f(b.get("wpReducerOutPressure"), 0.5) if has_red else 0.0),
+            "redPlace": "symbol" if has_tank else reducer_place(b),
+            "redS": min(1.0, max(0.0, _f(b.get("wpBreakTankT") if has_tank else b.get("wpReducerT"), 0.5))),
+            "tank": has_tank,
             "dv": 0.0, "q": (d or 1) * p.A * 0.5, "open": True,
         })
     for r in reservoirs:
@@ -545,7 +550,8 @@ def calc_water_network(nodes_in, branches_in):
             "reducerInP": round(max(0.0, p_up), 4),
             "reducerOutP": round(max(0.0, p_up - dv), 4),
             "reducerDeltaP": round(dv, 4),
-            "reducerOverCapacity": bool(L["red"] and max_flow > 0 and qh > max_flow),
+            "reducerOverCapacity": bool(L["red"] and not L.get("tank") and max_flow > 0 and qh > max_flow),
+            "breakTank": bool(L.get("tank")),
             "pumpActive": bool(pump_on),
             "pumpHeadM": round(L["pumpHeadM"], 2) if L["pump"] else 0.0,
             "pumpDeltaP": round(L["pump"], 4) if pump_on else 0.0,

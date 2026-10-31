@@ -34,6 +34,7 @@ export interface WaterBranchResult {
   pumpDeltaP?: number;    // МПа — прибавка давления от насоса
   flowFromTo?: boolean;   // направление течения воды: true = fromId→toId, false = toId→fromId
   reducerOverCapacity?: boolean; // расход выше паспортной пропускной способности редуктора
+  breakTank?: boolean;            // в ветви бак разрыва струи (reducer* — давление на нём)
   innerDiameter?: number; // мм — расчётный внутренний диаметр
   reynolds?: number;      // число Рейнольдса
   lambda?: number;        // коэффициент гидравлического трения
@@ -118,15 +119,19 @@ export function withWaterPumps<T extends TopoBranch>(
 ): T[] {
   const pumpByBranch = new Map<string, PumpSymbolLite>();
   const reducerT = new Map<string, number>();
+  const tankT = new Map<string, number>();
   for (const s of symbols) {
     if (s.typeId === "pump" && s.branchId) pumpByBranch.set(s.branchId, s);
     // Место редуктора на ветви — по его значку на схеме.
     if (s.typeId === "valve_reduce" && s.branchId) reducerT.set(s.branchId, s.t ?? 0.5);
+    if (s.typeId === "break_tank" && s.branchId) tankT.set(s.branchId, s.t ?? 0.5);
   }
-  if (pumpByBranch.size === 0 && reducerT.size === 0) return branches;
+  if (pumpByBranch.size === 0 && reducerT.size === 0 && tankT.size === 0) return branches;
   return branches.map(b0 => {
     const t = reducerT.get(b0.id);
-    const b = t !== undefined && b0.wpHasReducer ? { ...b0, wpReducerT: t } : b0;
+    const tt = tankT.get(b0.id);
+    let b = t !== undefined && b0.wpHasReducer ? { ...b0, wpReducerT: t } : b0;
+    if (tt !== undefined && b.wpHasBreakTank) b = { ...b, wpBreakTankT: tt };
     const pump = pumpByBranch.get(b.id);
     if (!pump) return b;
     const head = (pump.pumpHead ?? 0) * (pump.pumpParallel ?? 1);
@@ -175,7 +180,7 @@ export function waterInputsFingerprint(
       x.wpDiameter, x.wpWallThickness, x.wpMaterial, x.wpLength, x.wpLengthManual, b.length,
       x.wpRoughness, x.wpRoughnessMode, x.wpLocalXi, x.wpManualR,
       x.wpHasGate, x.wpGateClosed,
-      x.wpHasReducer, x.wpReducerOutPressure, x.wpReducerMaxFlow, x.wpReducerPlace,
+      x.wpHasReducer, x.wpReducerOutPressure, x.wpReducerMaxFlow, x.wpReducerPlace, x.wpHasBreakTank,
       x.wpHasPump, x.wpPumpHead, x.wpPumpReverse,
     ].join(","));
   }
@@ -212,8 +217,8 @@ export function waterInputsFingerprint(
   }
   // Положение значка редуктора на ветви — от него зависит давление на входе.
   for (const s of symbols) {
-    if (s.typeId !== "valve_reduce" || !s.branchId) continue;
-    parts.push(["r", s.branchId, s.t != null ? s.t.toFixed(3) : ""].join(","));
+    if ((s.typeId !== "valve_reduce" && s.typeId !== "break_tank") || !s.branchId) continue;
+    parts.push([s.typeId === "break_tank" ? "k" : "r", s.branchId, s.t != null ? s.t.toFixed(3) : ""].join(","));
   }
 
   return parts.join(";");

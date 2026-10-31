@@ -263,6 +263,7 @@ export interface SolverBranchResult {
   branchId: string; flow: number; velocity: number; deltaP: number; resistance: number;
   reducerActive: boolean; reducerInP: number; reducerOutP: number; reducerDeltaP: number;
   reducerOverCapacity?: boolean;
+  breakTank?: boolean;
   pumpActive?: boolean; pumpHeadM?: number; pumpDeltaP?: number; flowFromTo?: boolean;
   innerDiameter?: number; reynolds?: number; lambda?: number;
   regime?: "laminar" | "transition" | "turbulent" | "none";
@@ -284,6 +285,8 @@ interface Link {
   redPlace?: "symbol" | "inlet" | "outlet";
   /** Доля длины ветви от fromId до значка редуктора. */
   redS?: number;
+  /** Бак разрыва струи — редуктор с уставкой 0 (сброс до атмосферного). */
+  tank?: boolean;
 }
 
 export function reducerPlace(b: Partial<TopoBranch>): "symbol" | "inlet" | "outlet" {
@@ -345,15 +348,19 @@ export function solveWaterNetwork(
   for (const b of pipes) {
     if (!live.has(b.fromId)) continue;
     const pumpHead = b.wpHasPump ? num(b.wpPumpHead, 0) : 0;
-    const hasRed = !!b.wpHasReducer;
+    const hasTank = !!(b as { wpHasBreakTank?: boolean }).wpHasBreakTank;
+    const hasRed = !!b.wpHasReducer || hasTank;
     const d = pumpHead > 0 ? (b.wpPumpReverse ? -1 : 1) : 0;
     const p = new Pipe(b);
     links.push({
       kind: "pipe", b, i: b.fromId, j: b.toId, pipe: p, d,
       pump: pumpHead > 0 ? pumpHead * RHO_G_MPA : 0, pumpHeadM: pumpHead,
-      red: hasRed, redTarget: hasRed ? num(b.wpReducerOutPressure, 0.5) : 0,
-      redPlace: reducerPlace(b),
-      redS: Math.min(1, Math.max(0, num((b as { wpReducerT?: number }).wpReducerT, 0.5))),
+      red: hasRed, redTarget: hasTank ? 0 : hasRed ? num(b.wpReducerOutPressure, 0.5) : 0,
+      redPlace: hasTank ? "symbol" : reducerPlace(b),
+      redS: Math.min(1, Math.max(0, num(hasTank
+        ? (b as { wpBreakTankT?: number }).wpBreakTankT
+        : (b as { wpReducerT?: number }).wpReducerT, 0.5))),
+      tank: hasTank,
       dv: 0, q: (d || 1) * p.A * 0.5, open: true,
     });
   }
@@ -534,7 +541,8 @@ export function solveWaterNetwork(
       reducerInP: r4(Math.max(0, pUpRed)),
       reducerOutP: r4(Math.max(0, pUpRed - dv)),
       reducerDeltaP: r4(dv),
-      reducerOverCapacity: L.red && maxFlow > 0 && qh > maxFlow,
+      reducerOverCapacity: L.red && !L.tank && maxFlow > 0 && qh > maxFlow,
+      breakTank: !!L.tank,
       pumpActive: pumpOn,
       pumpHeadM: L.pump ? r4(L.pumpHeadM, 2) : 0,
       pumpDeltaP: pumpOn ? r4(L.pump) : 0,
