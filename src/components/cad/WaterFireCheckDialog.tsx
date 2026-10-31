@@ -148,7 +148,7 @@ export default function WaterFireCheckDialog({
   const [actMeta, setActMeta] = useState<ActMetaInput>(loadActMeta);
 
   function handleExport() {
-    exportWaterCheckAct(result, { projectName, ...actMeta }, { result: pipeNorms, kind: pipeKind });
+    exportWaterCheckAct(result, { projectName, ...actMeta }, { result: pipeNorms, kind: pipeKind, shafts: shaftPressure });
     onClose();
   }
 

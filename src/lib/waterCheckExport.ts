@@ -5,6 +5,7 @@
 //   • «Проверка точек» — таблица по всем пожарным кранам
 //   • «Мероприятия» — что сделать по несоответствующим точкам
 //   • «Трубы» — замечания по трубам: диаметр линии, скорость, давление
+//   • «Стволы» — давление внизу стволов и где ставить баки разрыва струи
 //   • «Выводы» — итог проверки
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -12,12 +13,16 @@ import * as XLSX from "xlsx";
 import type { WaterCheckResult, WaterCheckRow } from "./waterFireCheck";
 import { PIPE_ISSUE_LABEL, type PipeNormsResult } from "./waterPipeNorms";
 import { MIN_DN, V_TECH, V_FIRE, CORROSION_MM } from "./waterPipes";
+import type { ShaftPressureResult } from "./waterShaftPressure";
 
 /** Проверка труб по нормам — для листа «Трубы» и выводов акта. */
 export interface PipeActData {
   result: PipeNormsResult;
   kind: "ore" | "coal";
+  /** Давление в стволах — лист «Стволы», мероприятия и вывод акта. */
+  shafts?: ShaftPressureResult;
 }
+
 
 /** «1 участок», «3 участка», «5 участков» (род. падеж для «Проверено/Выявлено»). */
 function uch(n: number): string {
@@ -288,6 +293,87 @@ function buildMeasuresSheet(result: WaterCheckResult, pipes?: PipeActData): XLSX
     const sub = XLSX.utils.encode_cell({ r: start, c: 0 });
     if (ws[sub]) ws[sub].s = { font: { bold: true, sz: 10 } };
   }
+
+  // Мероприятия по стволам — баки разрыва струи
+  const shaftIssues = pipes?.shafts?.issues ?? [];
+  if (shaftIssues.length > 0) {
+    const range = XLSX.utils.decode_range(ws["!ref"] ?? "A1");
+    const start = range.e.r + 2;
+    const add: (string | number)[][] = [
+      ["Для стволов с давлением выше допустимого предусмотреть установку баков разрыва струи:"],
+      [],
+      ["№", "Ствол (сверху вниз)", "Перепад, м", "Выявленное несоответствие", "Мероприятие"],
+      ...shaftIssues.map((it, i) => [
+        i + 1, it.title, it.drop,
+        `Давление внизу ${it.pBottom} МПа`,
+        it.recommendation,
+      ]),
+    ];
+    XLSX.utils.sheet_add_aoa(ws, add, { origin: { r: start, c: 0 } });
+    const head = start + 2;
+    for (let c = 0; c < 5; c++) {
+      const ref = XLSX.utils.encode_cell({ r: head, c });
+      if (ws[ref]) ws[ref].s = headerStyle();
+    }
+    shaftIssues.forEach((_, i) => {
+      for (let c = 0; c < 5; c++) {
+        const ref = XLSX.utils.encode_cell({ r: head + 1 + i, c });
+        if (ws[ref]) ws[ref].s = cellStyle(i);
+      }
+    });
+    const sub = XLSX.utils.encode_cell({ r: start, c: 0 });
+    if (ws[sub]) ws[sub].s = { font: { bold: true, sz: 10 } };
+  }
+  return ws;
+}
+
+// ─── Лист «Стволы» ────────────────────────────────────────────────────────────
+const SHAFT_HEADERS = [
+  "№ п/п", "Ствол (сверху вниз)", "Перепад, м", "Давление вверху, МПа", "Давление внизу, МПа",
+  "Допустимое, МПа", "Установлено", "Баков нужно", "Глубины установки от верха, м", "Мероприятие",
+];
+
+function buildShaftsSheet(shafts: ShaftPressureResult, maxPressure: number): XLSX.WorkSheet {
+  const aoa: (string | number)[][] = [];
+  aoa.push(["Давление в стволах и крутых выработках водопровода (краны закрыты — статический напор)"]);
+  aoa.push([`Проверено крутых участков: ${shafts.total}. С превышением давления: ${shafts.issues.length}.`]);
+  aoa.push([`Допустимое давление — ${maxPressure} МПа. В стволе вода набирает около 0,1 МПа на каждые 10 м высоты; ` +
+    `бак разрыва струи сбрасывает давление до атмосферного, поэтому шаг каскада баков — не более ${Math.floor(shafts.stepM)} м высоты.`]);
+  aoa.push([]);
+  aoa.push([...SHAFT_HEADERS]);
+  if (shafts.issues.length === 0) {
+    aoa.push(SHAFT_HEADERS.map((_, i) => (i === 1 ? "Превышений давления в стволах нет" : "")));
+  }
+  shafts.issues.forEach((it, i) => {
+    aoa.push([
+      i + 1, it.title, it.drop, it.pTop, it.pBottom, maxPressure,
+      [it.hasTank && "бак разрыва", it.hasReducer && "редуктор"].filter(Boolean).join(", ") || "—",
+      it.tanksNeeded, it.tankDepths.join(", ") || "—", it.recommendation,
+    ]);
+  });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws["!cols"] = [
+    { wch: 6 }, { wch: 18 }, { wch: 10 }, { wch: 12 }, { wch: 12 },
+    { wch: 12 }, { wch: 16 }, { wch: 10 }, { wch: 18 }, { wch: 70 },
+  ];
+  ws["!merges"] = [0, 1, 2].map(r => ({ s: { r, c: 0 }, e: { r, c: SHAFT_HEADERS.length - 1 } }));
+  ws["!rows"] = [{ hpx: 22 }, { hpx: 16 }, { hpx: 28 }, { hpx: 6 }, { hpx: 40 }];
+  const t = XLSX.utils.encode_cell({ r: 0, c: 0 });
+  if (ws[t]) ws[t].s = { font: { bold: true, sz: 10 } };
+  const nr = XLSX.utils.encode_cell({ r: 2, c: 0 });
+  if (ws[nr]) ws[nr].s = { font: { sz: 9, color: { rgb: "555555" } }, alignment: { wrapText: true, vertical: "top" } };
+  SHAFT_HEADERS.forEach((_, ci) => {
+    const ref = XLSX.utils.encode_cell({ r: 4, c: ci });
+    if (ws[ref]) ws[ref].s = headerStyle();
+  });
+  shafts.issues.forEach((_, ri) => {
+    for (let ci = 0; ci < SHAFT_HEADERS.length; ci++) {
+      const ref = XLSX.utils.encode_cell({ r: ri + 5, c: ci });
+      if (ws[ref]) ws[ref].s = cellStyle(ri, ci === 4);
+    }
+  });
+  ws["!freeze"] = { xSplit: 0, ySplit: 5 };
   return ws;
 }
 
@@ -407,6 +493,20 @@ function buildConclusionsSheet(result: WaterCheckResult, pipes?: PipeActData): X
     }
   }
 
+  const shafts = pipes?.shafts;
+  if (shafts && shafts.total > 0) {
+    const si = shafts.issues;
+    aoa.push([]);
+    aoa.push([`6. Проверено давление в ${shafts.total} крутых участках водопровода (стволы, восстающие) при закрытых кранах.`]);
+    if (si.length === 0) {
+      aoa.push([`   Давление внизу стволов не превышает допустимого ${n.maxPressure} МПа.`]);
+    } else {
+      const tanks = si.reduce((s, it) => s + it.tanksNeeded, 0);
+      aoa.push([`   Превышение допустимого давления ${n.maxPressure} МПа выявлено в ${si.length} ${si.length % 10 === 1 && si.length % 100 !== 11 ? "стволе" : "стволах"}; наибольшее — ${si[0].pBottom} МПа (${si[0].title}).`]);
+      aoa.push([`   Требуется установить баков разрыва струи: ${tanks} (см. листы «Стволы» и «Мероприятия»).`]);
+    }
+  }
+
   aoa.push([]);
   aoa.push([`Расчёт выполнен в программном обеспечении «ПВ-Система».`]);
 
@@ -425,6 +525,7 @@ export function exportWaterCheckAct(result: WaterCheckResult, meta?: Partial<Wat
   XLSX.utils.book_append_sheet(wb, buildTitleSheet(m, result, pipes), "Титул");
   XLSX.utils.book_append_sheet(wb, buildTableSheet(result), "Проверка точек");
   if (pipes && pipes.result.total > 0) XLSX.utils.book_append_sheet(wb, buildPipesSheet(pipes), "Трубы");
+  if (pipes?.shafts && pipes.shafts.total > 0) XLSX.utils.book_append_sheet(wb, buildShaftsSheet(pipes.shafts, result.norms.maxPressure), "Стволы");
   XLSX.utils.book_append_sheet(wb, buildMeasuresSheet(result, pipes), "Мероприятия");
   XLSX.utils.book_append_sheet(wb, buildConclusionsSheet(result, pipes), "Выводы");
 
