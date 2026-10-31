@@ -42,6 +42,8 @@ export interface CadHotkeysDeps {
   /** Ctrl+O — «Открыть». */
   handleOpen?: () => unknown;
   handleSolve: () => void;
+  /** F10 — расчёт водопровода. */
+  handleWaterCalc?: () => void;
   handleDeleteSelected: () => void;
   /** Ctrl+R — развернуть выбранные условные обозначения. */
   handleFlipSymbols: (ids: string[]) => void;
@@ -85,7 +87,7 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
     selectedNodeId, selectedBranchId, selectedBranchIds,
     selectedSymbolId, selectedSymbolIds, selectedPositionId,
     symbolClipboard, pendingSymbol, leaderDrawMode, lastSPressRef,
-    handleUndo, handleSave, handleSolve, handleDeleteSelected,
+    handleUndo, handleSave, handleSolve, handleWaterCalc, handleDeleteSelected,
     handleFlipSymbols, toggleRibbonCollapsed,
     setLeftPanelOpen, setActiveSide, setShowPrintDialog,
     setPendingSymbol, setSymbolClipboard, setPosBranchBindMode,
@@ -214,9 +216,12 @@ export function useCadHotkeys(d: CadHotkeysDeps): void {
         requestResetToSurvey?.();
         return;
       }
-      // F6, F9 — всегда работают
+      // F6, F9, F10 — всегда работают
       if (e.key === "F6") { e.preventDefault(); setThinLines((v) => !v); return; }
       if (e.key === "F9") { e.preventDefault(); handleSolve(); return; }
+      // F10 — расчёт водопровода. Перехватываем и без водопровода: иначе
+      // браузер/Windows по F10 переводит фокус в системное меню окна.
+      if (e.key === "F10") { e.preventDefault(); handleWaterCalc?.(); return; }
       // И/B — добавить выноску (режим рисования) или убрать
       if ((e.key === "и" || e.key === "И" || e.key === "b" || e.key === "B") && !isEditing) {
         e.preventDefault();

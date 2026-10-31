@@ -1061,6 +1061,16 @@ table td.tabular-nums,
 .btn-water:not(:disabled):active { transform: translateY(1px); box-shadow: inset 0 1px 2px rgba(0, 0, 0, .15); }
 .btn-water[data-stale] { outline: 2px solid #3b9ae8; outline-offset: 1px; }
 .btn-water:disabled { cursor: default; filter: grayscale(.6); opacity: .5; }
+.btn-water-kbd {
+  font-family: var(--font-num);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 4px;
+  border-radius: 3px;
+  color: #fff;
+  background: #1d5f9c;
+}
 .btn-brand-kbd {
   font-family: var(--font-num);
   font-size: 10px;

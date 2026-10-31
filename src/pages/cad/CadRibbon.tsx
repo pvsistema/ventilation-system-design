@@ -1591,8 +1591,8 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
               title={!hasWaterPipes
                 ? "На схеме нет водопровода"
                 : waterStale
-                  ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды"
-                  : "Пересчитать напоры и расходы воды в водопроводе (данные не менялись с прошлого расчёта)"}>
+                  ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды (F10)"
+                  : "Пересчитать напоры и расходы воды в водопроводе (F10)"}>
               <span className="rb-tile">
                 <Icon name={waterCalcBusy ? "Loader" : "RefreshCw"} size={18} className={waterCalcBusy ? "animate-spin" : ""} />
               </span>

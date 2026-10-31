@@ -1993,6 +1993,7 @@ export function useCadPage() {
     setWaterNetwork({ nodeResults: new Map(), branchResults: new Map() });
   }, [hasWaterPipes]);
 
+  const recalcWaterRef = useRef<(() => void) | null>(null);
   const recalcWater = () => {
     if (!hasWaterPipes || waterCalcBusy) return;
     setWaterCalcBusy(true);
@@ -6136,12 +6137,14 @@ export function useCadPage() {
   // ─── ГОРЯЧИЕ КЛАВИШИ ────────────────────────────────────────────────
   // Логика вынесена в useCadHotkeys без изменений: тот же обработчик и тот же
   // порядок проверок клавиш.
+  recalcWaterRef.current = recalcWater;
   useCadHotkeys({
     nodes, branchesRaw, schemaSymbols, positions,
     selectedNodeId, selectedBranchId, selectedBranchIds,
     selectedSymbolId, selectedSymbolIds, selectedPositionId,
     symbolClipboard, pendingSymbol, leaderDrawMode, lastSPressRef,
     handleUndo, handleSolve, handleDeleteSelected,
+    handleWaterCalc: () => recalcWaterRef.current?.(),
     // Через ref: обработчик клавиш пересоздаётся не на каждое изменение, и
     // прямая ссылка могла сохранить устаревшее состояние (например, настройки
     // расчёта, изменённые после последнего пересоздания).

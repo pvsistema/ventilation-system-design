@@ -3227,10 +3227,11 @@ export default function CadWorkspace({ c }: { c: CadPageState }) {
                 title={!hasWaterPipes
                   ? "На схеме нет водопровода"
                   : waterStale
-                    ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды"
-                    : "Расчёт напоров и расходов воды в водопроводе"}>
+                    ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды (F10)"
+                    : "Расчёт напоров и расходов воды в водопроводе (F10)"}>
                 <Icon name={waterCalcBusy ? "Loader" : "Droplets"} size={12} className={waterCalcBusy ? "animate-spin" : ""} />
                 Расчёт
+                <kbd className="btn-water-kbd">F10</kbd>
               </button>
               {([
                 { on: thinLines, toggle: () => setThinLines((v) => !v), icon: "Minus", title: "Тонкие линии (F6)" },
