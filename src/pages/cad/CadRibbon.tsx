@@ -1582,7 +1582,7 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
               </span>
             </button>
 
-            {/* Пересчёт водопровода — рядом с расчётом сети, голубой */}
+            {/* Расчёт водопровода — рядом с расчётом сети, голубой */}
             <button onClick={recalcWater} disabled={!hasWaterPipes || waterCalcBusy}
               data-water=""
               data-stale={waterStale ? "1" : undefined}
@@ -1597,7 +1597,7 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
                 <Icon name={waterCalcBusy ? "Loader" : "RefreshCw"} size={18} className={waterCalcBusy ? "animate-spin" : ""} />
               </span>
               <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 600 }}>
-                <span className="block">Пересчёт</span><span className="block">водопровода</span>
+                <span className="block">Расчёт</span><span className="block">водопровода</span>
               </span>
             </button>
 

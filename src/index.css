@@ -1075,7 +1075,7 @@ table td.tabular-nums,
 .rb-btn[data-brand] .rb-progress { background: rgba(31, 35, 40, .22); }
 .dark .rb-btn[data-brand] .rb-label { color: var(--brand-amber-hi); }
 
-/* Кнопка «Пересчёт водопровода» — голубая пара к оранжевой «Расчёт сети» */
+/* Кнопка «Расчёт водопровода» — голубая пара к оранжевой «Расчёт сети» */
 .rb-btn[data-water] .rb-tile {
   background: linear-gradient(180deg, #7cc4fa, #3b9ae8);
   border-color: #2b7fc7;
