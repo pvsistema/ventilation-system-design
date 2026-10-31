@@ -1582,6 +1582,25 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
               </span>
             </button>
 
+            {/* Пересчёт водопровода — рядом с расчётом сети, голубой */}
+            <button onClick={recalcWater} disabled={!hasWaterPipes || waterCalcBusy}
+              data-water=""
+              data-stale={waterStale ? "1" : undefined}
+              className="rb-btn flex flex-col items-center justify-start gap-1"
+              style={{ minWidth: 54, height: 62, paddingTop: 3, flexShrink: 0, cursor: waterCalcBusy ? "wait" : "pointer" }}
+              title={!hasWaterPipes
+                ? "На схеме нет водопровода"
+                : waterStale
+                  ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды"
+                  : "Пересчитать напоры и расходы воды в водопроводе (данные не менялись с прошлого расчёта)"}>
+              <span className="rb-tile">
+                <Icon name={waterCalcBusy ? "Loader" : "RefreshCw"} size={18} className={waterCalcBusy ? "animate-spin" : ""} />
+              </span>
+              <span className="rb-label" style={{ fontSize: 9.5, lineHeight: "1.15", textAlign: "center", fontWeight: 600 }}>
+                <span className="block">Пересчёт</span><span className="block">водопровода</span>
+              </span>
+            </button>
+
             {/* Кнопка параметров */}
             <div className="relative">
               <button onClick={() => setShowSolverParams(v => !v)}
@@ -1679,19 +1698,6 @@ export default function CadRibbon({ c }: { c: CadPageState }) {
               sublabel="при пожаре"
               title="Проверка устойчивости вентиляционных режимов при пожаре и формирование Акта устойчивости"
               onClick={() => setShowFireStability(true)}
-            />
-            <RibbonBigBtn
-              icon={waterCalcBusy ? "Loader" : "RefreshCw"}
-              label="Пересчёт"
-              sublabel="водопровода"
-              disabled={!hasWaterPipes || waterCalcBusy}
-              active={waterStale}
-              title={!hasWaterPipes
-                ? "На схеме нет водопровода"
-                : waterStale
-                  ? "Водопровод изменён после расчёта — нажмите, чтобы пересчитать напоры и расходы воды"
-                  : "Пересчитать напоры и расходы воды в водопроводе (данные не менялись с прошлого расчёта)"}
-              onClick={recalcWater}
             />
             <RibbonBigBtn
               icon="Droplets"
